@@ -16,30 +16,39 @@ jobs:
 
       - name: Copy latest versioned HTML to index.html in each app folder
         run: |
+          version_summary=""
+
           for dir in */; do
             # Skip hidden dirs like .github
             [[ "$dir" == .* ]] && continue
 
             app="${dir%/}"
 
-            # Find the highest-versioned HTML file (e.g. remember-v0.70.html)
-            # Sort by major then minor version number numerically
+            # Find the highest-versioned HTML file using version sort (-V)
+            # Handles major.minor versions like v0.9, v0.10, v0.73 correctly
             latest=$(ls "$app"/"$app"-v*.html 2>/dev/null \
               | sort -t'v' -k2 -V \
               | tail -1)
 
             if [ -n "$latest" ]; then
               cp "$latest" "$app/index.html"
+              # Extract just the version number (e.g. v0.73) from the filename
+              version=$(echo "$latest" | grep -oE 'v[0-9]+\.[0-9]+')
               echo "✅ $app → copied $latest → index.html"
+              version_summary="$version_summary $app:$version"
             else
               echo "⏭️  $app → no versioned HTML found, skipping"
             fi
           done
+
+          # Save summary for use in commit message
+          echo "VERSION_SUMMARY=$version_summary" >> $GITHUB_ENV
 
       - name: Commit and push updated index.html files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || git commit -m "Auto-update index.html from latest versioned HTML"
+          git diff --staged --quiet || git commit -m "Deploy$VERSION_SUMMARY — auto-update index.html"
           git push
+          
