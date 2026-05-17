@@ -8,7 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Remember">
 <meta name="theme-color" content="#f5f0e8">
 <title>Remember</title>
-<link rel="manifest" href="#" id="manifest-link">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 
 <style>
 /* ===== GOOGLE FONTS ===== */
@@ -826,14 +827,123 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 
 /* ===== PRINT ===== */
 
+/* ===== IMPORT/EXPORT DIALOG ===== */
+.importexport-sheet {
+  background: var(--bg);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 640px;
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 10px;
+  max-height: 420px;
+  top: auto;
+  bottom: 60px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: var(--shadow-lg);
+  padding: 0 0 8px;
+  overscroll-behavior: contain;
+  display: none;
+  z-index: 101;
+}
+.importexport-sheet.open { display: block; }
+
+.ie-section { padding: 16px 20px; }
+.ie-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.ie-row:last-child { border-bottom: none; }
+.ie-label { font-size: 1em; font-weight: 600; color: var(--fg); }
+.ie-desc { font-size: 0.82em; color: var(--fg3); margin-top: 3px; }
+.ie-close-row { padding: 8px 20px; display: flex; justify-content: center; }
+.modal-close-btn-plain {
+  font-family: var(--font-body);
+  font-size: 0.95em;
+  font-weight: 600;
+  background: var(--bg3);
+  color: var(--fg);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 40px;
+  cursor: pointer;
+  min-height: 44px;
+  transition: filter 0.15s;
+}
+.modal-close-btn-plain:hover { filter: brightness(0.95); }
+
+/* ===== UPDATE BANNER ===== */
+#update-banner {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--accent);
+  color: white;
+  padding: 14px 18px;
+  z-index: 500;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.2);
+  flex-wrap: wrap;
+}
+#update-banner.visible { display: flex; }
+#update-banner-msg {
+  flex: 1;
+  font-size: 0.95em;
+  font-weight: 600;
+  min-width: 160px;
+}
+.update-banner-btn {
+  font-family: var(--font-body);
+  font-size: 0.9em;
+  font-weight: 700;
+  padding: 8px 18px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  min-height: 40px;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+#update-now-btn {
+  background: white;
+  color: var(--accent);
+}
+#update-later-btn {
+  background: transparent;
+  color: white;
+  border: 2px solid rgba(255,255,255,0.6);
+}
 </style>
 </head>
 <body>
+
+<!-- ===== UPDATE BANNER ===== -->
+<div id="update-banner" role="alert">
+  <span id="update-banner-msg">A new version of Remember is available.</span>
+  <button class="update-banner-btn" id="update-now-btn">Update now</button>
+  <button class="update-banner-btn" id="update-later-btn">Later</button>
+</div>
 
 <!-- ===== HOME SCREEN ===== -->
 <div id="home-screen" class="screen active">
   <header class="home-header">
     <h1 class="home-title">re<span>member</span></h1>
+    <button class="icon-btn" id="importexport-btn" aria-label="Import / Export notes" title="Import / Export">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="settings-btn" aria-label="Settings" title="Settings">
       <!-- gear icon -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -841,6 +951,8 @@ input[type="range"].settings-range::-webkit-slider-thumb {
       </svg>
     </button>
   </header>
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-file-input" accept=".json" style="display:none">
 
   <div class="notes-list" id="notes-list">
     <!-- populated by JS -->
@@ -915,6 +1027,11 @@ input[type="range"].settings-range::-webkit-slider-thumb {
       <button class="icon-btn" id="view-mode-btn" aria-label="Switch to view mode" title="View mode">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="export-note-btn" aria-label="Export this note to JSON" title="Export note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
         </svg>
       </button>
     </div>
@@ -1223,6 +1340,34 @@ input[type="range"].settings-range::-webkit-slider-thumb {
       <button class="reset-defaults-btn" id="reset-defaults-btn">Reset All Settings to Defaults</button>
     </div>
   </div>
+
+<!-- ===== IMPORT/EXPORT DIALOG ===== -->
+<div class="modal-overlay" id="importexport-overlay"></div>
+<div class="importexport-sheet" id="importexport-sheet">
+  <div class="modal-handle"></div>
+  <h2 class="modal-title" style="padding: 8px 20px 16px; border-bottom: 1px solid var(--border);">Import / Export</h2>
+
+  <div class="ie-section">
+    <div class="ie-row">
+      <div>
+        <div class="ie-label">Export all notes</div>
+        <div class="ie-desc">Download all your notes as a JSON backup file</div>
+      </div>
+      <button class="btn btn-primary" id="export-all-btn">Export All</button>
+    </div>
+    <div class="ie-row">
+      <div>
+        <div class="ie-label">Import notes</div>
+        <div class="ie-desc">Merge notes from a previously exported JSON file</div>
+      </div>
+      <button class="btn btn-ghost" id="import-btn">Import</button>
+    </div>
+  </div>
+
+  <div class="ie-close-row">
+    <button class="modal-close-btn-plain" id="importexport-close-btn">Close</button>
+  </div>
+</div>
 
 <!-- ===== CONFIRM DIALOG ===== -->
 <div class="confirm-overlay" id="confirm-overlay" role="dialog" aria-modal="true">
@@ -1650,6 +1795,93 @@ function scheduleSave() {
   saveTimeout = setTimeout(saveCurrentNote, 600);
 }
 
+// ===== EXPORT / IMPORT =====
+function downloadJSON(data, filename) {
+  var json = JSON.stringify(data, null, 2);
+  var blob = new Blob([json], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+}
+
+function exportAllNotes() {
+  var count = Object.keys(notes).length;
+  if (count === 0) {
+    showConfirm('No Notes', 'There are no notes to export.', 'OK', function() {}, false, null, null);
+    return;
+  }
+  var d = new Date();
+  var dateStr = d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+  downloadJSON({ version: '0.71', exportDate: d.toISOString(), notes: notes }, 'remember-notes-' + dateStr + '.json');
+}
+
+function exportCurrentNote() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  saveCurrentNote();
+  var n = notes[currentNoteId];
+  var safeName = n.name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 40);
+  downloadJSON({ version: '0.71', exportDate: new Date().toISOString(), notes: { [n.id]: n } }, 'remember-' + safeName + '.json');
+}
+
+function importNotes(file) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = JSON.parse(e.target.result);
+      // Support both full export format and bare notes object
+      var imported = data.notes || data;
+      if (typeof imported !== 'object' || Array.isArray(imported)) throw new Error('Invalid format');
+      var importedNotes = imported;
+      var count = Object.keys(importedNotes).length;
+      if (count === 0) throw new Error('No notes found');
+
+      // Check for duplicates
+      var duplicates = 0;
+      Object.values(importedNotes).forEach(function(n) {
+        if (Object.values(notes).some(function(existing) { return existing.name === n.name; })) {
+          duplicates++;
+        }
+      });
+
+      var msg = 'Import ' + count + ' note' + (count !== 1 ? 's' : '') + '?';
+      if (duplicates > 0) {
+        msg += ' (' + duplicates + ' have the same name as existing notes — both will be kept.)';
+      }
+
+      showConfirm(
+        'Import Notes',
+        msg,
+        'Import',
+        function() {
+          // Merge — imported notes get new IDs to avoid collision
+          Object.values(importedNotes).forEach(function(n) {
+            var newId = makeId();
+            notes[newId] = Object.assign({}, n, { id: newId });
+          });
+          saveNotes();
+          renderNotesList();
+          showConfirm('Import Complete', count + ' note' + (count !== 1 ? 's' : '') + ' imported successfully.', 'OK', function() {}, false, null, null);
+        },
+        false,
+        'Cancel',
+        null
+      );
+    } catch(err) {
+      showConfirm('Import Failed', 'The file could not be read. Make sure it is a valid Remember JSON export file.', 'OK', function() {}, false, null, null);
+    }
+  };
+  reader.readAsText(file);
+}
+
 function goHome() {
   stopSpeaking();
   setViewMode(false);
@@ -1927,6 +2159,33 @@ function init() {
   // Home
   document.getElementById('new-note-btn').addEventListener('click', createNewNote);
   document.getElementById('settings-btn').addEventListener('click', openSettings);
+  document.getElementById('importexport-btn').addEventListener('click', function() {
+    document.getElementById('importexport-overlay').classList.add('open');
+    document.getElementById('importexport-sheet').classList.add('open');
+  });
+  document.getElementById('importexport-close-btn').addEventListener('click', function() {
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+  });
+  document.getElementById('importexport-overlay').addEventListener('click', function() {
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+  });
+  document.getElementById('export-all-btn').addEventListener('click', function() {
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+    exportAllNotes();
+  });
+  document.getElementById('import-btn').addEventListener('click', function() {
+    document.getElementById('import-file-input').value = '';
+    document.getElementById('import-file-input').click();
+  });
+  document.getElementById('import-file-input').addEventListener('change', function() {
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+    if (this.files && this.files[0]) importNotes(this.files[0]);
+  });
+  document.getElementById('export-note-btn').addEventListener('click', exportCurrentNote);
   document.getElementById('about-btn').addEventListener('click', function() {
     showConfirm(
       'About Remember',
@@ -2307,6 +2566,54 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+// PWA Service Worker + Update Banner
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./service-worker.js').then(function(reg) {
+
+      // If a new SW is already waiting when we load, show banner immediately
+      if (reg.waiting) {
+        document.getElementById('update-banner').classList.add('visible');
+      }
+
+      // If a new SW installs while we're open, show banner when it starts waiting
+      reg.addEventListener('updatefound', function() {
+        var newWorker = reg.installing;
+        newWorker.addEventListener('statechange', function() {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            document.getElementById('update-banner').classList.add('visible');
+          }
+        });
+      });
+
+      // "Update now" — tell the waiting SW to activate, then reload
+      document.getElementById('update-now-btn').addEventListener('click', function() {
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      });
+
+      // "Later" — just hide the banner
+      document.getElementById('update-later-btn').addEventListener('click', function() {
+        document.getElementById('update-banner').classList.remove('visible');
+      });
+
+    }).catch(function(err) {
+      // Suppress the known Claude app WebView error (non app-bound domain)
+      // but log any other unexpected service worker errors
+      var msg = err && err.message ? err.message : String(err);
+      if (msg.indexOf('app-bound') === -1 && msg.indexOf('non-app-bound') === -1) {
+        console.log('SW registration failed:', err);
+      }
+    });
+
+    // When the SW activates (after SKIP_WAITING), reload the page
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      window.location.reload();
+    });
+  });
+}
 
 // Stop speaking if the tab/app is hidden or closed
 document.addEventListener('visibilitychange', function() {
