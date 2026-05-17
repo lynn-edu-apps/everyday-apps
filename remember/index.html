@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Remember App - Version 0.90 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1670,7 +1671,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 <script>
 'use strict';
 
-const APP_VERSION = '0.86';
+const APP_VERSION = '0.90';
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -2673,6 +2674,8 @@ function init() {
     isDictating = false;
     dictateBtn.classList.remove('listening');
     dictateBtn.setAttribute('title', 'Dictate text');
+    var ed = document.getElementById('note-editor');
+    if (ed) ed._dictInterimLen = 0;
     if (dictRecognition) { try { dictRecognition.stop(); } catch(e) {} }
   }
 
@@ -2693,35 +2696,51 @@ function init() {
 
       dictRecognition = new SpeechRecognition();
       dictRecognition.continuous = true;
-      dictRecognition.interimResults = false;
+      dictRecognition.interimResults = true;
       dictRecognition.lang = settings.voiceURI
         ? (window.speechSynthesis.getVoices().find(function(v) { return v.voiceURI === settings.voiceURI; }) || {}).lang || 'en-US'
         : 'en-US';
+
+      // Track where dictation started in the textarea
+      var insertionPoint = -1;
+      var insertionPrefix = '';
 
       dictRecognition.onstart = function() {
         isDictating = true;
         dictateBtn.classList.add('listening');
         dictateBtn.setAttribute('title', 'Tap to stop dictation');
+        // Record insertion point now (cursor position when dictation begins)
+        var ed = document.getElementById('note-editor');
+        var pos = ed.selectionStart;
+        var before = ed.value.substring(0, pos);
+        insertionPrefix = (before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+        insertionPoint = pos + insertionPrefix.length;
+        // Insert the prefix space immediately so the cursor is in the right spot
+        if (insertionPrefix) {
+          ed.value = ed.value.substring(0, pos) + insertionPrefix + ed.value.substring(ed.selectionEnd);
+          ed.setSelectionRange(insertionPoint, insertionPoint);
+        }
       };
 
       dictRecognition.onresult = function(e) {
         var ed = document.getElementById('note-editor');
+        // Build full transcript from all results so far (interim + final)
         var transcript = '';
-        for (var i = e.resultIndex; i < e.results.length; i++) {
+        for (var i = 0; i < e.results.length; i++) {
           transcript += e.results[i][0].transcript;
         }
-        // Insert at cursor position or append
-        var start = ed.selectionStart;
-        var end = ed.selectionEnd;
-        var before = ed.value.substring(0, start);
-        var after = ed.value.substring(end);
-        // Add a space before if needed
-        var prefix = (before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
-        ed.value = before + prefix + transcript + after;
-        var newPos = start + prefix.length + transcript.length;
+        // Replace everything from insertionPoint onward (the dictated region)
+        // preserving any text that was after the cursor when dictation started
+        var afterDictation = ed.value.substring(insertionPoint + ed._dictInterimLen || insertionPoint);
+        ed._dictInterimLen = transcript.length;
+        ed.value = ed.value.substring(0, insertionPoint) + transcript + afterDictation;
+        var newPos = insertionPoint + transcript.length;
         ed.setSelectionRange(newPos, newPos);
         resizeEditor();
-        scheduleSave();
+        // Only save on final results to avoid thrashing localStorage
+        if (e.results[e.results.length - 1].isFinal) {
+          scheduleSave();
+        }
       };
 
       dictRecognition.onerror = function(e) {
