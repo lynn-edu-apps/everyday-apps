@@ -210,6 +210,18 @@ body {
   color: var(--fg3);
   margin-top: 3px;
 }
+.note-item-preview {
+  font-size: 0.85em;
+  color: var(--fg2);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.note-item-empty {
+  color: var(--fg3);
+  font-style: italic;
+}
 
 .note-item-arrow {
   color: var(--fg3);
@@ -1565,6 +1577,19 @@ function showScreen(id) {
 }
 
 // ===== HOME SCREEN =====
+function notePreview(content) {
+  if (!content) return null;
+  // Find first non-blank line
+  var lines = content.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (line.length > 0) {
+      return line.length > 80 ? line.slice(0, 80) + '…' : line;
+    }
+  }
+  return null; // all whitespace
+}
+
 function renderNotesList() {
   const list = document.getElementById('notes-list');
   const ids = Object.keys(notes);
@@ -1581,10 +1606,14 @@ function renderNotesList() {
 
   list.innerHTML = ids.map(function(id) {
     var n = notes[id];
+    var preview = notePreview(n.content);
     return '<div class="note-item" data-id="' + id + '" role="button" tabindex="0" aria-label="Open note: ' + escHtml(n.name) + '">' +
       '<div class="note-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>' +
       '<div class="note-item-body">' +
         '<div class="note-item-name">' + escHtml(n.name) + '</div>' +
+        (preview !== null
+          ? '<div class="note-item-preview">' + escHtml(preview) + '</div>'
+          : '<div class="note-item-preview note-item-empty">Empty note</div>') +
         '<div class="note-item-date">Edited ' + fmtDate(n.editedAt) + '</div>' +
       '</div>' +
       '<div class="note-item-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>' +
@@ -1723,12 +1752,26 @@ function createNewNote() {
     id: id,
     name: name,
     content: '',
+    autoNamed: true,  // name is app-generated; will update from content
     createdAt: Date.now(),
     editedAt: Date.now(),
     viewedAt: Date.now()
   };
   saveNotes();
   openNote(id);
+}
+
+function nameFromContent(content) {
+  // Find first non-blank line, take first 50 chars
+  if (!content) return '';
+  var lines = content.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (line.length > 0) {
+      return line.length > 50 ? line.slice(0, 50).trim() + '…' : line;
+    }
+  }
+  return '';
 }
 
 function saveCurrentNote() {
@@ -1794,6 +1837,15 @@ function scheduleSave() {
   }
   if (editor) editor._lastLength = editor.value.length;
   resizeEditor();
+
+  // Auto-update title from content if note is still auto-named
+  if (currentNoteId && notes[currentNoteId] && notes[currentNoteId].autoNamed) {
+    var derived = nameFromContent(editor.value) || 'Empty note';
+    var titleEl = document.getElementById('note-title');
+    titleEl.textContent = derived;
+    notes[currentNoteId].name = derived;
+  }
+
   saveTimeout = setTimeout(saveCurrentNote, 600);
 }
 
@@ -2332,13 +2384,28 @@ function init() {
     resizeEditor();
     scheduleSave();
   });
-  document.getElementById('note-title').addEventListener('input', scheduleSave);
+  document.getElementById('note-title').addEventListener('input', function() {
+    // User manually editing title — no longer auto-named
+    if (currentNoteId && notes[currentNoteId]) {
+      notes[currentNoteId].autoNamed = false;
+    }
+    scheduleSave();
+  });
   document.getElementById('note-title').addEventListener('keydown', function(e) {
     // Prevent Enter key from inserting a newline in the title
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('note-editor').focus(); }
   });
   document.getElementById('note-title').addEventListener('blur', function() {
     var newName = this.textContent.trim();
+    // Prevent empty name — restore from content or fall back to date-based name
+    if (!newName && currentNoteId && notes[currentNoteId]) {
+      var fallback = nameFromContent(notes[currentNoteId].content) || 'Empty note';
+      this.textContent = fallback;
+      notes[currentNoteId].name = fallback;
+      notes[currentNoteId].autoNamed = true;
+      saveCurrentNote();
+      return;
+    }
     if (!newName || !currentNoteId) return;
     if (noteNameExists(newName, currentNoteId)) {
       showConfirm(
