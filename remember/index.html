@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.114 -->
+<!-- Remember App - Version 0.115 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1756,7 +1756,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 <script>
 'use strict';
 
-const APP_VERSION = '0.114';
+const APP_VERSION = '0.115';
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -2867,10 +2867,49 @@ function init() {
 
     noteScreen.classList.add('keyboard-open');
 
-    // After layout reflow from keyboard-open, restore the browser-set cursor
+    // After layout reflow from keyboard-open, restore cursor and scroll it into view
     requestAnimationFrame(function() {
       ed.focus();
       ed.setSelectionRange(savedStart, savedEnd);
+
+      // Scroll the cursor line into view within the content area
+      // We measure by creating a temporary mirror element to find cursor Y position
+      try {
+        var area = document.getElementById('note-content-area');
+        var style = window.getComputedStyle(ed);
+        var lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+
+        // Count newlines before cursor to find which line it's on
+        var textBefore = ed.value.substring(0, savedStart);
+        var linesBefore = textBefore.split('\n').length - 1;
+
+        // Also account for wrapped lines by measuring text width
+        // Simple approximation: use a hidden span to measure
+        var mirror = document.createElement('div');
+        mirror.style.cssText = [
+          'position:absolute', 'visibility:hidden', 'white-space:pre-wrap',
+          'word-wrap:break-word', 'width:' + ed.offsetWidth + 'px',
+          'font:' + style.font, 'padding:' + style.padding,
+          'line-height:' + style.lineHeight, 'border:' + style.border,
+          'box-sizing:' + style.boxSizing
+        ].join(';');
+        mirror.textContent = textBefore;
+        document.body.appendChild(mirror);
+        var cursorY = mirror.offsetHeight;
+        document.body.removeChild(mirror);
+
+        // Scroll so cursor is visible with some padding above
+        var areaScrollTop = area.scrollTop;
+        var areaHeight = area.clientHeight;
+        var cursorTop = ed.offsetTop + cursorY - lineHeight;
+        var cursorBottom = cursorTop + lineHeight * 2;
+
+        if (cursorBottom > areaScrollTop + areaHeight) {
+          area.scrollTop = cursorBottom - areaHeight + 16;
+        } else if (cursorTop < areaScrollTop) {
+          area.scrollTop = Math.max(0, cursorTop - 16);
+        }
+      } catch(err) { /* scroll best-effort */ }
     });
   });
 
