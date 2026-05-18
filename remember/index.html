@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.106 -->
+<!-- Remember App - Version 0.114 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -536,8 +536,8 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   background: transparent;
   border: none;
   width: 100%;
-  flex-shrink: 0;
-  min-height: 300px;
+  flex: 1;
+  min-height: 40vh;
   resize: none;
   outline: none;
   padding: 0;
@@ -555,6 +555,10 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   word-wrap: break-word;
   flex-shrink: 0;
   min-height: 300px;
+  /* Allow text selection for double/triple tap and copy */
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 .note-viewer a {
   color: var(--accent);
@@ -1092,6 +1096,27 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 .help-section-body p:last-child { margin-bottom: 0; }
 .help-section-body strong { color: var(--fg); }
 
+/* ===== TOAST ===== */
+#debug-toast {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 0.9em;
+  z-index: 999;
+  pointer-events: all;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.3s;
+  max-width: 90vw;
+  text-align: center;
+}
+#debug-toast.show { opacity: 1; }
+
 /* ===== UPDATE BANNER ===== */
 #update-banner {
   display: none;
@@ -1139,6 +1164,9 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 </style>
 </head>
 <body>
+
+<!-- ===== DEBUG TOAST ===== -->
+<div id="debug-toast"></div>
 
 <!-- ===== UPDATE BANNER ===== -->
 <div id="update-banner" role="alert">
@@ -1728,7 +1756,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 <script>
 'use strict';
 
-const APP_VERSION = '0.106';
+const APP_VERSION = '0.114';
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -2553,22 +2581,56 @@ function updateFontPreview() {
 }
 
 function populateVoices() {
-  var sel = document.getElementById('voice-select');
-  var voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
-  var enVoices = voices.filter(function(v) { return v.lang && v.lang.startsWith('en'); });
-  if (enVoices.length === 0) enVoices = voices;
+  try {
+    var sel = document.getElementById('voice-select');
+    var rawVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+    // Filter out malformed voice objects injected by browser extensions (e.g. Brave fingerprint protection)
+    var voices = [];
+    for (var i = 0; i < rawVoices.length; i++) {
+      try {
+        var v = rawVoices[i];
+        // Access all properties we use — if any throw, skip this voice
+        var lang = v.lang; var name = v.name; var uri = v.voiceURI;
+        if (typeof lang === 'string' && typeof name === 'string') {
+          voices.push(v);
+        }
+      } catch(e) { /* skip bad voice object */ }
+    }
+    var enVoices = voices.filter(function(v) { return v.lang && v.lang.startsWith('en'); });
+    if (enVoices.length === 0) enVoices = voices;
 
-  sel.innerHTML = '<option value="">Default system voice</option>';
-  enVoices.forEach(function(v) {
-    var opt = document.createElement('option');
-    opt.value = v.voiceURI;
-    opt.textContent = v.name + ' (' + v.lang + ')';
-    if (v.voiceURI === settings.voiceURI) opt.selected = true;
-    sel.appendChild(opt);
-  });
+    sel.innerHTML = '<option value="">Default system voice</option>';
+    enVoices.forEach(function(v) {
+      try {
+        var opt = document.createElement('option');
+        opt.value = v.voiceURI || '';
+        opt.textContent = v.name + ' (' + v.lang + ')';
+        if (v.voiceURI === settings.voiceURI) opt.selected = true;
+        sel.appendChild(opt);
+      } catch(e) { /* skip */ }
+    });
+  } catch(e) {
+    // Silently ignore — voice list is non-critical, default voice still works
+  }
 }
 
 // ===== EVENT WIRING =====
+var debugToastTimer = null;
+function showToast(msg) {
+  var t = document.getElementById('debug-toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(debugToastTimer);
+  debugToastTimer = setTimeout(function() { t.classList.remove('show'); }, 5000);
+  // Tap the toast to copy to clipboard
+  t.onclick = function() {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(msg);
+    }
+    showConfirm('Debug Info (tap to copy)', msg, 'OK', function() {}, false, null, null);
+  };
+}
+
 function init() {
   loadState();
   applySettings();
@@ -2712,8 +2774,26 @@ function init() {
   // Select-all / deselect toggle
   var isAllSelected = false;
   document.getElementById('select-all-btn').addEventListener('click', function() {
+    if (isViewMode) {
+      // Select all text in the viewer div using Range API
+      var viewer = document.getElementById('note-viewer');
+      if (isAllSelected) {
+        window.getSelection().removeAllRanges();
+        isAllSelected = false;
+        this.style.color = '';
+      } else {
+        var range = document.createRange();
+        range.selectNodeContents(viewer);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        isAllSelected = true;
+        this.style.color = 'var(--accent)';
+      }
+      return;
+    }
+    // EMNI or EMTIP mode — select in textarea
     var ed = document.getElementById('note-editor');
-    // This IS user-initiated so we want keyboard-open to stay/trigger
     if (isAllSelected) {
       ed.focus();
       ed.setSelectionRange(ed.value.length, ed.value.length);
@@ -2753,26 +2833,48 @@ function init() {
   document.getElementById('dismiss-keyboard-btn').addEventListener('click', function() {
     document.getElementById('note-editor').blur();
   });
+
   var noteScreen = document.getElementById('note-screen');
   var noteEditor = document.getElementById('note-editor');
   var kbBlurTimer = null;
 
-  noteEditor.addEventListener('focus', function() {
-    if (ignoreFocus) {
-      // Programmatic focus — but schedule a check in case this was actually
-      // the user's first real tap (race condition on first open)
-      setTimeout(function() {
-        if (document.activeElement === noteEditor &&
-            !noteScreen.classList.contains('keyboard-open')) {
-          noteScreen.classList.add('keyboard-open');
-        }
-      }, 150);
-      return;
-    }
-    clearTimeout(kbBlurTimer);
-    noteScreen.classList.add('keyboard-open');
+  // EMTIP detection: distinguish a tap from a scroll gesture using pointer distance.
+  // Only enter EMTIP if the user tapped (not scrolled) in the content area,
+  // and only in EMNI mode (not view mode).
+  var pointerDownX = 0, pointerDownY = 0;
+  var TAP_THRESHOLD = 10; // px — if pointer moves more than this, it's a scroll not a tap
+
+  document.getElementById('note-content-area').addEventListener('pointerdown', function(e) {
+    pointerDownX = e.clientX;
+    pointerDownY = e.clientY;
   });
 
+  // Use pointerdown/pointerup only for scroll detection
+  // Use click for EMTIP trigger — fires after browser has set focus and cursor
+  document.getElementById('note-content-area').addEventListener('click', function(e) {
+    if (isViewMode) return;
+    var dx = Math.abs(e.clientX - pointerDownX);
+    var dy = Math.abs(e.clientY - pointerDownY);
+    if (dx > TAP_THRESHOLD || dy > TAP_THRESHOLD) return;
+    clearTimeout(kbBlurTimer);
+
+    var ed = document.getElementById('note-editor');
+
+    // By the time 'click' fires, the browser has already focused the textarea
+    // and set selectionStart correctly from the tap position
+    var savedStart = ed.selectionStart;
+    var savedEnd   = ed.selectionEnd;
+
+    noteScreen.classList.add('keyboard-open');
+
+    // After layout reflow from keyboard-open, restore the browser-set cursor
+    requestAnimationFrame(function() {
+      ed.focus();
+      ed.setSelectionRange(savedStart, savedEnd);
+    });
+  });
+
+  // Exit EMTIP when editor loses focus (keyboard closes)
   noteEditor.addEventListener('blur', function() {
     kbBlurTimer = setTimeout(function() {
       if (document.activeElement !== noteEditor) {
