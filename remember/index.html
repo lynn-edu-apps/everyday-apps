@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.143 -->
+<!-- Remember App - Version 0.169 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -102,15 +102,18 @@ body {
 .screen { display: none; height: 100%; flex-direction: column; background: var(--bg); }
 .screen.active { display: flex; }
 
+/* When running in an iframe (e.g. Claude.ai), compensate for host chrome */
+body.in-iframe #note-screen,
+body.in-iframe #home-screen {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
 #home-screen {
   overflow-y: auto;
 }
 
 #note-screen {
-  /* Use dynamic viewport height so the layout shrinks when keyboard appears,
-     keeping the header and toolbar visible above the keyboard */
-  height: 100dvh;
-  max-height: 100dvh;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -290,16 +293,8 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 
 /* ===== KEYBOARD-OPEN MODE ===== */
 /* Hide top row and title when keyboard is open to save space */
-#note-screen.keyboard-open .note-header-row,
-#note-screen.keyboard-open .note-title-area,
-#note-screen.keyboard-open .note-divider {
-  display: none;
-}
-#note-screen.keyboard-open .note-header {
-  padding: 0;
-  border-bottom: none;
-  box-shadow: none;
-}
+/* ===== KEYBOARD-OPEN MODE ===== */
+/* Header stays visible in EMTIP — only bottom bar changes */
 /* Hide non-essential bottom bar buttons when keyboard is open */
 #note-screen.keyboard-open .note-bottom-bar .kb-hide {
   display: none;
@@ -396,27 +391,50 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   50% { background: #d4706c; box-shadow: 0 0 0 8px rgba(184,84,80,0); }
 }
 
-/* Note title area */
-.note-title-area {
-  padding: 10px 16px 0;
-  background: var(--bg);
+/* Inline note title — lives inside content area, scrolls with content */
+.note-inline-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 4px;
   flex-shrink: 0;
 }
 
-.note-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.note-inline-title {
+  font-family: var(--font-body);
+  font-size: 1.45em;
+  font-weight: 700;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  cursor: text;
+  display: block;
+  min-height: 1.2em;
+  padding: 0;
+}
+.note-inline-title:empty::before {
+  content: attr(data-placeholder);
+  color: var(--fg3);
+  pointer-events: none;
 }
 
 .title-pencil-btn {
   flex-shrink: 0;
-  opacity: 0.5;
-  padding: 6px;
-  min-width: 36px;
-  min-height: 36px;
+  opacity: 0.4;
+  padding: 2px;
+  min-width: unset;
+  min-height: unset;
+  align-self: center;
 }
-.title-pencil-btn:hover { opacity: 1; }
+.title-pencil-btn:hover { opacity: 0.85; }
+.title-pencil-btn svg { width: var(--icon-size); height: var(--icon-size); }
 
 /* Rename modal */
 .rename-sheet {
@@ -427,8 +445,8 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 10px;
-  top: auto;
+  top: 10px;
+  bottom: auto;
   overflow: hidden;
   box-shadow: var(--shadow-lg);
   padding: 0;
@@ -438,7 +456,7 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 .rename-sheet.open { display: block; }
 
 .rename-body {
-  padding: 20px 20px 12px;
+  padding: 8px 16px 6px;
 }
 
 .rename-input {
@@ -450,10 +468,10 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   width: 100%;
-  padding: 14px;
+  padding: 7px 10px;
   resize: none;
   outline: none;
-  line-height: 1.5;
+  line-height: 1.4;
   transition: border-color 0.2s;
   box-sizing: border-box;
 }
@@ -461,8 +479,8 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 
 .rename-quick-btns {
   display: flex;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .rename-quick-btn {
@@ -473,9 +491,9 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 10px 20px;
+  padding: 5px 16px;
   cursor: pointer;
-  min-height: 44px;
+  min-height: unset;
   transition: background 0.15s, color 0.15s;
   flex: 1;
 }
@@ -485,7 +503,7 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  padding: 12px 20px 20px;
+  padding: 6px 16px 10px;
   border-top: 1px solid var(--border);
 }
 
@@ -543,11 +561,12 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   background: transparent;
   border: none;
   width: 100%;
-  flex: 1;
-  min-height: 40vh;
+  flex-shrink: 0;
+  min-height: 60px;
   resize: none;
   outline: none;
   padding: 0;
+  overflow: hidden;
 }
 #note-editor::placeholder { color: var(--fg3); }
 
@@ -964,6 +983,9 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   align-items: flex-start;
   padding: 0 20px;
 }
+.confirm-overlay.centered {
+  align-items: center;
+}
 .confirm-box {
   background: var(--bg);
   border-radius: var(--radius);
@@ -1121,24 +1143,29 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 /* ===== TOAST ===== */
 #debug-toast {
   position: fixed;
-  bottom: 90px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(30,30,30,0.92);
+  top: 60px;
+  left: 12px;
+  right: 12px;
+  background: rgba(30,30,30,0.95);
   color: white;
-  padding: 11px 22px;
-  border-radius: 22px;
-  font-size: 0.9em;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 0.85em;
   font-weight: 500;
-  z-index: 999;
+  z-index: 9999;
   pointer-events: none;
+  cursor: pointer;
   opacity: 0;
   transition: opacity 0.25s;
-  white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-  letter-spacing: 0.01em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  line-height: 1.5;
 }
-#debug-toast.show { opacity: 1; }
+#debug-toast.show {
+  opacity: 1;
+  pointer-events: all;
+}
 
 /* Speaking highlight */
 .speak-highlight {
@@ -1280,19 +1307,15 @@ input[type="range"].settings-range::-webkit-slider-thumb {
     </div>
   </header>
 
-  <div class="note-title-area">
-    <div class="note-title-row">
-      <div id="note-title" class="note-title-input" contenteditable="true" role="textbox" aria-label="Note title" aria-multiline="false" spellcheck="true" data-placeholder="Note title…"></div>
+  <div class="note-content-area" id="note-content-area">
+    <div class="note-inline-title-row">
+      <div id="note-title" class="note-inline-title" contenteditable="false" role="button" aria-label="Rename note" data-placeholder="Title…" style="cursor:pointer"></div>
       <button class="icon-btn title-pencil-btn" id="rename-btn" aria-label="Rename note" title="Rename note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </svg>
       </button>
     </div>
-  </div>
-  <div class="note-divider"></div>
-
-  <div class="note-content-area" id="note-content-area">
     <textarea id="note-editor" placeholder="Start writing your note here…" spellcheck="true" autocomplete="off"></textarea>
     <div id="note-viewer" class="note-viewer" style="display:none"></div>
     <div class="oops-bar">
@@ -1673,8 +1696,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 <!-- ===== RENAME MODAL ===== -->
 <div class="modal-overlay" id="rename-overlay"></div>
 <div class="rename-sheet" id="rename-sheet">
-  <div class="modal-handle"></div>
-  <h2 class="modal-title" style="padding: 8px 20px 14px; border-bottom: 1px solid var(--border);">Rename Note</h2>
+  <h2 class="modal-title" style="padding: 10px 16px 8px; border-bottom: 1px solid var(--border);">Rename Note</h2>
   <div class="rename-body">
     <textarea id="rename-input" class="rename-input" rows="3" placeholder="Note name…" spellcheck="true"></textarea>
     <div class="rename-quick-btns">
@@ -1787,7 +1809,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 <script>
 'use strict';
 
-const APP_VERSION = '0.143';
+const APP_VERSION = '0.169';
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -2092,8 +2114,6 @@ function setViewMode(on, suppressFocus) {
   var viewer = document.getElementById('note-viewer');
   var btn = document.getElementById('view-mode-btn');
   var oopsBar = document.querySelector('.oops-bar');
-  var area = document.getElementById('note-content-area');
-  var savedScroll = area ? area.scrollTop : 0;
 
   if (on) {
     if (saveTimeout) { clearTimeout(saveTimeout); saveCurrentNote(); }
@@ -2106,47 +2126,22 @@ function setViewMode(on, suppressFocus) {
     btn.setAttribute('title', 'Edit mode');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
   } else {
-    // Populate textarea while still hidden
     if (currentNoteId && notes[currentNoteId]) {
       editor.value = notes[currentNoteId].content || '';
-      // Reseed deletion guard baseline so it tracks from this point
       editor._lastLength = editor.value.length;
     }
-    // Size it correctly while still hidden:
-    // Use visibility:hidden + display:block so scrollHeight is measurable but nothing repaints yet
-    editor.style.visibility = 'hidden';
     editor.style.display = 'block';
-    editor.style.height = 'auto';
-    var newH = editor.scrollHeight;
-    editor.style.height = newH + 'px';
-    editor.style.minHeight = newH + 'px';
-    // Now reveal — height is already correct, no reflow jump
-    editor.style.visibility = '';
     viewer.style.display = 'none';
     if (oopsBar) oopsBar.style.display = '';
     btn.classList.remove('active');
     btn.setAttribute('aria-label', 'Switch to view mode');
     btn.setAttribute('title', 'View mode');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-    // Focus without scrolling, then restore scroll position
-    setTimeout(function() {
-      var area = document.getElementById('note-content-area');
-      var ed = document.getElementById('note-editor');
-      // Move cursor to start so focus doesn't jump to end
-      ed.setSelectionRange(0, 0);
-      // ignoreFocus prevents this programmatic focus from triggering keyboard-open
-      ignoreFocus = suppressFocus ? true : false;
-      ed.focus({ preventScroll: true });
-      requestAnimationFrame(function() { ignoreFocus = false; });
-      // Restore scroll after focus settles
-      if (area) area.scrollTop = savedScroll;
-    }, 50);
-  }
-
-  // Restore scroll — area height is stable now so this should hold
-  if (area) {
-    area.scrollTop = savedScroll;
-    requestAnimationFrame(function() { area.scrollTop = savedScroll; });
+    if (!suppressFocus) {
+      ignoreFocus = false;
+      editor.focus({ preventScroll: true });
+    }
+    resizeEditor();
   }
 }
 
@@ -2161,9 +2156,7 @@ function openNote(id, speakDelay) {
 
   document.getElementById('note-title').textContent = n.name;
   document.getElementById('note-editor').value = n.content || '';
-  // Seed deletion-guard baseline immediately (also reseeded in setViewMode for view→edit)
   document.getElementById('note-editor')._lastLength = (n.content || '').length;
-  setTimeout(resizeEditor, 50);
   setTimeout(function() {
     var area = document.getElementById('note-content-area');
     if (area) area.scrollTop = 0;
@@ -2233,14 +2226,9 @@ function saveCurrentNote() {
 function resizeEditor() {
   var ed = document.getElementById('note-editor');
   if (!ed) return;
-  var area = document.getElementById('note-content-area');
-  var savedScroll = area ? area.scrollTop : 0;
-  ed.style.minHeight = '0';      // clear first so shrinking is possible
-  ed.style.height = 'auto';
-  var newH = Math.max(ed.scrollHeight, 300); // never shrink below 300px min
-  ed.style.minHeight = newH + 'px';
-  ed.style.height = newH + 'px';
-  if (area) area.scrollTop = savedScroll;
+  // Grow textarea to fit content — use offsetHeight comparison to avoid shrink reflow
+  ed.style.height = '1px';
+  ed.style.height = (ed.scrollHeight) + 'px';
 }
 
 function updateSpeakBtnState() {
@@ -2401,6 +2389,20 @@ function goHome() {
   document.getElementById('note-screen').classList.remove('keyboard-open');
   updateDictateVisibility();
   setViewMode(false, true);
+  // Auto-delete if note is empty and still auto-named (user never added content)
+  if (currentNoteId && notes[currentNoteId]) {
+    var n = notes[currentNoteId];
+    var hasContent = n.content && n.content.trim().length > 0;
+    if (!hasContent && n.autoNamed) {
+      delete notes[currentNoteId];
+      saveNotes();
+      currentNoteId = null;
+      saveCurrentRef();
+      renderNotesList();
+      showScreen('home-screen');
+      return;
+    }
+  }
   saveCurrentNote();
   openSnapshot = null;
   currentNoteId = null;
@@ -2627,15 +2629,19 @@ function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cance
   var overlay = document.getElementById('confirm-overlay');
   var btns = document.getElementById('confirm-btns');
   btns.style.flexDirection = reverseButtons ? 'row-reverse' : '';
-  if (anchorBelowTitle) {
+  overlay.classList.remove('top-anchored', 'centered');
+  overlay.style.paddingTop = '';
+  if (anchorBelowTitle === 'centered') {
+    overlay.classList.add('centered');
+  } else if (anchorBelowTitle === 'fixed-top') {
+    overlay.classList.add('top-anchored');
+    overlay.style.paddingTop = '10px';
+  } else if (anchorBelowTitle) {
     var titleEl = document.getElementById('note-title');
     var rect = titleEl ? titleEl.getBoundingClientRect() : null;
     var topPx = rect ? Math.round(rect.bottom) + 8 : 80;
     overlay.classList.add('top-anchored');
     overlay.style.paddingTop = topPx + 'px';
-  } else {
-    overlay.classList.remove('top-anchored');
-    overlay.style.paddingTop = '';
   }
   overlay.classList.add('open');
 }
@@ -2644,6 +2650,7 @@ function closeConfirm() {
   var overlay = document.getElementById('confirm-overlay');
   overlay.classList.remove('open');
   overlay.classList.remove('top-anchored');
+  overlay.classList.remove('centered');
   overlay.style.paddingTop = '';
   confirmCallback = null;
   cancelCallback = null;
@@ -2795,15 +2802,27 @@ function populateVoices() {
 
 // ===== EVENT WIRING =====
 var debugToastTimer = null;
-function showToast(msg) {
+function showToast(msg, persistent) {
   var t = document.getElementById('debug-toast');
-  t.textContent = msg;
+  t.textContent = persistent ? msg + '\n(tap to copy & dismiss)' : msg;
   t.classList.add('show');
   clearTimeout(debugToastTimer);
-  debugToastTimer = setTimeout(function() { t.classList.remove('show'); }, 2500);
+  if (!persistent) {
+    debugToastTimer = setTimeout(function() { t.classList.remove('show'); }, 2500);
+  }
+  t.onclick = function() {
+    if (navigator.clipboard) navigator.clipboard.writeText(msg);
+    t.classList.remove('show');
+  };
 }
 
 function init() {
+  // Detect if running inside an iframe (Claude.ai or similar)
+  var inIframe = window.self !== window.top;
+  if (inIframe) {
+    document.body.classList.add('in-iframe');
+    showToast('Running in iframe — tap to dismiss', true);
+  }
   loadState();
   applySettings();
 
@@ -2876,18 +2895,42 @@ function init() {
   });
 
   // Note screen
-  document.getElementById('back-btn').addEventListener('click', goHome);
-  document.getElementById('rename-btn').addEventListener('click', function() {
+  document.getElementById('back-btn').addEventListener('mousedown', function(e) {
+    e.preventDefault(); // prevent blur firing before our click handler
+  });
+  document.getElementById('back-btn').addEventListener('click', function(e) {
+    // Cancel any pending blur timer to avoid double-handling
+    clearTimeout(kbBlurTimer);
+    // Explicitly blur the editor if in EMTIP to cleanly exit before navigation
+    var ed = document.getElementById('note-editor');
+    if (document.activeElement === ed) {
+      ed.blur();
+    }
+    goHome();
+  });
+  function openRenameDialog() {
     var currentName = document.getElementById('note-title').textContent.trim();
     var input = document.getElementById('rename-input');
     input.value = currentName;
     document.getElementById('rename-overlay').classList.add('open');
     document.getElementById('rename-sheet').classList.add('open');
-    // Focus immediately (in gesture handler) so keyboard opens on mobile
     input.focus();
-    // Cursor to end
-    var len = input.value.length;
-    input.setSelectionRange(len, len);
+    var isAuto = currentNoteId && notes[currentNoteId] && notes[currentNoteId].autoNamed;
+    if (isAuto) {
+      // Auto-generated name — select all so user can immediately replace it
+      input.select();
+    } else {
+      // User-set name — cursor at end for easy appending/editing
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+
+  document.getElementById('rename-btn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    openRenameDialog();
+  });
+  document.getElementById('rename-btn').addEventListener('pointerdown', function(e) {
+    e.stopPropagation();
   });
   document.getElementById('rename-cancel-btn').addEventListener('click', function() {
     document.getElementById('rename-overlay').classList.remove('open');
@@ -3041,80 +3084,33 @@ function init() {
 
     var ed = document.getElementById('note-editor');
 
-    // By the time 'click' fires, the browser has already focused the textarea
-    // and set selectionStart correctly from the tap position
-    var savedStart = ed.selectionStart;
-    var savedEnd   = ed.selectionEnd;
-
     noteScreen.classList.add('keyboard-open');
     updateDictateVisibility();
     var alreadyAskedPaste = noteScreen.dataset.askedPaste === '1';
     if (!alreadyAskedPaste && ed.value.trim() === '' && navigator.clipboard && navigator.clipboard.readText) {
-      noteScreen.dataset.askedPaste = '1'; // only ask once per note open
+      noteScreen.dataset.askedPaste = '1';
       navigator.clipboard.readText().then(function(clipText) {
         if (clipText && clipText.trim()) {
+          ed.blur();
           showConfirm(
             'Paste from clipboard?',
             'You have copied text. Would you like to paste it into this note?',
             'Paste',
             function() {
               ed.value = clipText;
-              ed.setSelectionRange(clipText.length, clipText.length);
               resizeEditor();
               scheduleSave();
+              ed.focus();
+              ed.setSelectionRange(clipText.length, clipText.length);
             },
             false,
             'No thanks',
-            null
+            null,
+            'centered'
           );
         }
-      }).catch(function() { /* permission denied or unavailable — silent */ });
+      }).catch(function() { /* silent */ });
     }
-
-    // After layout reflow from keyboard-open, restore cursor and scroll it into view
-    requestAnimationFrame(function() {
-      ed.focus();
-      ed.setSelectionRange(savedStart, savedEnd);
-
-      // Scroll the cursor line into view within the content area
-      // We measure by creating a temporary mirror element to find cursor Y position
-      try {
-        var area = document.getElementById('note-content-area');
-        var style = window.getComputedStyle(ed);
-        var lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
-
-        // Count newlines before cursor to find which line it's on
-        var textBefore = ed.value.substring(0, savedStart);
-        var linesBefore = textBefore.split('\n').length - 1;
-
-        // Also account for wrapped lines by measuring text width
-        // Simple approximation: use a hidden span to measure
-        var mirror = document.createElement('div');
-        mirror.style.cssText = [
-          'position:absolute', 'visibility:hidden', 'white-space:pre-wrap',
-          'word-wrap:break-word', 'width:' + ed.offsetWidth + 'px',
-          'font:' + style.font, 'padding:' + style.padding,
-          'line-height:' + style.lineHeight, 'border:' + style.border,
-          'box-sizing:' + style.boxSizing
-        ].join(';');
-        mirror.textContent = textBefore;
-        document.body.appendChild(mirror);
-        var cursorY = mirror.offsetHeight;
-        document.body.removeChild(mirror);
-
-        // Scroll so cursor is visible with some padding above
-        var areaScrollTop = area.scrollTop;
-        var areaHeight = area.clientHeight;
-        var cursorTop = ed.offsetTop + cursorY - lineHeight;
-        var cursorBottom = cursorTop + lineHeight * 2;
-
-        if (cursorBottom > areaScrollTop + areaHeight) {
-          area.scrollTop = cursorBottom - areaHeight + 16;
-        } else if (cursorTop < areaScrollTop) {
-          area.scrollTop = Math.max(0, cursorTop - 16);
-        }
-      } catch(err) { /* scroll best-effort */ }
-    });
   });
 
   // Exit EMTIP when editor loses focus (keyboard closes)
@@ -3385,39 +3381,13 @@ function init() {
     resizeEditor();
     scheduleSave();
   });
-  document.getElementById('note-title').addEventListener('input', function() {
-    // User manually editing title — no longer auto-named
-    if (currentNoteId && notes[currentNoteId]) {
-      notes[currentNoteId].autoNamed = false;
-    }
-    scheduleSave();
+  // Title click opens rename dialog (not EMTIP)
+  document.getElementById('note-title').addEventListener('click', function(e) {
+    e.stopPropagation(); // prevent EMTIP
+    openRenameDialog();
   });
-  document.getElementById('note-title').addEventListener('keydown', function(e) {
-    // Prevent Enter key from inserting a newline in the title
-    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('note-editor').focus(); }
-  });
-  document.getElementById('note-title').addEventListener('blur', function() {
-    var newName = this.textContent.trim();
-    // Prevent empty name — restore from content or fall back to date-based name
-    if (!newName && currentNoteId && notes[currentNoteId]) {
-      var fallback = nameFromContent(notes[currentNoteId].content) ||
-                     notes[currentNoteId].name ||
-                     uniqueNoteName();
-      this.textContent = fallback;
-      notes[currentNoteId].name = fallback;
-      notes[currentNoteId].autoNamed = true;
-      saveCurrentNote();
-      return;
-    }
-    if (!newName || !currentNoteId) return;
-    if (noteNameExists(newName, currentNoteId)) {
-      showConfirm(
-        'Duplicate Name',
-        'Another note is already called "' + newName + '". You can keep this name or go back and change it — both notes will still be saved.',
-        'Keep it',
-        function() {}
-      );
-    }
+  document.getElementById('note-title').addEventListener('pointerdown', function(e) {
+    e.stopPropagation(); // prevent EMTIP coordinate tracking
   });
 
   // Settings modal - stop scroll/zoom from bubbling
