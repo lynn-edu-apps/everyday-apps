@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.135 -->
+<!-- Remember App - Version 0.143 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1302,38 +1302,38 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 
   <!-- Floating bottom toolbar — stays above keyboard on mobile -->
   <div class="note-bottom-bar" id="note-bottom-bar">
-    <button class="icon-btn" id="scroll-top-btn" aria-label="Scroll to top" title="Scroll to top">
+    <button class="icon-btn" id="scroll-top-btn" tabindex="-1" aria-label="Scroll to top" title="Scroll to top">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="18 15 12 9 6 15"/>
       </svg>
     </button>
-    <button class="icon-btn" id="scroll-bottom-btn" aria-label="Scroll to bottom" title="Scroll to bottom">
+    <button class="icon-btn" id="scroll-bottom-btn" tabindex="-1" aria-label="Scroll to bottom" title="Scroll to bottom">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
     </button>
-    <button class="icon-btn" id="select-all-btn" aria-label="Select all text" title="Select all / deselect">
+    <button class="icon-btn" id="select-all-btn" tabindex="-1" aria-label="Select all text" title="Select all / deselect">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="3"/>
         <text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" stroke="none" fill="currentColor">A</text>
       </svg>
     </button>
-    <button class="icon-btn kb-hide" id="print-btn" aria-label="Print note" title="Print note">
+    <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
       </svg>
     </button>
-    <button class="icon-btn kb-hide" id="view-mode-btn" aria-label="Switch to view mode" title="View mode">
+    <button class="icon-btn kb-hide" id="view-mode-btn" tabindex="-1" aria-label="Switch to view mode" title="View mode">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
       </svg>
     </button>
-    <button class="icon-btn kb-hide" id="export-note-btn" aria-label="Export this note to JSON" title="Export note">
+    <button class="icon-btn kb-hide" id="export-note-btn" tabindex="-1" aria-label="Export this note to JSON" title="Export note">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
       </svg>
     </button>
-    <button class="icon-btn" id="dictate-btn" aria-label="Dictate text" title="Dictate text" style="display:none">
+    <button class="icon-btn" id="dictate-btn" tabindex="-1" aria-label="Dictate text" title="Dictate text" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
       </svg>
@@ -1787,7 +1787,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 <script>
 'use strict';
 
-const APP_VERSION = '0.135';
+const APP_VERSION = '0.143';
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -1820,6 +1820,7 @@ let pendingAutoSpeak = false;
 let openSnapshot = null; // { name, content } captured when note is opened
 let isViewMode = false;
 let ignoreFocus = false; // prevents programmatic focus from triggering keyboard-open
+var updateDictateVisibility = function() {}; // replaced in init when SpeechRecognition available
 let settingsSnapshot = null; // copy of settings when dialog was opened
 
 // ===== STORAGE =====
@@ -2398,6 +2399,7 @@ function importNotes(file) {
 function goHome() {
   stopSpeaking();
   document.getElementById('note-screen').classList.remove('keyboard-open');
+  updateDictateVisibility();
   setViewMode(false, true);
   saveCurrentNote();
   openSnapshot = null;
@@ -2999,18 +3001,14 @@ function init() {
   });
 
   // Prevent bottom bar buttons from stealing focus (which closes keyboard)
+  // Prevent bottom bar buttons from stealing focus (which closes keyboard)
+  // tabindex="-1" on buttons + mousedown preventDefault covers desktop
+  // On mobile, iOS respects this combination and won't blur the textarea
   document.getElementById('note-bottom-bar').addEventListener('mousedown', function(e) {
-    // Allow dismiss-keyboard button to blur normally; prevent all others
     if (!e.target.closest('#dismiss-keyboard-btn')) {
       e.preventDefault();
     }
   });
-  document.getElementById('note-bottom-bar').addEventListener('touchstart', function(e) {
-    if (!e.target.closest('#dismiss-keyboard-btn')) {
-      // Don't prevent default (needed for touch events to fire click)
-      // but we'll restore focus after click
-    }
-  }, { passive: true });
 
   // Dismiss keyboard button — blur the editor to close keyboard
   document.getElementById('dismiss-keyboard-btn').addEventListener('click', function() {
@@ -3049,8 +3047,7 @@ function init() {
     var savedEnd   = ed.selectionEnd;
 
     noteScreen.classList.add('keyboard-open');
-
-    // If note is empty and clipboard may have text, offer to paste
+    updateDictateVisibility();
     var alreadyAskedPaste = noteScreen.dataset.askedPaste === '1';
     if (!alreadyAskedPaste && ed.value.trim() === '' && navigator.clipboard && navigator.clipboard.readText) {
       noteScreen.dataset.askedPaste = '1'; // only ask once per note open
@@ -3127,6 +3124,7 @@ function init() {
         noteScreen.classList.remove('keyboard-open');
         isAllSelected = false;
         document.getElementById('select-all-btn').style.color = '';
+        updateDictateVisibility();
       }
     }, 300);
   });
@@ -3142,14 +3140,15 @@ function init() {
   var dictRecognition = null;
   var isDictating = false;
 
-  function updateDictateVisibility() {
-    if (SpeechRecognition && navigator.onLine) {
+  updateDictateVisibility = function() {
+    var inEMTIP = noteScreen.classList.contains('keyboard-open');
+    if (SpeechRecognition && navigator.onLine && inEMTIP) {
       dictateBtn.style.display = '';
     } else {
       dictateBtn.style.display = 'none';
       if (isDictating) stopDictation();
     }
-  }
+  };
 
   function stopDictation() {
     isDictating = false;
@@ -3227,8 +3226,15 @@ function init() {
       dictRecognition.onerror = function(e) {
         stopDictation();
         if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-          // Silently ignore — sandboxed environment (Claude app/iframe)
-          dictateBtn.style.display = 'none';
+          // Microphone permission denied — tell user how to fix it
+          // Don't hide the button permanently so they can try again
+          showConfirm(
+            'Microphone Access Needed',
+            'Remember needs permission to use your microphone for dictation.\n\nOn iPhone: go to Settings → Safari → [this website] → Microphone → Allow.\n\nOn Android: tap the lock icon in the browser address bar and allow microphone access.',
+            'OK',
+            function() {},
+            false, null, null
+          );
         } else if (e.error === 'network') {
           showConfirm('No Internet', 'Dictation requires an internet connection. Please connect and try again.', 'OK', function() {}, false, null, null);
         } else if (e.error !== 'aborted' && e.error !== 'no-speech') {
