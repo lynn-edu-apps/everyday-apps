@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.169 -->
+<!-- Remember App - Version 0.192 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -307,6 +307,26 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   display: flex;
 }
 
+/* Formatting mode buttons — dim when inactive, dark when active */
+#crossout-mode-btn, #bold-mode-btn, #color-mode-btn {
+  color: var(--fg3);
+}
+#crossout-mode-btn.active, #bold-mode-btn.active, #color-mode-btn.active {
+  color: var(--fg);
+  background: var(--bg3);
+}
+.color-swatch {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.1s, border-color 0.15s;
+}
+.color-swatch.selected { border-color: var(--fg); transform: scale(1.2); }
+.color-swatch:active { transform: scale(0.9); }
+#color-swatches { display: none; }
+
 /* ===== FLOATING BOTTOM TOOLBAR ===== */
 .note-bottom-bar {
   display: flex;
@@ -438,7 +458,7 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 
 /* Rename modal */
 .rename-sheet {
-  background: var(--bg);
+  background: var(--bg-dialog, var(--bg));
   border-radius: 20px;
   width: 100%;
   max-width: 640px;
@@ -593,6 +613,9 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   word-break: break-all;
 }
 .note-viewer a:hover { opacity: 0.8; }
+.viewer-line { min-height: 1.2em; border-radius: 3px; }
+.crossout-mode .viewer-line { cursor: pointer; }
+.crossout-mode .viewer-line:hover { background: rgba(128,128,128,0.1); }
 
 /* Light mode only: lighter note item background (uses user's bg color setting) */
 body:not(.dark) .note-item {
@@ -675,7 +698,7 @@ body:not(.dark) .note-item:hover {
 .modal-overlay.open { display: block; }
 
 .modal-sheet {
-  background: var(--bg);
+  background: var(--bg-dialog, var(--bg));
   border-radius: 20px;
   width: 100%;
   max-width: 640px;
@@ -987,7 +1010,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   align-items: center;
 }
 .confirm-box {
-  background: var(--bg);
+  background: var(--bg-dialog, var(--bg));
   border-radius: var(--radius);
   padding: 16px 18px;
   max-width: 380px;
@@ -1146,8 +1169,8 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   top: 60px;
   left: 12px;
   right: 12px;
-  background: rgba(30,30,30,0.95);
-  color: white;
+  background: #3a3a3a;
+  color: #fff;
   padding: 12px 16px;
   border-radius: 14px;
   font-size: 0.85em;
@@ -1162,10 +1185,9 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   line-height: 1.5;
 }
-#debug-toast.show {
-  opacity: 1;
-  pointer-events: all;
-}
+body:not(.dark) #debug-toast { background: #2a2a2a; }
+body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255,0.2); }
+#debug-toast.show { opacity: 1; pointer-events: all; }
 
 /* Speaking highlight */
 .speak-highlight {
@@ -1298,9 +1320,25 @@ input[type="range"].settings-range::-webkit-slider-thumb {
           </svg>
           Stop
         </button>
+        <button class="icon-btn" id="select-all-btn" aria-label="Select all text" title="Select all / deselect">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3"/>
+            <text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" stroke="none" fill="currentColor">A</text>
+          </svg>
+        </button>
         <button class="icon-btn" id="copy-btn" aria-label="Copy note text" title="Copy note text to clipboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="scroll-top-btn" aria-label="Scroll to top" title="Scroll to top">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="scroll-bottom-btn" aria-label="Scroll to bottom" title="Scroll to bottom">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
           </svg>
         </button>
       </div>
@@ -1325,30 +1363,9 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 
   <!-- Floating bottom toolbar — stays above keyboard on mobile -->
   <div class="note-bottom-bar" id="note-bottom-bar">
-    <button class="icon-btn" id="scroll-top-btn" tabindex="-1" aria-label="Scroll to top" title="Scroll to top">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="18 15 12 9 6 15"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="scroll-bottom-btn" tabindex="-1" aria-label="Scroll to bottom" title="Scroll to bottom">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6 9 12 15 18 9"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="select-all-btn" tabindex="-1" aria-label="Select all text" title="Select all / deselect">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="3"/>
-        <text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" stroke="none" fill="currentColor">A</text>
-      </svg>
-    </button>
     <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
-      </svg>
-    </button>
-    <button class="icon-btn kb-hide" id="view-mode-btn" tabindex="-1" aria-label="Switch to view mode" title="View mode">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
       </svg>
     </button>
     <button class="icon-btn kb-hide" id="export-note-btn" tabindex="-1" aria-label="Export this note to JSON" title="Export note">
@@ -1362,7 +1379,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
       </svg>
     </button>
     <!-- Keyboard dismiss button — only shown when keyboard is open -->
-    <button class="icon-btn kb-only" id="dismiss-keyboard-btn" aria-label="Dismiss keyboard" title="Dismiss keyboard" style="margin-left:auto">
+    <button class="icon-btn kb-only" id="dismiss-keyboard-btn" aria-label="Dismiss keyboard" title="Dismiss keyboard">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="4" width="20" height="16" rx="2"/>
         <line x1="8" y1="10" x2="8" y2="10" stroke-width="3" stroke-linecap="round"/>
@@ -1372,6 +1389,72 @@ input[type="range"].settings-range::-webkit-slider-thumb {
         <polyline points="7 19 12 23 17 19" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
+    <!-- Bold mode toggle — only shown in view mode -->
+    <button class="icon-btn view-only-btn" id="bold-mode-btn" aria-label="Toggle bold mode" title="Bold lines" style="display:none">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)">
+        <text x="1" y="21" font-size="24" font-weight="900" font-family="serif">B</text>
+      </svg>
+    </button>
+    <!-- Color mode toggle — only shown in view mode -->
+    <button class="icon-btn view-only-btn" id="color-mode-btn" aria-label="Toggle color mode" title="Color lines" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 2a10 10 0 010 20" fill="#aaaaaa" stroke="none"/>
+        <path d="M12 2a10 10 0 0110 10" fill="#e07070" stroke="none"/>
+        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+    </button>
+    <!-- Single cycling color swatch — shown when color mode active -->
+    <button id="color-swatch-cycle" style="display:none;width:32px;height:28px;border-radius:4px;border:2px solid var(--fg);cursor:pointer;background:#d94f4f;flex-shrink:0" title="Tap to change color"></button>
+    <!-- Strikethrough mode + trash grouped with subtle box when trash visible -->
+    <div id="crossout-group" style="display:flex;align-items:center;border-radius:6px;border:1.5px solid transparent;transition:border-color 0.2s">
+      <button class="icon-btn view-only-btn" id="crossout-mode-btn" aria-label="Toggle cross-out mode" title="Cross out lines" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="12" x2="20" y2="12"/>
+          <path d="M17 5H9.5a3.5 3.5 0 000 7"/>
+          <path d="M7 19h7.5a3.5 3.5 0 000-7"/>
+        </svg>
+      </button>
+      <!-- Clear all strikethroughs — visually paired with crossout button -->
+      <button class="icon-btn view-only-btn" id="clear-strikethroughs-btn" aria-label="Clear all cross-outs" title="Clear all cross-outs" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+        </svg>
+      </button>
+    </div>
+    <!-- Plus + pencil grouped at far right -->
+    <button class="icon-btn" id="quick-add-btn" tabindex="-1" aria-label="Quick add text" title="Quick add text" style="margin-left:auto;padding:2px 3px;min-width:unset;min-height:unset;margin-right:6px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
+        <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
+      </svg>
+    </button>
+    <!-- Pencil edit toggle — right of plus, no gap -->
+    <button class="icon-btn kb-hide" id="view-mode-btn" tabindex="-1" aria-label="Switch to view mode" title="Edit mode on">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- ===== QUICK ADD MODAL ===== -->
+<div class="confirm-overlay" id="quick-add-overlay" role="dialog" aria-modal="true">
+  <div class="confirm-box" id="quick-add-box">
+    <div class="confirm-title">Add text to note</div>
+    <textarea id="quick-add-input" rows="4" placeholder="Type text to add…" spellcheck="true"
+      style="width:100%;font-family:var(--font-body);font-size:var(--font-size-editor);background:var(--bg2);color:var(--fg);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;resize:none;outline:none;box-sizing:border-box;line-height:var(--line-height);transition:border-color 0.2s;margin-top:10px"></textarea>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+      <input type="checkbox" id="quick-add-blank-line" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+      Add a blank line after the new text
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+      <input type="checkbox" id="quick-add-hyphen" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+      Start each line with a hyphen (- )
+    </label>
+    <div class="confirm-btns" style="margin-top:12px">
+      <button class="btn btn-ghost" id="quick-add-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="quick-add-save-btn">Save</button>
+    </div>
   </div>
 </div>
 
@@ -1621,6 +1704,16 @@ input[type="range"].settings-range::-webkit-slider-thumb {
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">+ button inserts at</div>
+          <div class="settings-row-desc">When you tap + to quickly add text, insert it at the beginning or end of the note.</div>
+        </div>
+        <select id="plus-position-select" class="settings-select" style="min-width:90px">
+          <option value="bottom">End</option>
+          <option value="top">Beginning</option>
+        </select>
+      </div>
     </div>
 
     <!-- Speech -->
@@ -1809,7 +1902,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 <script>
 'use strict';
 
-const APP_VERSION = '0.169';
+const APP_VERSION = '0.192';
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -1828,7 +1921,10 @@ const DEFAULT_SETTINGS = {
   voiceURI: '',
   speechRate: 0.9,
   autoSpeak: false,
-  defaultViewMode: false
+  defaultViewMode: false,
+  plusPosition: 'top',  // 'top' or 'bottom' — where + button inserts text
+  plusBlankLine: true,  // whether to add a blank line after inserted text
+  plusHyphen: false     // whether to prepend "- " to each non-blank line
 };
 
 let settings = Object.assign({}, DEFAULT_SETTINGS);
@@ -1843,6 +1939,11 @@ let openSnapshot = null; // { name, content } captured when note is opened
 let isViewMode = false;
 let ignoreFocus = false; // prevents programmatic focus from triggering keyboard-open
 var updateDictateVisibility = function() {}; // replaced in init when SpeechRecognition available
+var crossoutMode = false; // whether crossout mode is active in view mode
+var boldMode = false;
+var colorMode = false;
+var activeColor = 'red';
+var updateViewOnlyBtns = function() {}; // replaced in init
 let settingsSnapshot = null; // copy of settings when dialog was opened
 
 // ===== STORAGE =====
@@ -2011,11 +2112,13 @@ function applySettings() {
   if (activeBg) {
     body.style.setProperty('--bg', activeBg);
     body.style.setProperty('--bg2', activeBg);
-    // Set --bg-card: lighter version for note list items in light mode
     if (!useDark) {
       body.style.setProperty('--bg-card', lightenHex(activeBg, 18));
+      body.style.removeProperty('--bg-dialog');
     } else {
       body.style.removeProperty('--bg-card');
+      // In dark mode, dialogs/modals/toasts get a noticeably lighter background
+      body.style.setProperty('--bg-dialog', lightenHex(activeBg, 32));
     }
   }
   if (activeFg) {
@@ -2094,18 +2197,33 @@ function escHtml(s) {
 }
 
 // ===== VIEW MODE =====
-function urlsToLinks(text) {
-  // Escape HTML first, then convert URLs to links
+function urlsToLinks(text, addLineWrappers) {
   var escaped = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  // Match URLs but strip trailing punctuation like ) . , ! ? ] that aren't part of the URL
-  return escaped.replace(/(https?:\/\/[^\s<>"']+)/g, function(url) {
+  // Render ~~strikethrough~~
+  escaped = escaped.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+  // Render **bold**
+  escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  // Render {color}text{/color}
+  var colorMap = { red:'#d94f4f', orange:'#e07b2a', green:'#4a9e6b', blue:'#3b82c4', purple:'#8b5cf6' };
+  escaped = escaped.replace(/\{(red|orange|green|blue|purple)\}([^{]*)\{\/\1\}/g, function(m, color, content) {
+    return '<span style="color:' + (colorMap[color] || color) + '">' + content + '</span>';
+  });
+  // Render URLs
+  escaped = escaped.replace(/(https?:\/\/[^\s<>"']+)/g, function(url) {
     var trail = '';
     var stripped = url.replace(/[).,!?\]]+$/, function(m) { trail = m; return ''; });
     return '<a href="' + stripped + '" target="_blank" rel="noopener noreferrer">' + stripped + '</a>' + trail;
   });
+  if (addLineWrappers) {
+    var renderedLines = escaped.split('\n');
+    return renderedLines.map(function(line, i) {
+      return '<div class="viewer-line" data-line="' + i + '">' + (line || '&nbsp;') + '</div>';
+    }).join('');
+  }
+  return escaped;
 }
 
 function setViewMode(on, suppressFocus) {
@@ -2117,14 +2235,15 @@ function setViewMode(on, suppressFocus) {
 
   if (on) {
     if (saveTimeout) { clearTimeout(saveTimeout); saveCurrentNote(); }
-    viewer.innerHTML = urlsToLinks(editor.value);
+    viewer.innerHTML = urlsToLinks(editor.value, true);
     editor.style.display = 'none';
     viewer.style.display = 'block';
     if (oopsBar) oopsBar.style.display = 'none';
     btn.classList.add('active');
     btn.setAttribute('aria-label', 'Switch to edit mode');
-    btn.setAttribute('title', 'Edit mode');
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    btn.setAttribute('title', 'Edit mode off — tap to edit');
+    btn.style.background = '';
+    btn.style.color = '';
   } else {
     if (currentNoteId && notes[currentNoteId]) {
       editor.value = notes[currentNoteId].content || '';
@@ -2135,14 +2254,18 @@ function setViewMode(on, suppressFocus) {
     if (oopsBar) oopsBar.style.display = '';
     btn.classList.remove('active');
     btn.setAttribute('aria-label', 'Switch to view mode');
-    btn.setAttribute('title', 'View mode');
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    btn.setAttribute('title', 'Edit mode on — tap to view');
+    btn.style.background = 'var(--accent)';
+    btn.style.color = 'white';
     if (!suppressFocus) {
       ignoreFocus = false;
       editor.focus({ preventScroll: true });
     }
     resizeEditor();
   }
+  // Reset all formatting modes when leaving view mode
+  if (!on) { crossoutMode = false; boldMode = false; colorMode = false; }
+  updateViewOnlyBtns();
 }
 
 // ===== NOTE SCREEN =====
@@ -2168,8 +2291,17 @@ function openNote(id, speakDelay) {
   showScreen('note-screen');
   document.getElementById('note-screen').dataset.askedPaste = '0';
   updateSpeakBtnState();
+  if (typeof updateViewOnlyBtns === 'function') updateViewOnlyBtns();
   // Determine initial mode: view mode only if setting is on AND note has content
-  var startInView = settings.defaultViewMode && n.content && n.content.trim().length > 0;
+  // Determine initial mode:
+  // 1. If 'open in view mode' setting is on AND note has content → view mode
+  // 2. Otherwise → use last mode the user was in (sticky, stored in settings)
+  var startInView;
+  if (settings.defaultViewMode && n.content && n.content.trim().length > 0) {
+    startInView = true;
+  } else {
+    startInView = !!settings.lastViewMode && n.content && n.content.trim().length > 0;
+  }
   setViewMode(startInView, true); // true = suppress focus to avoid triggering keyboard-open on open
   // Focus editor after short delay (mobile) — programmatic, don't trigger keyboard-open
   // Don't programmatically focus the editor on open — this caused keyboard-open
@@ -2386,6 +2518,9 @@ function importNotes(file) {
 
 function goHome() {
   stopSpeaking();
+  // Remember the mode we were in when leaving this note
+  settings.lastViewMode = isViewMode;
+  saveSettings();
   document.getElementById('note-screen').classList.remove('keyboard-open');
   updateDictateVisibility();
   setViewMode(false, true);
@@ -2565,7 +2700,7 @@ function clearViewerHighlight() {
   // Re-render the viewer without any mark highlight
   var viewer = document.getElementById('note-viewer');
   if (!viewer || !currentNoteId || !notes[currentNoteId]) return;
-  viewer.innerHTML = urlsToLinks(escHtml(notes[currentNoteId].content || ''));
+  viewer.innerHTML = urlsToLinks(notes[currentNoteId].content || '', true);
 }
 
 function highlightViewerRange(start, end) {
@@ -2716,6 +2851,7 @@ function openSettings() {
 
   document.getElementById('auto-speak-toggle').checked = !!settings.autoSpeak;
   document.getElementById('default-view-mode-toggle').checked = !!settings.defaultViewMode;
+  document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
 
   // Snapshot current settings so we can detect changes
   settingsSnapshot = JSON.parse(JSON.stringify(settings));
@@ -3048,9 +3184,9 @@ function init() {
   // tabindex="-1" on buttons + mousedown preventDefault covers desktop
   // On mobile, iOS respects this combination and won't blur the textarea
   document.getElementById('note-bottom-bar').addEventListener('mousedown', function(e) {
-    if (!e.target.closest('#dismiss-keyboard-btn')) {
-      e.preventDefault();
-    }
+    // Only allow dismiss-keyboard to blur normally; prevent all others
+    if (e.target.closest('#dismiss-keyboard-btn')) return;
+    e.preventDefault();
   });
 
   // Dismiss keyboard button — blur the editor to close keyboard
@@ -3553,8 +3689,290 @@ function init() {
     settings.defaultViewMode = this.checked;
     updateSaveBtnState();
   });
+  document.getElementById('plus-position-select').addEventListener('change', function() {
+    settings.plusPosition = this.value;
+    updateSaveBtnState();
+  });
   document.getElementById('view-mode-btn').addEventListener('click', function() {
-    setViewMode(!isViewMode);
+    var newMode = !isViewMode;
+    settings.lastViewMode = newMode;
+    saveSettings();
+    setViewMode(newMode, true); // suppress focus to avoid triggering keyboard
+  });
+
+  // ===== QUICK ADD MODAL =====
+  var quickAddDirty = false;
+
+  function openQuickAdd() {
+    var overlay = document.getElementById('quick-add-overlay');
+    var input = document.getElementById('quick-add-input');
+    var checkbox = document.getElementById('quick-add-blank-line');
+    var hyphenBox = document.getElementById('quick-add-hyphen');
+    input.value = '';
+    quickAddDirty = false;
+    // Restore sticky preferences
+    checkbox.checked = settings.plusBlankLine !== false;
+    hyphenBox.checked = !!settings.plusHyphen;
+    overlay.classList.add('open');
+    overlay.classList.add('centered');
+    setTimeout(function() { input.focus(); }, 100);
+  }
+
+  function closeQuickAdd() {
+    var overlay = document.getElementById('quick-add-overlay');
+    overlay.classList.remove('open');
+    overlay.classList.remove('centered');
+    quickAddDirty = false;
+  }
+
+  function saveQuickAdd() {
+    var rawInput = document.getElementById('quick-add-input').value;
+    var addBlankLine = document.getElementById('quick-add-blank-line').checked;
+    var addHyphen = document.getElementById('quick-add-hyphen').checked;
+
+    // Strip trailing spaces per line but keep newlines
+    var lines = rawInput.split('\n').map(function(l) { return l.trimEnd(); });
+    var hasVisibleText = lines.some(function(l) { return l.trim().length > 0; });
+    var inputNewlineCount = lines.length - 1; // number of \n in input
+
+    // Count total blank lines that would be added
+    // = newlines typed by user (if no visible text) + 1 if checkbox checked
+    var blankLinesFromInput = !hasVisibleText ? inputNewlineCount : 0;
+    var blankLinesFromCheckbox = addBlankLine ? 1 : 0;
+    var totalBlankLines = blankLinesFromInput + blankLinesFromCheckbox;
+
+    // Nothing at all — just close
+    if (!hasVisibleText && totalBlankLines === 0) {
+      closeQuickAdd();
+      return;
+    }
+
+    // No visible text — confirm blank line addition
+    if (!hasVisibleText) {
+      var lineWord = totalBlankLines === 1 ? 'line' : 'lines';
+      showConfirm(
+        'Add blank lines?',
+        'You didn\'t enter any text. Do you want to add ' + totalBlankLines + ' blank ' + lineWord + '?',
+        'Add blank lines',
+        function() { doInsert(lines, addBlankLine, addHyphen); },
+        false, 'Cancel', null, 'centered'
+      );
+      return;
+    }
+
+    doInsert(lines, addBlankLine, addHyphen);
+  }
+
+  function doInsert(lines, addBlankLine, addHyphen) {
+    if (!currentNoteId || !notes[currentNoteId]) { closeQuickAdd(); return; }
+
+    settings.plusBlankLine = addBlankLine;
+    settings.plusHyphen = addHyphen;
+    saveSettings();
+
+    var hasVisibleText = lines.some(function(l) { return l.trim().length > 0; });
+
+    var processedLines;
+    if (!hasVisibleText) {
+      // Pure blank lines — just use what was typed (newlines from input)
+      // plus one more if checkbox checked
+      var blankCount = (lines.length - 1) + (addBlankLine ? 1 : 0);
+      processedLines = [];
+      for (var i = 0; i < blankCount; i++) processedLines.push('');
+    } else {
+      // Apply hyphen to each non-blank line
+      processedLines = lines.map(function(l) {
+        if (addHyphen && l.trim().length > 0) return '- ' + l;
+        return l;
+      });
+      // Add exactly one trailing blank line if checkbox checked
+      if (addBlankLine) processedLines.push('');
+    }
+
+    var insertText = processedLines.join('\n');
+    var current = notes[currentNoteId].content || '';
+    var position = settings.plusPosition || 'top';
+    var newContent;
+    if (position === 'top') {
+      newContent = insertText + (current ? '\n' + current : '');
+    } else {
+      newContent = (current ? current + '\n' : '') + insertText;
+    }
+
+    var ed = document.getElementById('note-editor');
+    notes[currentNoteId].content = newContent;
+    ed.value = newContent;
+    scheduleSave();
+    resizeEditor();
+    if (isViewMode) {
+      document.getElementById('note-viewer').innerHTML = urlsToLinks(newContent, true);
+      updateViewOnlyBtns();
+    }
+    closeQuickAdd();
+  }
+
+  document.getElementById('quick-add-btn').addEventListener('click', openQuickAdd);
+
+  document.getElementById('quick-add-save-btn').addEventListener('click', saveQuickAdd);
+
+  document.getElementById('quick-add-cancel-btn').addEventListener('click', function() {
+    if (quickAddDirty) {
+      showConfirm('Discard text?', 'You have unsaved text. Discard it?', 'Discard',
+        closeQuickAdd, false, 'Keep editing', null, 'centered');
+    } else {
+      closeQuickAdd();
+    }
+  });
+
+  document.getElementById('quick-add-input').addEventListener('input', function() {
+    quickAddDirty = this.value.trim().length > 0;
+  });
+
+  // Click outside quick-add box to cancel (with confirmation if dirty)
+  document.getElementById('quick-add-overlay').addEventListener('click', function(e) {
+    if (e.target === this) {
+      if (quickAddDirty) {
+        showConfirm('Discard text?', 'You have unsaved text. Discard it?', 'Discard',
+          closeQuickAdd, false, 'Keep editing', null, 'centered');
+      } else {
+        closeQuickAdd();
+      }
+    }
+  });
+
+  // Also save on Ctrl/Cmd+Enter in the textarea
+  document.getElementById('quick-add-input').addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      saveQuickAdd();
+    }
+  });
+  updateViewOnlyBtns = function() {
+    var crossoutBtn = document.getElementById('crossout-mode-btn');
+    var clearBtn = document.getElementById('clear-strikethroughs-btn');
+    var boldBtn = document.getElementById('bold-mode-btn');
+    var colorBtn = document.getElementById('color-mode-btn');
+    var swatches = document.getElementById('color-swatch-cycle');
+    var inView = isViewMode;
+
+    [crossoutBtn, boldBtn, colorBtn].forEach(function(b) { b.style.display = inView ? '' : 'none'; });
+    var hasStrikes = currentNoteId && notes[currentNoteId] &&
+                     notes[currentNoteId].content && notes[currentNoteId].content.indexOf('~~') !== -1;
+    clearBtn.style.display = (inView && hasStrikes) ? '' : 'none';
+    swatches.style.display = (inView && colorMode) ? 'flex' : 'none';
+
+    // Show subtle box around crossout group when trash is visible
+    var crossoutGroup = document.getElementById('crossout-group');
+    if (crossoutGroup) {
+      crossoutGroup.style.borderColor = (inView && hasStrikes) ? 'var(--border)' : 'transparent';
+    }
+
+    crossoutBtn.classList.toggle('active', crossoutMode);
+    boldBtn.classList.toggle('active', boldMode);
+    colorBtn.classList.toggle('active', colorMode);
+
+    var viewer = document.getElementById('note-viewer');
+    if (viewer) viewer.classList.toggle('crossout-mode', (crossoutMode || boldMode || colorMode) && inView);
+  };
+
+  document.getElementById('crossout-mode-btn').addEventListener('click', function() {
+    crossoutMode = !crossoutMode;
+    if (crossoutMode) { boldMode = false; colorMode = false; }
+    updateViewOnlyBtns();
+  });
+
+  document.getElementById('bold-mode-btn').addEventListener('click', function() {
+    boldMode = !boldMode;
+    if (boldMode) { crossoutMode = false; colorMode = false; }
+    updateViewOnlyBtns();
+  });
+
+  document.getElementById('color-mode-btn').addEventListener('click', function() {
+    colorMode = !colorMode;
+    if (colorMode) { crossoutMode = false; boldMode = false; }
+    updateViewOnlyBtns();
+  });
+
+  // Single cycling color swatch
+  var colorCycle = [
+    {name:'red',    bg:'#d94f4f'},
+    {name:'orange', bg:'#e07b2a'},
+    {name:'green',  bg:'#4a9e6b'},
+    {name:'blue',   bg:'#3b82c4'},
+    {name:'purple', bg:'#8b5cf6'}
+  ];
+  var colorCycleIdx = 0;
+  activeColor = colorCycle[0].name;
+  var swatchBtn = document.getElementById('color-swatch-cycle');
+  swatchBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    colorCycleIdx = (colorCycleIdx + 1) % colorCycle.length;
+    activeColor = colorCycle[colorCycleIdx].name;
+    swatchBtn.style.background = colorCycle[colorCycleIdx].bg;
+    swatchBtn.title = colorCycle[colorCycleIdx].name.charAt(0).toUpperCase() + colorCycle[colorCycleIdx].name.slice(1);
+  });
+
+  document.getElementById('clear-strikethroughs-btn').addEventListener('click', function() {
+    if (!currentNoteId || !notes[currentNoteId]) return;
+    showConfirm(
+      'Clear all cross-outs?',
+      'This will remove all strikethroughs from this note.',
+      'Clear all',
+      function() {
+        notes[currentNoteId].content = notes[currentNoteId].content.replace(/~~([^~\n]*)~~/g, '$1');
+        document.getElementById('note-editor').value = notes[currentNoteId].content;
+        saveNotes();
+        document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+        updateViewOnlyBtns();
+      },
+      false, 'Cancel', null, 'centered'
+    );
+  });
+
+  // Click a line in view mode to apply formatting based on active mode
+  document.getElementById('note-viewer').addEventListener('click', function(e) {
+    if (!isViewMode || (!crossoutMode && !boldMode && !colorMode)) return;
+    var lineDiv = e.target.closest('.viewer-line');
+    if (!lineDiv) return;
+    var lineIndex = parseInt(lineDiv.dataset.line);
+    if (isNaN(lineIndex)) return;
+
+    var content = currentNoteId && notes[currentNoteId] ? notes[currentNoteId].content || '' : '';
+    var lines = content.split('\n');
+    if (lineIndex >= lines.length) return;
+    var line = lines[lineIndex];
+    if (!line.trim()) return;
+
+    if (crossoutMode) {
+      if (line.startsWith('~~') && line.endsWith('~~') && line.length > 4) {
+        lines[lineIndex] = line.slice(2, -2);
+      } else {
+        lines[lineIndex] = '~~' + line.replace(/~~/g, '') + '~~';
+      }
+    } else if (boldMode) {
+      if (line.startsWith('**') && line.endsWith('**') && line.length > 4) {
+        lines[lineIndex] = line.slice(2, -2);
+      } else {
+        lines[lineIndex] = '**' + line.replace(/\*\*/g, '') + '**';
+      }
+    } else if (colorMode) {
+      // Remove any existing color markers first
+      var stripped = line.replace(/\{(?:red|orange|green|blue|purple)\}([^{]*)\{\/(?:red|orange|green|blue|purple)\}/g, '$1');
+      // Toggle off if same color already applied
+      var colorRe = new RegExp('^\\{' + activeColor + '\\}(.*)\\{\\/' + activeColor + '\\}$');
+      if (colorRe.test(line)) {
+        lines[lineIndex] = stripped;
+      } else {
+        lines[lineIndex] = '{' + activeColor + '}' + stripped + '{/' + activeColor + '}';
+      }
+    }
+
+    notes[currentNoteId].content = lines.join('\n');
+    document.getElementById('note-editor').value = notes[currentNoteId].content;
+    saveNotes();
+    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    document.getElementById('note-viewer').classList.toggle('crossout-mode', crossoutMode || boldMode || colorMode);
+    updateViewOnlyBtns();
   });
 
   // Confirm dialog
