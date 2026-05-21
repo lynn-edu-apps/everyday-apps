@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.216 -->
+<!-- Remember App - Version 0.218 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -1485,6 +1485,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 </div>
 
+<!-- ===== TAP TO SPEAK BANNER ===== -->
+<div id="tap-to-speak-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:900;background:var(--accent);color:#fff;padding:14px 20px;text-align:center;cursor:pointer;font-size:1.1em;font-weight:600;letter-spacing:0.02em;box-shadow:0 2px 12px rgba(0,0,0,0.25)">
+  Tap here to hear this note read aloud
+</div>
+
 <!-- ===== QUICK ADD MODAL ===== -->
 <div class="confirm-overlay" id="quick-add-overlay" role="dialog" aria-modal="true">
   <div class="confirm-box" id="quick-add-box">
@@ -2005,7 +2010,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.216';
+const APP_VERSION = '0.218';
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -2159,18 +2164,12 @@ function loadState() {
     saveNotes();
   }
 
-  // One-time migration: add Features Guide note for existing users
-  // Guard 1: settings flag; Guard 2: check no note with this name already exists
+  // One-time migration: add Features Guide note if it doesn't already exist
+  // Guard is purely name-based — reliable across all load contexts
   var featuresAlreadyExists = Object.values(notes).some(function(n) {
-    return n.name === 'Remember — Features Guide';
+    return (n.name || '').indexOf('Features Guide') !== -1;
   });
-  if (featuresAlreadyExists && !settings.featuresNoteAdded) {
-    settings.featuresNoteAdded = true;
-    saveSettings();
-  }
-  if (!settings.featuresNoteAdded && !featuresAlreadyExists) {
-    settings.featuresNoteAdded = true;
-    saveSettings();
+  if (!featuresAlreadyExists) {
     var fId = makeId();
     var fNow = Date.now();
     var fContent = [
@@ -2759,6 +2758,8 @@ function importNotes(file) {
 
 function goHome() {
   stopSpeaking();
+  var _banner = document.getElementById('tap-to-speak-banner');
+  if (_banner) _banner.style.display = 'none';
   // Remember the mode we were in when leaving this note
   settings.lastViewMode = isViewMode;
   saveSettings();
@@ -4000,6 +4001,18 @@ function init() {
     );
   }, true); // use capture so this fires before the existing viewer click handler
 
+  // ===== TAP TO SPEAK BANNER =====
+  function showTapToSpeakBanner(noteId) {
+    var banner = document.getElementById('tap-to-speak-banner');
+    if (!banner) return;
+    banner.style.display = 'block';
+  }
+
+  document.getElementById('tap-to-speak-banner').addEventListener('click', function() {
+    this.style.display = 'none';
+    speakNote();
+  });
+
   // ===== QUICK ADD MODAL =====
   var quickAddDirty = false;
 
@@ -4409,18 +4422,27 @@ function handleUrlAction() {
     if (foundId) {
       openNote(foundId);
       if (action === 'speak') {
-        // Attempt to speak after note opens — may be blocked without user gesture
-        setTimeout(function() {
-          if (notes[foundId] && notes[foundId].content) {
-            if (window.speechSynthesis) {
-              var utt = new SpeechSynthesisUtterance(notes[foundId].content);
-              utt.rate = parseFloat(settings.speechRate) || 0.9;
-              var voice = getSpeechVoice();
-              if (voice) utt.voice = voice;
-              window.speechSynthesis.speak(utt);
+        // Prime audio context and try to auto-speak
+        // Uses two attempts with increasing delays; falls back to tap-to-speak banner
+        var attemptSpeak = function() {
+          if (!notes[foundId] || !notes[foundId].content) return;
+          // Cancel any current speech first — primes the audio context on iOS
+          if (window.speechSynthesis) window.speechSynthesis.cancel();
+          setTimeout(function() {
+            // Try speaking via the full speakNote() function
+            try {
+              speakNote();
+              // If speechSynthesis is still not speaking after a short check, show banner
+              setTimeout(function() {
+                if (!isSpeaking) showTapToSpeakBanner(foundId);
+              }, 800);
+            } catch(e) {
+              showTapToSpeakBanner(foundId);
             }
-          }
-        }, 600);
+          }, 200);
+        };
+        // Wait for note to fully render before attempting
+        setTimeout(attemptSpeak, 1200);
       }
     } else {
       // Note not found — go to home screen with a message
