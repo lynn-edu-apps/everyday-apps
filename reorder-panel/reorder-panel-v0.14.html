@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Reorder Panel Component Test</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 18px;
+    line-height: 1.75;
+    background: #fffdf7;
+    color: #2a2a2a;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #app-header {
+    background: #4a90d9;
+    color: #fff;
+    padding: 12px 18px;
+    font-size: 15px;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #app-header span { opacity: 0.75; font-size: 13px; }
+
+  #text-panel {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px 18px 180px 18px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Every line is a tappable block — including blank lines */
+  .para-block {
+    padding: 1px 14px;
+    border-radius: 4px;
+    margin-bottom: 0;
+    line-height: 1.4;
+    cursor: default;
+    border: 2px solid transparent;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    min-height: 26px;   /* blank lines are still tap-able */
+  }
+  .para-block.selectable {
+    cursor: pointer;
+  }
+  .para-block.selectable:hover {
+    background: #e8f4ff;
+  }
+  .para-block.selected {
+    background: #dbeeff;
+    border-color: #4a90d9;
+    box-shadow: 0 2px 8px rgba(74,144,217,0.20);
+  }
+  .para-block.moving { /* no animation */ }
+
+  /* ══════════════════════════════════════════════════
+     REORDER PANEL CSS
+  ══════════════════════════════════════════════════ */
+  #reorder-panel {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 100;
+    background: #f0f7ff;
+    border-top: 3px solid #4a90d9;
+    padding: 10px 14px 16px;
+    box-shadow: 0 -4px 20px rgba(74,144,217,0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: transform 0.3s ease;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #reorder-panel.hidden { transform: translateY(110%); }
+
+  #panel-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #panel-label {
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #4a90d9;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+  /* Hint line — always visible in title row */
+  #panel-hint {
+    font-size: 15px;
+    font-weight: 600;
+    color: #2266b0;
+    font-style: italic;
+    flex: 1;
+    text-align: center;
+    padding: 0 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Selected line preview — shown below title row when a line is selected */
+  #panel-selected-preview {
+    background: #fff8e0;
+    border: 2px solid #e8a020;
+    border-radius: 7px;
+    padding: 2px 12px;
+    font-size: 16px;
+    color: #7a4a00;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: none;
+  }
+  #panel-selected-preview.visible {
+    display: block;
+  }
+  #btn-close-panel {
+    background: none;
+    border: 2px solid #c0d8f0;
+    color: #4a90d9;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 6px;
+    touch-action: manipulation;
+    transition: background 0.12s;
+  }
+  #btn-close-panel:hover { background: #d8ecff; }
+
+  #panel-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .pb {
+    background: #fff;
+    border: 2px solid #b8d4ee;
+    color: #4a90d9;
+    border-radius: 10px;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+    min-width: 56px;
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s, border-color 0.12s, transform 0.08s, box-shadow 0.12s;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .pb:active { transform: scale(0.92); }
+
+  /* Select-line button */
+  #btn-select-line {
+    font-size: 22px;
+    font-family: Georgia, serif;
+    font-weight: bold;
+    background: #fff8e8;
+    border-color: #e8a020;
+    color: #c07010;
+    min-width: 62px;
+  }
+  #btn-select-line.active {
+    background: #fff0c0;
+    border-color: #e8a020;
+    color: #b06000;
+    box-shadow: 0 0 0 3px rgba(232,160,32,0.30);
+  }
+
+  .pb.step-arrow {
+    color: #aaa;
+    font-size: 26px;
+  }
+  .pb.step-arrow.enabled {
+    background: #fffbe8;
+    border-color: #d4a830;
+    color: #b07020;
+  }
+  .pb.step-arrow.enabled:hover { background: #fff5cc; }
+
+  .pb.jump-arrow {
+    color: #aaa;
+    font-size: 24px;
+  }
+  .pb.jump-arrow.enabled {
+    background: #eef8ff;
+    border-color: #4a90d9;
+    color: #2266b0;
+  }
+  .pb.jump-arrow.enabled:hover { background: #d8ecff; }
+
+  .panel-divider {
+    width: 2px;
+    height: 44px;
+    background: #c8dff0;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+
+  .pb.disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  #select-hint {
+    position: fixed;
+    bottom: 150px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #4a90d9;
+    color: #fff;
+    font-size: 15px;
+    padding: 9px 22px;
+    border-radius: 24px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 200;
+    white-space: nowrap;
+    box-shadow: 0 3px 12px rgba(74,144,217,0.35);
+  }
+  #select-hint.show { opacity: 1; }
+
+  .hidden { display: none !important; }
+
+  #btn-open-panel {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    z-index: 99;
+    background: #4a90d9;
+    border: none;
+    color: #fff;
+    border-radius: 50%;
+    width: 58px; height: 58px;
+    font-size: 28px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(74,144,217,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s;
+    touch-action: manipulation;
+  }
+  #btn-open-panel:active { transform: scale(0.91); }
+  #btn-open-panel.hidden { display: none; }
+  /* ── Desktop / mouse device: compact panel ───────────
+     Detects a fine pointer (mouse) with hover support.
+     Shrinks buttons, font sizes, and panel padding so the
+     reorder panel doesn't dominate a large screen.        */
+  @media (hover: hover) and (pointer: fine) {
+    #reorder-panel {
+      padding: 6px 12px 10px;
+      gap: 5px;
+    }
+    #panel-label  { font-size: 11px; }
+    #panel-hint   { font-size: 13px; }
+    #panel-selected-preview { font-size: 14px; padding: 1px 10px; }
+    #btn-close-panel { font-size: 15px; padding: 2px 6px; }
+
+    .pb {
+      min-width: 38px;
+      min-height: 38px;
+      font-size: 17px;
+      border-radius: 7px;
+    }
+    #btn-select-line { min-width: 44px; font-size: 17px; }
+    .pb.step-arrow   { font-size: 18px; }
+    .pb.jump-arrow svg { width: 16px; height: 16px; }
+
+    .panel-divider { height: 30px; }
+
+    #panel-buttons { gap: 5px; }
+  }
+  /* ── END REORDER PANEL CSS ── */
+</style>
+</head>
+<body>
+
+<div id="app-header">
+  📋 Reorder Panel <span>— component test &nbsp;·&nbsp; v0.14</span>
+</div>
+
+<div id="text-panel"></div>
+
+<div id="select-hint">Tap a line to select it</div>
+<button id="btn-open-panel" class="hidden" title="Open reorder panel">⇅</button>
+
+<!-- ══════════════════════════════════════════════════
+     REORDER PANEL  (copy this div + the JS section below)
+══════════════════════════════════════════════════ -->
+<div id="reorder-panel">
+  <div id="panel-top">
+    <span id="panel-label">Reorder</span>
+    <span id="panel-hint">Tap ¶ to select a line</span>
+    <button id="btn-close-panel" title="Close">✕</button>
+  </div>
+  <div id="panel-selected-preview"></div>
+  <div id="panel-buttons">
+    <button class="pb" id="btn-select-line" title="Select a line">¶</button>
+    <div class="panel-divider"></div>
+    <button class="pb step-arrow disabled" id="btn-step-up"     title="Move up one line">▲</button>
+    <button class="pb step-arrow disabled" id="btn-step-down"   title="Move down one line">▼</button>
+    <div class="panel-divider"></div>
+    <button class="pb jump-arrow disabled" id="btn-jump-top"    title="Move to very top">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <line x1="3" y1="2.5" x2="19" y2="2.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        <polyline points="6,18 11,7 16,18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <button class="pb jump-arrow disabled" id="btn-jump-bottom" title="Move to very bottom">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <line x1="3" y1="19.5" x2="19" y2="19.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        <polyline points="6,4 11,15 16,4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+</div>
+<!-- ══════════════════════════════════════════════════
+     END REORDER PANEL
+══════════════════════════════════════════════════ -->
+
+<script>
+// ══════════════════════════════════════════════════════
+//  REORDER PANEL — self-contained component
+//
+//  Each newline-delimited line in the text panel is a
+//  separately selectable and moveable "block" — including
+//  blank lines. The unit is a LINE (delimited by \n),
+//  not a paragraph in the typographic sense.
+//
+//  Usage:
+//    ReorderPanel.init('container-element-id');   // first
+//    ReorderPanel.buildBlocks(plainText);          // then
+// ══════════════════════════════════════════════════════
+const ReorderPanel = (() => {
+
+  // ── State ──────────────────────────────────────────
+  let textPanel   = null;
+  let blocks      = [];
+  let selectedIdx = -1;
+  let selectMode  = false;
+
+  // Long-press repeat state
+  let repeatTimeoutId  = null;
+  let repeatIntervalId = null;
+  let repeatActive     = false;
+
+  const REPEAT_DELAY = 900;
+  const REPEAT_SPEED = 220;
+
+  // ── DOM refs ───────────────────────────────────────
+  const panel      = document.getElementById('reorder-panel');
+  const btnClose   = document.getElementById('btn-close-panel');
+  const btnOpen    = document.getElementById('btn-open-panel');
+  const btnSelLine = document.getElementById('btn-select-line');
+  const btnStepUp  = document.getElementById('btn-step-up');
+  const btnStepDn  = document.getElementById('btn-step-down');
+  const btnJmpTop  = document.getElementById('btn-jump-top');
+  const btnJmpBot  = document.getElementById('btn-jump-bottom');
+  const previewEl  = document.getElementById('panel-selected-preview');
+  const panelHintEl= document.getElementById('panel-hint');
+  const hintEl     = document.getElementById('select-hint');
+
+  // ── Utilities ──────────────────────────────────────
+
+  function refreshBlocks() {
+    blocks = Array.from(textPanel.querySelectorAll('.para-block'));
+  }
+
+  function setStatus(msg) { /* no-op: kept for safety */ }
+
+  function setPreview(text) {
+    if (text) {
+      previewEl.textContent = text;
+      previewEl.classList.add('visible');
+    } else {
+      previewEl.textContent = '';
+      previewEl.classList.remove('visible');
+    }
+  }
+
+  function showHint(msg, ms) {
+    hintEl.textContent = msg;
+    hintEl.classList.add('show');
+    clearTimeout(hintEl._t);
+    hintEl._t = setTimeout(() => hintEl.classList.remove('show'), ms || 2000);
+  }
+
+  function updateButtons() {
+    const has = selectedIdx >= 0;
+    [btnStepUp, btnStepDn, btnJmpTop, btnJmpBot].forEach(b => {
+      b.classList.toggle('disabled', !has);
+      b.classList.toggle('enabled',   has);
+    });
+    if (has) {
+      const isBlank = blocks[selectedIdx].classList.contains('blank');
+      const txt = blocks[selectedIdx].textContent.trim();
+      const label = isBlank ? '(blank line)'
+                  : txt.length > 50 ? txt.slice(0, 50) + '\u2026' : txt;
+      setPreview(label);
+      panelHintEl.textContent = 'Tap \u00b6 to choose a different line';
+    } else {
+      setPreview(null);
+      panelHintEl.textContent = 'Tap \u00b6 to select a line';
+    }
+  }
+
+  // ── Deselect ───────────────────────────────────────
+
+  function clearSelection() {
+    refreshBlocks();
+    blocks.forEach(b => b.classList.remove('selected'));
+    selectedIdx = -1;
+  }
+
+  // ── Select mode ────────────────────────────────────
+
+  function enterSelectMode() {
+    selectMode = true;
+    btnSelLine.classList.add('active');
+    refreshBlocks();
+    // ALL blocks (including blank lines) become selectable
+    blocks.forEach(b => b.classList.add('selectable'));
+    showHint('Tap any line to select it', 3000);
+  }
+
+  function exitSelectMode() {
+    selectMode = false;
+    btnSelLine.classList.remove('active');
+    blocks.forEach(b => b.classList.remove('selectable'));
+  }
+
+  // ¶ button behavior:
+  // - If in select mode (waiting for tap): cancel, clear any selection, go idle
+  // - If idle or has selection: clear selection, enter select mode to pick new line
+  function toggleSelectMode() {
+    if (selectMode) {
+      // User changed their mind — cancel select mode and deselect
+      exitSelectMode();
+      clearSelection();
+      updateButtons();
+    } else {
+      // Enter select mode (clears any previous selection first)
+      clearSelection();
+      updateButtons();
+      enterSelectMode();
+    }
+  }
+
+  function selectBlock(idx) {
+    clearSelection();
+    selectedIdx = idx;
+    if (idx >= 0 && idx < blocks.length) blocks[idx].classList.add('selected');
+    exitSelectMode();
+    updateButtons();
+  }
+
+  function handleBlockTap(block) {
+    if (!selectMode) return;
+    refreshBlocks();
+    const idx = blocks.indexOf(block);
+    if (idx >= 0) selectBlock(idx);
+  }
+
+  // ── Movement helpers ───────────────────────────────
+
+  function scrollToSelected() {
+    if (selectedIdx < 0 || selectedIdx >= blocks.length) return;
+    const el = blocks[selectedIdx];
+    const panelHeight = panel.offsetHeight || 160;
+    const topMargin   = 12;  // breathing room from top of container
+    const botMargin   = 12;  // breathing room above floating panel
+
+    // Measure the height of ~2 context lines using neighbors when they exist
+    function neighborHeight(idx) {
+      if (idx < 0 || idx >= blocks.length) return 0;
+      return blocks[idx].offsetHeight || 28;
+    }
+    const contextAbove = neighborHeight(selectedIdx - 1) + neighborHeight(selectedIdx - 2);
+    const contextBelow = neighborHeight(selectedIdx + 1) + neighborHeight(selectedIdx + 2);
+
+    const elRect        = el.getBoundingClientRect();
+    const containerRect = textPanel.getBoundingClientRect();
+    const visibleTop    = containerRect.top;
+    const visibleBottom = containerRect.bottom - panelHeight - botMargin;
+
+    // How far the element's top/bottom are from the visible boundaries
+    const topEdge = elRect.top - visibleTop;
+    const botEdge = visibleBottom - elRect.bottom;
+
+    if (topEdge < contextAbove + topMargin) {
+      // Too close to (or above) the top — scroll up to reveal context above
+      textPanel.scrollTop -= (contextAbove + topMargin - topEdge);
+    } else if (botEdge < contextBelow + botMargin) {
+      // Too close to (or hidden behind) the panel — scroll down to reveal context below
+      textPanel.scrollTop += (contextBelow + botMargin - botEdge);
+    }
+  }
+
+  function reanchorSelected(el) {
+    refreshBlocks();
+    selectedIdx = blocks.indexOf(el);
+    el.classList.add('selected');
+    scrollToSelected();
+    updateButtons();
+  }
+
+  // ── Movement actions ───────────────────────────────
+  // Moves exactly ONE block at a time (blank or not).
+  // Skipping spacers is gone — every line is equal.
+
+  function stepUp() {
+    refreshBlocks();
+    if (selectedIdx <= 0) return;
+    const el = blocks[selectedIdx];
+    // Insert before the block immediately above
+    textPanel.insertBefore(el, blocks[selectedIdx - 1]);
+    reanchorSelected(el);
+  }
+
+  function stepDown() {
+    refreshBlocks();
+    if (selectedIdx < 0 || selectedIdx >= blocks.length - 1) return;
+    const el = blocks[selectedIdx];
+    const after = blocks[selectedIdx + 1].nextSibling;
+    if (after) textPanel.insertBefore(el, after);
+    else       textPanel.appendChild(el);
+    reanchorSelected(el);
+  }
+
+  function jumpTop() {
+    refreshBlocks();
+    if (selectedIdx <= 0) return;
+    const el = blocks[selectedIdx];
+    textPanel.insertBefore(el, textPanel.firstChild);
+    reanchorSelected(el);
+  }
+
+  function jumpBottom() {
+    refreshBlocks();
+    if (selectedIdx < 0 || selectedIdx >= blocks.length - 1) return;
+    const el = blocks[selectedIdx];
+    textPanel.appendChild(el);
+    reanchorSelected(el);
+  }
+
+  // ── Long-press repeat ──────────────────────────────
+
+  function clearRepeatTimers() {
+    if (repeatTimeoutId  !== null) { clearTimeout(repeatTimeoutId);   repeatTimeoutId  = null; }
+    if (repeatIntervalId !== null) { clearInterval(repeatIntervalId); repeatIntervalId = null; }
+  }
+
+  function stopRepeat() {
+    repeatActive = false;
+    clearRepeatTimers();
+  }
+
+  function bindRepeatButton(btn, fn) {
+    btn.addEventListener('pointerdown', function(e) {
+      if (btn.classList.contains('disabled')) return;
+      if (repeatActive) return;
+      e.preventDefault();
+      repeatActive = true;
+      try { btn.setPointerCapture(e.pointerId); } catch(_) {}
+
+      fn(); // immediate first step
+
+      repeatTimeoutId = setTimeout(function() {
+        repeatTimeoutId = null;
+        if (!repeatActive) return;
+        repeatIntervalId = setInterval(function() {
+          if (!repeatActive) { clearRepeatTimers(); return; }
+          fn();
+        }, REPEAT_SPEED);
+      }, REPEAT_DELAY);
+    });
+
+    btn.addEventListener('pointerup',     stopRepeat);
+    btn.addEventListener('pointercancel', stopRepeat);
+    btn.addEventListener('touchend',      stopRepeat, { passive: true });
+    btn.addEventListener('touchcancel',   stopRepeat, { passive: true });
+  }
+
+  // ── Panel open / close ─────────────────────────────
+
+  function openPanel() {
+    panel.classList.remove('hidden');
+    btnOpen.classList.add('hidden');
+  }
+
+  function closePanel() {
+    panel.classList.add('hidden');
+    btnOpen.classList.remove('hidden');
+    clearSelection();
+    exitSelectMode();
+    updateButtons();
+  }
+
+  // ── Block builder ──────────────────────────────────
+
+  function buildBlocks(rawText) {
+    if (!textPanel) { console.error('ReorderPanel: call init() before buildBlocks()'); return; }
+    textPanel.innerHTML = '';
+    rawText.split('\n').forEach(function(line) {
+      const div = document.createElement('div');
+      const blank = line.trim() === '';
+      // All blocks use 'para-block'; blank lines also get class 'blank'
+      div.className = 'para-block' + (blank ? ' blank' : '');
+      if (!blank) div.textContent = line;
+      textPanel.appendChild(div);
+
+      // Tap handlers on ALL blocks (blank and non-blank)
+      div.addEventListener('click', function() { handleBlockTap(div); });
+      div.addEventListener('touchend', function(e) {
+        if (!selectMode) return;
+        e.preventDefault();
+        handleBlockTap(div);
+      }, { passive: false });
+    });
+    refreshBlocks();
+  }
+
+  // ── Init ───────────────────────────────────────────
+
+  function init(panelId) {
+    textPanel = document.getElementById(panelId);
+    if (!textPanel) { console.error('ReorderPanel: element not found:', panelId); return; }
+
+    btnClose.addEventListener('click', closePanel);
+    btnOpen.addEventListener('click',  openPanel);
+    btnSelLine.addEventListener('click', toggleSelectMode);
+
+    btnJmpTop.addEventListener('click', function() {
+      if (!btnJmpTop.classList.contains('disabled')) jumpTop();
+    });
+    btnJmpBot.addEventListener('click', function() {
+      if (!btnJmpBot.classList.contains('disabled')) jumpBottom();
+    });
+
+    bindRepeatButton(btnStepUp, stepUp);
+    bindRepeatButton(btnStepDn, stepDown);
+
+    updateButtons();
+    openPanel();
+  }
+
+  return { init, buildBlocks };
+
+})();
+// ══════════════════════════════════════════════════════
+//  END REORDER PANEL
+// ══════════════════════════════════════════════════════
+
+
+// ── Test harness ──────────────────────────────────────
+// Lines separated by \n only — no blank lines between some groups.
+// Blank lines are themselves selectable and moveable.
+// (Remove this section when copying to your app.)
+
+const SAMPLE_TEXT = [
+  "The bakery on Elm Street opens before sunrise, and by the time most people are awake the sidewalk already smells of warm bread and cinnamon.",
+  "Old Mr. Hoffmann has worked the same oven for thirty-one years without a single sick day.",
+  "His son helps out on Saturday mornings.",
+  "",
+  "It rained on Tuesday.",
+  "It rained again on Wednesday.",
+  "Nobody was surprised.",
+  "",
+  "Bees can recognize human faces. Scientists discovered this by training bees with sugar rewards, and the bees performed well even on photos they had never seen before.",
+  "",
+  "She kept a notebook of things she wanted to remember.",
+  "The smell of her grandmother's garden.",
+  "The way light moved through the big sycamore in the yard.",
+  "The first word her son ever said out loud.",
+  "",
+  "The library closes at six.",
+  "On Sundays it does not open at all.",
+  "",
+  "There is a particular quiet that settles over a town after heavy snow — not silence exactly, but a muffled hush that makes everything feel both closer and farther away at the same time.",
+  "",
+  "Wear a hat.",
+  "Bring an umbrella.",
+  "Don't forget to call.",
+  "The leftover soup is in the fridge.",
+  "Back by ten.",
+  "",
+  "Repairing a bicycle tire is one of those skills that feels impossible the first time and completely obvious the second. Most things are like that.",
+  "",
+  "Every autumn the same flock of Canada geese stops at the pond behind the high school for about two weeks before continuing south.",
+  "The biology teacher has counted them every year since 1987.",
+  "This year he counted forty-three.",
+  "",
+  "Turn left at the old mill.",
+  "The road gets narrow but keep going.",
+  "You will see a red mailbox on the right.",
+  "The driveway is just past it.",
+  "",
+  "Tomatoes grown in a garden and eaten the same day taste almost like a different vegetable from the ones sold in grocery stores in winter.",
+  "This is not nostalgia — it is chemistry.",
+  "",
+  "Check the oil.",
+  "Check the tire pressure.",
+  "Fill the windshield washer fluid.",
+  "Gas is low.",
+  "",
+  "He had lived alone for eleven years and had learned to enjoy it.",
+  "The apartment was exactly as he liked: quiet in the evenings, full of books, and never too warm.",
+  "",
+  "Apples.",
+  "Bread — the whole wheat kind.",
+  "Orange juice.",
+  "Milk (two percent).",
+  "That good cheese from the corner shop.",
+  "",
+  "The first frost always comes as a surprise, even when the forecast warned about it for days."
+].join('\n');
+
+ReorderPanel.init('text-panel');
+ReorderPanel.buildBlocks(SAMPLE_TEXT);
+</script>
+</body>
+</html>
