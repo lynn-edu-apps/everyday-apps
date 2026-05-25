@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.233 -->
+<!-- Remember App - Version 0.246 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -96,7 +96,10 @@ body.ui-small {
 
 html {
   font-size: var(--font-size-base);
-  height: 100%;
+  /* --viewport-height is set by JS via visualViewport API so the layout
+     always fills exactly the visible area even when the iOS virtual keyboard
+     is open. Falls back to 100% on first paint before JS runs. */
+  height: var(--viewport-height, 100%);
   overflow: hidden;
 }
 
@@ -104,7 +107,7 @@ body {
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--fg);
-  height: 100%;
+  height: var(--viewport-height, 100%);
   overflow: hidden;
   transition: background 0.3s, color 0.3s;
   -webkit-text-size-adjust: 100%;
@@ -125,7 +128,7 @@ body.in-iframe #home-screen {
 }
 
 #note-screen {
-  height: 100%;
+  height: var(--viewport-height, 100%);
   overflow: hidden;
 }
 
@@ -375,16 +378,76 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 .note-bottom-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
+  gap: 0;
+  padding: 0;
   background: var(--bg2);
   border-top: 1px solid var(--border);
   box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
   flex-shrink: 0;
-  /* On mobile, position:sticky bottom:0 keeps it above the keyboard */
-  position: sticky;
-  bottom: 0;
+  /* No position:sticky — toolbar is a plain flex child at the bottom of
+     #note-screen. This prevents the double-scroll-context bug on iOS Safari
+     where sticky inside a flex column creates a second scrollable layer. */
   z-index: 20;
+  overflow: hidden;
+}
+
+/* Scrollable inner row of toolbar buttons */
+.toolbar-scroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1 1 auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;       /* Firefox */
+  -ms-overflow-style: none;    /* IE/Edge */
+}
+.toolbar-scroll::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+/* Scroll arrow buttons */
+.toolbar-scroll-arrow {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 100%;
+  min-height: 44px;
+  background: var(--bg2);
+  border: none;
+  cursor: pointer;
+  color: var(--fg);
+  padding: 0;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.toolbar-scroll-arrow:active { opacity: 0.6; }
+
+/* Gradient fade overlays — sit on top of scroll area edge */
+.toolbar-scroll-fade-left,
+.toolbar-scroll-fade-right {
+  flex: 0 0 auto;
+  width: 20px;
+  min-width: 20px;
+  align-self: stretch;
+  pointer-events: none;
+  z-index: 1;
+}
+.toolbar-scroll-fade-left {
+  background: linear-gradient(to right, var(--bg2) 30%, transparent);
+  margin-left: -20px;  /* overlap the scroll area */
+  position: relative;
+}
+.toolbar-scroll-fade-right {
+  background: linear-gradient(to left, var(--bg2) 30%, transparent);
+  margin-right: -20px; /* overlap the scroll area */
+  position: relative;
 }
 
 .btn {
@@ -607,7 +670,7 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 /* Note content */
 .note-content-area {
   flex: 1;
-  padding: 12px 16px 80px 22px;
+  padding: 12px 16px 16px 22px;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
@@ -1461,81 +1524,114 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
   <!-- Floating bottom toolbar — stays above keyboard on mobile -->
   <div class="note-bottom-bar" id="note-bottom-bar">
-    <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
-      </svg>
+    <!-- Scroll-left arrow (shown only when content is scrolled right) -->
+    <button class="toolbar-scroll-arrow" id="toolbar-scroll-left" aria-label="Scroll toolbar left" style="display:none">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><polygon points="16,4 8,12 16,20"/></svg>
     </button>
-    <button class="icon-btn kb-hide" id="export-note-btn" tabindex="-1" aria-label="Export this note to JSON" title="Export note">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="dictate-btn" tabindex="-1" aria-label="Dictate text" title="Dictate text" style="display:none">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-      </svg>
-    </button>
-    <!-- Keyboard dismiss button — only shown when keyboard is open -->
-    <button class="icon-btn kb-only" id="dismiss-keyboard-btn" aria-label="Dismiss keyboard" title="Dismiss keyboard">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="4" width="20" height="16" rx="2"/>
-        <line x1="8" y1="10" x2="8" y2="10" stroke-width="3" stroke-linecap="round"/>
-        <line x1="12" y1="10" x2="12" y2="10" stroke-width="3" stroke-linecap="round"/>
-        <line x1="16" y1="10" x2="16" y2="10" stroke-width="3" stroke-linecap="round"/>
-        <line x1="8" y1="14" x2="16" y2="14" stroke-width="2.5" stroke-linecap="round"/>
-        <polyline points="7 19 12 23 17 19" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </button>
-    <!-- Bold mode toggle — only shown in view mode -->
-    <button class="icon-btn view-only-btn" id="bold-mode-btn" aria-label="Toggle bold mode" title="Bold lines" style="display:none">
-      <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)">
-        <text x="1" y="21" font-size="24" font-weight="900" font-family="serif">B</text>
-      </svg>
-    </button>
-    <!-- Color mode toggle — only shown in view mode -->
-    <button class="icon-btn view-only-btn" id="color-mode-btn" aria-label="Toggle color mode" title="Color lines" style="display:none">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <path d="M12 2a10 10 0 010 20" fill="#aaaaaa" stroke="none"/>
-        <path d="M12 2a10 10 0 0110 10" fill="#e07070" stroke="none"/>
-        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
-      </svg>
-    </button>
-    <!-- Single cycling color swatch — shown when color mode active -->
-    <button id="color-swatch-cycle" style="display:none;width:32px;height:28px;border-radius:4px;border:2px solid var(--fg);cursor:pointer;background:#d94f4f;flex-shrink:0" title="Tap to change color"></button>
-    <!-- Strikethrough mode + trash grouped with subtle box when trash visible -->
-    <div id="crossout-group" style="display:flex;align-items:center;border-radius:6px;border:1.5px solid transparent;transition:border-color 0.2s">
-      <button class="icon-btn view-only-btn" id="crossout-mode-btn" aria-label="Toggle cross-out mode" title="Cross out lines" style="display:none">
+    <div class="toolbar-scroll-fade-left" id="toolbar-fade-left" style="display:none"></div>
+
+    <!-- Scrollable inner container -->
+    <div class="toolbar-scroll" id="toolbar-scroll">
+      <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+        </svg>
+      </button>
+      <button class="icon-btn kb-hide" id="export-note-btn" tabindex="-1" aria-label="Export this note to JSON" title="Export note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="dictate-btn" tabindex="-1" aria-label="Dictate text" title="Dictate text" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+      <!-- Keyboard dismiss button — only shown when keyboard is open -->
+      <button class="icon-btn kb-only" id="dismiss-keyboard-btn" aria-label="Dismiss keyboard" title="Dismiss keyboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <line x1="8" y1="10" x2="8" y2="10" stroke-width="3" stroke-linecap="round"/>
+          <line x1="12" y1="10" x2="12" y2="10" stroke-width="3" stroke-linecap="round"/>
+          <line x1="16" y1="10" x2="16" y2="10" stroke-width="3" stroke-linecap="round"/>
+          <line x1="8" y1="14" x2="16" y2="14" stroke-width="2.5" stroke-linecap="round"/>
+          <polyline points="7 19 12 23 17 19" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <!-- Indent button — edit modes -->
+      <button class="icon-btn edit-only-btn" id="indent-btn" tabindex="-1" aria-label="Indent selected lines" title="Indent" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="9" y1="12" x2="21" y2="12"/>
+          <line x1="9" y1="18" x2="21" y2="18"/>
+          <polyline points="3,10 7,12 3,14"/>
+        </svg>
+      </button>
+      <!-- Dedent button — edit modes -->
+      <button class="icon-btn edit-only-btn" id="dedent-btn" tabindex="-1" aria-label="Dedent selected lines" title="Dedent" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="9" y1="12" x2="21" y2="12"/>
+          <line x1="9" y1="18" x2="21" y2="18"/>
+          <polyline points="7,10 3,12 7,14"/>
+        </svg>
+      </button>
+      <!-- Bold mode toggle — only shown in view mode -->
+      <button class="icon-btn view-only-btn" id="bold-mode-btn" aria-label="Toggle bold mode" title="Bold lines" style="display:none">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)">
+          <text x="1" y="21" font-size="24" font-weight="900" font-family="serif">B</text>
+        </svg>
+      </button>
+      <!-- Color mode toggle — only shown in view mode -->
+      <button class="icon-btn view-only-btn" id="color-mode-btn" aria-label="Toggle color mode" title="Color lines" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 2a10 10 0 010 20" fill="#aaaaaa" stroke="none"/>
+          <path d="M12 2a10 10 0 0110 10" fill="#e07070" stroke="none"/>
+          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </button>
+      <!-- Single cycling color swatch — shown when color mode active -->
+      <button id="color-swatch-cycle" style="display:none;width:32px;height:28px;border-radius:4px;border:2px solid var(--fg);cursor:pointer;background:#d94f4f;flex-shrink:0" title="Tap to change color"></button>
+      <!-- Strikethrough mode + trash grouped with subtle box when trash visible -->
+      <div id="crossout-group" style="display:flex;align-items:center;border-radius:6px;border:1.5px solid transparent;transition:border-color 0.2s">
+        <button class="icon-btn view-only-btn" id="crossout-mode-btn" aria-label="Toggle cross-out mode" title="Cross out lines" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <path d="M17 5H9.5a3.5 3.5 0 000 7"/>
+            <path d="M7 19h7.5a3.5 3.5 0 000-7"/>
+          </svg>
+        </button>
+        <!-- Clear all strikethroughs — visually paired with crossout button -->
+        <button class="icon-btn view-only-btn" id="clear-strikethroughs-btn" aria-label="Clear all cross-outs" title="Clear all cross-outs" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          </svg>
+        </button>
+      </div>
+      <!-- Minus (delete line) + Plus + Pencil grouped at far right -->
+      <button class="icon-btn view-only-btn" id="delete-line-btn" tabindex="-1" aria-label="Delete a line" title="Delete a line" style="display:none;color:var(--fg3)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
           <line x1="4" y1="12" x2="20" y2="12"/>
-          <path d="M17 5H9.5a3.5 3.5 0 000 7"/>
-          <path d="M7 19h7.5a3.5 3.5 0 000-7"/>
         </svg>
       </button>
-      <!-- Clear all strikethroughs — visually paired with crossout button -->
-      <button class="icon-btn view-only-btn" id="clear-strikethroughs-btn" aria-label="Clear all cross-outs" title="Clear all cross-outs" style="display:none">
+      <button class="icon-btn" id="quick-add-btn" tabindex="-1" aria-label="Quick add text" title="Quick add text" style="padding:2px 3px;min-width:unset;min-height:unset;margin-right:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
+          <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
+        </svg>
+      </button>
+      <!-- Pencil edit toggle — right of plus, no gap -->
+      <button class="icon-btn kb-hide" id="view-mode-btn" tabindex="-1" aria-label="Switch to view mode" title="Edit mode on">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </svg>
       </button>
-    </div>
-    <!-- Minus (delete line) + Plus + Pencil grouped at far right -->
-    <button class="icon-btn view-only-btn" id="delete-line-btn" tabindex="-1" aria-label="Delete a line" title="Delete a line" style="display:none;margin-left:auto;color:var(--fg3)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
-        <line x1="4" y1="12" x2="20" y2="12"/>
-      </svg>
-    </button>
-    <button class="icon-btn" id="quick-add-btn" tabindex="-1" aria-label="Quick add text" title="Quick add text" style="padding:2px 3px;min-width:unset;min-height:unset;margin-right:6px">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
-        <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
-      </svg>
-    </button>
-    <!-- Pencil edit toggle — right of plus, no gap -->
-    <button class="icon-btn kb-hide" id="view-mode-btn" tabindex="-1" aria-label="Switch to view mode" title="Edit mode on">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-      </svg>
+    </div><!-- end .toolbar-scroll -->
+
+    <div class="toolbar-scroll-fade-right" id="toolbar-fade-right" style="display:none"></div>
+    <!-- Scroll-right arrow (shown only when there is more content to the right) -->
+    <button class="toolbar-scroll-arrow" id="toolbar-scroll-right" aria-label="Scroll toolbar right">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><polygon points="8,4 16,12 8,20"/></svg>
     </button>
   </div>
 </div>
@@ -1858,6 +1954,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <option value="top">Beginning</option>
         </select>
       </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Spaces per indent / dedent</div>
+          <div class="settings-row-desc">Number of spaces added or removed when you press Tab / Shift+Tab, or tap the Indent / Dedent buttons.</div>
+        </div>
+        <input type="number" id="indent-spaces-input" min="1" max="16" step="1"
+          style="width:70px;font-size:1em;padding:6px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg);text-align:center">
+      </div>
     </div>
 
     <!-- Speech -->
@@ -2125,7 +2230,36 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.233';
+const APP_VERSION = '0.246';
+
+// ===== VIEWPORT HEIGHT — visualViewport API =====
+// On iOS Safari (and iOS webviews like Claude.ai), the virtual keyboard does
+// not reliably shrink dvh or 100%. We use visualViewport.height, which always
+// reflects the actual visible area, and write it into --viewport-height so
+// the CSS layout (html, body, #note-screen) resizes correctly in real time.
+(function() {
+  var root = document.documentElement;
+
+  function applyViewportHeight() {
+    var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    root.style.setProperty('--viewport-height', h + 'px');
+  }
+
+  // Run immediately (before first paint if possible)
+  applyViewportHeight();
+
+  if (window.visualViewport) {
+    // visualViewport fires 'resize' whenever the keyboard opens, closes, or
+    // changes size (e.g. QuickType bar toggled, orientation change).
+    window.visualViewport.addEventListener('resize', applyViewportHeight);
+    // 'scroll' fires when the viewport is panned (iOS sometimes pans the
+    // visual viewport independently of the layout viewport).
+    window.visualViewport.addEventListener('scroll', applyViewportHeight);
+  } else {
+    // Fallback for browsers without visualViewport (very old)
+    window.addEventListener('resize', applyViewportHeight);
+  }
+})();
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -2153,7 +2287,8 @@ const DEFAULT_SETTINGS = {
   deleteGuardEnabled: true,  // whether to show confirmation on large deletions
   deleteGuardChars: 30,      // character threshold to trigger the delete guard
   showOopsBtn: true,         // whether to show the Oops restore button
-  sectionStates: {}          // collapsed/expanded state for each settings section
+  sectionStates: {},         // collapsed/expanded state for each settings section
+  indentSpaces: 2              // spaces per indent/dedent action
 };
 
 let settings = Object.assign({}, DEFAULT_SETTINGS);
@@ -2718,6 +2853,85 @@ function createNewNote() {
   openNote(id);
 }
 
+// ===== SMART INDENT HELPER =====
+// Given the text of the current line (from line-start to cursor position),
+// returns the prefix to repeat on the next line, or null if smart indent
+// should not apply.
+// Pattern matched: <WS1> <marker> <WS2> <at-least-one-non-whitespace>
+//   where marker is: "-"  or  "[ ]"  or  "[x]"  or  "[X]"  or  "[]"
+// Returns WS1 + marker + WS2 so the caller can insert "\n" + prefix.
+function getSmartIndentPrefix(lineText) {
+  // Must have some non-whitespace content after the marker+WS2
+  var m = lineText.match(/^([ \t]*)([-]|\[\s*[xX]?\s*\])([ \t]+)\S/);
+  if (!m) return null;
+  // m[1] = WS1, m[2] = marker (hyphen or checkbox variant), m[3] = WS2
+  // Normalise checkbox marker to unchecked [ ] so new lines always start blank
+  var ws1 = m[1];
+  var rawMarker = m[2];
+  var ws2 = m[3];
+  var marker;
+  if (rawMarker === '-') {
+    marker = '-';
+  } else {
+    // Any checkbox variant (checked or unchecked) → produce unchecked [ ]
+    marker = '[ ]';
+  }
+  return ws1 + marker + ws2;
+}
+
+// ===== INDENT / DEDENT HELPERS =====
+// indentLines: add N spaces to the start of every line touched by the selection.
+// If nothing is selected (or selection is on one line with start==end), just
+// insert N spaces at the cursor position.
+// Returns nothing; mutates the textarea value and selection.
+function indentLines(ed) {
+  var n = (settings.indentSpaces !== undefined ? settings.indentSpaces : 2);
+  var spaces = '';
+  for (var i = 0; i < n; i++) spaces += ' ';
+  var val = ed.value;
+  var selStart = ed.selectionStart;
+  var selEnd   = ed.selectionEnd;
+  if (selStart === selEnd) {
+    // No selection — just insert spaces at cursor
+    ed.value = val.substring(0, selStart) + spaces + val.substring(selEnd);
+    ed.setSelectionRange(selStart + n, selStart + n);
+    return;
+  }
+  // Multi-char selection: indent every line that the selection touches
+  var lineStart = val.lastIndexOf('\n', selStart - 1) + 1;
+  var chunk     = val.substring(lineStart, selEnd);
+  var lines     = chunk.split('\n');
+  var indented  = lines.map(function(l) { return spaces + l; });
+  var result    = indented.join('\n');
+  // Adjust selection to cover the full indented block
+  var newSelStart = lineStart === selStart ? selStart + n : selStart + n;
+  // Keep start at the same visual position (add n for the first line indent)
+  var delta = indented.length * n;
+  ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
+  ed.setSelectionRange(selStart + n, selStart + n + (result.length - chunk.length) + (selEnd - selStart));
+  // Simpler: just extend selection to cover whole rewritten block
+  ed.setSelectionRange(lineStart, lineStart + result.length);
+}
+
+// dedentLines: remove up to N leading spaces from each line in the selection.
+function dedentLines(ed) {
+  var n = (settings.indentSpaces !== undefined ? settings.indentSpaces : 2);
+  var val = ed.value;
+  var selStart = ed.selectionStart;
+  var selEnd   = ed.selectionEnd;
+  var lineStart = val.lastIndexOf('\n', selStart - 1) + 1;
+  var chunk   = val.substring(lineStart, selEnd);
+  var lines   = chunk.split('\n');
+  var dedented = lines.map(function(l) {
+    var removed = 0;
+    while (removed < n && l.charAt(removed) === ' ') removed++;
+    return l.substring(removed);
+  });
+  var result = dedented.join('\n');
+  ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
+  ed.setSelectionRange(lineStart, lineStart + result.length);
+}
+
 function nameFromContent(content) {
   // Find first non-blank line, take first 50 chars
   if (!content) return '';
@@ -3280,6 +3494,7 @@ function openSettings() {
   document.getElementById('delete-guard-chars').value = settings.deleteGuardChars !== undefined ? settings.deleteGuardChars : 30;
   document.getElementById('show-oops-toggle').checked = settings.showOopsBtn !== false;
   document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
+  document.getElementById('indent-spaces-input').value = settings.indentSpaces !== undefined ? settings.indentSpaces : 2;
 
   // Snapshot current settings so we can detect changes
   settingsSnapshot = JSON.parse(JSON.stringify(settings));
@@ -3665,6 +3880,57 @@ function init() {
   // Prevent bottom bar buttons from stealing focus (which closes keyboard)
   // tabindex="-1" on buttons + mousedown preventDefault covers desktop
   // On mobile, iOS respects this combination and won't blur the textarea
+  // ===== TOOLBAR SCROLL ARROWS =====
+  (function() {
+    var scroll  = document.getElementById('toolbar-scroll');
+    var btnL    = document.getElementById('toolbar-scroll-left');
+    var btnR    = document.getElementById('toolbar-scroll-right');
+    var fadeL   = document.getElementById('toolbar-fade-left');
+    var fadeR   = document.getElementById('toolbar-fade-right');
+
+    function updateArrows() {
+      var atStart = scroll.scrollLeft <= 2;
+      var atEnd   = scroll.scrollLeft >= scroll.scrollWidth - scroll.clientWidth - 2;
+      btnL.style.display  = atStart ? 'none' : '';
+      fadeL.style.display = atStart ? 'none' : '';
+      btnR.style.display  = atEnd   ? 'none' : '';
+      fadeR.style.display = atEnd   ? 'none' : '';
+    }
+    // Amount to scroll per arrow tap — roughly 3 button widths
+    var SCROLL_AMT = 120;
+    btnL.addEventListener('click', function() {
+      scroll.scrollBy({ left: -SCROLL_AMT, behavior: 'smooth' });
+    });
+    btnR.addEventListener('click', function() {
+      scroll.scrollBy({ left: SCROLL_AMT, behavior: 'smooth' });
+    });
+    scroll.addEventListener('scroll', updateArrows, { passive: true });
+    // Re-check after layout changes (show/hide buttons, resize)
+    var arrowObserver = new ResizeObserver(updateArrows);
+    arrowObserver.observe(scroll);
+    updateArrows();
+    // Export so other code can trigger a recheck after show/hiding toolbar buttons
+    window._updateToolbarArrows = updateArrows;
+  })();
+
+  // ===== INDENT / DEDENT BUTTONS =====
+  document.getElementById('indent-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('indent-btn').addEventListener('click', function() {
+    indentLines(noteEditor);
+    // Do NOT call noteEditor.focus() here — on iOS that would summon the virtual
+    // keyboard even when the user is in EMNI mode (no keyboard was open before).
+    // e.preventDefault() on mousedown already keeps desktop focus intact.
+    resizeEditor();
+    scheduleSave();
+  });
+  document.getElementById('dedent-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('dedent-btn').addEventListener('click', function() {
+    dedentLines(noteEditor);
+    // Same reasoning as indent-btn above — no explicit focus() call.
+    resizeEditor();
+    scheduleSave();
+  });
+
   document.getElementById('note-bottom-bar').addEventListener('mousedown', function(e) {
     // Only allow dismiss-keyboard to blur normally; prevent all others
     if (e.target.closest('#dismiss-keyboard-btn')) return;
@@ -3745,9 +4011,46 @@ function init() {
     }, 300);
   });
 
-  noteEditor.addEventListener('keydown', function() {
+  noteEditor.addEventListener('keydown', function(e) {
     isAllSelected = false;
     document.getElementById('select-all-btn').style.color = '';
+
+    // ===== TAB / SHIFT+TAB — indent or dedent =====
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        dedentLines(this);
+      } else {
+        indentLines(this);
+      }
+      resizeEditor();
+      scheduleSave();
+      return;
+    }
+
+    // ===== SMART INDENT =====
+    // When Enter is pressed, if the current line matches the pattern:
+    //   <Whitespace1> <hyphen or checkbox-marker> <Whitespace2> <non-whitespace...>
+    // then insert a newline followed by the same prefix (WS1 + marker + WS2).
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      var ed = this;
+      var val = ed.value;
+      var pos = ed.selectionStart;
+      var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+      var lineText = val.substring(lineStart, pos);
+      var prefix = getSmartIndentPrefix(lineText);
+      if (prefix !== null) {
+        e.preventDefault();
+        var before = val.substring(0, pos);
+        var after = val.substring(ed.selectionEnd);
+        var inserted = '\n' + prefix;
+        ed.value = before + inserted + after;
+        var newPos = pos + inserted.length;
+        ed.setSelectionRange(newPos, newPos);
+        resizeEditor();
+        scheduleSave();
+      }
+    }
   });
 
   // ===== DICTATION (Speech-to-Text) =====
@@ -4208,6 +4511,18 @@ function init() {
     settings.plusPosition = this.value;
     updateSaveBtnState();
   });
+  document.getElementById('indent-spaces-input').addEventListener('input', function() {
+    var val = parseInt(this.value);
+    settings.indentSpaces = isNaN(val) ? 2 : Math.max(1, Math.min(16, val));
+    updateSaveBtnState();
+  });
+  document.getElementById('indent-spaces-input').addEventListener('blur', function() {
+    var val = parseInt(this.value);
+    if (isNaN(val) || val < 1) { this.value = 1; settings.indentSpaces = 1; }
+    else if (val > 16) { this.value = 16; settings.indentSpaces = 16; }
+    else { this.value = val; settings.indentSpaces = val; }
+    updateSaveBtnState();
+  });
   document.getElementById('view-mode-btn').addEventListener('click', function() {
     var newMode = !isViewMode;
     settings.lastViewMode = newMode;
@@ -4477,11 +4792,36 @@ function init() {
     }
   });
 
-  // Also save on Ctrl/Cmd+Enter in the textarea
+  // Also save on Ctrl/Cmd+Enter in the textarea; smart indent on plain Enter; Tab indent
   document.getElementById('quick-add-input').addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       saveQuickAdd();
+      return;
+    }
+    // Tab / Shift+Tab — indent or dedent
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (e.shiftKey) { dedentLines(this); } else { indentLines(this); }
+      return;
+    }
+    // Smart indent: plain Enter inside quick-add textarea
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      var ed = this;
+      var val = ed.value;
+      var pos = ed.selectionStart;
+      var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+      var lineText = val.substring(lineStart, pos);
+      var prefix = getSmartIndentPrefix(lineText);
+      if (prefix !== null) {
+        e.preventDefault();
+        var before = val.substring(0, pos);
+        var after = val.substring(ed.selectionEnd);
+        var inserted = '\n' + prefix;
+        ed.value = before + inserted + after;
+        var newPos = pos + inserted.length;
+        ed.setSelectionRange(newPos, newPos);
+      }
     }
   });
   updateViewOnlyBtns = function() {
@@ -4501,6 +4841,12 @@ function init() {
       deleteLineBtn.classList.remove('active');
       deleteLineBtn.style.color = '';
     }
+    // Show indent/dedent buttons in edit mode, hide in view mode
+    var indentBtn  = document.getElementById('indent-btn');
+    var dedentBtn  = document.getElementById('dedent-btn');
+    if (indentBtn) { indentBtn.style.display = inView ? 'none' : ''; }
+    if (dedentBtn) { dedentBtn.style.display = inView ? 'none' : ''; }
+
     // When minus is hidden (edit mode), plus needs margin-left:auto to push right
     var quickAddBtn = document.getElementById('quick-add-btn');
     if (quickAddBtn) quickAddBtn.style.marginLeft = inView ? '' : 'auto';
@@ -4521,6 +4867,9 @@ function init() {
 
     var viewer = document.getElementById('note-viewer');
     if (viewer) viewer.classList.toggle('crossout-mode', (crossoutMode || boldMode || colorMode) && inView);
+
+    // Recheck toolbar scroll arrows after button visibility changes
+    if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
   };
 
   document.getElementById('crossout-mode-btn').addEventListener('click', function() {
@@ -4812,13 +5161,17 @@ if ('serviceWorker' in navigator) {
       });
 
     }).catch(function(err) {
-      // Suppress known sandboxed environment errors (Claude app WebView, Claude.ai iframe)
-      // but log any other unexpected service worker errors
+      // Suppress known sandboxed/preview environment errors:
+      //   - Claude app WebView (app-bound, non-app-bound)
+      //   - Claude.ai iframe (SecurityError, origin)
+      //   - claudeusercontent.com preview (404 — service-worker.js not deployed there)
       var msg = err && err.message ? err.message : String(err);
       var isSandboxErr = msg.indexOf('app-bound') !== -1 ||
                          msg.indexOf('non-app-bound') !== -1 ||
                          msg.indexOf('SecurityError') !== -1 ||
-                         msg.indexOf('origin') !== -1;
+                         msg.indexOf('origin') !== -1 ||
+                         msg.indexOf('404') !== -1 ||
+                         msg.indexOf('bad HTTP response') !== -1;
       if (!isSandboxErr) {
         console.log('SW registration failed:', err);
       }
@@ -4840,6 +5193,228 @@ document.addEventListener('visibilitychange', function() {
 window.addEventListener('beforeunload', function() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 });
+
+// ===== DIAGNOSTIC OVERLAY (temporary — remove before release) =====
+(function() {
+  var diagVisible = false;
+  var diagOverlay = null;
+  var diagBtn = null;
+
+  function getModeLabel() {
+    var noteScreen = document.getElementById('note-screen');
+    var noteEditor = document.getElementById('note-editor');
+    if (!noteScreen || !noteScreen.classList.contains('active')) return 'Not on note screen';
+    if (typeof isViewMode !== 'undefined' && isViewMode) return 'View mode';
+    var kbOpen = noteScreen.classList.contains('keyboard-open');
+    if (!kbOpen) return 'EMNI (edit, no insertion point / no VK)';
+    // keyboard-open is set — but is it VKS or PK?
+    // We heuristically check: if visualViewport height < window.innerHeight by > 100px
+    // we assume a virtual keyboard is showing.
+    var vvh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    var diff = window.innerHeight - vvh;
+    if (diff > 100) return 'EMTIP-VKS (virtual keyboard showing)';
+    return 'EMTIP-PK (physical keyboard, no VK detected)';
+  }
+
+  function getLines() {
+    var vvh    = window.visualViewport ? window.visualViewport.height    : null;
+    var vvw    = window.visualViewport ? window.visualViewport.width     : null;
+    var vvOfsY = window.visualViewport ? window.visualViewport.offsetTop : null;
+    var vvScY  = window.visualViewport ? window.visualViewport.pageTop   : null;
+    var wih    = window.innerHeight;
+    var wiw    = window.innerWidth;
+    var kbHeight = (vvh !== null) ? Math.max(0, wih - vvh) : 'n/a';
+    var kbMm = (kbHeight !== 'n/a' && window.devicePixelRatio)
+      ? ' (~' + Math.round(kbHeight / window.devicePixelRatio * 0.2646) + 'mm)'
+      : '';
+    var vpCssVar = getComputedStyle(document.documentElement)
+                    .getPropertyValue('--viewport-height').trim() || 'not set';
+    var noteArea = document.getElementById('note-content-area');
+    var noteAreaH = noteArea ? Math.round(noteArea.getBoundingClientRect().height) : 'n/a';
+    var noteBar   = document.getElementById('note-bottom-bar');
+    var noteBarH  = noteBar  ? Math.round(noteBar.getBoundingClientRect().height)  : 'n/a';
+    var noteBarBot = noteBar ? Math.round(noteBar.getBoundingClientRect().bottom)  : 'n/a';
+    var screenH   = window.screen ? window.screen.height : 'n/a';
+    var screenW   = window.screen ? window.screen.width  : 'n/a';
+    var dpr       = window.devicePixelRatio || 'n/a';
+    // Split UA into 40-char chunks so it always fits
+    var ua = navigator.userAgent;
+    var uaLines = [];
+    for (var i = 0; i < ua.length; i += 40) uaLines.push(ua.substring(i, i + 40));
+
+    var lines = [
+      '=== DIAGNOSTIC v' + APP_VERSION + ' ===',
+      '',
+      'MODE:',
+      '  ' + getModeLabel(),
+      '',
+      '--- Viewport ---',
+      'innerHeight:  ' + wih + 'px',
+      'innerWidth:   ' + wiw + 'px',
+      'vv.height:    ' + (vvh !== null ? vvh + 'px' : 'API unavailable'),
+      'vv.width:     ' + (vvw !== null ? vvw + 'px' : 'n/a'),
+      'vv.offsetTop: ' + (vvOfsY !== null ? vvOfsY + 'px' : 'n/a'),
+      'vv.pageTop:   ' + (vvScY  !== null ? vvScY  + 'px' : 'n/a'),
+      '',
+      '--- KB estimate ---',
+      'inner - vv.h: ' + kbHeight + (kbHeight !== 'n/a' ? 'px' + kbMm : ''),
+      '',
+      '--- CSS var ---',
+      '--vp-height:  ' + vpCssVar,
+      '',
+      '--- Layout ---',
+      'content-h:    ' + noteAreaH + 'px',
+      'toolbar-h:    ' + noteBarH  + 'px',
+      'toolbar-bot:  ' + noteBarBot + 'px',
+      '',
+      '--- Screen ---',
+      'screen:       ' + screenW + 'x' + screenH + 'px',
+      'DPR:          ' + dpr,
+      'orientation:  ' + (screen.orientation ? screen.orientation.type : window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'),
+      '',
+      '--- User Agent ---'
+    ];
+    uaLines.forEach(function(l) { lines.push('  ' + l); });
+    lines.push('');
+    lines.push('(Tap to dismiss)');
+    return lines.join('\n');
+  }
+
+  function showDiag() {
+    // kept for reference — triggerDiag() is used instead
+    if (diagOverlay) {
+      diagOverlay.textContent = getLines();
+      diagOverlay.style.display = 'block';
+      diagVisible = true;
+    }
+  }
+
+  function hideDiag() {
+    if (diagOverlay) diagOverlay.style.display = 'none';
+    diagVisible = false;
+  }
+
+  function pinDiagBtn() {
+    // iOS Safari: position:fixed drifts when keyboard opens because the
+    // layout viewport doesn't shrink. We manually pin the button to the
+    // center of the visual viewport using its offsetTop + height/2.
+    if (!diagBtn || !window.visualViewport) return;
+    var vv = window.visualViewport;
+    var btnH = diagBtn.offsetHeight || 44;
+    var top = vv.offsetTop + (vv.height / 2) - (btnH / 2);
+    diagBtn.style.top = Math.round(top) + 'px';
+    diagBtn.style.transform = 'none';
+    if (diagVisible && diagOverlay) {
+      // Also re-center the overlay
+      var ovH = diagOverlay.offsetHeight || 200;
+      var ovTop = vv.offsetTop + (vv.height / 2) - (ovH / 2);
+      diagOverlay.style.top = Math.round(ovTop) + 'px';
+      diagOverlay.style.transform = 'none';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    diagBtn = document.getElementById('diag-btn');
+    diagOverlay = document.getElementById('diag-overlay');
+    if (!diagBtn || !diagOverlay) return;
+
+    // Prevent the button from stealing focus (which dismisses the VK).
+    // We track touchstart position and only act on touchend if the finger
+    // didn't move (i.e. it was a tap, not a scroll).
+    var diagTouchStartX = 0, diagTouchStartY = 0;
+    diagBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    diagBtn.addEventListener('touchstart', function(e) {
+      diagTouchStartX = e.touches[0].clientX;
+      diagTouchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    diagBtn.addEventListener('touchend', function(e) {
+      var dx = Math.abs(e.changedTouches[0].clientX - diagTouchStartX);
+      var dy = Math.abs(e.changedTouches[0].clientY - diagTouchStartY);
+      if (dx > 10 || dy > 10) return; // was a scroll, not a tap
+      e.preventDefault();
+      e.stopPropagation();
+      triggerDiag();
+    }, { passive: false });
+    // fallback for mouse-only environments
+    diagBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerDiag();
+    });
+
+    function triggerDiag() {
+      var text = getLines();
+      // Copy to clipboard so user can paste it into chat
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+          showDiagWithMsg(text, '✅ Copied to clipboard!');
+        }).catch(function() {
+          showDiagWithMsg(text, '(clipboard unavailable)');
+        });
+      } else {
+        showDiagWithMsg(text, '(clipboard API not available)');
+      }
+    }
+
+    function showDiagWithMsg(text, msg) {
+      diagOverlay.textContent = msg + '\n\n' + text;
+      diagOverlay.style.display = 'block';
+      diagVisible = true;
+      pinDiagBtn();
+    }
+    diagOverlay.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    diagOverlay.addEventListener('touchend', function(e) { e.preventDefault(); hideDiag(); }, { passive: false });
+    diagOverlay.addEventListener('click', function(e) { e.preventDefault(); hideDiag(); });
+
+    // Keep button pinned to visual viewport center as keyboard opens/closes
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', pinDiagBtn);
+      window.visualViewport.addEventListener('scroll', pinDiagBtn);
+    }
+    pinDiagBtn();
+  });
+})();
 </script>
+<!-- ===== DIAGNOSTIC OVERLAY (temporary — remove before release) ===== -->
+<div id="diag-overlay" style="
+  display:none;
+  position:fixed;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  z-index:99999;
+  background:#1a1a2e;
+  color:#e0e0ff;
+  font-family:monospace;
+  font-size:13px;
+  line-height:1.6;
+  padding:20px 24px;
+  border-radius:12px;
+  border:2px solid #7070ff;
+  width:92vw;
+  max-width:420px;
+  max-height:55vh;
+  overflow-y:auto;
+  box-shadow:0 8px 40px rgba(0,0,0,0.7);
+  white-space:pre-wrap;
+  word-break:break-all;
+  box-sizing:border-box;
+">
+</div>
+<button id="diag-btn" style="
+  position:fixed;
+  top:50%;
+  right:12px;
+  transform:translateY(-50%);
+  z-index:99998;
+  background:#7070ff;
+  color:#fff;
+  border:none;
+  border-radius:8px;
+  padding:10px 14px;
+  font-size:14px;
+  font-weight:700;
+  cursor:pointer;
+  box-shadow:0 2px 12px rgba(0,0,0,0.4);
+">🔍 Diag</button>
 </body>
 </html>
