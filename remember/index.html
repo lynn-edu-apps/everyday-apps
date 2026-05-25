@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.246 -->
+<!-- Remember App - Version 0.247 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -96,10 +96,7 @@ body.ui-small {
 
 html {
   font-size: var(--font-size-base);
-  /* --viewport-height is set by JS via visualViewport API so the layout
-     always fills exactly the visible area even when the iOS virtual keyboard
-     is open. Falls back to 100% on first paint before JS runs. */
-  height: var(--viewport-height, 100%);
+  height: 100%;
   overflow: hidden;
 }
 
@@ -107,7 +104,7 @@ body {
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--fg);
-  height: var(--viewport-height, 100%);
+  height: 100%;
   overflow: hidden;
   transition: background 0.3s, color 0.3s;
   -webkit-text-size-adjust: 100%;
@@ -128,6 +125,9 @@ body.in-iframe #home-screen {
 }
 
 #note-screen {
+  /* --viewport-height is set by JS via visualViewport.resize (not scroll)
+     so it tracks the keyboard opening/closing without triggering iOS
+     scroll-to-keep-cursor feedback loops. */
   height: var(--viewport-height, 100%);
   overflow: hidden;
 }
@@ -289,11 +289,12 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  position: sticky;
-  top: 0;
+  /* No position:sticky — header is a plain flex-shrink:0 child of #note-screen
+     (overflow:hidden). Sticky inside a flex container with overflow:hidden causes
+     unpredictable scroll behaviour on iOS Safari. */
+  flex-shrink: 0;
   z-index: 10;
   box-shadow: var(--shadow);
-  flex-shrink: 0;
 }
 
 .note-header-row {
@@ -2230,7 +2231,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.246';
+const APP_VERSION = '0.247';
 
 // ===== VIEWPORT HEIGHT — visualViewport API =====
 // On iOS Safari (and iOS webviews like Claude.ai), the virtual keyboard does
@@ -2249,12 +2250,14 @@ const APP_VERSION = '0.246';
   applyViewportHeight();
 
   if (window.visualViewport) {
-    // visualViewport fires 'resize' whenever the keyboard opens, closes, or
-    // changes size (e.g. QuickType bar toggled, orientation change).
+    // Only listen to 'resize' — this fires when the keyboard opens/closes
+    // or changes size (orientation change, QuickType bar toggle).
+    // We deliberately do NOT listen to 'scroll': iOS fires visualViewport
+    // scroll events when it pans the visual viewport to keep the cursor
+    // visible. If we update --viewport-height in response, we cause a layout
+    // reflow which triggers another pan, creating a feedback loop that makes
+    // the toolbar jump around.
     window.visualViewport.addEventListener('resize', applyViewportHeight);
-    // 'scroll' fires when the viewport is panned (iOS sometimes pans the
-    // visual viewport independently of the layout viewport).
-    window.visualViewport.addEventListener('scroll', applyViewportHeight);
   } else {
     // Fallback for browsers without visualViewport (very old)
     window.addEventListener('resize', applyViewportHeight);
