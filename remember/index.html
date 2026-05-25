@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.266 -->
+<!-- Remember App - Version 0.267 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -2260,7 +2260,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.266';
+const APP_VERSION = '0.267';
 
 
 
@@ -3038,31 +3038,41 @@ function resizeEditor() {
   var newHeight = ed.offsetHeight;
   var delta = newHeight - oldHeight;
 
+  if (!area) return;
 
-  if (!area || delta === 0) return;
-
-  // If the textarea grew or shrank, decide whether to scroll:
-  // Only scroll if the cursor is near the bottom edge of the visible area
-  // (within one line-height), meaning a new line just appeared that needs
-  // to come into view. Otherwise restore the saved scroll position so the
-  // view stays rock-steady while typing in the middle of the note.
-  var lineH = parseFloat(getComputedStyle(ed).lineHeight) || 24;
-  var areaVisible = area.clientHeight;  // visible height of scroll container
-  var cursorY = getCursorY(ed);         // cursor Y relative to note-content-area top
-
-  var cursorBelowFold = cursorY > (savedScrollTop + areaVisible - lineH * 1.5);
-  var cursorAboveFold = cursorY < (savedScrollTop + lineH * 0.5);
-
-  if (delta > 0 && cursorBelowFold) {
-    // New content appeared and cursor is near/below the bottom — scroll it in
-    area.scrollTop = savedScrollTop + delta;
-  } else if (delta < 0 && cursorAboveFold) {
-    // Content shrank and cursor is near/above the top — scroll it in
-    area.scrollTop = Math.max(0, savedScrollTop + delta);
+  // Decide the target scrollTop based on cursor position.
+  var targetScrollTop;
+  if (delta === 0) {
+    // No height change — keep scroll exactly where it was.
+    targetScrollTop = savedScrollTop;
   } else {
-    // Cursor is comfortably in the middle — restore saved position exactly
-    area.scrollTop = savedScrollTop;
+    var lineH = parseFloat(getComputedStyle(ed).lineHeight) || 24;
+    var areaVisible = area.clientHeight;
+    var cursorY = getCursorY(ed);
+    var cursorBelowFold = cursorY > (savedScrollTop + areaVisible - lineH * 1.5);
+    var cursorAboveFold = cursorY < (savedScrollTop + lineH * 0.5);
+
+    if (delta > 0 && cursorBelowFold) {
+      targetScrollTop = savedScrollTop + delta;
+    } else if (delta < 0 && cursorAboveFold) {
+      targetScrollTop = Math.max(0, savedScrollTop + delta);
+    } else {
+      targetScrollTop = savedScrollTop;
+    }
   }
+
+  // Apply synchronously first.
+  area.scrollTop = targetScrollTop;
+
+  // The browser may fire a deferred scroll-to-cursor after our synchronous
+  // set, overriding it. We use requestAnimationFrame to re-apply our target
+  // after that deferred task, locking the scroll position.
+  // This is the main fix for the "first keystroke jumps" bug on iOS/Android.
+  requestAnimationFrame(function() {
+    if (area.scrollTop !== targetScrollTop) {
+      area.scrollTop = targetScrollTop;
+    }
+  });
 }
 
 // Scrolls note-content-area so the cursor line is visible within the
