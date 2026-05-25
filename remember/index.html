@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.247 -->
+<!-- Remember App - Version 0.248 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -2231,7 +2231,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.247';
+const APP_VERSION = '0.248';
 
 // ===== VIEWPORT HEIGHT — visualViewport API =====
 // On iOS Safari (and iOS webviews like Claude.ai), the virtual keyboard does
@@ -2242,24 +2242,36 @@ const APP_VERSION = '0.247';
   var root = document.documentElement;
 
   function applyViewportHeight() {
-    var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    var vv = window.visualViewport;
+    var h = vv ? vv.height : window.innerHeight;
     root.style.setProperty('--viewport-height', h + 'px');
+  }
+
+  function counteractPan() {
+    // iOS Safari pans the visual viewport (scrolls the layout) to keep the
+    // cursor visible when the keyboard opens. This moves the entire page up,
+    // detaching the toolbar from the bottom visually.
+    // We counteract by scrolling window back to 0,0 whenever we detect a pan
+    // (visualViewport.offsetTop > 0). We do this on both resize and scroll
+    // events, but guard against feedback loops with a flag.
+    var vv = window.visualViewport;
+    if (!vv) return;
+    applyViewportHeight();
+    if (vv.offsetTop > 0 || vv.pageTop > 0) {
+      window.scrollTo(0, 0);
+    }
   }
 
   // Run immediately (before first paint if possible)
   applyViewportHeight();
 
   if (window.visualViewport) {
-    // Only listen to 'resize' — this fires when the keyboard opens/closes
-    // or changes size (orientation change, QuickType bar toggle).
-    // We deliberately do NOT listen to 'scroll': iOS fires visualViewport
-    // scroll events when it pans the visual viewport to keep the cursor
-    // visible. If we update --viewport-height in response, we cause a layout
-    // reflow which triggers another pan, creating a feedback loop that makes
-    // the toolbar jump around.
-    window.visualViewport.addEventListener('resize', applyViewportHeight);
+    // Listen to both resize (keyboard open/close) and scroll (iOS pan).
+    // counteractPan handles both — it updates the height AND scrolls back
+    // to 0,0 if iOS has panned the page.
+    window.visualViewport.addEventListener('resize', counteractPan);
+    window.visualViewport.addEventListener('scroll', counteractPan);
   } else {
-    // Fallback for browsers without visualViewport (very old)
     window.addEventListener('resize', applyViewportHeight);
   }
 })();
