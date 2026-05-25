@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.249 -->
+<!-- Remember App - Version 0.266 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -125,10 +125,7 @@ body.in-iframe #home-screen {
 }
 
 #note-screen {
-  /* --viewport-height is set by JS via visualViewport.resize (not scroll)
-     so it tracks the keyboard opening/closing without triggering iOS
-     scroll-to-keep-cursor feedback loops. */
-  height: var(--viewport-height, 100%);
+  height: 100%;
   overflow: hidden;
 }
 
@@ -289,11 +286,14 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  /* No position:sticky — header is a plain flex-shrink:0 child of #note-screen
-     (overflow:hidden). Sticky inside a flex container with overflow:hidden causes
-     unpredictable scroll behaviour on iOS Safari. */
-  flex-shrink: 0;
-  z-index: 10;
+  /* position:fixed keeps the header pinned to the top of the screen even
+     when iOS Safari scrolls the page to bring the cursor into view.
+     top/left/right/width are set; actual top value is always 0. */
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
   box-shadow: var(--shadow);
 }
 
@@ -382,13 +382,15 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   gap: 0;
   padding: 0;
   background: var(--bg2);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
-  flex-shrink: 0;
-  /* No position:sticky — toolbar is a plain flex child at the bottom of
-     #note-screen. This prevents the double-scroll-context bug on iOS Safari
-     where sticky inside a flex column creates a second scrollable layer. */
-  z-index: 20;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  /* position:fixed keeps toolbar pinned below the header regardless of iOS
+     scroll-to-cursor behavior. top is set dynamically by pinToolbars() in JS. */
+  position: fixed;
+  top: 0; /* overridden by pinToolbars() immediately on load */
+  left: 0;
+  right: 0;
+  z-index: 29;
   overflow: hidden;
 }
 
@@ -414,8 +416,8 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  min-width: 28px;
+  width: calc(var(--icon-size) + 8px);
+  min-width: calc(var(--icon-size) + 8px);
   height: 100%;
   min-height: 44px;
   background: var(--bg2);
@@ -670,14 +672,16 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 
 /* Note content */
 .note-content-area {
-  flex: 1;
-  padding: 12px 16px 16px 22px;
+  /* padding-top is set dynamically by pinToolbars() to equal combined toolbar heights */
+  padding: 0 16px 16px 22px;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  min-height: 0;
+  /* Fill the full screen height — the fixed toolbars sit on top via padding-top */
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 #note-editor {
@@ -1495,39 +1499,26 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </button>
         <button class="icon-btn" id="scroll-top-btn" aria-label="Scroll to top" title="Scroll to top">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="4" x2="19" y2="4"/>
             <polyline points="18 15 12 9 6 15"/>
           </svg>
         </button>
         <button class="icon-btn" id="scroll-bottom-btn" aria-label="Scroll to bottom" title="Scroll to bottom">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9"/>
+            <line x1="5" y1="20" x2="19" y2="20"/>
           </svg>
         </button>
       </div>
     </div>
   </header>
 
-  <div class="note-content-area" id="note-content-area">
-    <div class="note-inline-title-row">
-      <div id="note-title" class="note-inline-title" contenteditable="false" role="button" aria-label="Rename note" data-placeholder="Title…" style="cursor:pointer"></div>
-      <button class="icon-btn title-pencil-btn" id="rename-btn" aria-label="Rename note" title="Rename note">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-        </svg>
-      </button>
-    </div>
-    <textarea id="note-editor" placeholder="Start writing your note here…" spellcheck="true" autocomplete="off"></textarea>
-    <div id="note-viewer" class="note-viewer" style="display:none"></div>
-    <div class="oops-bar">
-      <button class="oops-btn" id="oops-btn" title="Restore note to how it was when you opened it">⟲ Oops! Restore note</button>
-    </div>
-  </div>
-
+  <!-- Second toolbar — always at top, below note header -->
   <!-- Floating bottom toolbar — stays above keyboard on mobile -->
   <div class="note-bottom-bar" id="note-bottom-bar">
     <!-- Scroll-left arrow (shown only when content is scrolled right) -->
     <button class="toolbar-scroll-arrow" id="toolbar-scroll-left" aria-label="Scroll toolbar left" style="display:none">
-      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><polygon points="16,4 8,12 16,20"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)"><polygon points="16,4 8,12 16,20"/></svg>
     </button>
     <div class="toolbar-scroll-fade-left" id="toolbar-fade-left" style="display:none"></div>
 
@@ -1627,13 +1618,51 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </svg>
       </button>
+      <!-- ~~~ DUMMY BUTTONS for scroll testing — remove before release ~~~ -->
+      <button class="icon-btn" tabindex="-1" title="Dummy 1" style="opacity:0.4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </button>
+      <button class="icon-btn" tabindex="-1" title="Dummy 2" style="opacity:0.4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </button>
+      <button class="icon-btn" tabindex="-1" title="Dummy 3" style="opacity:0.4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+      </button>
+      <button class="icon-btn" tabindex="-1" title="Dummy 4" style="opacity:0.4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      </button>
+      <button class="icon-btn" tabindex="-1" title="Dummy 5" style="opacity:0.4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      </button>
+      <button class="icon-btn" tabindex="-1" title="Dummy 6" style="opacity:0.4">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+      </button>
+      <!-- ~~~ end dummy buttons ~~~ -->
     </div><!-- end .toolbar-scroll -->
 
     <div class="toolbar-scroll-fade-right" id="toolbar-fade-right" style="display:none"></div>
     <!-- Scroll-right arrow (shown only when there is more content to the right) -->
     <button class="toolbar-scroll-arrow" id="toolbar-scroll-right" aria-label="Scroll toolbar right">
-      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><polygon points="8,4 16,12 8,20"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)"><polygon points="8,4 16,12 8,20"/></svg>
     </button>
+  </div>
+
+  <div class="note-content-area" id="note-content-area">
+    <div class="note-inline-title-row">
+      <div id="note-title" class="note-inline-title" contenteditable="false" role="button" aria-label="Rename note" data-placeholder="Title…" style="cursor:pointer"></div>
+      <button class="icon-btn title-pencil-btn" id="rename-btn" aria-label="Rename note" title="Rename note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </button>
+    </div>
+    <textarea id="note-editor" placeholder="Start writing your note here…" spellcheck="true" autocomplete="off"></textarea>
+    <div id="note-viewer" class="note-viewer" style="display:none"></div>
+    <div class="oops-bar">
+      <button class="oops-btn" id="oops-btn" title="Restore note to how it was when you opened it">⟲ Oops! Restore note</button>
+    </div>
+  </div>
+
   </div>
 </div>
 
@@ -2231,50 +2260,63 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.249';
+const APP_VERSION = '0.266';
 
-// ===== VIEWPORT HEIGHT — visualViewport API =====
-// On iOS Safari (and iOS webviews like Claude.ai), the virtual keyboard does
-// not reliably shrink dvh or 100%. We use visualViewport.height, which always
-// reflects the actual visible area, and write it into --viewport-height so
-// the CSS layout (html, body, #note-screen) resizes correctly in real time.
-(function() {
-  var root = document.documentElement;
 
-  function applyViewportHeight() {
-    var vv = window.visualViewport;
-    var h = vv ? vv.height : window.innerHeight;
-    root.style.setProperty('--viewport-height', h + 'px');
+
+// ===== VIEWPORT HEIGHT =====
+// Toolbars are now always at the top of the note screen, so the keyboard
+// cannot cover them. No viewport height manipulation is needed.
+
+// ===== PIN TOOLBARS =====
+// Both toolbars are position:fixed. pinToolbars() compensates for iOS
+// visual viewport panning by reading visualViewport.offsetTop.
+//
+// In most browsers (Chrome, Safari deployed, Brave) the viewport shrinks
+// when the keyboard opens so offsetTop stays 0 and no compensation needed.
+//
+// In iOS webviews (Claude app, Claude.ai iframe) the viewport doesn't shrink
+// but iOS pans the page upward, making offsetTop > 0. We shift the fixed
+// toolbars down by that same amount so they stay in the visible area.
+//
+// We detect "iOS webview that doesn't shrink" by checking if:
+//   - we're on iOS (navigator.platform or UA contains iPhone/iPad/iPod)
+//   - AND visualViewport.height equals window.innerHeight even when keyboard
+//     is open (i.e. viewport hasn't shrunk)
+// In practice we just use offsetTop directly — if it's 0 the shift is 0,
+// so it's safe to apply on all platforms without detection.
+var _pinnedHeaderH  = 0;
+var _pinnedToolbarH = 0;
+
+function pinToolbars() {
+  var header  = document.getElementById('note-top-bar');
+  var toolbar = document.getElementById('note-bottom-bar');
+  var area    = document.getElementById('note-content-area');
+  if (!header || !toolbar || !area) return;
+
+  var vv = window.visualViewport;
+  var offsetTop = vv ? vv.offsetTop : 0;
+  _pinnedHeaderH  = header.offsetHeight;
+  _pinnedToolbarH = toolbar.offsetHeight;
+
+  // TEMP diagnostic — only logs when keyboard is open to reduce noise
+  var ns = document.getElementById('note-screen');
+  var kbOpen = ns && ns.classList.contains('keyboard-open');
+  if (kbOpen) {
+    console.log('[pinToolbars] offsetTop=' + offsetTop +
+      ' scrollY=' + Math.round(window.scrollY) +
+      ' docScrollTop=' + Math.round(document.documentElement.scrollTop) +
+      ' bodyScrollTop=' + Math.round(document.body.scrollTop) +
+      ' headerH=' + _pinnedHeaderH + ' toolbarH=' + _pinnedToolbarH +
+      ' vv.height=' + (vv ? Math.round(vv.height) : 'n/a') +
+      ' vv.pageTop=' + (vv ? Math.round(vv.pageTop) : 'n/a') +
+      ' innerH=' + window.innerHeight);
   }
 
-  function counteractPan() {
-    // iOS Safari pans the visual viewport (scrolls the layout) to keep the
-    // cursor visible when the keyboard opens. This moves the entire page up,
-    // detaching the toolbar from the bottom visually.
-    // We counteract by scrolling window back to 0,0 whenever we detect a pan
-    // (visualViewport.offsetTop > 0). We do this on both resize and scroll
-    // events, but guard against feedback loops with a flag.
-    var vv = window.visualViewport;
-    if (!vv) return;
-    applyViewportHeight();
-    if (vv.offsetTop > 0 || vv.pageTop > 0) {
-      window.scrollTo(0, 0);
-    }
-  }
-
-  // Run immediately (before first paint if possible)
-  applyViewportHeight();
-
-  if (window.visualViewport) {
-    // Listen to both resize (keyboard open/close) and scroll (iOS pan).
-    // counteractPan handles both — it updates the height AND scrolls back
-    // to 0,0 if iOS has panned the page.
-    window.visualViewport.addEventListener('resize', counteractPan);
-    window.visualViewport.addEventListener('scroll', counteractPan);
-  } else {
-    window.addEventListener('resize', applyViewportHeight);
-  }
-})();
+  header.style.top  = offsetTop + 'px';
+  toolbar.style.top = (offsetTop + _pinnedHeaderH) + 'px';
+  area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + 12) + 'px';
+}
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -2646,6 +2688,8 @@ function applySettings() {
   if (document.getElementById('settings-overlay').classList.contains('open')) {
     updateSaveBtnState();
   }
+  // Re-pin toolbars since font/size changes affect header and toolbar heights
+  pinToolbars();
 }
 
 // ===== SCREENS =====
@@ -2820,6 +2864,9 @@ function openNote(id, speakDelay) {
   openSnapshot = { name: n.name, content: n.content || '' };
 
   showScreen('note-screen');
+  // Re-pin toolbars now that note-screen is visible and has layout dimensions.
+  // On Android the second toolbar may be hidden until this runs post-display.
+  setTimeout(pinToolbars, 0);
   document.getElementById('note-screen').dataset.askedPaste = '0';
   document.getElementById('note-screen').dataset.freshlyOpened = '1';
   // Apply oops button visibility setting
@@ -2990,6 +3037,7 @@ function resizeEditor() {
 
   var newHeight = ed.offsetHeight;
   var delta = newHeight - oldHeight;
+
 
   if (!area || delta === 0) return;
 
@@ -3728,7 +3776,6 @@ function init() {
   var inIframe = window.self !== window.top;
   if (inIframe) {
     document.body.classList.add('in-iframe');
-    showToast('Running in iframe — tap to dismiss', true);
   }
   loadState();
   applySettings();
@@ -4024,16 +4071,26 @@ function init() {
       fadeR.style.display = atEnd   ? 'none' : '';
     }
     // Amount to scroll per arrow tap — roughly 3 button widths
-    var SCROLL_AMT = 120;
+    var SCROLL_AMT = 80;
     btnL.addEventListener('click', function() {
-      scroll.scrollBy({ left: -SCROLL_AMT, behavior: 'smooth' });
+      // Clamp to 0 so we never overshoot into blank space on the left
+      var target = Math.max(0, scroll.scrollLeft - SCROLL_AMT);
+      scroll.scrollTo({ left: target, behavior: 'smooth' });
     });
     btnR.addEventListener('click', function() {
-      scroll.scrollBy({ left: SCROLL_AMT, behavior: 'smooth' });
+      // Clamp to max so we never overshoot past the last button
+      var maxScroll = scroll.scrollWidth - scroll.clientWidth;
+      var target = Math.min(maxScroll, scroll.scrollLeft + SCROLL_AMT);
+      scroll.scrollTo({ left: target, behavior: 'smooth' });
     });
     scroll.addEventListener('scroll', updateArrows, { passive: true });
-    // Re-check after layout changes (show/hide buttons, resize)
-    var arrowObserver = new ResizeObserver(updateArrows);
+    // Re-check after layout changes (show/hide buttons, resize).
+    // Debounced via requestAnimationFrame to avoid ResizeObserver loop warnings
+    // (synchronous ResizeObserver callbacks that cause further layout changes
+    // trigger "ResizeObserver loop completed with undelivered notifications").
+    var arrowObserver = new ResizeObserver(function() {
+      requestAnimationFrame(updateArrows);
+    });
     arrowObserver.observe(scroll);
     updateArrows();
     // Export so other code can trigger a recheck after show/hiding toolbar buttons
@@ -4097,11 +4154,13 @@ function init() {
 
     noteScreen.classList.add('keyboard-open');
     updateDictateVisibility();
-    // After keyboard opens and layout settles, scroll the cursor into view
-    // within note-content-area (the browser may have left it below the fold).
-    setTimeout(function() {
-      scrollCursorIntoView();
-    }, 450);  // 450ms: enough for keyboard animation + counteractPan to settle
+    // Re-pin toolbars immediately and again after keyboard animation settles.
+    // On iOS webviews (Claude app) visualViewport events may not fire reliably,
+    // so we explicitly call pinToolbars after keyboard-open is set.
+    pinToolbars();
+    setTimeout(pinToolbars, 100);
+    setTimeout(pinToolbars, 350);
+    setTimeout(pinToolbars, 600);
     var alreadyAskedPaste = noteScreen.dataset.askedPaste === '1';
     var isFresh = noteScreen.dataset.freshlyOpened === '1';
     noteScreen.dataset.freshlyOpened = '0'; // clear immediately — only first focus counts
@@ -4139,6 +4198,10 @@ function init() {
         isAllSelected = false;
         document.getElementById('select-all-btn').style.color = '';
         updateDictateVisibility();
+        // Re-pin toolbars now that keyboard is dismissed — offsetTop should
+        // be 0 again, so toolbars return to their normal top position.
+        pinToolbars();
+        setTimeout(pinToolbars, 150);
       }
     }, 300);
   });
@@ -5258,7 +5321,35 @@ function handleUrlAction() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+// Re-pin toolbars on resize, orientation change, and iOS viewport pan
+window.addEventListener('resize', pinToolbars);
+window.addEventListener('orientationchange', function() {
+  setTimeout(pinToolbars, 100);
+});
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', pinToolbars);
+  // 'scroll' fires when iOS pans the visual viewport to keep the cursor
+  // visible. We shift the fixed toolbars by the same offsetTop amount
+  // so they follow the pan and stay visible.
+  window.visualViewport.addEventListener('scroll', pinToolbars);
+}
+
+// Suppress generic cross-origin "Script error." messages that appear in the
+// console from service workers or third-party scripts loaded cross-origin.
+// These are not actionable and clutter the console.
+window.addEventListener('error', function(e) {
+  if (e && e.message === 'Script error.') {
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  init();
+  // Pin toolbars after init so offsetHeight values are available
+  setTimeout(pinToolbars, 0);
+});
 
 // PWA Service Worker + Update Banner
 if ('serviceWorker' in navigator) {
@@ -5326,227 +5417,6 @@ window.addEventListener('beforeunload', function() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 });
 
-// ===== DIAGNOSTIC OVERLAY (temporary — remove before release) =====
-(function() {
-  var diagVisible = false;
-  var diagOverlay = null;
-  var diagBtn = null;
-
-  function getModeLabel() {
-    var noteScreen = document.getElementById('note-screen');
-    var noteEditor = document.getElementById('note-editor');
-    if (!noteScreen || !noteScreen.classList.contains('active')) return 'Not on note screen';
-    if (typeof isViewMode !== 'undefined' && isViewMode) return 'View mode';
-    var kbOpen = noteScreen.classList.contains('keyboard-open');
-    if (!kbOpen) return 'EMNI (edit, no insertion point / no VK)';
-    // keyboard-open is set — but is it VKS or PK?
-    // We heuristically check: if visualViewport height < window.innerHeight by > 100px
-    // we assume a virtual keyboard is showing.
-    var vvh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    var diff = window.innerHeight - vvh;
-    if (diff > 100) return 'EMTIP-VKS (virtual keyboard showing)';
-    return 'EMTIP-PK (physical keyboard, no VK detected)';
-  }
-
-  function getLines() {
-    var vvh    = window.visualViewport ? window.visualViewport.height    : null;
-    var vvw    = window.visualViewport ? window.visualViewport.width     : null;
-    var vvOfsY = window.visualViewport ? window.visualViewport.offsetTop : null;
-    var vvScY  = window.visualViewport ? window.visualViewport.pageTop   : null;
-    var wih    = window.innerHeight;
-    var wiw    = window.innerWidth;
-    var kbHeight = (vvh !== null) ? Math.max(0, wih - vvh) : 'n/a';
-    var kbMm = (kbHeight !== 'n/a' && window.devicePixelRatio)
-      ? ' (~' + Math.round(kbHeight / window.devicePixelRatio * 0.2646) + 'mm)'
-      : '';
-    var vpCssVar = getComputedStyle(document.documentElement)
-                    .getPropertyValue('--viewport-height').trim() || 'not set';
-    var noteArea = document.getElementById('note-content-area');
-    var noteAreaH = noteArea ? Math.round(noteArea.getBoundingClientRect().height) : 'n/a';
-    var noteBar   = document.getElementById('note-bottom-bar');
-    var noteBarH  = noteBar  ? Math.round(noteBar.getBoundingClientRect().height)  : 'n/a';
-    var noteBarBot = noteBar ? Math.round(noteBar.getBoundingClientRect().bottom)  : 'n/a';
-    var screenH   = window.screen ? window.screen.height : 'n/a';
-    var screenW   = window.screen ? window.screen.width  : 'n/a';
-    var dpr       = window.devicePixelRatio || 'n/a';
-    // Split UA into 40-char chunks so it always fits
-    var ua = navigator.userAgent;
-    var uaLines = [];
-    for (var i = 0; i < ua.length; i += 40) uaLines.push(ua.substring(i, i + 40));
-
-    var lines = [
-      '=== DIAGNOSTIC v' + APP_VERSION + ' ===',
-      '',
-      'MODE:',
-      '  ' + getModeLabel(),
-      '',
-      '--- Viewport ---',
-      'innerHeight:  ' + wih + 'px',
-      'innerWidth:   ' + wiw + 'px',
-      'vv.height:    ' + (vvh !== null ? vvh + 'px' : 'API unavailable'),
-      'vv.width:     ' + (vvw !== null ? vvw + 'px' : 'n/a'),
-      'vv.offsetTop: ' + (vvOfsY !== null ? vvOfsY + 'px' : 'n/a'),
-      'vv.pageTop:   ' + (vvScY  !== null ? vvScY  + 'px' : 'n/a'),
-      '',
-      '--- KB estimate ---',
-      'inner - vv.h: ' + kbHeight + (kbHeight !== 'n/a' ? 'px' + kbMm : ''),
-      '',
-      '--- CSS var ---',
-      '--vp-height:  ' + vpCssVar,
-      '',
-      '--- Layout ---',
-      'content-h:    ' + noteAreaH + 'px',
-      'toolbar-h:    ' + noteBarH  + 'px',
-      'toolbar-bot:  ' + noteBarBot + 'px',
-      '',
-      '--- Screen ---',
-      'screen:       ' + screenW + 'x' + screenH + 'px',
-      'DPR:          ' + dpr,
-      'orientation:  ' + (screen.orientation ? screen.orientation.type : window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'),
-      '',
-      '--- User Agent ---'
-    ];
-    uaLines.forEach(function(l) { lines.push('  ' + l); });
-    lines.push('');
-    lines.push('(Tap to dismiss)');
-    return lines.join('\n');
-  }
-
-  function showDiag() {
-    // kept for reference — triggerDiag() is used instead
-    if (diagOverlay) {
-      diagOverlay.textContent = getLines();
-      diagOverlay.style.display = 'block';
-      diagVisible = true;
-    }
-  }
-
-  function hideDiag() {
-    if (diagOverlay) diagOverlay.style.display = 'none';
-    diagVisible = false;
-  }
-
-  function pinDiagBtn() {
-    // iOS Safari: position:fixed drifts when keyboard opens because the
-    // layout viewport doesn't shrink. We manually pin the button to the
-    // center of the visual viewport using its offsetTop + height/2.
-    if (!diagBtn || !window.visualViewport) return;
-    var vv = window.visualViewport;
-    var btnH = diagBtn.offsetHeight || 44;
-    var top = vv.offsetTop + (vv.height / 2) - (btnH / 2);
-    diagBtn.style.top = Math.round(top) + 'px';
-    diagBtn.style.transform = 'none';
-    if (diagVisible && diagOverlay) {
-      // Also re-center the overlay
-      var ovH = diagOverlay.offsetHeight || 200;
-      var ovTop = vv.offsetTop + (vv.height / 2) - (ovH / 2);
-      diagOverlay.style.top = Math.round(ovTop) + 'px';
-      diagOverlay.style.transform = 'none';
-    }
-  }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    diagBtn = document.getElementById('diag-btn');
-    diagOverlay = document.getElementById('diag-overlay');
-    if (!diagBtn || !diagOverlay) return;
-
-    // Prevent the button from stealing focus (which dismisses the VK).
-    // We track touchstart position and only act on touchend if the finger
-    // didn't move (i.e. it was a tap, not a scroll).
-    var diagTouchStartX = 0, diagTouchStartY = 0;
-    diagBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
-    diagBtn.addEventListener('touchstart', function(e) {
-      diagTouchStartX = e.touches[0].clientX;
-      diagTouchStartY = e.touches[0].clientY;
-    }, { passive: true });
-    diagBtn.addEventListener('touchend', function(e) {
-      var dx = Math.abs(e.changedTouches[0].clientX - diagTouchStartX);
-      var dy = Math.abs(e.changedTouches[0].clientY - diagTouchStartY);
-      if (dx > 10 || dy > 10) return; // was a scroll, not a tap
-      e.preventDefault();
-      e.stopPropagation();
-      triggerDiag();
-    }, { passive: false });
-    // fallback for mouse-only environments
-    diagBtn.addEventListener('click', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      triggerDiag();
-    });
-
-    function triggerDiag() {
-      var text = getLines();
-      // Copy to clipboard so user can paste it into chat
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function() {
-          showDiagWithMsg(text, '✅ Copied to clipboard!');
-        }).catch(function() {
-          showDiagWithMsg(text, '(clipboard unavailable)');
-        });
-      } else {
-        showDiagWithMsg(text, '(clipboard API not available)');
-      }
-    }
-
-    function showDiagWithMsg(text, msg) {
-      diagOverlay.textContent = msg + '\n\n' + text;
-      diagOverlay.style.display = 'block';
-      diagVisible = true;
-      pinDiagBtn();
-    }
-    diagOverlay.addEventListener('mousedown', function(e) { e.preventDefault(); });
-    diagOverlay.addEventListener('touchend', function(e) { e.preventDefault(); hideDiag(); }, { passive: false });
-    diagOverlay.addEventListener('click', function(e) { e.preventDefault(); hideDiag(); });
-
-    // Keep button pinned to visual viewport center as keyboard opens/closes
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', pinDiagBtn);
-      window.visualViewport.addEventListener('scroll', pinDiagBtn);
-    }
-    pinDiagBtn();
-  });
-})();
 </script>
-<!-- ===== DIAGNOSTIC OVERLAY (temporary — remove before release) ===== -->
-<div id="diag-overlay" style="
-  display:none;
-  position:fixed;
-  top:50%;left:50%;
-  transform:translate(-50%,-50%);
-  z-index:99999;
-  background:#1a1a2e;
-  color:#e0e0ff;
-  font-family:monospace;
-  font-size:13px;
-  line-height:1.6;
-  padding:20px 24px;
-  border-radius:12px;
-  border:2px solid #7070ff;
-  width:92vw;
-  max-width:420px;
-  max-height:55vh;
-  overflow-y:auto;
-  box-shadow:0 8px 40px rgba(0,0,0,0.7);
-  white-space:pre-wrap;
-  word-break:break-all;
-  box-sizing:border-box;
-">
-</div>
-<button id="diag-btn" style="
-  position:fixed;
-  top:50%;
-  right:12px;
-  transform:translateY(-50%);
-  z-index:99998;
-  background:#7070ff;
-  color:#fff;
-  border:none;
-  border-radius:8px;
-  padding:10px 14px;
-  font-size:14px;
-  font-weight:700;
-  cursor:pointer;
-  box-shadow:0 2px 12px rgba(0,0,0,0.4);
-">🔍 Diag</button>
 </body>
 </html>
