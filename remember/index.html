@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.248 -->
+<!-- Remember App - Version 0.249 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -2231,7 +2231,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.248';
+const APP_VERSION = '0.249';
 
 // ===== VIEWPORT HEIGHT — visualViewport API =====
 // On iOS Safari (and iOS webviews like Claude.ai), the virtual keyboard does
@@ -2979,9 +2979,121 @@ function saveCurrentNote() {
 function resizeEditor() {
   var ed = document.getElementById('note-editor');
   if (!ed) return;
-  // Grow textarea to fit content — use offsetHeight comparison to avoid shrink reflow
+  var area = document.getElementById('note-content-area');
+
+  // Save scroll position before the height change.
+  var savedScrollTop = area ? area.scrollTop : 0;
+  var oldHeight = ed.offsetHeight;
+
   ed.style.height = '1px';
-  ed.style.height = (ed.scrollHeight) + 'px';
+  ed.style.height = ed.scrollHeight + 'px';
+
+  var newHeight = ed.offsetHeight;
+  var delta = newHeight - oldHeight;
+
+  if (!area || delta === 0) return;
+
+  // If the textarea grew or shrank, decide whether to scroll:
+  // Only scroll if the cursor is near the bottom edge of the visible area
+  // (within one line-height), meaning a new line just appeared that needs
+  // to come into view. Otherwise restore the saved scroll position so the
+  // view stays rock-steady while typing in the middle of the note.
+  var lineH = parseFloat(getComputedStyle(ed).lineHeight) || 24;
+  var areaVisible = area.clientHeight;  // visible height of scroll container
+  var cursorY = getCursorY(ed);         // cursor Y relative to note-content-area top
+
+  var cursorBelowFold = cursorY > (savedScrollTop + areaVisible - lineH * 1.5);
+  var cursorAboveFold = cursorY < (savedScrollTop + lineH * 0.5);
+
+  if (delta > 0 && cursorBelowFold) {
+    // New content appeared and cursor is near/below the bottom — scroll it in
+    area.scrollTop = savedScrollTop + delta;
+  } else if (delta < 0 && cursorAboveFold) {
+    // Content shrank and cursor is near/above the top — scroll it in
+    area.scrollTop = Math.max(0, savedScrollTop + delta);
+  } else {
+    // Cursor is comfortably in the middle — restore saved position exactly
+    area.scrollTop = savedScrollTop;
+  }
+}
+
+// Scrolls note-content-area so the cursor line is visible within the
+// currently visible viewport height (accounts for keyboard being open).
+function scrollCursorIntoView() {
+  var ed = document.getElementById('note-editor');
+  var area = document.getElementById('note-content-area');
+  if (!ed || !area) return;
+
+  var lineH = parseFloat(getComputedStyle(ed).lineHeight) || 24;
+  var cursorY = getCursorY(ed);  // relative to area top, accounting for scrollTop
+  var areaVisible = area.clientHeight;
+  var currentScroll = area.scrollTop;
+
+  var topEdge    = currentScroll + lineH;           // one line from top
+  var bottomEdge = currentScroll + areaVisible - lineH * 2;  // two lines from bottom
+
+  if (cursorY < topEdge) {
+    // Cursor is above the visible area — scroll up to show it
+    area.scrollTop = Math.max(0, cursorY - lineH);
+  } else if (cursorY > bottomEdge) {
+    // Cursor is below the visible area — scroll down to show it
+    area.scrollTop = cursorY - areaVisible + lineH * 2;
+  }
+  // else cursor is already visible — do nothing
+}
+
+// Returns the Y pixel position of the textarea cursor relative to the top
+// of note-content-area (the scroll container), accounting for scrollTop.
+// Uses a hidden mirror div with the same styles as the editor.
+function getCursorY(ed) {
+  // Measures the Y position of the cursor within note-content-area by
+  // briefly creating a mirror div, reading the position, then immediately
+  // removing it so it never lingers in the DOM and can't affect layout,
+  // events, or assistive technology.
+  var area = document.getElementById('note-content-area');
+  if (!area) return 0;
+
+  var cs = getComputedStyle(ed);
+  var mirror = document.createElement('div');
+  mirror.setAttribute('aria-hidden', 'true');
+  mirror.style.cssText = [
+    'position:absolute',
+    'top:-9999px',
+    'left:-9999px',
+    'visibility:hidden',
+    'pointer-events:none',
+    'white-space:pre-wrap',
+    'word-wrap:break-word',
+    'width:' + ed.clientWidth + 'px',
+    'font-family:' + cs.fontFamily,
+    'font-size:' + cs.fontSize,
+    'font-weight:' + cs.fontWeight,
+    'line-height:' + cs.lineHeight,
+    'padding:' + cs.padding,
+    'border:' + cs.border,
+    'box-sizing:' + cs.boxSizing
+  ].join(';');
+
+  // Text up to cursor with a span marker; handle trailing newline edge case
+  var textBefore = ed.value.substring(0, ed.selectionStart);
+  var safeText = textBefore
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // If text ends with newline, the span would land on same line — add zero-width space
+  if (safeText.charAt(safeText.length - 1) === '\n') safeText += '\u200b';
+  var span = document.createElement('span');
+  span.textContent = '\u200b';
+  mirror.innerHTML = safeText;
+  mirror.appendChild(span);
+
+  document.body.appendChild(mirror);
+  var spanRect = span.getBoundingClientRect();
+  var areaRect = area.getBoundingClientRect();
+  var result   = spanRect.top - areaRect.top + area.scrollTop;
+  document.body.removeChild(mirror);  // remove immediately — never leave in DOM
+
+  return result;
 }
 
 function updateSpeakBtnState() {
@@ -3985,6 +4097,11 @@ function init() {
 
     noteScreen.classList.add('keyboard-open');
     updateDictateVisibility();
+    // After keyboard opens and layout settles, scroll the cursor into view
+    // within note-content-area (the browser may have left it below the fold).
+    setTimeout(function() {
+      scrollCursorIntoView();
+    }, 450);  // 450ms: enough for keyboard animation + counteractPan to settle
     var alreadyAskedPaste = noteScreen.dataset.askedPaste === '1';
     var isFresh = noteScreen.dataset.freshlyOpened === '1';
     noteScreen.dataset.freshlyOpened = '0'; // clear immediately — only first focus counts
