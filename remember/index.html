@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.288 -->
+<!-- Remember App - Version 0.289 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -1798,9 +1798,22 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 </div>
 
-<!-- ===== TAP TO SPEAK BANNER ===== -->
-<div id="tap-to-speak-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:900;background:var(--accent);color:#fff;padding:14px 20px;text-align:center;cursor:pointer;font-size:1.1em;font-weight:600;letter-spacing:0.02em;box-shadow:0 2px 12px rgba(0,0,0,0.25)">
-  Tap here to hear this note read aloud
+<!-- ===== TAP TO SPEAK OVERLAY ===== -->
+<div id="tap-to-speak-banner" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,0.82);flex-direction:column;align-items:center;justify-content:center;gap:28px;cursor:pointer;-webkit-tap-highlight-color:transparent">
+  <div style="color:#fff;font-size:1.1em;font-weight:600;text-align:center;padding:0 24px;opacity:0.85">
+    Tap the button below to hear this note
+  </div>
+  <div style="background:var(--accent);color:#fff;font-size:1.6em;font-weight:700;padding:22px 48px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.4);letter-spacing:0.03em;display:flex;align-items:center;gap:14px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:36px;height:36px;flex-shrink:0">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+      <path d="M19.07 4.93a10 10 0 010 14.14"/>
+      <path d="M15.54 8.46a5 5 0 010 7.07"/>
+    </svg>
+    Speak Note
+  </div>
+  <div style="color:#fff;font-size:0.85em;opacity:0.6;text-align:center;padding:0 24px">
+    Tap anywhere to dismiss without speaking
+  </div>
 </div>
 
 <!-- ===== QUICK ADD MODAL ===== -->
@@ -2481,7 +2494,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.288';
+const APP_VERSION = '0.289';
 
 
 
@@ -5235,12 +5248,16 @@ function init() {
   function showTapToSpeakBanner(noteId) {
     var banner = document.getElementById('tap-to-speak-banner');
     if (!banner) return;
-    banner.style.display = 'block';
+    banner.style.display = 'flex';
   }
 
-  document.getElementById('tap-to-speak-banner').addEventListener('click', function() {
+  document.getElementById('tap-to-speak-banner').addEventListener('click', function(e) {
+    // Tap the center button area → speak. Tap anywhere else → dismiss only.
     this.style.display = 'none';
-    speakNote();
+    // Check if tap was on or inside the speak button (second child div)
+    var speakBtn = this.children[1];
+    var wasOnBtn = speakBtn && (e.target === speakBtn || speakBtn.contains(e.target));
+    if (wasOnBtn) speakNote();
   });
 
   // Clear freshlyOpened flag on any note-screen toolbar interaction
@@ -5880,28 +5897,32 @@ function handleUrlAction() {
     if (foundId) {
       openNote(foundId);
       if (action === 'speak') {
-        // Prime audio context and try to auto-speak
-        // Uses two attempts with increasing delays; falls back to tap-to-speak banner
-        var attemptSpeak = function() {
-          if (!notes[foundId] || !notes[foundId].content) return;
-          // Cancel any current speech first — primes the audio context on iOS
-          if (window.speechSynthesis) window.speechSynthesis.cancel();
+        // On iOS, auto-speak is blocked when a page is opened programmatically
+        // (no user gesture). Detect iOS by checking for WebKit + mobile UA.
+        var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) &&
+                    /webkit/i.test(navigator.userAgent);
+        if (isIOS) {
+          // Show the full-screen tap-to-speak overlay immediately —
+          // don't waste time on an auto-speak attempt that will fail
+          setTimeout(function() { showTapToSpeakBanner(foundId); }, 800);
+        } else {
+          // Non-iOS: try auto-speak, fall back to banner if it fails
           setTimeout(function() {
-            // Try speaking via the full speakNote() function
-            try {
-              speakNote();
-              // If speechSynthesis is still not speaking after a short check, show banner
-              setTimeout(function() {
-                if (!isSpeaking) showTapToSpeakBanner(foundId);
-              }, 800);
-            } catch(e) {
-              showTapToSpeakBanner(foundId);
-            }
-          }, 200);
-        };
-        // Wait for note to fully render before attempting
-        setTimeout(attemptSpeak, 1200);
-      }
+            if (!notes[foundId] || !notes[foundId].content) return;
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            setTimeout(function() {
+              try {
+                speakNote();
+                setTimeout(function() {
+                  if (!isSpeaking) showTapToSpeakBanner(foundId);
+                }, 800);
+              } catch(e) {
+                showTapToSpeakBanner(foundId);
+              }
+            }, 200);
+          }, 1200);
+        }
+      }  // end if (action === 'speak')
     } else {
       // Note not found — go to home screen with a message
       renderNotesList();
