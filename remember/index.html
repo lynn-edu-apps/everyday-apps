@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.267 -->
+<!-- Remember App - Version 0.287 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -171,7 +171,12 @@ body.in-iframe #home-screen {
   min-width: 36px;
   min-height: 36px;
 }
-.icon-btn:hover, .icon-btn:focus { background: var(--bg3); color: var(--fg); outline: none; }
+/* focus: remove outline only — no background fill (background sticks on touch) */
+.icon-btn:focus { outline: none; }
+/* hover: only on real pointer devices — touch screens report (hover:none) */
+@media (hover: hover) {
+  .icon-btn:hover { background: var(--bg3); color: var(--fg); }
+}
 .icon-btn svg { width: var(--icon-size); height: var(--icon-size); }
 
 .notes-list {
@@ -337,8 +342,8 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   color: var(--fg3);
 }
 #crossout-mode-btn.active, #bold-mode-btn.active, #color-mode-btn.active {
-  color: var(--fg);
-  background: var(--bg3);
+  color: var(--accent);
+  background: transparent;
 }
 .color-swatch {
   width: 24px; height: 24px;
@@ -491,16 +496,21 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 }
 .btn-danger:hover { filter: brightness(1.1); }
 
-/* Speak button */
-#speak-btn {
-  background: var(--accent);
-  color: white;
+/* Speak / Stop buttons — same width so layout doesn't jump when swapping */
+#speak-btn, #stop-btn {
+  display: inline-flex;
+  justify-content: center;
   padding: 2px 14px;
   font-size: var(--btn-font);
   border-radius: var(--radius-sm);
   align-self: center;
   line-height: 1.4;
   min-height: unset;
+  box-sizing: border-box;
+}
+#speak-btn {
+  background: var(--accent);
+  color: white;
 }
 
 /* Stop speaking button */
@@ -508,12 +518,6 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   display: none;
   background: var(--danger);
   color: white;
-  padding: 2px 14px;
-  font-size: var(--btn-font);
-  border-radius: var(--radius-sm);
-  align-self: center;
-  line-height: 1.4;
-  min-height: unset;
   animation: pulse-danger 1.4s ease-in-out infinite;
 }
 @keyframes pulse-danger {
@@ -523,13 +527,17 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 
 /* Inline note title — lives inside content area, scrolls with content */
 .note-inline-title-row {
-  display: flex;
-  align-items: flex-start;
+  /* inline-flex so the row only takes as much width as the title text,
+     keeping the rename button snug next to the title on all screen sizes */
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
   margin-bottom: 8px;
   border-bottom: 2px solid var(--border);
   padding-bottom: 4px;
   flex-shrink: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .note-inline-title {
@@ -540,9 +548,11 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   background: transparent;
   border: none;
   outline: none;
-  flex: 1;
+  /* No flex:1 — let title size to content so button stays adjacent */
   min-width: 0;
-  overflow-x: auto;
+  max-width: calc(100% - 36px); /* leave room for rename button */
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: text;
   display: block;
@@ -739,7 +749,28 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 .note-item-preview .viewer-checkbox { width: 0.95em; height: 0.95em; pointer-events: none; }
 .note-item-preview a { pointer-events: none; color: inherit; text-decoration: underline; }
 .crossout-mode .viewer-line { cursor: pointer; }
-.crossout-mode .viewer-line:hover { background: rgba(128,128,128,0.1); }
+/* Only show hover tint on real pointer (mouse) devices — touch screens
+   freeze :hover state after tap so it never clears, leaving a stale tint */
+@media (hover: hover) {
+  .crossout-mode .viewer-line:hover { background: rgba(128,128,128,0.1); }
+}
+/* Select mode */
+.select-mode .viewer-line { cursor: pointer; user-select: none; -webkit-user-select: none; }
+@media (hover: hover) {
+  .select-mode .viewer-line:hover { background: rgba(59,130,246,0.10); }
+}
+.viewer-line.block-selected {
+  background: rgba(59,130,246,0.25);
+  border-radius: 3px;
+  outline: 2px solid rgba(59,130,246,0.55);
+  outline-offset: -1px;
+}
+#select-blocks-btn.active {
+  color: #3b82f6;
+  background: transparent;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.5);
+  border-radius: var(--radius-sm);
+}
 
 /* Light mode only: lighter note item background (uses user's bg color setting) */
 body:not(.dark) .note-item {
@@ -759,7 +790,7 @@ body:not(.dark) .note-item:hover {
 #speak-btn.dimmed:hover { background: var(--bg3); }
 #view-mode-btn.active {
   color: var(--accent);
-  background: var(--bg3);
+  background: transparent;
 }
 
 /* Dictate button listening state */
@@ -927,6 +958,102 @@ body:not(.dark) .note-item:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* Help page collapsible sections — same visual pattern as settings */
+.help-collapsible {
+  border-top: 1px solid var(--border);
+}
+.help-collapsible:last-child {
+  border-bottom: 1px solid var(--border);
+}
+.help-collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 20px 11px 20px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  gap: 8px;
+}
+@media (hover: none) {
+  .help-collapsible-header:active { opacity: 0.7; }
+}
+.help-collapsible-title {
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--fg);
+  margin: 0;
+  flex: 1;
+}
+.help-collapsible-chevron {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--fg3);
+  pointer-events: none;
+  transition: transform 0.2s;
+}
+.help-collapsible.open .help-collapsible-chevron {
+  transform: rotate(180deg);
+}
+.help-collapsible-body {
+  display: none;
+  padding: 0 20px 12px 20px;
+}
+.help-collapsible.open .help-collapsible-body {
+  display: block;
+}
+/* Nested sub-sections inside a help collapsible */
+.help-sub {
+  border-top: 1px solid var(--border);
+  margin: 0 -20px;
+  padding: 0 20px;
+}
+.help-sub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0 8px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  gap: 8px;
+}
+@media (hover: none) {
+  .help-sub-header:active { opacity: 0.7; }
+}
+.help-sub-title {
+  font-size: 0.95em;
+  font-weight: 700;
+  color: var(--fg2, var(--fg));
+  margin: 0;
+  flex: 1;
+}
+.help-sub-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--fg3);
+  pointer-events: none;
+  transition: transform 0.2s;
+}
+.help-sub.open .help-sub-chevron { transform: rotate(180deg); }
+.help-sub-body {
+  display: none;
+  padding-bottom: 10px;
+}
+.help-sub.open .help-sub-body { display: block; }
+.help-body code {
+  word-break: break-all;
+  overflow-wrap: break-word;
+  font-size: 0.88em;
+  background: var(--bg3);
+  padding: 1px 4px;
+  border-radius: 3px;
+  display: inline-block;
+  max-width: 100%;
+}
+
 .settings-section-header {
   display: flex;
   align-items: center;
@@ -936,7 +1063,10 @@ body:not(.dark) .note-item:hover {
   user-select: none;
   gap: 8px;
 }
-.settings-section-header:active { opacity: 0.7; }
+/* Only apply active opacity on touch devices — on mouse it never sticks */
+@media (hover: none) {
+  .settings-section-header:active { opacity: 0.7; }
+}
 
 .settings-label {
   font-size: 1.05em;
@@ -953,6 +1083,9 @@ body:not(.dark) .note-item:hover {
   height: 20px;
   flex-shrink: 0;
   color: var(--fg3);
+  /* Prevent SVG from being the e.target — ensures click fires on the header */
+  pointer-events: none;
+  transition: transform 0.2s;
 }
 .settings-section.open .settings-section-chevron {
   transform: rotate(180deg);
@@ -1357,10 +1490,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
 /* Speaking highlight */
 .speak-highlight {
-  background: var(--accent);
-  color: white;
-  border-radius: 3px;
-  padding: 0 1px;
+  /* Applied to a full viewer-line div, not an inline word */
+  background: rgba(var(--accent-rgb, 91,124,110), 0.18);
+  border-radius: 4px;
+  outline: 2px solid rgba(var(--accent-rgb, 91,124,110), 0.45);
+  outline-offset: -1px;
 }
 
 /* ===== UPDATE BANNER ===== */
@@ -1459,7 +1593,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 <!-- ===== NOTE SCREEN ===== -->
 <div id="note-screen" class="screen">
   <header class="note-header" id="note-top-bar">
-    <!-- Row 1: back, delete, speak, stop, copy, select-all -->
+    <!-- Row 1: back | speak, stop, copy, select-all, scroll-top, scroll-bottom, view-mode -->
     <div class="note-header-row">
       <div class="note-header-left">
         <button class="icon-btn" id="back-btn" aria-label="Back to notes" title="Back">
@@ -1469,11 +1603,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </button>
       </div>
       <div class="note-header-right">
-        <button class="icon-btn" id="delete-note-btn" aria-label="Delete note" title="Delete note">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
-          </svg>
-        </button>
         <button class="btn" id="speak-btn" aria-label="Speak note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/>
@@ -1499,14 +1628,20 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </button>
         <button class="icon-btn" id="scroll-top-btn" aria-label="Scroll to top" title="Scroll to top">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="5" y1="4" x2="19" y2="4"/>
-            <polyline points="18 15 12 9 6 15"/>
+            <line x1="5" y1="7" x2="19" y2="7"/>
+            <polyline points="18 17 12 11 6 17"/>
           </svg>
         </button>
         <button class="icon-btn" id="scroll-bottom-btn" aria-label="Scroll to bottom" title="Scroll to bottom">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 12 15 18 9"/>
-            <line x1="5" y1="20" x2="19" y2="20"/>
+            <polyline points="6 7 12 13 18 7"/>
+            <line x1="5" y1="17" x2="19" y2="17"/>
+          </svg>
+        </button>
+        <!-- Edit/View toggle — far right of top toolbar -->
+        <button class="icon-btn kb-hide" id="view-mode-btn" aria-label="Switch to view mode" title="Edit mode on">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
           </svg>
         </button>
       </div>
@@ -1524,14 +1659,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
     <!-- Scrollable inner container -->
     <div class="toolbar-scroll" id="toolbar-scroll">
-      <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
-        </svg>
-      </button>
-      <button class="icon-btn kb-hide" id="export-note-btn" tabindex="-1" aria-label="Export this note to JSON" title="Export note">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      <!-- Select blocks — leftmost so indent/unindent appear just to its right -->
+      <button class="icon-btn kb-hide" id="select-blocks-btn" tabindex="-1" aria-label="Select text blocks" title="Select text blocks">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)">
+          <rect x="3" y="5" width="18" height="3" rx="1"/>
+          <rect x="3" y="11" width="18" height="3" rx="1"/>
+          <rect x="3" y="17" width="11" height="3" rx="1"/>
+          <polyline points="18 16 21 19 18 22" stroke-width="2"/>
         </svg>
       </button>
       <button class="icon-btn" id="dictate-btn" tabindex="-1" aria-label="Dictate text" title="Dictate text" style="display:none">
@@ -1550,7 +1684,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <polyline points="7 19 12 23 17 19" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
-      <!-- Indent button — edit modes -->
+      <!-- Indent button -->
       <button class="icon-btn edit-only-btn" id="indent-btn" tabindex="-1" aria-label="Indent selected lines" title="Indent" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)">
           <line x1="3" y1="6" x2="21" y2="6"/>
@@ -1559,8 +1693,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <polyline points="3,10 7,12 3,14"/>
         </svg>
       </button>
-      <!-- Dedent button — edit modes -->
-      <button class="icon-btn edit-only-btn" id="dedent-btn" tabindex="-1" aria-label="Dedent selected lines" title="Dedent" style="display:none">
+      <!-- Unindent button -->
+      <button class="icon-btn edit-only-btn" id="dedent-btn" tabindex="-1" aria-label="Remove indent from selected lines" title="Unindent" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)">
           <line x1="3" y1="6" x2="21" y2="6"/>
           <line x1="9" y1="12" x2="21" y2="12"/>
@@ -1574,7 +1708,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <text x="1" y="21" font-size="24" font-weight="900" font-family="serif">B</text>
         </svg>
       </button>
-      <!-- Color mode toggle — only shown in view mode -->
+      <!-- Color mode toggle + swatch always adjacent — only shown in view mode -->
       <button class="icon-btn view-only-btn" id="color-mode-btn" aria-label="Toggle color mode" title="Color lines" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/>
@@ -1583,7 +1717,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
         </svg>
       </button>
-      <!-- Single cycling color swatch — shown when color mode active -->
+      <!-- Color swatch immediately after color button so it always stays adjacent -->
       <button id="color-swatch-cycle" style="display:none;width:32px;height:28px;border-radius:4px;border:2px solid var(--fg);cursor:pointer;background:#d94f4f;flex-shrink:0" title="Tap to change color"></button>
       <!-- Strikethrough mode + trash grouped with subtle box when trash visible -->
       <div id="crossout-group" style="display:flex;align-items:center;border-radius:6px;border:1.5px solid transparent;transition:border-color 0.2s">
@@ -1601,43 +1735,35 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           </svg>
         </button>
       </div>
-      <!-- Minus (delete line) + Plus + Pencil grouped at far right -->
+      <!-- Delete line -->
       <button class="icon-btn view-only-btn" id="delete-line-btn" tabindex="-1" aria-label="Delete a line" title="Delete a line" style="display:none;color:var(--fg3)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
           <line x1="4" y1="12" x2="20" y2="12"/>
         </svg>
       </button>
+      <!-- Quick add -->
       <button class="icon-btn" id="quick-add-btn" tabindex="-1" aria-label="Quick add text" title="Quick add text" style="padding:2px 3px;min-width:unset;min-height:unset;margin-right:6px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
           <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
         </svg>
       </button>
-      <!-- Pencil edit toggle — right of plus, no gap -->
-      <button class="icon-btn kb-hide" id="view-mode-btn" tabindex="-1" aria-label="Switch to view mode" title="Edit mode on">
+      <!-- Print + Export — less-used, at far right requiring scroll -->
+      <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
         </svg>
       </button>
-      <!-- ~~~ DUMMY BUTTONS for scroll testing — remove before release ~~~ -->
-      <button class="icon-btn" tabindex="-1" title="Dummy 1" style="opacity:0.4">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <button class="icon-btn kb-hide" id="export-note-btn" tabindex="-1" aria-label="Export this note to JSON" title="Export note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
       </button>
-      <button class="icon-btn" tabindex="-1" title="Dummy 2" style="opacity:0.4">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      <!-- Delete note — far right, requires scroll to reach -->
+      <button class="icon-btn" id="delete-note-btn" tabindex="-1" aria-label="Delete note" title="Delete note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+        </svg>
       </button>
-      <button class="icon-btn" tabindex="-1" title="Dummy 3" style="opacity:0.4">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-      </button>
-      <button class="icon-btn" tabindex="-1" title="Dummy 4" style="opacity:0.4">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-      </button>
-      <button class="icon-btn" tabindex="-1" title="Dummy 5" style="opacity:0.4">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-      </button>
-      <button class="icon-btn" tabindex="-1" title="Dummy 6" style="opacity:0.4">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
-      </button>
-      <!-- ~~~ end dummy buttons ~~~ -->
     </div><!-- end .toolbar-scroll -->
 
     <div class="toolbar-scroll-fade-right" id="toolbar-fade-right" style="display:none"></div>
@@ -1651,8 +1777,14 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="note-inline-title-row">
       <div id="note-title" class="note-inline-title" contenteditable="false" role="button" aria-label="Rename note" data-placeholder="Title…" style="cursor:pointer"></div>
       <button class="icon-btn title-pencil-btn" id="rename-btn" aria-label="Rename note" title="Rename note">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)">
+          <!-- Title line at top -->
+          <line x1="3" y1="4" x2="21" y2="4"/>
+          <!-- Exact same Lucide pencil as view-mode-btn, scaled down and shifted down -->
+          <g transform="translate(1, 5) scale(0.78)">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </g>
         </svg>
       </button>
     </div>
@@ -1987,8 +2119,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-row">
         <div>
-          <div class="settings-row-label">Spaces per indent / dedent</div>
-          <div class="settings-row-desc">Number of spaces added or removed when you press Tab / Shift+Tab, or tap the Indent / Dedent buttons.</div>
+          <div class="settings-row-label">Spaces per indent / unindent</div>
+          <div class="settings-row-desc">Number of spaces added or removed when you press Tab / Shift+Tab, or tap the Indent / Unindent buttons.</div>
         </div>
         <input type="number" id="indent-spaces-input" min="1" max="16" step="1"
           style="width:70px;font-size:1em;padding:6px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg);text-align:center">
@@ -2024,6 +2156,26 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </div>
         <label class="toggle-switch" aria-label="Speak note automatically when opened">
           <input type="checkbox" id="auto-speak-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row range-row">
+        <div>
+          <div class="settings-row-label">Pause between lines</div>
+          <div class="settings-row-desc">Extra pause between spoken lines (0 = no pause)</div>
+        </div>
+        <input type="range" class="settings-range" id="speech-pause-range" min="0" max="2000" step="200" value="400">
+        <span class="range-val" id="speech-pause-val">0.4s</span>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Skip list markers when speaking</div>
+          <div class="settings-row-desc">When on, checkboxes [ ] [x], leading hyphens, and bullet characters are silently skipped. When off, the voice may say "semicolon" or "comma" for these characters.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Skip list markers when speaking">
+          <input type="checkbox" id="speak-checkboxes-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
@@ -2109,133 +2261,175 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
   <div class="help-body">
 
-    <div class="help-section">
+    <!-- Always-visible privacy note -->
+    <div class="help-section" style="padding: 12px 20px 10px;">
       <div class="help-section-title">Your notes are private</div>
       <div class="help-section-body">
-        <p>All your notes are stored only on your device — they are never sent to any server or cloud service. This also means your notes stay with the device and browser you use. Use Export (the ⇄ icon on the main screen) to back up your notes to a file.</p>
+        <p>All your notes are stored only on your device — they are never sent to any server or cloud service. This also means your notes stay with the device and browser you use. Use Export to back up your notes to a file.</p>
       </div>
     </div>
 
-    <div class="help-section">
-      <div class="help-section-title">About the optional setup steps</div>
+    <!-- Always-visible: about plain text and optional formatting -->
+    <div class="help-section" style="padding: 12px 20px 10px;">
+      <div class="help-section-title">About notes and formatting <span style="font-weight:400;font-size:0.85em;color:var(--fg3)">(formatting is optional)</span></div>
       <div class="help-section-body">
-        <p>The Siri Shortcuts, Google Assistant, and home screen (PWA) setup steps described below are all <strong>completely optional</strong>. Remember works perfectly well without any of this — just open the link in your browser and start writing. These features are extras for users who want them.</p>
+        <p>Remember stores your notes as <strong>plain text</strong> — the same simple format used by basic text editors. You can write and read notes in plain text alone, and that works perfectly well.</p>
+        <p>Optionally, you can switch to <strong>View mode</strong> (tap the pencil icon in the top toolbar) to see light formatting applied to your notes: <strong>bold</strong>, <span style="text-decoration:line-through">strikethrough</span>, colors, and checkboxes. In View mode, checkboxes appear as real tappable boxes you can check and uncheck — not just <code>[ ]</code> characters.</p>
+        <p>To add formatting, Remember uses small special characters called <em>Markdown</em> that you type directly into your note. For example, typing <code>**word**</code> makes <strong>word</strong> appear bold in View mode. You never have to use any of this — plain text notes work just as well, and the Speak button reads both kinds naturally.</p>
       </div>
     </div>
 
-    <div class="help-section">
-      <div class="help-section-title">Installing Remember on your Home Screen</div>
-      <div class="help-section-body">
-        <p><strong>On iPhone or iPad (Safari):</strong> Open the Remember web address in Safari, tap the Share button (the box with an arrow pointing up), then tap <strong>Add to Home Screen</strong> and tap <strong>Add</strong>.</p>
-        <p><strong>On Android (Chrome):</strong> Open the Remember web address in Chrome, tap the three-dot menu, then tap <strong>Add to Home Screen</strong>.</p>
+    <!-- ── TIPS FOR GETTING STARTED — open by default ── -->
+    <div class="help-collapsible open" id="help-sec-tips">
+      <div class="help-collapsible-header">
+        <span class="help-collapsible-title">Tips for getting started</span>
+        <svg class="help-collapsible-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="help-collapsible-body">
+
+        <div class="help-sub open" id="help-sub-noteslist">
+          <div class="help-sub-header">
+            <span class="help-sub-title">The notes list</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p>The notes list is the first screen you see when you open Remember. Each note shows its title and a short preview of its content.</p>
+            <p>Tap any note to open it. Tap the <strong>+</strong> button to create a new note.</p>
+            <p>To delete a note, open it and scroll all the way to the right in the lower toolbar — the trash icon is at the far right.</p>
+            <p>Use the Import / Export button on the notes list screen to back up all your notes to a file, or to restore them on a new device.</p>
+          </div>
+        </div>
+
+        <div class="help-sub open" id="help-sub-editor">
+          <div class="help-sub-header">
+            <span class="help-sub-title">The note editor</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p>When you open a note you start in <strong>Edit mode</strong> — you can tap anywhere in the text to position your cursor and start typing.</p>
+            <p>Tap the pencil icon (top right of the top toolbar) to switch to <strong>View mode</strong>, which shows your note with formatting applied — bold, strikethrough, colors, and checkboxes all appear as they should.</p>
+            <p>The <strong>Speak</strong> button reads your note aloud and is available in any mode. It works best in <strong>View mode</strong> — the text is spoken more naturally because formatting markers like bold and color have already been applied and are not read aloud.</p>
+            <p>To rename a note, tap its title at the top of the note.</p>
+            <p>The <strong>+</strong> button in the lower toolbar lets you quickly add text to the end (or beginning) of a note without tapping into the note body.</p>
+          </div>
+        </div>
+
+        <div class="help-sub open" id="help-sub-toolbar">
+          <div class="help-sub-header">
+            <span class="help-sub-title">Scrolling the lower toolbar</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p>The lower toolbar has more buttons than can fit on screen at once. You can <strong>scroll it left and right with your finger</strong> — just swipe horizontally on the toolbar itself.</p>
+            <p>Scroll arrows (◀ and ▶) appear at the edges of the toolbar when there are hidden buttons in that direction. Tap an arrow to scroll one step, or swipe the toolbar directly.</p>
+            <p>Less-used buttons like Print, Export, and Delete note are at the far right — scroll to reach them.</p>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <div class="help-section">
-      <div class="help-section-title">Opening Remember with Siri (iPhone &amp; iPad)</div>
-      <div class="help-section-body">
-        <p>You can open the Remember app using your voice with Siri on iPhone or iPad. You will need to do a one-time setup first — this takes about two minutes.</p>
-
-        <p><strong>Step 1.</strong> Open the <strong>Shortcuts</strong> app on your device. This is an Apple app that comes pre-installed — look for an icon with a colorful square. If you can't find it, ask Siri: "Open Shortcuts".</p>
-
-        <p><strong>Step 2.</strong> Tap the <strong>+</strong> (plus) icon in the top right corner to create a new shortcut.</p>
-
-        <p><strong>Step 3.</strong> You will see a search box that says <em>"Search Actions"</em>. Type <strong>Open URLs</strong> (plural — with an S at the end).</p>
-
-        <p><strong>Step 4.</strong> Tap <strong>Open URLs</strong> in the list that appears below the search box.</p>
-
-        <p><strong>Step 5.</strong> In the URL field that appears, paste or type this address:<br>
-        <strong>https://lynn-edu-apps.github.io/everyday-apps/remember/</strong><br>
-        Then dismiss the keyboard (usually by tapping a checkmark ✓ or tapping anywhere outside the keyboard).</p>
-
-        <p><strong>Step 6.</strong> At the top of the screen you will see the name of the shortcut. Tap on it and rename it to something easy to say, such as <strong>Open Remember</strong>.</p>
-
-        <p><strong>Step 7.</strong> Tap <strong>Done</strong> to save.</p>
-
-        <p>From now on, just say <strong>"Hey Siri, Open Remember"</strong> and Siri will open the app for you.</p>
+    <!-- ── OPTIONAL SETUP STEPS — closed by default ── -->
+    <div class="help-collapsible" id="help-sec-setup">
+      <div class="help-collapsible-header">
+        <span class="help-collapsible-title">Optional setup steps</span>
+        <svg class="help-collapsible-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
-    </div>
+      <div class="help-collapsible-body">
+        <p style="margin-top:4px"><em>Everything in this section is completely optional. Remember works perfectly well without any of it — just open the link in your browser and start writing.</em></p>
 
-    <div class="help-section">
-      <div class="help-section-title">Adding a new note with Siri (iPhone &amp; iPad)</div>
-      <div class="help-section-body">
-        <p>You can create a shortcut that lets you say <strong>"Hey Siri, Add a note to Remember"</strong> and Siri will ask you what to write, then open Remember with your words already in a new note.</p>
+        <div class="help-sub" id="help-sub-homescreen">
+          <div class="help-sub-header">
+            <span class="help-sub-title">Installing on your Home Screen</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p><strong>On iPhone or iPad (Safari):</strong> Open the Remember web address in Safari, tap the Share button (the box with an arrow pointing up), then tap <strong>Add to Home Screen</strong> and tap <strong>Add</strong>.</p>
+            <p><strong>On Android (Chrome):</strong> Open the Remember web address in Chrome, tap the three-dot menu, then tap <strong>Add to Home Screen</strong>.</p>
+          </div>
+        </div>
 
-        <p><strong>Step 1.</strong> Open the <strong>Shortcuts</strong> app and tap <strong>+</strong> to create a new shortcut.</p>
+        <div class="help-sub" id="help-sub-siri-open">
+          <div class="help-sub-header">
+            <span class="help-sub-title">Opening Remember with Siri (iPhone &amp; iPad)</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p>You can open Remember by voice with a one-time setup that takes about two minutes.</p>
+            <p><strong>Step 1.</strong> Open the <strong>Shortcuts</strong> app (comes pre-installed — ask Siri "Open Shortcuts" if you can't find it).</p>
+            <p><strong>Step 2.</strong> Tap <strong>+</strong> to create a new shortcut.</p>
+            <p><strong>Step 3.</strong> Search for and add <strong>Open URLs</strong> (with an S).</p>
+            <p><strong>Step 4.</strong> Paste this address into the URL field:<br>
+            <strong>https://lynn-edu-apps.github.io/everyday-apps/remember/</strong></p>
+            <p><strong>Step 5.</strong> Name the shortcut <strong>Open Remember</strong> and tap <strong>Done</strong>.</p>
+            <p>From now on say <strong>"Hey Siri, Open Remember"</strong>.</p>
+          </div>
+        </div>
 
-        <p><strong>Step 2.</strong> Search for and add <strong>Ask for Input</strong>. Set the prompt to something like <em>"What would you like to note?"</em> and set the input type to <strong>Text</strong>.</p>
+        <div class="help-sub" id="help-sub-siri-add">
+          <div class="help-sub-header">
+            <span class="help-sub-title">Adding a new note with Siri (iPhone &amp; iPad)</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p>This lets you say <strong>"Hey Siri, Add a note to Remember"</strong> and Siri will ask what to write, then open Remember with your words already in a new note.</p>
+            <p><strong>Step 1.</strong> Open <strong>Shortcuts</strong> and tap <strong>+</strong>.</p>
+            <p><strong>Step 2.</strong> Add <strong>Ask for Input</strong>. Set the prompt to <em>"What would you like to note?"</em> and input type to <strong>Text</strong>.</p>
+            <p><strong>Step 3.</strong> Add <strong>URL</strong> (not "Open URLs"). Paste:<br>
+            <code>https://lynn-edu-apps.github.io/everyday-apps/remember/?action=new&amp;content=</code><br>
+            The result of Step 2 connects automatically — you should see a dashed line between steps.</p>
+            <p><strong>Step 4.</strong> Add <strong>Open URLs</strong>. It uses the URL from Step 3 automatically.</p>
+            <p><strong>Step 5.</strong> Name it <strong>Add a note to Remember</strong> and tap <strong>Done</strong>.</p>
+            <p><em>Note: These instructions are for iOS 26 and later. On older iOS, steps may look different and you may need to manually insert a "Provided Input" variable in Step 3.</em></p>
+          </div>
+        </div>
 
-        <p><strong>Step 3.</strong> Tap <strong>+</strong> to add another action. Search for and add <strong>URL</strong> (not "Open URLs"). In the URL field, type:<br>
-        <code>https://lynn-edu-apps.github.io/everyday-apps/remember/?action=new&amp;content=</code><br>
-        The result of Step 2 will be automatically piped into this step — you do not need to add any variable manually. You should see a dashed connecting line between the steps showing they are linked.</p>
+        <div class="help-sub" id="help-sub-google">
+          <div class="help-sub-header">
+            <span class="help-sub-title">Opening with Google Assistant (Android)</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p><strong>Simple (no setup):</strong> Say <strong>"OK Google, open lynn-edu-apps.github.io/everyday-apps/remember"</strong>.</p>
+            <p><strong>Better (one-time setup for a shorter phrase):</strong></p>
+            <p><strong>Step 1.</strong> Open the <strong>Google app</strong> → profile picture → Settings → Google Assistant → Routines → <strong>+</strong>.</p>
+            <p><strong>Step 2.</strong> Under "When I say...", type <strong>Open Remember</strong>.</p>
+            <p><strong>Step 3.</strong> Choose <strong>Open website</strong> and paste the Remember address. Save.</p>
+            <p>From now on say <strong>"OK Google, Open Remember"</strong>.</p>
+          </div>
+        </div>
 
-        <p><strong>Step 4.</strong> Tap <strong>+</strong> again and add <strong>Open URLs</strong>. It will automatically use the URL from Step 3 — no need to fill anything in.</p>
+        <div class="help-sub" id="help-sub-share">
+          <div class="help-sub-header">
+            <span class="help-sub-title">Sharing text into Remember</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p>Remember can receive text shared from other apps (web pages, emails, messages). In any app, tap the Share button and look for <strong>Remember</strong> in the share sheet — it will create a new note with the shared text.</p>
+            <p><em>The share sheet option appears after installing Remember on your home screen.</em></p>
+          </div>
+        </div>
 
-        <p><strong>Step 5.</strong> Name the shortcut <strong>Add a note to Remember</strong> and tap <strong>Done</strong>.</p>
+        <div class="help-sub" id="help-sub-url">
+          <div class="help-sub-header">
+            <span class="help-sub-title">URL actions (for Siri Shortcuts)</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p><strong>Create a new note:</strong><br>
+            <code>…/remember/?action=new</code><br>
+            <code>…/remember/?action=new&amp;content=Your+text+here</code></p>
+            <p><strong>Open a note:</strong><br>
+            <code>…/remember/?action=open&amp;name=Shopping+List</code></p>
+            <p><strong>Open and speak a note:</strong><br>
+            <code>…/remember/?action=speak&amp;name=Shopping+List</code></p>
+            <p><strong>Quick-add text to a note:</strong><br>
+            <code>…/remember/?action=quickadd&amp;content=Your+text+here&amp;name=Shopping+List</code><br>
+            Appends (or prepends, per your Settings) the content to the named note, then opens it. If the name matches multiple notes, the most recently edited one is used. If no match is found, a new note is created with that name.</p>
+          </div>
+        </div>
 
-        <p><em>You may notice Apple automatically adds a step at the top that says something like <strong>"Receive Apps and 18 more from Nowhere"</strong>. This is normal and harmless — you can safely ignore it.</em></p>
-
-        <p><em>Note: These instructions are for iOS 26 and later, which uses a pipeline model where steps are automatically connected by dashed lines. On older versions of iOS, the steps may look different — you may need to manually insert a "Provided Input" variable into the URL field in Step 3.</em></p>
-
-        <p>Now say <strong>"Hey Siri, Add a note to Remember"</strong> — Siri will ask what you want to write, and your words will appear in a new note ready to save.</p>
       </div>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">Opening Remember with Google Assistant (Android)</div>
-      <div class="help-section-body">
-        <p>On Android phones you can open Remember by voice using Google Assistant. There are two ways:</p>
-
-        <p><strong>Simple way (no setup needed):</strong> Just say <strong>"OK Google, open lynn-edu-apps.github.io/everyday-apps/remember"</strong> and Google Assistant will open the app in Chrome.</p>
-
-        <p><strong>Better way (one-time setup for a shorter phrase):</strong></p>
-
-        <p><strong>Step 1.</strong> Open the <strong>Google app</strong> on your phone (the colorful G icon).</p>
-
-        <p><strong>Step 2.</strong> Tap your profile picture in the top right, then tap <strong>Settings</strong>.</p>
-
-        <p><strong>Step 3.</strong> Tap <strong>Google Assistant</strong>, then tap <strong>Routines</strong>.</p>
-
-        <p><strong>Step 4.</strong> Tap the <strong>+</strong> button to add a new routine.</p>
-
-        <p><strong>Step 5.</strong> Under "When I say...", type <strong>Open Remember</strong>.</p>
-
-        <p><strong>Step 6.</strong> Under the action, choose <strong>Open website</strong> and paste:<br>
-        <strong>https://lynn-edu-apps.github.io/everyday-apps/remember/</strong></p>
-
-        <p><strong>Step 7.</strong> Save the routine. From now on say <strong>"OK Google, Open Remember"</strong>.</p>
-      </div>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">Sharing text into Remember (iPhone, iPad &amp; Android)</div>
-      <div class="help-section-body">
-        <p>Remember can receive text shared from other apps — such as a web page, an email, or a message — and automatically create a new note with that content.</p>
-
-        <p><strong>How to use it:</strong> In any app, select some text or tap the Share button, then look for <strong>Remember</strong> in the share sheet. Tapping it will open Remember and create a new note with the shared text.</p>
-
-        <p><em>Note: The share sheet option appears after you have installed Remember on your home screen and may require refreshing the share sheet list in your device settings.</em></p>
-      </div>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">Available URL actions (for Siri Shortcuts)</div>
-      <div class="help-section-body">
-        <p>Remember supports the following URL actions for use in Siri Shortcuts or any automation tool. Replace the base URL with your deployed address.</p>
-
-        <p><strong>Create a new note:</strong><br>
-        <code>…/remember/?action=new</code><br>
-        <code>…/remember/?action=new&amp;content=Your+text+here</code></p>
-
-        <p><strong>Open an existing note:</strong><br>
-        <code>…/remember/?action=open&amp;name=Shopping+List</code><br>
-        Opens the note whose name matches (case-insensitive, partial match allowed). If no name is given, opens the most recently edited note.</p>
-
-        <p><strong>Open a note and speak it aloud:</strong><br>
-        <code>…/remember/?action=speak&amp;name=Shopping+List</code><br>
-        Opens the note and attempts to read it aloud automatically. Note: some browsers require a tap before allowing audio — if speaking doesn't start automatically, tap the Speak button.</p>
-      
-    </div></div>
     </div>
 
   </div>
@@ -2260,7 +2454,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.267';
+const APP_VERSION = '0.287';
 
 
 
@@ -2334,6 +2528,8 @@ const DEFAULT_SETTINGS = {
   accentColor: '#5b7c6e',
   voiceURI: '',
   speechRate: 0.9,
+  speechPause: 400,          // ms pause between spoken lines (0-2000)
+  skipListMarkers: true,     // if true, skip checkboxes, leading hyphens and bullets when speaking
   autoSpeak: false,
   defaultViewMode: false,
   plusPosition: 'top',  // 'top' or 'bottom' — where + button inserts text
@@ -2365,8 +2561,11 @@ var boldMode = false;
 var colorMode = false;
 var activeColor = 'red';
 var deletingLine = false;
+var selectMode = false;      // whether block-select mode is active
+var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
 var updateViewOnlyBtns = function() {}; // replaced in init
 var updateBottomBtnsVisibility = function() {}; // replaced in init
+var updateSelectModeBtn = function() {}; // replaced in init
 let settingsSnapshot = null; // copy of settings when dialog was opened
 
 // ===== STORAGE =====
@@ -2811,6 +3010,7 @@ function setViewMode(on, suppressFocus) {
   if (on) {
     if (saveTimeout) { clearTimeout(saveTimeout); saveCurrentNote(); }
     viewer.innerHTML = urlsToLinks(editor.value, true);
+    renderBlockSelections();
     editor.style.display = 'none';
     viewer.style.display = 'block';
     if (oopsBar) oopsBar.style.display = 'none';
@@ -3021,6 +3221,81 @@ function saveCurrentNote() {
   n.content = document.getElementById('note-editor').value;
   n.editedAt = Date.now();
   saveNotes();
+}
+
+// ===== BLOCK SELECT =====
+
+// Apply/remove block-selected CSS class on viewer lines to match selectedBlocks set.
+function renderBlockSelections() {
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return;
+  viewer.querySelectorAll('.viewer-line').forEach(function(div) {
+    var idx = parseInt(div.dataset.line, 10);
+    div.classList.toggle('block-selected', selectedBlocks.has(idx));
+  });
+}
+
+// Toggle selection of the block at lineIndex.
+function toggleBlockSelection(lineIndex) {
+  if (selectedBlocks.has(lineIndex)) {
+    selectedBlocks.delete(lineIndex);
+  } else {
+    selectedBlocks.add(lineIndex);
+  }
+  renderBlockSelections();
+}
+
+// Clear all selected blocks and update display.
+function clearSelectedBlocks() {
+  selectedBlocks.clear();
+  renderBlockSelections();
+}
+
+// Returns the raw content lines of all selected blocks as an array of {index, text} objects.
+function getSelectedBlockContents() {
+  if (!currentNoteId || !notes[currentNoteId]) return [];
+  var lines = (notes[currentNoteId].content || '').split('\n');
+  var result = [];
+  selectedBlocks.forEach(function(idx) {
+    if (idx >= 0 && idx < lines.length) {
+      result.push({ index: idx, text: lines[idx] });
+    }
+  });
+  result.sort(function(a, b) { return a.index - b.index; });
+  return result;
+}
+
+// Apply indent or dedent to all selected blocks in view mode,
+// save the note, and re-render the viewer.
+function applyIndentToSelectedBlocks(isIndent) {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  var n = notes[currentNoteId];
+  var lines = (n.content || '').split('\n');
+  var spaces = '';
+  var numSpaces = settings.indentSpaces !== undefined ? settings.indentSpaces : 2;
+  for (var i = 0; i < numSpaces; i++) spaces += ' ';
+
+  selectedBlocks.forEach(function(idx) {
+    if (idx < 0 || idx >= lines.length) return;
+    if (isIndent) {
+      lines[idx] = spaces + lines[idx];
+    } else {
+      var removed = 0;
+      while (removed < numSpaces && lines[idx].charAt(removed) === ' ') removed++;
+      lines[idx] = lines[idx].substring(removed);
+    }
+  });
+
+  n.content = lines.join('\n');
+  saveNotes();
+
+  // Re-render viewer and restore selections
+  var viewer = document.getElementById('note-viewer');
+  if (viewer) {
+    viewer.innerHTML = urlsToLinks(n.content, true);
+    renderBlockSelections();
+    renderBlockSelections();
+  }
 }
 
 function resizeEditor() {
@@ -3339,6 +3614,9 @@ function goHome() {
   saveCurrentNote();
   openSnapshot = null;
   currentNoteId = null;
+  // Clear block selections when leaving note
+  selectMode = false;
+  clearSelectedBlocks();
   saveCurrentRef();
   renderNotesList();
   showScreen('home-screen');
@@ -3375,161 +3653,229 @@ function getSpeechVoice() {
   return voices.find(function(v) { return v.lang && v.lang.startsWith('en'); }) || voices[0] || null;
 }
 
-function speakNote() {
-  if (!window.speechSynthesis) { alert('Sorry, text to speech is not available on this device.'); return; }
+// ===== SPEECH HELPERS =====
 
-  var text = '';
-  var speakingSelection = false;
-
-  // Snapshot selection before speaking (speaking can clear it)
-  var savedEditorStart = null, savedEditorEnd = null;
-  var savedWindowRange = null;
-
-  // Check for selected text in textarea (EMNI/EMTIP mode)
-  var ed = document.getElementById('note-editor');
-  if (!isViewMode && ed.selectionStart !== ed.selectionEnd) {
-    text = ed.value.substring(ed.selectionStart, ed.selectionEnd).trim();
-    speakingSelection = true;
-    savedEditorStart = ed.selectionStart;
-    savedEditorEnd = ed.selectionEnd;
+// Strip markdown formatting from a line so TTS doesn't speak raw markers.
+function stripMarkdownForSpeech(line) {
+  // Remove color markers {red}...{/red} etc.
+  line = line.replace(/\{(?:red|orange|green|blue|purple)\}([^{]*)\{\/(?:red|orange|green|blue|purple)\}/g, '$1');
+  // Remove bold **...**
+  line = line.replace(/\*\*([^*]*)\*\*/g, '$1');
+  // Remove strikethrough ~~...~~
+  line = line.replace(/~~([^~]*)~~/g, '$1');
+  // Skip list markers (checkboxes, leading hyphens, bullets) per setting
+  if (settings.skipListMarkers !== false) {
+    // Remove checkbox markers [ ] and [x]
+    line = line.replace(/\[x\]/gi, '');
+    line = line.replace(/\[\s*\]/g, '');
+    // Remove leading hyphens used as list markers (e.g. "- item" or "  - item")
+    line = line.replace(/^(\s*)-\s+/, '$1');
+    // Remove common bullet characters at start of line
+    line = line.replace(/^\s*[\u2022\u2023\u25E6\u00B7\u2043]\s*/, '');
+  } else {
+    // Speak checkboxes explicitly
+    line = line.replace(/\[x\]/gi, 'checked');
+    line = line.replace(/\[\s*\]/g, 'checkbox');
+    // Leave hyphens and bullets as-is (TTS will handle them)
   }
+  return line.trim();
+}
 
-  // Check for selected text in viewer div (view mode) or window selection
-  if (!text) {
-    var sel = window.getSelection();
-    if (sel && sel.toString().trim()) {
-      text = sel.toString().trim();
-      speakingSelection = true;
-      // Save the range so we can restore it
-      if (sel.rangeCount > 0) {
-        savedWindowRange = sel.getRangeAt(0).cloneRange();
-      }
+// Module-level speak state for line-by-line speaking
+var _speakLines      = [];   // array of {lineIndex, text} to speak
+var _speakLinePos    = 0;    // index into _speakLines currently speaking
+var _speakPauseTimer = null; // setTimeout handle between lines
+
+function _speakShowButtons(speaking) {
+  var speakBtn = document.getElementById('speak-btn');
+  var stopBtn  = document.getElementById('stop-btn');
+  if (speaking) {
+    // Measure Speak width before hiding it, then lock both to that value
+    var w = speakBtn.offsetWidth;
+    if (w > 0) {
+      speakBtn.style.width = w + 'px';
+      stopBtn.style.width  = w + 'px';
     }
+    speakBtn.style.display = 'none';
+    stopBtn.style.display  = 'inline-flex';
+  } else {
+    stopBtn.style.display  = 'none';
+    speakBtn.style.display = 'inline-flex';
+    // Re-sync widths after Speak is visible again
+    requestAnimationFrame(function() {
+      speakBtn.style.width = '';  // reset to natural first
+      requestAnimationFrame(function() {
+        var w2 = speakBtn.offsetWidth;
+        if (w2 > 0) {
+          speakBtn.style.width = w2 + 'px';
+          stopBtn.style.width  = w2 + 'px';
+        }
+      });
+    });
   }
+}
 
-  // Fall back to full note text
-  if (!text) {
-    text = ed.value.trim();
-    speakingSelection = false;
+function _speakNextLine() {
+  // Always check isSpeaking first — stopSpeaking() may have cleared it
+  // between the setTimeout firing and this function running.
+  if (!isSpeaking) return;
+  if (_speakLinePos >= _speakLines.length) {
+    // All lines done
+    isSpeaking = false;
+    _speakShowButtons(false);
+    clearViewerHighlight();
+    return;
   }
+  var item = _speakLines[_speakLinePos];
+  _speakLinePos++;
 
-  if (!text) { alert('The note has no text to speak.'); return; }
+  // Highlight the line in the viewer
+  if (isViewMode) highlightViewerLine(item.lineIndex);
 
-  // Clean up checkbox markers so Speak says "unchecked" / "checked" instead of [ ] / [x]
-  text = text.replace(/\[x\]/gi, 'checked').replace(/\[ \]/g, 'unchecked');
-
-  stopSpeaking();
-
-  const utt = new SpeechSynthesisUtterance(text);
+  var utt = new SpeechSynthesisUtterance(item.text);
   utt.rate = parseFloat(settings.speechRate) || 0.9;
-  const voice = getSpeechVoice();
+  var voice = getSpeechVoice();
   if (voice) utt.voice = voice;
 
-  // The character offset in the full editor text where speech starts
-  var speakTextOffset = savedEditorStart !== null ? savedEditorStart : 0;
-  var sentenceStart = speakTextOffset;
-
-  utt.onstart = function() {
-    isSpeaking = true;
-    sentenceStart = speakTextOffset;
-    document.getElementById('speak-btn').style.display = 'none';
-    document.getElementById('stop-btn').style.display = 'inline-flex';
+  utt.onend = function() {
+    if (!isSpeaking) return; // stopped by user
+    var pause = settings.speechPause !== undefined ? settings.speechPause : 400;
+    if (pause > 0) {
+      _speakPauseTimer = setTimeout(_speakNextLine, pause);
+    } else {
+      _speakNextLine();
+    }
   };
-
-  // Highlight current sentence as speech progresses
-  utt.onboundary = function(e) {
+  utt.onerror = function() {
     if (!isSpeaking) return;
-    var wordStart = speakTextOffset + e.charIndex;
-    var wordEnd = wordStart + (e.charLength || 1);
-
-    if (e.name === 'sentence') {
-      // Sentence boundary — highlight just this sentence
-      sentenceStart = wordStart;
-      doHighlight(wordStart, wordEnd);
-    } else {
-      // Word boundary — check if this word starts a new sentence
-      // (i.e. the character right before it, skipping whitespace, is sentence-ending punctuation)
-      var fullText = isViewMode
-        ? (currentNoteId && notes[currentNoteId] ? notes[currentNoteId].content : '')
-        : ed.value;
-      // Look back from wordStart to find the last non-space character
-      var lookback = wordStart - speakTextOffset - 1;
-      while (lookback > 0 && /\s/.test(text.charAt(lookback))) lookback--;
-      if (lookback > 0 && /[.!?]/.test(text.charAt(lookback))) {
-        // New sentence — reset start to this word
-        sentenceStart = wordStart;
-      }
-      // Highlight from sentence start to end of current word
-      doHighlight(sentenceStart, wordEnd);
-    }
-  };
-
-  function doHighlight(start, end) {
-    if (isViewMode) {
-      highlightViewerRange(start, end);
-    } else {
-      ed.focus({ preventScroll: true });
-      ed.setSelectionRange(start, end);
-    }
-  }
-
-  utt.onend = utt.onerror = function() {
-    isSpeaking = false;
-    document.getElementById('speak-btn').style.display = '';
-    document.getElementById('stop-btn').style.display = 'none';
-    clearViewerHighlight();
-    setTimeout(function() {
-      if (savedEditorStart !== null) {
-        ed.focus({ preventScroll: true });
-        ed.setSelectionRange(savedEditorStart, savedEditorEnd);
-      } else if (savedWindowRange) {
-        try {
-          var s = window.getSelection();
-          s.removeAllRanges();
-          s.addRange(savedWindowRange);
-        } catch(e2) { /* ignore */ }
-      } else if (!isViewMode) {
-        ed.setSelectionRange(0, 0);
-      }
-    }, 50);
+    _speakNextLine(); // skip errored line, continue
   };
 
   window.speechSynthesis.speak(utt);
 }
 
-function clearViewerHighlight() {
-  // Re-render the viewer without any mark highlight
-  var viewer = document.getElementById('note-viewer');
-  if (!viewer || !currentNoteId || !notes[currentNoteId]) return;
-  viewer.innerHTML = urlsToLinks(notes[currentNoteId].content || '', true);
+function speakNote() {
+  if (!window.speechSynthesis) { alert('Sorry, text to speech is not available on this device.'); return; }
+
+  var ed = document.getElementById('note-editor');
+  stopSpeaking();
+
+  // ── Priority 1: light-blue block selections ───────────────────────────────
+  if (selectedBlocks.size > 0 && currentNoteId && notes[currentNoteId]) {
+    var allLines = (notes[currentNoteId].content || '').split('\n');
+    var items = [];
+    // Speak in document order
+    var idxArr = [];
+    selectedBlocks.forEach(function(i) { idxArr.push(i); });
+    idxArr.sort(function(a,b) { return a-b; });
+    idxArr.forEach(function(i) {
+      var stripped = stripMarkdownForSpeech(allLines[i] || '');
+      if (stripped) items.push({ lineIndex: i, text: stripped });
+    });
+    if (items.length === 0) { alert('The selected lines have no text to speak.'); return; }
+    _speakLines   = items;
+    _speakLinePos = 0;
+    isSpeaking    = true;
+    _speakShowButtons(true);
+    _speakNextLine();
+    return;
+  }
+
+  // ── Priority 2: standard text selection (textarea or window) ─────────────
+  var savedEditorStart = null, savedEditorEnd = null, savedWindowRange = null;
+  var selText = '';
+
+  if (!isViewMode && ed.selectionStart !== ed.selectionEnd) {
+    selText = ed.value.substring(ed.selectionStart, ed.selectionEnd).trim();
+    savedEditorStart = ed.selectionStart;
+    savedEditorEnd   = ed.selectionEnd;
+  }
+  if (!selText) {
+    var sel = window.getSelection();
+    if (sel && sel.toString().trim()) {
+      selText = sel.toString().trim();
+      if (sel.rangeCount > 0) savedWindowRange = sel.getRangeAt(0).cloneRange();
+    }
+  }
+
+  if (selText) {
+    // Speak the selection as a single utterance (no line splitting)
+    var cleaned = stripMarkdownForSpeech(selText);
+    if (!cleaned) { alert('The selected text has no speakable content.'); return; }
+    _speakLines   = [{ lineIndex: -1, text: cleaned }];
+    _speakLinePos = 0;
+    isSpeaking    = true;
+    _speakShowButtons(true);
+
+    var utt = new SpeechSynthesisUtterance(cleaned);
+    utt.rate = parseFloat(settings.speechRate) || 0.9;
+    var voice = getSpeechVoice();
+    if (voice) utt.voice = voice;
+    utt.onend = utt.onerror = function() {
+      isSpeaking = false;
+      _speakShowButtons(false);
+      clearViewerHighlight();
+      setTimeout(function() {
+        if (savedEditorStart !== null) {
+          ed.focus({ preventScroll: true });
+          ed.setSelectionRange(savedEditorStart, savedEditorEnd);
+        } else if (savedWindowRange) {
+          try { var s=window.getSelection(); s.removeAllRanges(); s.addRange(savedWindowRange); } catch(e2){}
+        }
+      }, 50);
+    };
+    window.speechSynthesis.speak(utt);
+    return;
+  }
+
+  // ── Priority 3: full note, line by line ───────────────────────────────────
+  if (!currentNoteId || !notes[currentNoteId]) { alert('The note has no text to speak.'); return; }
+  var rawLines = (notes[currentNoteId].content || '').split('\n');
+  var items = [];
+  rawLines.forEach(function(line, i) {
+    var stripped = stripMarkdownForSpeech(line);
+    if (stripped) items.push({ lineIndex: i, text: stripped });
+  });
+  if (items.length === 0) { alert('The note has no text to speak.'); return; }
+  _speakLines   = items;
+  _speakLinePos = 0;
+  isSpeaking    = true;
+  _speakShowButtons(true);
+  _speakNextLine();
 }
 
-function highlightViewerRange(start, end) {
-  // Re-render viewer with <mark> around the word at [start, end]
+function clearViewerHighlight() {
+  // Remove speak-highlight class from any highlighted viewer line — no re-render needed
   var viewer = document.getElementById('note-viewer');
-  if (!viewer || !currentNoteId || !notes[currentNoteId]) return;
-  var content = notes[currentNoteId].content || '';
-  // Clamp to valid range
-  start = Math.max(0, Math.min(start, content.length));
-  end = Math.max(start, Math.min(end, content.length));
-  var before = escHtml(content.substring(0, start));
-  var word   = escHtml(content.substring(start, end));
-  var after  = escHtml(content.substring(end));
-  // Apply link rendering to each part separately to avoid breaking links
-  viewer.innerHTML =
-    urlsToLinks(before) +
-    '<mark class="speak-highlight">' + word + '</mark>' +
-    urlsToLinks(after);
+  if (!viewer) return;
+  var highlighted = viewer.querySelector('.viewer-line.speak-highlight');
+  if (highlighted) highlighted.classList.remove('speak-highlight');
+}
+
+function highlightViewerLine(lineIndex) {
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return;
+  // Clear previous highlight
+  var prev = viewer.querySelector('.viewer-line.speak-highlight');
+  if (prev) prev.classList.remove('speak-highlight');
+  // Apply to new line
+  if (lineIndex < 0) return;
+  var lineDiv = viewer.querySelector('.viewer-line[data-line="' + lineIndex + '"]');
+  if (lineDiv) lineDiv.classList.add('speak-highlight');
 }
 
 function stopSpeaking() {
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  // Set isSpeaking false FIRST so any in-flight onend/setTimeout callbacks
+  // see it immediately and bail out before queuing the next utterance.
   isSpeaking = false;
+  // Cancel the inter-line pause timer before it can call _speakNextLine again
+  if (_speakPauseTimer) { clearTimeout(_speakPauseTimer); _speakPauseTimer = null; }
+  _speakLines   = [];
+  _speakLinePos = 0;
+  // Now cancel the speech engine — its onend will fire but isSpeaking is false so it exits
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
   clearViewerHighlight();
-  var sb = document.getElementById('speak-btn');
-  var stb = document.getElementById('stop-btn');
-  if (sb) sb.style.display = '';
-  if (stb) stb.style.display = 'none';
+  _speakShowButtons(false);
 }
 
 // ===== DELETE NOTE =====
@@ -3674,6 +4020,11 @@ function openSettings() {
   document.getElementById('speech-rate-val').textContent = parseFloat(settings.speechRate).toFixed(1) + '\xd7';
 
   document.getElementById('auto-speak-toggle').checked = !!settings.autoSpeak;
+  var spr = document.getElementById('speech-pause-range');
+  var pauseVal = settings.speechPause !== undefined ? settings.speechPause : 400;
+  spr.value = pauseVal;
+  document.getElementById('speech-pause-val').textContent = (pauseVal / 1000).toFixed(1) + 's';
+  document.getElementById('speak-checkboxes-toggle').checked = settings.skipListMarkers !== false;
   document.getElementById('default-view-mode-toggle').checked = !!settings.defaultViewMode;
   document.getElementById('check-strikethrough-toggle').checked = settings.checkStrikethrough !== false;
   document.getElementById('delete-guard-chars').value = settings.deleteGuardChars !== undefined ? settings.deleteGuardChars : 30;
@@ -3851,6 +4202,21 @@ function init() {
       showToast('Print works on the deployed app — not available in this preview', true);
     }
   });
+  // ===== HELP COLLAPSIBLE SECTIONS =====
+  // Wire both top-level (.help-collapsible-header) and sub-level (.help-sub-header)
+  document.querySelectorAll('.help-collapsible-header').forEach(function(header) {
+    header.addEventListener('click', function() {
+      var section = header.parentElement;
+      section.classList.toggle('open');
+    });
+  });
+  document.querySelectorAll('.help-sub-header').forEach(function(header) {
+    header.addEventListener('click', function() {
+      var section = header.parentElement;
+      section.classList.toggle('open');
+    });
+  });
+
   document.getElementById('help-close-btn').addEventListener('click', function() {
     document.getElementById('help-overlay').classList.remove('open');
     document.getElementById('help-sheet').classList.remove('open');
@@ -4110,19 +4476,23 @@ function init() {
   // ===== INDENT / DEDENT BUTTONS =====
   document.getElementById('indent-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('indent-btn').addEventListener('click', function() {
-    indentLines(noteEditor);
-    // Do NOT call noteEditor.focus() here — on iOS that would summon the virtual
-    // keyboard even when the user is in EMNI mode (no keyboard was open before).
-    // e.preventDefault() on mousedown already keeps desktop focus intact.
-    resizeEditor();
-    scheduleSave();
+    if (isViewMode && selectedBlocks.size > 0) {
+      applyIndentToSelectedBlocks(true);
+    } else if (!isViewMode) {
+      indentLines(noteEditor);
+      resizeEditor();
+      scheduleSave();
+    }
   });
   document.getElementById('dedent-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('dedent-btn').addEventListener('click', function() {
-    dedentLines(noteEditor);
-    // Same reasoning as indent-btn above — no explicit focus() call.
-    resizeEditor();
-    scheduleSave();
+    if (isViewMode && selectedBlocks.size > 0) {
+      applyIndentToSelectedBlocks(false);
+    } else if (!isViewMode) {
+      dedentLines(noteEditor);
+      resizeEditor();
+      scheduleSave();
+    }
   });
 
   document.getElementById('note-bottom-bar').addEventListener('mousedown', function(e) {
@@ -4693,6 +5063,16 @@ function init() {
     settings.autoSpeak = this.checked;
     updateSaveBtnState();
   });
+  document.getElementById('speech-pause-range').addEventListener('input', function() {
+    var v = parseInt(this.value);
+    settings.speechPause = v;
+    document.getElementById('speech-pause-val').textContent = (v / 1000).toFixed(1) + 's';
+    updateSaveBtnState();
+  });
+  document.getElementById('speak-checkboxes-toggle').addEventListener('change', function() {
+    settings.skipListMarkers = this.checked;
+    updateSaveBtnState();
+  });
   document.getElementById('default-view-mode-toggle').addEventListener('change', function() {
     settings.defaultViewMode = this.checked;
     updateSaveBtnState();
@@ -5046,11 +5426,17 @@ function init() {
       deleteLineBtn.classList.remove('active');
       deleteLineBtn.style.color = '';
     }
-    // Show indent/dedent buttons in edit mode, hide in view mode
+    // Show indent/dedent in edit mode OR in view mode when blocks selected
     var indentBtn  = document.getElementById('indent-btn');
     var dedentBtn  = document.getElementById('dedent-btn');
-    if (indentBtn) { indentBtn.style.display = inView ? 'none' : ''; }
-    if (dedentBtn) { dedentBtn.style.display = inView ? 'none' : ''; }
+    var showIndent = !inView || selectedBlocks.size > 0;
+    if (indentBtn) { indentBtn.style.display = showIndent ? '' : 'none'; }
+    if (dedentBtn) { dedentBtn.style.display = showIndent ? '' : 'none'; }
+
+    // Update select button appearance
+    updateSelectModeBtn();
+    // Recheck toolbar scroll arrows since visible buttons may have changed
+    if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
 
     // When minus is hidden (edit mode), plus needs margin-left:auto to push right
     var quickAddBtn = document.getElementById('quick-add-btn');
@@ -5132,6 +5518,42 @@ function init() {
   });
 
   // Click a line in view mode to apply formatting based on active mode
+  // ===== BLOCK SELECT mode wiring =====
+  updateSelectModeBtn = function() {
+    var btn = document.getElementById('select-blocks-btn');
+    if (!btn) return;
+    btn.classList.toggle('active', selectMode);
+    btn.title = selectMode ? 'Block select ON — tap lines to select' : 'Select text blocks';
+    // Apply select-mode class to viewer for cursor/hover styles
+    var viewer = document.getElementById('note-viewer');
+    if (viewer) viewer.classList.toggle('select-mode', selectMode);
+  };
+
+  document.getElementById('select-blocks-btn').addEventListener('click', function() {
+    selectMode = !selectMode;
+    if (selectMode && !isViewMode) {
+      // Switch to view mode when activating select in edit mode
+      setViewMode(true);
+    }
+    updateSelectModeBtn();
+    if (window._updateToolbarArrows) window._updateToolbarArrows();
+  });
+
+  // Handle taps on viewer lines in select mode
+  // This listener fires BEFORE the crossout/bold/color handler below,
+  // so we can intercept select-mode taps and stop propagation.
+  document.getElementById('note-viewer').addEventListener('click', function(e) {
+    if (!selectMode) return;
+    var lineDiv = e.target.closest('.viewer-line');
+    if (!lineDiv) return;
+    var lineIndex = parseInt(lineDiv.dataset.line, 10);
+    if (isNaN(lineIndex)) return;
+    e.stopPropagation();
+    toggleBlockSelection(lineIndex);
+    // Recheck arrow visibility and indent/dedent visibility after selection change
+    updateViewOnlyBtns();
+  });
+
   document.getElementById('note-viewer').addEventListener('click', function(e) {
     if (!isViewMode || deletingLine || (!crossoutMode && !boldMode && !colorMode)) return;
     var lineDiv = e.target.closest('.viewer-line');
@@ -5273,6 +5695,63 @@ function handleUrlAction() {
       }, 300);
     }
 
+  } else if (action === 'quickadd') {
+    var qaContent = params.get('content') || '';
+    var qaName    = params.get('name') || '';
+
+    // Find target note by name using same logic as 'open':
+    // exact match wins; if multiple matches, use most recently edited.
+    // If no match, create a new note.
+    var qaFoundId = null;
+    if (qaName) {
+      var qaLower = qaName.toLowerCase();
+      var qaExact = [], qaPartial = [];
+      Object.values(notes).forEach(function(n) {
+        var nLower = (n.name || '').toLowerCase();
+        if (nLower === qaLower) qaExact.push(n);
+        else if (nLower.indexOf(qaLower) !== -1) qaPartial.push(n);
+      });
+      var qaPool = qaExact.length ? qaExact : qaPartial;
+      if (qaPool.length) {
+        // Multiple matches — use most recently edited
+        qaPool.sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
+        qaFoundId = qaPool[0].id;
+      }
+    }
+
+    if (!qaFoundId) {
+      // No match — create a new note
+      var qaId = 'note-' + Date.now();
+      var qaAutoName = qaName || (qaContent ? qaContent.split('\n')[0].trim().substring(0,40) : uniqueNoteName());
+      notes[qaId] = {
+        id: qaId, name: qaAutoName || uniqueNoteName(),
+        content: '', autoNamed: !qaName,
+        createdAt: Date.now(), editedAt: Date.now(), viewedAt: Date.now()
+      };
+      saveNotes();
+      qaFoundId = qaId;
+    }
+
+    // Append or prepend content per the user's plusPosition setting
+    var qaN = notes[qaFoundId];
+    if (qaContent) {
+      var qaPos = settings.plusPosition || 'bottom';
+      if (qaPos === 'top') {
+        qaN.content = qaContent + (qaN.content ? '\n' + qaN.content : '');
+      } else {
+        qaN.content = (qaN.content ? qaN.content + '\n' : '') + qaContent;
+      }
+      qaN.editedAt = Date.now();
+      if (qaN.autoNamed) {
+        var derived = nameFromContent(qaN.content);
+        if (derived) qaN.name = derived;
+      }
+      saveNotes();
+    }
+    currentNoteId = qaFoundId;
+    saveCurrentRef();
+    openNote(qaFoundId);
+
   } else if (action === 'open' || action === 'speak') {
     // Find note by name (case-insensitive partial match) or by id
     var noteName = params.get('name') || '';
@@ -5357,8 +5836,19 @@ window.addEventListener('error', function(e) {
 
 document.addEventListener('DOMContentLoaded', function() {
   init();
-  // Pin toolbars after init so offsetHeight values are available
   setTimeout(pinToolbars, 0);
+  // Sync Stop button width to Speak button width after first render
+  requestAnimationFrame(function() {
+    var speakBtn = document.getElementById('speak-btn');
+    var stopBtn  = document.getElementById('stop-btn');
+    if (speakBtn && stopBtn) {
+      var w = speakBtn.offsetWidth;
+      if (w > 0) {
+        speakBtn.style.width = w + 'px';
+        stopBtn.style.width  = w + 'px';
+      }
+    }
+  });
 });
 
 // PWA Service Worker + Update Banner
@@ -5418,7 +5908,19 @@ if ('serviceWorker' in navigator) {
 }
 
 // Stop speaking if the tab/app is hidden or closed
+// Clear block selections when app is hidden/closed
 document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'hidden') {
+    selectMode = false;
+    clearSelectedBlocks();
+  }
+});
+
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'hidden') {
+    selectMode = false;
+    clearSelectedBlocks();
+  }
   if (document.visibilityState === 'hidden' && window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
