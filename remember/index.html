@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.293 -->
+<!-- Remember App - Version 0.294 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -2378,25 +2378,20 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
         <div class="help-sub" id="help-sub-siri-speak">
           <div class="help-sub-header">
-            <span class="help-sub-title">Having Siri read a note aloud (experimental)</span>
+            <span class="help-sub-title">Having Siri open and speak a note</span>
             <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
           <div class="help-sub-body">
-            <p>This uses a clipboard trick to get note text to Siri. It may or may not work depending on your iOS version and clipboard permissions — worth trying.</p>
-            <p><strong>How it works:</strong> A Shortcut opens Remember with a special URL that copies your note text to the clipboard, then Siri reads the clipboard aloud using its own voice engine — no browser audio restrictions involved.</p>
-            <p><strong>One-time setup — grant clipboard permission first:</strong><br>
-            Open Remember normally in Safari, open any note, and tap the Copy button. This grants clipboard write permission to the Remember website, which the Shortcut will need later.</p>
+            <p>This shortcut opens Remember, shows a large <strong>Speak Note</strong> button, and waits for you to tap it. One tap starts reading — no typing or searching needed.</p>
+            <p><em>Why a tap? iOS requires one tap to start audio in a browser. The button is large and easy to tap even for users with limited vision or dexterity.</em></p>
             <p><strong>Step 1.</strong> Open <strong>Shortcuts</strong> and tap <strong>+</strong>.</p>
             <p><strong>Step 2.</strong> Add <strong>URL</strong>. Paste:<br>
-            <code>https://lynn-edu-apps.github.io/everyday-apps/remember/?action=copy&amp;name=Shopping+List</code><br>
+            <code>https://lynn-edu-apps.github.io/everyday-apps/remember/?action=speak&amp;name=Shopping+List</code><br>
             Replace "Shopping+List" with your note name (use + for spaces).</p>
-            <p><strong>Step 3.</strong> Add <strong>Open URL</strong>. It uses the URL from Step 2 automatically. Remember will open briefly, copy the note text, then close.</p>
-            <p><strong>Step 4.</strong> Add <strong>Wait</strong>. Set to <strong>4 seconds</strong> — this gives Remember time to load and copy before the next step runs.</p>
-            <p><strong>Step 5.</strong> Add <strong>Get Clipboard</strong>.</p>
-            <p><strong>Step 6.</strong> Add <strong>Speak Text</strong>. It will use the clipboard contents from Step 5 automatically.</p>
-            <p><strong>Step 7.</strong> Name the shortcut <strong>Read Shopping List</strong> (or whatever you like) and tap <strong>Done</strong>.</p>
-            <p>Say <strong>"Hey Siri, Read Shopping List"</strong> to try it. If you see a "Clipboard blocked" message in Remember, go back and repeat the one-time clipboard permission step above.</p>
-            <p><em>Note: On some iOS versions, Safari may stay open after copying rather than closing automatically. You can manually return to Shortcuts and the note text will still be in the clipboard.</em></p>
+            <p><strong>Step 3.</strong> Add <strong>Open URL</strong>. It uses the URL from Step 2 automatically.</p>
+            <p><strong>Step 4.</strong> Name the shortcut <strong>Read Shopping List</strong> (or whatever you like) and tap <strong>Done</strong>.</p>
+            <p>Say <strong>"Hey Siri, Read Shopping List"</strong>. Remember will open, show your note, and display a large Speak Note button. Tap it once to start reading. Tap the Stop button or anywhere on the overlay to stop.</p>
+            <p><em>Tip: you can create multiple shortcuts for different notes — one for your Shopping List, one for your Medication Reminders, etc.</em></p>
           </div>
         </div>
 
@@ -2455,11 +2450,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <code>…/remember/?action=new&amp;content=Your+text+here</code></p>
             <p><strong>Open a note:</strong><br>
             <code>…/remember/?action=open&amp;name=Shopping+List</code></p>
-            <p><strong>Open and speak a note:</strong><br>
-            <code>…/remember/?action=speak&amp;name=Shopping+List</code></p>
-            <p><strong>Copy note text to clipboard (for Siri):</strong><br>
-            <code>…/remember/?action=copy&amp;name=Shopping+List</code><br>
-            Opens briefly, copies the note text (markdown stripped) to the clipboard, then closes. Use with the iOS Shortcuts "Get Clipboard" + "Speak Text" actions to have Siri read a note aloud.</p>
+            <p><strong>Open a note and show the Speak button:</strong><br>
+            <code>…/remember/?action=speak&amp;name=Shopping+List</code><br>
+            Opens the note and shows a large full-screen Speak Note button. One tap starts reading aloud. Ideal for use with Siri Shortcuts — see the setup steps in the Optional Setup section above.</p>
             <p><strong>Quick-add text to a note:</strong><br>
             <code>…/remember/?action=quickadd&amp;content=Your+text+here&amp;name=Shopping+List</code><br>
             Appends (or prepends, per your Settings) the content to the named note, then opens it. If the name matches multiple notes, the most recently edited one is used. If no match is found, a new note is created with that name.</p>
@@ -2491,7 +2484,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.293';
+const APP_VERSION = '0.294';
 
 
 
@@ -3898,7 +3891,24 @@ function highlightViewerLine(lineIndex) {
   // Apply to new line
   if (lineIndex < 0) return;
   var lineDiv = viewer.querySelector('.viewer-line[data-line="' + lineIndex + '"]');
-  if (lineDiv) lineDiv.classList.add('speak-highlight');
+  if (!lineDiv) return;
+  lineDiv.classList.add('speak-highlight');
+
+  // Scroll the highlighted line into view within note-content-area if needed
+  var area = document.getElementById('note-content-area');
+  if (!area) return;
+  var areaRect  = area.getBoundingClientRect();
+  var lineRect  = lineDiv.getBoundingClientRect();
+  var margin    = 48; // px of breathing room above/below the highlighted line
+
+  if (lineRect.bottom > areaRect.bottom - margin) {
+    // Line is below the visible fold — scroll down
+    area.scrollBy({ top: lineRect.bottom - areaRect.bottom + margin, behavior: 'smooth' });
+  } else if (lineRect.top < areaRect.top + margin) {
+    // Line is above the visible fold — scroll up
+    area.scrollBy({ top: lineRect.top - areaRect.top - margin, behavior: 'smooth' });
+  }
+  // else line is comfortably visible — don't scroll
 }
 
 function stopSpeaking() {
@@ -5892,30 +5902,12 @@ function handleUrlAction() {
     if (foundId) {
       openNote(foundId);
       if (action === 'speak') {
-        // DEBUG: show visible toasts at each step to trace what's happening
-        showToast('speak action reached, foundId=' + foundId, false);
+        // Show the tap-to-speak overlay after a delay long enough for the page
+        // to fully load even on a slow first visit (no cache).
+        // 1500ms is safe for most connections; the note is already open by then.
         setTimeout(function() {
-          showToast('300ms timer fired', false);
-          var banner = document.getElementById('tap-to-speak-banner');
-          if (!banner) {
-            showToast('ERROR: banner element not found!', true);
-            return;
-          }
-          showToast('banner found, display was: ' + banner.style.display, false);
-          try {
-            showTapToSpeakBanner(foundId);
-            showToast('banner shown OK, display now: ' + banner.style.display, false);
-          } catch(err) {
-            showToast('ERROR in showTapToSpeakBanner: ' + String(err), true);
-            // Fallback: try setting display directly
-            try {
-              banner.style.display = 'block';
-              showToast('fallback display:block set', false);
-            } catch(err2) {
-              showToast('fallback also failed: ' + String(err2), true);
-            }
-          }
-        }, 300);
+          showTapToSpeakBanner(foundId);
+        }, 1500);
       }  // end if (action === 'speak')
     } else {
       // Note not found — go to home screen with a message
