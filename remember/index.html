@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.287 -->
+<!-- Remember App - Version 0.288 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -2366,6 +2366,30 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           </div>
         </div>
 
+        <div class="help-sub" id="help-sub-siri-speak">
+          <div class="help-sub-header">
+            <span class="help-sub-title">Having Siri read a note aloud (experimental)</span>
+            <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="help-sub-body">
+            <p>This uses a clipboard trick to get note text to Siri. It may or may not work depending on your iOS version and clipboard permissions — worth trying.</p>
+            <p><strong>How it works:</strong> A Shortcut opens Remember with a special URL that copies your note text to the clipboard, then Siri reads the clipboard aloud using its own voice engine — no browser audio restrictions involved.</p>
+            <p><strong>One-time setup — grant clipboard permission first:</strong><br>
+            Open Remember normally in Safari, open any note, and tap the Copy button. This grants clipboard write permission to the Remember website, which the Shortcut will need later.</p>
+            <p><strong>Step 1.</strong> Open <strong>Shortcuts</strong> and tap <strong>+</strong>.</p>
+            <p><strong>Step 2.</strong> Add <strong>URL</strong>. Paste:<br>
+            <code>https://lynn-edu-apps.github.io/everyday-apps/remember/?action=copy&amp;name=Shopping+List</code><br>
+            Replace "Shopping+List" with your note name (use + for spaces).</p>
+            <p><strong>Step 3.</strong> Add <strong>Open URL</strong>. It uses the URL from Step 2 automatically. Remember will open briefly, copy the note text, then close.</p>
+            <p><strong>Step 4.</strong> Add <strong>Wait</strong>. Set to <strong>4 seconds</strong> — this gives Remember time to load and copy before the next step runs.</p>
+            <p><strong>Step 5.</strong> Add <strong>Get Clipboard</strong>.</p>
+            <p><strong>Step 6.</strong> Add <strong>Speak Text</strong>. It will use the clipboard contents from Step 5 automatically.</p>
+            <p><strong>Step 7.</strong> Name the shortcut <strong>Read Shopping List</strong> (or whatever you like) and tap <strong>Done</strong>.</p>
+            <p>Say <strong>"Hey Siri, Read Shopping List"</strong> to try it. If you see a "Clipboard blocked" message in Remember, go back and repeat the one-time clipboard permission step above.</p>
+            <p><em>Note: On some iOS versions, Safari may stay open after copying rather than closing automatically. You can manually return to Shortcuts and the note text will still be in the clipboard.</em></p>
+          </div>
+        </div>
+
         <div class="help-sub" id="help-sub-siri-add">
           <div class="help-sub-header">
             <span class="help-sub-title">Adding a new note with Siri (iPhone &amp; iPad)</span>
@@ -2423,6 +2447,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <code>…/remember/?action=open&amp;name=Shopping+List</code></p>
             <p><strong>Open and speak a note:</strong><br>
             <code>…/remember/?action=speak&amp;name=Shopping+List</code></p>
+            <p><strong>Copy note text to clipboard (for Siri):</strong><br>
+            <code>…/remember/?action=copy&amp;name=Shopping+List</code><br>
+            Opens briefly, copies the note text (markdown stripped) to the clipboard, then closes. Use with the iOS Shortcuts "Get Clipboard" + "Speak Text" actions to have Siri read a note aloud.</p>
             <p><strong>Quick-add text to a note:</strong><br>
             <code>…/remember/?action=quickadd&amp;content=Your+text+here&amp;name=Shopping+List</code><br>
             Appends (or prepends, per your Settings) the content to the named note, then opens it. If the name matches multiple notes, the most recently edited one is used. If no match is found, a new note is created with that name.</p>
@@ -2454,7 +2481,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.287';
+const APP_VERSION = '0.288';
 
 
 
@@ -5751,6 +5778,80 @@ function handleUrlAction() {
     currentNoteId = qaFoundId;
     saveCurrentRef();
     openNote(qaFoundId);
+
+  } else if (action === 'copy') {
+    // Copy note text to clipboard for use with iOS Shortcuts + Siri "Speak Text"
+    // Usage: ?action=copy&name=Shopping+List
+    var copyName = params.get('name') || '';
+    var copyFoundId = null;
+
+    if (copyName) {
+      var copyLower = copyName.toLowerCase();
+      var copyExact = [], copyPartial = [];
+      Object.values(notes).forEach(function(n) {
+        var nLower = (n.name || '').toLowerCase();
+        if (nLower === copyLower) copyExact.push(n);
+        else if (nLower.indexOf(copyLower) !== -1) copyPartial.push(n);
+      });
+      var copyPool = copyExact.length ? copyExact : copyPartial;
+      if (copyPool.length) {
+        copyPool.sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
+        copyFoundId = copyPool[0].id;
+      }
+    } else {
+      // No name — use most recently edited note
+      var copySorted = Object.values(notes).sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
+      if (copySorted.length) copyFoundId = copySorted[0].id;
+    }
+
+    if (copyFoundId && notes[copyFoundId]) {
+      var copyNote = notes[copyFoundId];
+      // Strip markdown from each line using the same speech stripping logic
+      var copyLines = (copyNote.content || '').split('\n');
+      var copyStripped = copyLines.map(function(line) {
+        return stripMarkdownForSpeech(line);
+      }).join('\n').trim();
+
+      // Show a full-screen message immediately so the user sees the page loaded
+      document.body.innerHTML = '<div style="font-family:sans-serif;font-size:1.3em;padding:40px;text-align:center;background:#f0f8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">' +
+        '<div style="font-size:2em">📋</div>' +
+        '<div><strong>Remember</strong></div>' +
+        '<div>Copying note to clipboard&hellip;</div>' +
+        '<div style="font-size:0.85em;color:#666">' + (copyNote.name || 'Untitled') + '</div>' +
+        '</div>';
+
+      // Attempt clipboard write
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(copyStripped).then(function() {
+          document.body.innerHTML = '<div style="font-family:sans-serif;font-size:1.3em;padding:40px;text-align:center;background:#f0f8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">' +
+            '<div style="font-size:2em">✅</div>' +
+            '<div><strong>Copied!</strong></div>' +
+            '<div style="font-size:0.85em;color:#444">' + (copyNote.name || 'Untitled') + '</div>' +
+            '<div style="font-size:0.75em;color:#888">Returning to Shortcuts&hellip;</div>' +
+            '</div>';
+          // Try to close the tab/window after a short delay to return to Shortcuts
+          setTimeout(function() { window.close(); }, 1800);
+        }).catch(function(err) {
+          document.body.innerHTML = '<div style="font-family:sans-serif;font-size:1.3em;padding:40px;text-align:center;background:#fff0f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">' +
+            '<div style="font-size:2em">⚠️</div>' +
+            '<div><strong>Clipboard blocked</strong></div>' +
+            '<div style="font-size:0.8em;color:#666">iOS blocked clipboard access.<br>Try opening Remember manually first<br>to grant clipboard permission.</div>' +
+            '</div>';
+        });
+      } else {
+        document.body.innerHTML = '<div style="font-family:sans-serif;font-size:1.3em;padding:40px;text-align:center;background:#fff0f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">' +
+          '<div style="font-size:2em">⚠️</div>' +
+          '<div><strong>Clipboard not available</strong></div>' +
+          '<div style="font-size:0.8em;color:#666">Your browser does not support<br>clipboard access.</div>' +
+          '</div>';
+      }
+    } else {
+      document.body.innerHTML = '<div style="font-family:sans-serif;font-size:1.3em;padding:40px;text-align:center;background:#fff0f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">' +
+        '<div style="font-size:2em">❌</div>' +
+        '<div><strong>Note not found</strong></div>' +
+        '<div style="font-size:0.8em;color:#666">' + (copyName ? '"' + copyName + '"' : 'No notes found') + '</div>' +
+        '</div>';
+    }
 
   } else if (action === 'open' || action === 'speak') {
     // Find note by name (case-insensitive partial match) or by id
