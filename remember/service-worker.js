@@ -1,5 +1,5 @@
 // Remember PWA Service Worker
-const CACHE_NAME = 'remember-v0.289';
+const CACHE_NAME = 'remember-v0.306';
 const ASSETS = [
   './',
   './index.html',
