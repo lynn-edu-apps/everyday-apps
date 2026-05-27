@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.298 -->
+<!-- Remember App - Version 0.302 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -1465,7 +1465,8 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 
 #debug-toast {
   position: fixed;
-  top: 60px;
+  top: 50%;
+  transform: translateY(-50%);
   left: 12px;
   right: 12px;
   background: #3a3a3a;
@@ -2489,7 +2490,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.298';
+const APP_VERSION = '0.302';
 
 
 
@@ -5735,6 +5736,49 @@ function findNoteByName(name) {
   return pool[0].id;
 }
 
+// ===== SPEAK ERROR OVERLAY =====
+// Shows the speak overlay with an error message instead of the speak button.
+// Includes debug codepoint info and a copy button for diagnosis.
+function showSpeakError(noteName, debugInfo) {
+  var banner = document.getElementById('tap-to-speak-banner');
+  if (!banner) return;
+
+  // Build debug section HTML
+  var debugHtml = debugInfo
+    ? '<div id="speak-error-debug" style="margin-top:16px;font-size:0.6em;opacity:0.7;word-break:break-all;text-align:left;max-height:120px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:8px;border-radius:8px">' + debugInfo + '</div>' +
+      '<button id="speak-error-copy" style="margin-top:10px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:8px;padding:8px 18px;font-size:0.7em;cursor:pointer">Copy debug info</button>'
+    : '';
+
+  // Replace banner contents with error UI
+  banner.innerHTML =
+    '<div style="position:absolute;top:4%;left:4%;right:4%;bottom:4%;background:#7a1a1a;border-radius:24px;box-shadow:0 8px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;text-align:center;gap:16px">' +
+      '<div style="font-size:min(15vw,4em)">❌</div>' +
+      '<div style="color:#fff;font-size:min(6vw,1.6em);font-weight:700">Note not found</div>' +
+      '<div style="color:#ffaaaa;font-size:min(4vw,1em)">"' + noteName + '"</div>' +
+      '<div style="color:#fff;font-size:min(3.5vw,0.85em);opacity:0.7">Check the note name in your Shortcut.<br>Names are matched even if you omit dashes.</div>' +
+      debugHtml +
+    '</div>' +
+    '<div style="position:absolute;bottom:2%;left:0;right:0;text-align:center;color:#fff;font-size:min(3.5vw,0.8em);opacity:0.45">Tap anywhere to dismiss</div>';
+
+  banner.style.removeProperty('display');
+  banner.style.display = 'block';
+
+  // Wire copy button if present
+  setTimeout(function() {
+    var copyBtn = document.getElementById('speak-error-copy');
+    if (copyBtn && debugInfo) {
+      copyBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(debugInfo).then(function() {
+            copyBtn.textContent = 'Copied!';
+          });
+        }
+      });
+    }
+  }, 0);
+}
+
 // ===== TAP TO SPEAK BANNER =====
 // Must be module-level (not inside init()) so handleUrlAction's setTimeout can call it
 function showTapToSpeakBanner(noteId) {
@@ -5929,18 +5973,26 @@ function handleUrlAction() {
     if (foundId) {
       openNote(foundId);
       if (action === 'speak') {
-        // Show the tap-to-speak overlay after a delay long enough for the page
-        // to fully load even on a slow first visit (no cache).
-        // 1500ms is safe for most connections; the note is already open by then.
-        setTimeout(function() {
-          showTapToSpeakBanner(foundId);
-        }, 1500);
-      }  // end if (action === 'speak')
+        setTimeout(function() { showTapToSpeakBanner(foundId); }, 1500);
+      }
     } else {
-      // Note not found — go to home screen with a message
+      // Note not found — show error on the speak overlay (always visible,
+      // not covered by the iOS shortcut banner like a top toast would be)
       renderNotesList();
       showScreen('home-screen');
-      showToast(noteName ? 'Note "' + noteName + '" not found' : 'No notes found', true);
+      var noteCount = Object.keys(notes).length;
+      var needle = normalizeNoteName(noteName);
+      // Build debug info with Unicode codepoints for each note name
+      var debugLines = ['needle: "' + needle + '" (' + noteCount + ' notes)'];
+      Object.values(notes).forEach(function(n) {
+        var name = n.name || '';
+        var codes = Array.from(name).map(function(c) {
+          return c.codePointAt(0).toString(16);
+        }).join(',');
+        debugLines.push('"' + name + '" [' + codes + '] -> "' + normalizeNoteName(name) + '"');
+      });
+      var debugInfo = debugLines.join('\n');
+      showSpeakError(noteName || '(no name given)', debugInfo);
     }
   }
 }
