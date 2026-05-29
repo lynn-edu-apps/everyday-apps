@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.308 -->
+<!-- Remember App - Version 0.325 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -177,6 +177,67 @@ body.in-iframe #home-screen {
 @media (hover: hover) {
   .icon-btn:hover { background: var(--bg3); color: var(--fg); }
 }
+/* Moved toolbar row highlight — brief accent tint to show where item ended up */
+.toolbar-row-moved {
+  background: rgba(var(--accent-rgb, 91,124,110), 0.12);
+  border-radius: 6px;
+  transition: background 0.3s;
+}
+
+/* Toolbar reorder arrow spans — use spans not buttons to avoid focus highlight */
+.toolbar-reorder-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--icon-size) + 12px);
+  height: calc(var(--icon-size) + 12px);
+  cursor: pointer;
+  border-radius: 6px;
+  color: var(--fg2, var(--fg));
+  flex-shrink: 0;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.toolbar-reorder-arrow:active {
+  background: transparent !important;
+  color: var(--fg2, var(--fg)) !important;
+  opacity: 0.5;
+}
+.toolbar-reorder-arrow.disabled {
+  opacity: 0.2;
+  cursor: default;
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .toolbar-reorder-arrow:not(.disabled):hover { background: var(--bg3); }
+}
+
+/* Color picker popover swatches */
+.color-picker-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s, border-color 0.1s;
+}
+@media (hover: hover) {
+  .color-picker-swatch:hover { transform: scale(1.15); border-color: var(--fg); }
+}
+.color-picker-swatch:active { transform: scale(0.9) !important; }
+
+/* More menu button hover */
+@media (hover: hover) {
+  #toolbar-more-menu button:hover { background: var(--bg3); }
+}
+#toolbar-more-menu button:focus { outline: none; }
 .icon-btn svg { width: var(--icon-size); height: var(--icon-size); }
 
 .notes-list {
@@ -1063,9 +1124,18 @@ body:not(.dark) .note-item:hover {
   user-select: none;
   gap: 8px;
 }
-/* Only apply active opacity on touch devices — on mouse it never sticks */
-@media (hover: none) {
-  .settings-section-header:active { opacity: 0.7; }
+/* Active state: suppress color/background changes with !important to prevent
+   stuck state on iOS. Opacity dip gives subtle tap feedback without sticking. */
+.settings-section-header:active {
+  background: transparent !important;
+  color: inherit !important;
+  opacity: 0.7;
+}
+.help-collapsible-header:active,
+.help-sub-header:active {
+  background: transparent !important;
+  color: inherit !important;
+  opacity: 0.7;
 }
 
 .settings-label {
@@ -1718,26 +1788,23 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
         </svg>
       </button>
-      <!-- Color swatch immediately after color button so it always stays adjacent -->
-      <button id="color-swatch-cycle" style="display:none;width:32px;height:28px;border-radius:4px;border:2px solid var(--fg);cursor:pointer;background:#d94f4f;flex-shrink:0" title="Tap to change color"></button>
-      <!-- Strikethrough mode + trash grouped with subtle box when trash visible -->
-      <div id="crossout-group" style="display:flex;align-items:center;border-radius:6px;border:1.5px solid transparent;transition:border-color 0.2s">
-        <button class="icon-btn view-only-btn" id="crossout-mode-btn" aria-label="Toggle cross-out mode" title="Cross out lines" style="display:none">
+      <!-- Strikethrough + Clear strikethroughs grouped — move and hide as a pair -->
+      <div id="crossout-group" style="display:flex;align-items:center;border-radius:6px;border:1.5px solid transparent;transition:border-color 0.2s;flex-shrink:0">
+        <button class="icon-btn view-only-btn" id="crossout-mode-btn" aria-label="Strikethrough selected lines" title="Strikethrough" style="display:none">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="4" y1="12" x2="20" y2="12"/>
             <path d="M17 5H9.5a3.5 3.5 0 000 7"/>
             <path d="M7 19h7.5a3.5 3.5 0 000-7"/>
           </svg>
         </button>
-        <!-- Clear all strikethroughs — visually paired with crossout button -->
-        <button class="icon-btn view-only-btn" id="clear-strikethroughs-btn" aria-label="Clear all cross-outs" title="Clear all cross-outs" style="display:none">
+        <button class="icon-btn view-only-btn" id="clear-strikethroughs-btn" aria-label="Clear all strikethroughs" title="Clear all strikethroughs" style="display:none">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
           </svg>
         </button>
       </div>
-      <!-- Delete line -->
-      <button class="icon-btn view-only-btn" id="delete-line-btn" tabindex="-1" aria-label="Delete a line" title="Delete a line" style="display:none;color:var(--fg3)">
+      <!-- Delete text — renamed from delete line -->
+      <button class="icon-btn view-only-btn" id="delete-line-btn" tabindex="-1" aria-label="Delete selected text" title="Delete text" style="display:none;color:var(--fg3)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
           <line x1="4" y1="12" x2="20" y2="12"/>
         </svg>
@@ -1766,6 +1833,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </svg>
       </button>
     </div><!-- end .toolbar-scroll -->
+
+    <!-- More (⋯) button — always visible, never hideable -->
+    <button class="icon-btn toolbar-more-btn" id="toolbar-more-btn" tabindex="-1"
+      aria-label="More options" title="More"
+      style="flex-shrink:0;padding:0 10px;border-radius:0;border-left:1px solid var(--border)">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+        <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
+      </svg>
+    </button>
 
     <div class="toolbar-scroll-fade-right" id="toolbar-fade-right" style="display:none"></div>
     <!-- Scroll-right arrow (shown only when there is more content to the right) -->
@@ -1797,6 +1873,96 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 
   </div>
+</div>
+
+<!-- ===== COLOR PICKER POPOVER ===== -->
+<div id="color-picker-popover" style="
+  display:none;
+  position:fixed;
+  z-index:10001;
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:12px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.25);
+  padding:12px 16px;
+  touch-action:manipulation;
+  user-select:none;
+  -webkit-user-select:none;
+">
+  <div style="font-size:0.8em;opacity:0.6;margin-bottom:8px;pointer-events:none">Tap a color to apply</div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <button class="color-picker-swatch" data-color="red"    style="background:#d94f4f" title="Red"></button>
+    <button class="color-picker-swatch" data-color="orange" style="background:#e07b2a" title="Orange"></button>
+    <button class="color-picker-swatch" data-color="green"  style="background:#4a9e6b" title="Green"></button>
+    <button class="color-picker-swatch" data-color="blue"   style="background:#3b82c4" title="Blue"></button>
+    <button class="color-picker-swatch" data-color="purple" style="background:#8b5cf6" title="Purple"></button>
+    <button class="color-picker-swatch" data-color="none"   style="background:var(--bg3);border-color:var(--fg)" title="Remove color">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;pointer-events:none">
+        <line x1="4" y1="4" x2="20" y2="20"/><line x1="20" y1="4" x2="4" y2="20"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- ===== MORE DROPDOWN MENU ===== -->
+<div id="toolbar-more-menu" style="
+  display:none;
+  position:fixed;
+  z-index:10000;
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:10px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.25);
+  min-width:190px;
+  overflow:hidden;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:manipulation;
+">
+  <!-- Hidden toolbar buttons will be inserted here dynamically -->
+  <div id="toolbar-more-hidden-items"></div>
+  <!-- Divider — shown only when hidden items are present -->
+  <div id="toolbar-more-divider" style="display:none;height:1px;background:var(--border);margin:2px 0"></div>
+  <!-- Share note item -->
+  <button id="more-share-btn" style="
+    display:flex;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-size:var(--font-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+    </svg>
+    <span style="pointer-events:none;flex:1">Share note</span>
+  </button>
+  <!-- Placeholder italic item — no action yet -->
+  <button id="more-italic-btn" style="
+    display:flex;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-size:var(--font-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+      stroke-linecap="round" stroke-linejoin="round"
+      width="var(--icon-size)" height="var(--icon-size)"
+      style="flex-shrink:0;pointer-events:none">
+      <line x1="19" y1="4" x2="10" y2="4"/>
+      <line x1="14" y1="20" x2="5" y2="20"/>
+      <line x1="15" y1="4" x2="9" y2="20"/>
+    </svg>
+    <span style="pointer-events:none;flex:1">Italic</span>
+    <span style="pointer-events:none;font-size:0.72em;opacity:0.4">coming soon</span>
+  </button>
 </div>
 
 <!-- ===== TAP TO SPEAK OVERLAY ===== -->
@@ -1976,6 +2142,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <span class="range-val" id="line-height-val">1.7</span>
       </div>
     </div>
+    </div>
 
     <!-- Colors -->
     <div class="settings-section">
@@ -2139,6 +2306,23 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           style="width:70px;font-size:1em;padding:6px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg);text-align:center">
       </div>
     </div>
+    </div>
+
+    <!-- Bottom Toolbar Buttons -->
+    <div class="settings-section" id="settings-section-toolbar">
+      <div class="settings-section-header">
+        <span class="settings-label">Lower Toolbar Buttons</span>
+        <svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="settings-section-body">
+        <div class="settings-row-desc" style="padding:4px 0 10px">
+          Hidden buttons move to the ⋯ More menu. The + button and More button are always visible in the lower toolbar.
+        </div>
+        <div id="toolbar-visibility-rows">
+          <!-- Rows generated by JS -->
+        </div>
+      </div>
+    </div>
 
     <!-- Speech -->
     <div class="settings-section">
@@ -2192,6 +2376,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+    </div>
     </div>
 
     <div class="modal-close-row">
@@ -2334,7 +2519,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           </div>
           <div class="help-sub-body">
             <p>The lower toolbar has more buttons than can fit on screen at once. You can <strong>scroll it left and right with your finger</strong> — just swipe horizontally on the toolbar itself.</p>
-            <p>Scroll arrows (◀ and ▶) appear at the edges of the toolbar when there are hidden buttons in that direction. Tap an arrow to scroll one step, or swipe the toolbar directly.</p>
+            <p>Scroll arrows (<svg viewBox="0 0 24 24" fill="currentColor" style="width:0.9em;height:0.9em;vertical-align:middle"><polygon points="16,4 8,12 16,20"/></svg> and <svg viewBox="0 0 24 24" fill="currentColor" style="width:0.9em;height:0.9em;vertical-align:middle"><polygon points="8,4 16,12 8,20"/></svg>) appear at the edges of the toolbar when there are hidden buttons in that direction. Tap an arrow to scroll one step, or swipe the toolbar directly.</p>
             <p>Less-used buttons like Print, Export, and Delete note are at the far right — scroll to reach them.</p>
           </div>
         </div>
@@ -2395,12 +2580,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             This result will be your note contents.</p>
             <p><strong>Step 4.</strong> Add <strong>URL</strong>. Type:<br>
             <code>https://lynn-edu-apps.github.io/everyday-apps/remember/?action=new&amp;name=</code><br>
-            Then tap the magic variable token field and select the result from <strong>Step 2</strong> (the note name).<br>
-            Then type <code>&amp;content=</code> and insert the result from <strong>Step 3</strong> (the note contents).</p>
-            <p><em>How to insert a variable: after typing the URL text, tap the variable token icon (looks like a small box or magic wand) and choose "Ask for Input" result from the correct step. iOS Shortcuts will connect them automatically using dashed lines in iOS 26+.</em></p>
+            Then insert the NoteName variable from Step 2 (see below for how).<br>
+            Then type <code>&amp;content=</code> and insert the NoteContent variable from Step 3.</p>
+            <p>How to insert a variable depends on your iOS version. In recent versions of iOS, after you type an equals sign in the URL (e.g. <code>name=</code>), tap <strong>Select variable</strong> in the scrollable variable picker bar near the bottom of the screen. After you tap, you will see new items highlighted in blue that say <strong>Ask for Input</strong> appearing under the steps. Tap on the blue item underneath the step that contains the prompt asking for the value you want (the note name or the note contents).</p>
+            <p>If this is not consistent with what you see, ask Siri: "How do I insert a variable in Shortcuts".</p>
             <p><strong>Step 5.</strong> Add <strong>Open URL</strong>. It uses the URL from Step 4 automatically.</p>
-            <p><strong>Step 6.</strong> Name the shortcut <strong>New Remember Note</strong> and tap <strong>Done</strong>.</p>
-            <p>Say <strong>"Hey Siri, New Remember Note"</strong>. Siri will ask for the note name, then the contents, then open Remember with the new note ready to view.</p>
+            <p><strong>Step 6.</strong> Name the shortcut <strong>Add a note to Remember</strong> and tap <strong>Done</strong>.</p>
+            <p>Say <strong>"Hey Siri, Add a note to Remember"</strong>. Siri will ask for the note name, then the contents, then open Remember with the new note ready to view.</p>
             <p><strong>Rather than building this shortcut yourself, you can add the ready-made version in one tap:</strong></p>
             <p style="text-align:center;margin:12px 0">
               <a href="https://www.icloud.com/shortcuts/3f1ddfa8d77b4512938581a85848dcbe"
@@ -2563,7 +2749,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.308';
+const APP_VERSION = '0.325';
 
 
 
@@ -2650,7 +2836,9 @@ const DEFAULT_SETTINGS = {
   deleteGuardChars: 30,      // character threshold to trigger the delete guard
   showOopsBtn: true,         // whether to show the Oops restore button
   sectionStates: {},         // collapsed/expanded state for each settings section
-  indentSpaces: 2              // spaces per indent/dedent action
+  indentSpaces: 2,             // spaces per indent/dedent action
+  toolbarHidden: [],           // array of button IDs hidden from bottom toolbar
+  toolbarOrder: []             // ordered array of button IDs (empty = use default order)
 };
 
 let settings = Object.assign({}, DEFAULT_SETTINGS);
@@ -2666,9 +2854,9 @@ let isViewMode = false;
 let ignoreFocus = false; // prevents programmatic focus from triggering keyboard-open
 var updateDictateVisibility = function() {}; // replaced in init when SpeechRecognition available
 var crossoutMode = false; // whether crossout mode is active in view mode
-var boldMode = false;
-var colorMode = false;
-var activeColor = 'red';
+// boldMode, colorMode removed — replaced by select-first applyFormattingToBlocks
+// activeColor no longer needed — color chosen per-action from color picker
+var activeColor = 'red'; // kept for any legacy references
 var deletingLine = false;
 var selectMode = false;      // whether block-select mode is active
 var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
@@ -3148,7 +3336,7 @@ function setViewMode(on, suppressFocus) {
     resizeEditor();
   }
   // Reset all formatting modes when leaving view mode
-  if (!on) { crossoutMode = false; boldMode = false; colorMode = false; deletingLine = false; }
+  if (!on) { crossoutMode = false; deletingLine = false; }
   updateViewOnlyBtns();
 }
 
@@ -3258,49 +3446,63 @@ function getSmartIndentPrefix(lineText) {
 function indentLines(ed) {
   var n = (settings.indentSpaces !== undefined ? settings.indentSpaces : 2);
   var spaces = '';
-  for (var i = 0; i < n; i++) spaces += ' ';
-  var val = ed.value;
+  for (var si = 0; si < n; si++) spaces += ' ';
+  var val      = ed.value;
   var selStart = ed.selectionStart;
   var selEnd   = ed.selectionEnd;
-  if (selStart === selEnd) {
-    // No selection — just insert spaces at cursor
-    ed.value = val.substring(0, selStart) + spaces + val.substring(selEnd);
-    ed.setSelectionRange(selStart + n, selStart + n);
-    return;
-  }
-  // Multi-char selection: indent every line that the selection touches
+
+  // Always operate at the start of the line(s), never at cursor position
   var lineStart = val.lastIndexOf('\n', selStart - 1) + 1;
-  var chunk     = val.substring(lineStart, selEnd);
-  var lines     = chunk.split('\n');
-  var indented  = lines.map(function(l) { return spaces + l; });
-  var result    = indented.join('\n');
-  // Adjust selection to cover the full indented block
-  var newSelStart = lineStart === selStart ? selStart + n : selStart + n;
-  // Keep start at the same visual position (add n for the first line indent)
-  var delta = indented.length * n;
-  ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
-  ed.setSelectionRange(selStart + n, selStart + n + (result.length - chunk.length) + (selEnd - selStart));
-  // Simpler: just extend selection to cover whole rewritten block
-  ed.setSelectionRange(lineStart, lineStart + result.length);
+
+  if (selStart === selEnd) {
+    // No text selection — indent the single line the cursor is on
+    ed.value = val.substring(0, lineStart) + spaces + val.substring(lineStart);
+    // Restore cursor position, shifted right by indent amount
+    ed.setSelectionRange(selStart + n, selStart + n);
+  } else {
+    // Text selection — indent every line the selection touches
+    var chunk    = val.substring(lineStart, selEnd);
+    var lines    = chunk.split('\n');
+    var indented = lines.map(function(l) { return spaces + l; });
+    var result   = indented.join('\n');
+    ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
+    // Restore cursor to same position within text (shifted by one indent level)
+    ed.setSelectionRange(selStart + n, selEnd + indented.length * n);
+  }
 }
 
 // dedentLines: remove up to N leading spaces from each line in the selection.
 function dedentLines(ed) {
   var n = (settings.indentSpaces !== undefined ? settings.indentSpaces : 2);
-  var val = ed.value;
+  var val      = ed.value;
   var selStart = ed.selectionStart;
   var selEnd   = ed.selectionEnd;
   var lineStart = val.lastIndexOf('\n', selStart - 1) + 1;
-  var chunk   = val.substring(lineStart, selEnd);
-  var lines   = chunk.split('\n');
+  var chunk    = val.substring(lineStart, selEnd);
+  var lines    = chunk.split('\n');
+  var removedPerLine = [];
   var dedented = lines.map(function(l) {
     var removed = 0;
     while (removed < n && l.charAt(removed) === ' ') removed++;
+    removedPerLine.push(removed);
     return l.substring(removed);
   });
   var result = dedented.join('\n');
   ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
-  ed.setSelectionRange(lineStart, lineStart + result.length);
+
+  // Mirror indentLines selection behavior:
+  // - No text selection: restore cursor shifted left by spaces removed from this line
+  // - Text selection: adjust selection endpoints by spaces removed (symmetric with indent)
+  var firstLineRemoved = removedPerLine[0] || 0;
+  if (selStart === selEnd) {
+    var newPos = Math.max(lineStart, selStart - firstLineRemoved);
+    ed.setSelectionRange(newPos, newPos);
+  } else {
+    var totalRemoved = removedPerLine.reduce(function(a, b) { return a + b; }, 0);
+    var newStart = Math.max(lineStart, selStart - firstLineRemoved);
+    var newEnd   = Math.max(newStart, selEnd - totalRemoved);
+    ed.setSelectionRange(newStart, newEnd);
+  }
 }
 
 function nameFromContent(content) {
@@ -3355,6 +3557,66 @@ function toggleBlockSelection(lineIndex) {
 }
 
 // Clear all selected blocks and update display.
+// Apply bold, strikethrough, or color to all selected blocks (toggle behavior)
+function applyFormattingToBlocks(type, color) {
+  if (!currentNoteId || !notes[currentNoteId] || selectedBlocks.size === 0) return;
+  var lines = (notes[currentNoteId].content || '').split('\n');
+  selectedBlocks.forEach(function(lineIndex) {
+    if (lineIndex >= lines.length) return;
+    var line = lines[lineIndex];
+    if (!line.trim()) return; // skip blank lines
+
+    if (type === 'bold') {
+      if (line.startsWith('**') && line.endsWith('**') && line.length > 4) {
+        lines[lineIndex] = line.slice(2, -2); // toggle off
+      } else {
+        lines[lineIndex] = '**' + line.replace(/\*\*/g, '') + '**';
+      }
+    } else if (type === 'strikethrough') {
+      if (line.startsWith('~~') && line.endsWith('~~') && line.length > 4) {
+        lines[lineIndex] = line.slice(2, -2); // toggle off
+      } else {
+        lines[lineIndex] = '~~' + line.replace(/~~/g, '') + '~~';
+      }
+    } else if (type === 'color') {
+      var stripped = line.replace(/\{(?:red|orange|green|blue|purple)\}([^{]*)\{\/(?:red|orange|green|blue|purple)\}/g, '$1');
+      if (color === 'none') {
+        lines[lineIndex] = stripped; // remove any color
+      } else {
+        var colorRe = new RegExp('^\\{' + color + '\\}(.*)\\{\\/' + color + '\\}$');
+        if (colorRe.test(line)) {
+          lines[lineIndex] = stripped; // toggle off same color
+        } else {
+          lines[lineIndex] = '{' + color + '}' + stripped + '{/' + color + '}';
+        }
+      }
+    }
+  });
+  notes[currentNoteId].content = lines.join('\n');
+  document.getElementById('note-editor').value = notes[currentNoteId].content;
+  saveNotes();
+  document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+  renderBlockSelections();
+  updateViewOnlyBtns();
+}
+
+// Strip formatting tags for sharing — keeps text readable
+// Differs from stripMarkdownForSpeech: keeps [ ] as-is, converts [x] to ✓
+function stripForShare(content) {
+  return (content || '').split('\n').map(function(line) {
+    // Color markers {red}...{/red} etc.
+    line = line.replace(/\{(?:red|orange|green|blue|purple)\}([^{]*)\{\/(?:red|orange|green|blue|purple)\}/g, '$1');
+    // Bold **...**
+    line = line.replace(/\*\*([^*]*)\*\*/g, '$1');
+    // Strikethrough ~~...~~
+    line = line.replace(/~~([^~]*)~~/g, '$1');
+    // Checked checkbox [x] → ✓
+    line = line.replace(/\[x\]/gi, '\u2713');
+    // Unchecked checkbox [ ] → keep as-is (readable as text)
+    return line;
+  }).join('\n').trim();
+}
+
 function clearSelectedBlocks() {
   selectedBlocks.clear();
   renderBlockSelections();
@@ -4285,16 +4547,33 @@ function init() {
 
   // Collapsible section headers
   document.querySelectorAll('#settings-sheet .settings-section-header').forEach(function(header, idx) {
-    header.addEventListener('click', function() {
-      var section = this.closest('.settings-section');
+    // Use touchHandled pattern (from lessons learned) to prevent iOS ghost-click
+    // when layout shifts during section expand/collapse.
+    // touchend + preventDefault fires the action; click is suppressed if touch already handled.
+    var touchHandled = false;
+
+    function toggleSection() {
+      var section = header.parentElement; // parentElement is more precise than closest()
       var isOpen = section.classList.toggle('open');
-      // Save state
       if (!settings.sectionStates) settings.sectionStates = {};
       settings.sectionStates['section_' + idx] = isOpen;
       saveSettings();
-      // If Speech section is being opened, repopulate voices in case
-      // they loaded asynchronously after the initial call
       if (isOpen && section.querySelector('#voice-select')) populateVoices();
+      if (isOpen && section.querySelector('#toolbar-visibility-rows')) buildToolbarVisibilityRows();
+    }
+
+    header.addEventListener('touchstart', function() {
+      touchHandled = true;
+    }, { passive: true });
+
+    header.addEventListener('touchend', function(e) {
+      e.preventDefault(); // prevent ghost click after layout shift
+      toggleSection();
+    }, { passive: false });
+
+    header.addEventListener('click', function() {
+      if (touchHandled) { touchHandled = false; return; } // already handled by touchend
+      toggleSection();
     });
   });
   document.getElementById('help-btn').addEventListener('click', function() {
@@ -4332,19 +4611,21 @@ function init() {
     }
   });
   // ===== HELP COLLAPSIBLE SECTIONS =====
-  // Wire both top-level (.help-collapsible-header) and sub-level (.help-sub-header)
-  document.querySelectorAll('.help-collapsible-header').forEach(function(header) {
+  // Same touchHandled pattern to prevent ghost clicks on layout shift
+  function wireCollapsibleHeader(header) {
+    var touchHandled = false;
+    header.addEventListener('touchstart', function() { touchHandled = true; }, { passive: true });
+    header.addEventListener('touchend', function(e) {
+      e.preventDefault();
+      header.parentElement.classList.toggle('open');
+    }, { passive: false });
     header.addEventListener('click', function() {
-      var section = header.parentElement;
-      section.classList.toggle('open');
+      if (touchHandled) { touchHandled = false; return; }
+      header.parentElement.classList.toggle('open');
     });
-  });
-  document.querySelectorAll('.help-sub-header').forEach(function(header) {
-    header.addEventListener('click', function() {
-      var section = header.parentElement;
-      section.classList.toggle('open');
-    });
-  });
+  }
+  document.querySelectorAll('.help-collapsible-header').forEach(wireCollapsibleHeader);
+  document.querySelectorAll('.help-sub-header').forEach(wireCollapsibleHeader);
 
   document.getElementById('help-close-btn').addEventListener('click', function() {
     document.getElementById('help-overlay').classList.remove('open');
@@ -4499,6 +4780,401 @@ function init() {
   document.getElementById('stop-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('stop-btn').addEventListener('click', stopSpeaking);
   document.getElementById('delete-note-btn').addEventListener('click', deleteCurrentNote);
+
+  // ===== MORE MENU =====
+  // Map of hideable button IDs to their display labels and icons for Settings
+  var HIDEABLE_BUTTONS = [
+    { id: 'select-blocks-btn',      label: 'Select blocks' },
+    { id: 'indent-btn',             label: 'Indent' },
+    { id: 'dedent-btn',             label: 'Unindent' },
+    { id: 'dictate-btn',            label: 'Dictate' },
+    { id: 'dismiss-keyboard-btn',   label: 'Dismiss keyboard' },
+    { id: 'bold-mode-btn',          label: 'Bold' },
+    { id: 'color-mode-btn',         label: 'Color' },
+    { id: 'crossout-group',          label: 'Strikethrough' },  // group: strikethrough + clear
+    { id: 'delete-line-btn',        label: 'Delete text' },
+    { id: 'print-btn',              label: 'Print' },
+    { id: 'export-note-btn',        label: 'Export note' },
+    { id: 'delete-note-btn',        label: 'Delete note' },
+    { id: 'scroll-top-btn',         label: 'Scroll to top' },
+    { id: 'scroll-bottom-btn',      label: 'Scroll to bottom' },
+  ];
+
+  // Default toolbar order — matches the original HTML left-to-right order
+  var DEFAULT_TOOLBAR_ORDER = ['select-blocks-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'bold-mode-btn', 'color-mode-btn', 'crossout-group', 'delete-line-btn', 'quick-add-btn', 'print-btn', 'export-note-btn', 'delete-note-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
+
+  // Get effective order: stored order supplemented by any missing buttons
+  function getEffectiveOrder() {
+    var stored = (settings.toolbarOrder && settings.toolbarOrder.length)
+      ? settings.toolbarOrder.slice()
+      : DEFAULT_TOOLBAR_ORDER.slice();
+    // Add any buttons not yet in stored order (e.g. newly added buttons)
+    DEFAULT_TOOLBAR_ORDER.forEach(function(id) {
+      if (stored.indexOf(id) === -1) stored.push(id);
+    });
+    return stored;
+  }
+
+  // Reorder the actual toolbar DOM buttons to match settings.toolbarOrder
+  function applyToolbarOrder() {
+    var scroll = document.getElementById('toolbar-scroll');
+    if (!scroll) return;
+    var order = getEffectiveOrder();
+    order.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      // crossout-group is a div, not a button — move directly
+      if (el.parentElement === scroll) {
+        scroll.appendChild(el);
+      }
+    });
+    // quick-add-btn is not in HIDEABLE_BUTTONS but must stay after ordered items
+    // It's already in HTML so just ensure it stays — appendChild moves to end
+    // Actually quick-add stays where it is since it's not in order list
+  }
+
+  // Track the currently highlighted row and its clear timer
+  var _highlightedRow = null;
+  var _highlightTimer = null;
+
+  function highlightMovedRow(btnId) {
+    // Clear any existing highlight immediately
+    if (_highlightedRow) {
+      _highlightedRow.classList.remove('toolbar-row-moved');
+      _highlightedRow = null;
+    }
+    if (_highlightTimer) { clearTimeout(_highlightTimer); _highlightTimer = null; }
+
+    // Find the row for this btnId by data attribute on the toggle input
+    var container = document.getElementById('toolbar-visibility-rows');
+    if (!container) return;
+    var inputs = container.querySelectorAll('input[type="checkbox"]');
+    var targetRow = null;
+    inputs.forEach(function(input) {
+      if (input.closest('.settings-row') &&
+          input.closest('.settings-row').querySelector('input') === input) {
+        // Check if this row's toggle corresponds to btnId
+        // We identify by position — find the row at the new index
+      }
+    });
+    // Simpler: find row whose label matches the button label
+    var info = HIDEABLE_BUTTONS.filter(function(b) { return b.id === btnId; })[0];
+    if (!info) return;
+    var rows = container.querySelectorAll('.settings-row');
+    rows.forEach(function(row) {
+      var label = row.querySelector('.settings-row-label');
+      if (label && label.textContent === info.label) targetRow = row;
+    });
+    if (!targetRow) return;
+
+    targetRow.classList.add('toolbar-row-moved');
+    _highlightedRow = targetRow;
+    _highlightTimer = setTimeout(function() {
+      if (_highlightedRow) _highlightedRow.classList.remove('toolbar-row-moved');
+      _highlightedRow = null;
+      _highlightTimer = null;
+    }, 2000);
+  }
+
+  // Move button at fromIdx to toIdx in the order array
+  function moveToolbarButton(btnId, direction) {
+    var order = getEffectiveOrder();
+    var idx = order.indexOf(btnId);
+    if (idx === -1) return;
+    var newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= order.length) return;
+    order.splice(idx, 1);
+    order.splice(newIdx, 0, btnId);
+    settings.toolbarOrder = order;
+    applyToolbarOrder();
+    buildToolbarVisibilityRows();
+    updateSaveBtnState();
+    if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
+    // Highlight the moved row after rebuild so the new DOM row exists
+    setTimeout(function() { highlightMovedRow(btnId); }, 0);
+  }
+
+  // Apply hidden state: hide toolbar buttons and rebuild More menu items
+  function applyToolbarVisibility() {
+    var hidden = settings.toolbarHidden || [];
+    HIDEABLE_BUTTONS.forEach(function(b) {
+      var el = document.getElementById(b.id);
+      if (!el) return;
+      if (hidden.indexOf(b.id) !== -1) {
+        el.dataset.toolbarHidden = '1';
+      } else {
+        delete el.dataset.toolbarHidden;
+      }
+    });
+    applyToolbarHiddenOverrides();
+    rebuildMoreMenuItems();
+    if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
+  }
+
+  // After normal show/hide logic, force hidden buttons to display:none
+  function applyToolbarHiddenOverrides() {
+    var hidden = settings.toolbarHidden || [];
+    HIDEABLE_BUTTONS.forEach(function(b) {
+      if (hidden.indexOf(b.id) !== -1) {
+        var el = document.getElementById(b.id);
+        if (el) el.style.display = 'none';
+      }
+    });
+    // crossout-group: hide/show the entire group div together
+    var crossoutGroup = document.getElementById('crossout-group');
+    if (crossoutGroup) {
+      if (hidden.indexOf('crossout-group') !== -1) {
+        crossoutGroup.style.display = 'none';
+      }
+      // actual show/hide of children handled by updateViewOnlyBtns
+    }
+  }
+
+  // Rebuild the hidden-items section of the More menu
+  function rebuildMoreMenuItems() {
+    var container = document.getElementById('toolbar-more-hidden-items');
+    var divider   = document.getElementById('toolbar-more-divider');
+    if (!container) return;
+    container.innerHTML = '';
+    var hidden = settings.toolbarHidden || [];
+    var kbOpen = document.getElementById('note-screen').classList.contains('keyboard-open');
+
+    hidden.forEach(function(btnId) {
+      // Find button info
+      var info = HIDEABLE_BUTTONS.filter(function(b) { return b.id === btnId; })[0];
+      if (!info) return;
+
+      // Determine if this item should currently be visible in the menu
+      // based on the same rules as the toolbar button
+      // crossout-group is a div, not a button — get its first child button for icon/visibility
+      var srcBtn = document.getElementById(btnId);
+      if (!srcBtn) return;
+      // For the crossout-group, use the group div itself for visibility check
+      // but the crossout-mode-btn for the icon
+      if (btnId === 'crossout-group') {
+        srcBtn = document.getElementById('crossout-mode-btn') || srcBtn;
+      }
+
+      // Check mode-based visibility
+      var isViewOnlyBtn = srcBtn.classList.contains('view-only-btn');
+      var isEditOnlyBtn = srcBtn.classList.contains('edit-only-btn');
+      var isKbHide      = srcBtn.classList.contains('kb-hide');
+      var isKbOnly      = srcBtn.classList.contains('kb-only');
+
+      var shouldShow = true;
+      if (isViewOnlyBtn && !isViewMode) shouldShow = false;
+      if (isEditOnlyBtn && isViewMode)  shouldShow = false;
+      if (isKbHide && kbOpen)           shouldShow = false;
+      if (isKbOnly && !kbOpen)          shouldShow = false;
+      // Special case: indent/dedent show in view mode when blocks selected
+      if ((btnId === 'indent-btn' || btnId === 'dedent-btn') && selectedBlocks.size > 0) shouldShow = true;
+      // dictate-btn has its own display logic — only show if it would be visible
+      if (btnId === 'dictate-btn' && srcBtn.style.display === 'none') shouldShow = false;
+
+      if (!shouldShow) return;
+
+      // Clone the SVG icon from the source button
+      var svgSrc = srcBtn.querySelector('svg');
+      var svgHtml = svgSrc ? svgSrc.outerHTML.replace(/width="[^"]*"/, 'width="var(--icon-size)"')
+                                              .replace(/height="[^"]*"/, 'height="var(--icon-size)"')
+                           : '';
+
+      var item = document.createElement('button');
+      item.dataset.moreFor = btnId;
+      item.style.cssText = [
+        'display:flex', 'align-items:center', 'gap:12px',
+        'width:100%', 'padding:13px 18px',
+        'background:none', 'border:none',
+        'color:var(--fg)', 'font-size:var(--font-ui)',
+        'text-align:left', 'cursor:pointer',
+        'touch-action:manipulation',
+        'user-select:none', '-webkit-user-select:none',
+        'box-sizing:border-box'
+      ].join(';');
+
+      // Active state for mode-toggle buttons
+      var isActive = srcBtn.classList.contains('active');
+      if (isActive) item.style.color = 'var(--accent)';
+
+      item.innerHTML = '<span style="pointer-events:none;flex-shrink:0">' + svgHtml + '</span>' +
+                       '<span style="pointer-events:none;flex:1">' + info.label + '</span>' +
+                       (isActive ? '<span style="pointer-events:none;font-size:0.75em;opacity:0.6">on</span>' : '');
+
+      // Wire click to the source button's click handler by clicking it
+      item.addEventListener('mousedown', function(e) { e.preventDefault(); });
+      item.addEventListener('click', function() {
+        closeMoreMenu();
+        document.getElementById(btnId).click();
+      });
+      item.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
+
+      container.appendChild(item);
+    });
+
+    // Show/hide divider
+    var hasItems = container.children.length > 0;
+    if (divider) divider.style.display = hasItems ? 'block' : 'none';
+  }
+
+  // Build the toolbar visibility + order Settings rows
+  function buildToolbarVisibilityRows() {
+    var container = document.getElementById('toolbar-visibility-rows');
+    if (!container) return;
+    var hidden = settings.toolbarHidden || [];
+    var order  = getEffectiveOrder();
+    container.innerHTML = '';
+
+    // Show buttons in current toolbar order
+    order.forEach(function(btnId, idx) {
+      var b = HIDEABLE_BUTTONS.filter(function(x) { return x.id === btnId; })[0];
+      if (!b) return; // skip buttons not in HIDEABLE_BUTTONS (e.g. quick-add)
+
+      var isHidden  = hidden.indexOf(b.id) !== -1;
+      var isFirst   = idx === 0;
+      var isLast    = idx === order.length - 1;
+
+      var row = document.createElement('div');
+      row.className = 'settings-row';
+      row.style.cssText = 'padding-top:4px;padding-bottom:4px;gap:6px;align-items:center';
+
+      // ▲ arrow span
+      var upSpan = document.createElement('span');
+      upSpan.className = 'toolbar-reorder-arrow' + (isFirst ? ' disabled' : '');
+      upSpan.setAttribute('aria-label', 'Move ' + b.label + ' up');
+      upSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none" width="var(--icon-size)" height="var(--icon-size)"><polyline points="18 15 12 9 6 15"/></svg>';
+
+      // ▼ arrow span
+      var downSpan = document.createElement('span');
+      downSpan.className = 'toolbar-reorder-arrow' + (isLast ? ' disabled' : '');
+      downSpan.setAttribute('aria-label', 'Move ' + b.label + ' down');
+      downSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none" width="var(--icon-size)" height="var(--icon-size)"><polyline points="6 9 12 15 18 9"/></svg>';
+
+      // touchHandled flag per arrow to prevent double-firing on iOS
+      var touchHandledUp = false, touchHandledDown = false;
+
+      upSpan.addEventListener('touchstart', function() { touchHandledUp = true; }, { passive: true });
+      upSpan.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        if (!isFirst) moveToolbarButton(b.id, -1);
+      }, { passive: false });
+      upSpan.addEventListener('click', function() {
+        if (touchHandledUp) { touchHandledUp = false; return; }
+        if (!isFirst) moveToolbarButton(b.id, -1);
+      });
+
+      downSpan.addEventListener('touchstart', function() { touchHandledDown = true; }, { passive: true });
+      downSpan.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        if (!isLast) moveToolbarButton(b.id, 1);
+      }, { passive: false });
+      downSpan.addEventListener('click', function() {
+        if (touchHandledDown) { touchHandledDown = false; return; }
+        if (!isLast) moveToolbarButton(b.id, 1);
+      });
+
+      // Label
+      var labelDiv = document.createElement('div');
+      labelDiv.style.flex = '1';
+      labelDiv.innerHTML = '<div class="settings-row-label">' + b.label + '</div>';
+
+      // Visibility toggle
+      var toggleLabel = document.createElement('label');
+      toggleLabel.className = 'toggle-switch';
+      toggleLabel.setAttribute('aria-label', 'Show ' + b.label);
+      toggleLabel.innerHTML =
+        '<input type="checkbox"' + (!isHidden ? ' checked' : '') + '>' +
+        '<span class="toggle-track"><span class="toggle-thumb"></span></span>';
+      toggleLabel.querySelector('input').addEventListener('change', function() {
+        var hiddenArr = (settings.toolbarHidden || []).slice();
+        if (this.checked) {
+          hiddenArr = hiddenArr.filter(function(id) { return id !== b.id; });
+        } else {
+          if (hiddenArr.indexOf(b.id) === -1) hiddenArr.push(b.id);
+        }
+        settings.toolbarHidden = hiddenArr;
+        applyToolbarVisibility();
+        updateViewOnlyBtns();
+        updateSaveBtnState();
+      });
+
+      // Layout: label | toggle | ▲ ▼  (arrows at far right for right-handed use)
+      row.appendChild(labelDiv);
+      row.appendChild(toggleLabel);
+      row.appendChild(upSpan);
+      row.appendChild(downSpan);
+      container.appendChild(row);
+    });
+  }
+
+  // Toggle More menu open/closed
+  var moreMenuOpen = false;
+  function openMoreMenu() {
+    var btn   = document.getElementById('toolbar-more-btn');
+    var menu  = document.getElementById('toolbar-more-menu');
+    if (!btn || !menu) return;
+    // Rebuild hidden items fresh every open so mode-based visibility is current
+    rebuildMoreMenuItems();
+    var rect = btn.getBoundingClientRect();
+    // Position menu below the button (toolbars are at top)
+    menu.style.display = 'block';
+    var menuH = menu.offsetHeight;
+    var top = rect.bottom + 4;
+    // If it would go off-screen bottom, flip above
+    if (top + menuH > window.innerHeight - 20) top = rect.top - menuH - 4;
+    menu.style.top  = Math.max(4, top) + 'px';
+    // Align right edge with button right edge
+    var left = rect.right - menu.offsetWidth;
+    menu.style.left = Math.max(4, left) + 'px';
+    moreMenuOpen = true;
+  }
+
+  function closeMoreMenu() {
+    var menu = document.getElementById('toolbar-more-menu');
+    if (menu) menu.style.display = 'none';
+    moreMenuOpen = false;
+  }
+
+  document.getElementById('toolbar-more-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('toolbar-more-btn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (moreMenuOpen) { closeMoreMenu(); } else { openMoreMenu(); }
+  });
+
+  // Close menu when tapping outside
+  document.addEventListener('click', function(e) {
+    if (moreMenuOpen && !document.getElementById('toolbar-more-menu').contains(e.target)) {
+      closeMoreMenu();
+    }
+  });
+  document.addEventListener('touchstart', function(e) {
+    if (moreMenuOpen && !document.getElementById('toolbar-more-menu').contains(e.target)
+        && e.target.id !== 'toolbar-more-btn') {
+      closeMoreMenu();
+    }
+  }, { passive: true });
+
+  // Italic placeholder — no action yet
+  document.getElementById('more-share-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-share-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    shareNote();
+  });
+
+  document.getElementById('more-italic-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-italic-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    // TODO: implement italic
+  });
+
+  // Load toolbar visibility settings when Settings opens
+  var _origOpenSettings = document.getElementById('settings-btn').onclick;
+  document.getElementById('settings-btn').addEventListener('click', function() {
+    buildToolbarVisibilityRows();
+  });
+
+  // Apply on init
+  applyToolbarOrder();
+  applyToolbarVisibility();
   document.getElementById('oops-btn').addEventListener('click', restoreNote);
   // Select-all / deselect toggle
   var isAllSelected = false;
@@ -4605,9 +5281,25 @@ function init() {
   // ===== INDENT / DEDENT BUTTONS =====
   document.getElementById('indent-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('indent-btn').addEventListener('click', function() {
-    if (isViewMode && selectedBlocks.size > 0) {
-      applyIndentToSelectedBlocks(true);
-    } else if (!isViewMode) {
+    if (isViewMode) {
+      // View mode: requires block selection
+      if (selectedBlocks.size > 0) {
+        applyIndentToSelectedBlocks(true);
+      } else {
+        showToast('Select some lines first', false);
+      }
+    } else {
+      // Edit mode (EMNI or EMTIP): indent current line or selected lines
+      if (!isViewMode && selectedBlocks.size === 0 &&
+          noteEditor.selectionStart === noteEditor.selectionEnd) {
+        // EMNI — no insertion point and no blocks: prompt to select
+        // Check if we have an insertion point (EMTIP) or not (EMNI)
+        // We detect EMNI by checking if the editor has focus
+        if (document.activeElement !== noteEditor) {
+          showToast('Select some lines first', false);
+          return;
+        }
+      }
       indentLines(noteEditor);
       resizeEditor();
       scheduleSave();
@@ -4615,9 +5307,19 @@ function init() {
   });
   document.getElementById('dedent-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('dedent-btn').addEventListener('click', function() {
-    if (isViewMode && selectedBlocks.size > 0) {
-      applyIndentToSelectedBlocks(false);
-    } else if (!isViewMode) {
+    if (isViewMode) {
+      // View mode: requires block selection
+      if (selectedBlocks.size > 0) {
+        applyIndentToSelectedBlocks(false);
+      } else {
+        showToast('Select some lines first', false);
+      }
+    } else {
+      // Edit mode (EMNI or EMTIP): dedent current line or selected lines
+      if (document.activeElement !== noteEditor) {
+        showToast('Select some lines first', false);
+        return;
+      }
       dedentLines(noteEditor);
       resizeEditor();
       scheduleSave();
@@ -5292,46 +5994,33 @@ function init() {
   // ===== DELETE LINE =====
   document.getElementById('delete-line-btn').addEventListener('click', function() {
     if (!isViewMode) return;
-    deletingLine = !deletingLine;
-    this.classList.toggle('active', deletingLine);
-    this.style.color = deletingLine ? '' : 'var(--fg3)';
-    var viewer = document.getElementById('note-viewer');
-    if (viewer) viewer.classList.toggle('crossout-mode', deletingLine);
-  });
-
-  document.getElementById('note-viewer').addEventListener('click', function(e) {
-    if (!isViewMode || !deletingLine) return;
-    var lineDiv = e.target.closest('.viewer-line');
-    if (!lineDiv) return;
-    var lineIndex = parseInt(lineDiv.dataset.line);
-    if (isNaN(lineIndex)) return;
-
-    var content = currentNoteId && notes[currentNoteId] ? notes[currentNoteId].content || '' : '';
-    var lines = content.split('\n');
-    if (lineIndex >= lines.length) return;
-
-    var lineText = lines[lineIndex].trim();
-    var preview = lineText.length > 50 ? lineText.substring(0, 50) + '…' : lineText;
-    var confirmMsg = lineText
-      ? 'Delete this line?\n\n"' + preview + '"'
-      : 'Delete this blank line?';
-
+    if (selectedBlocks.size === 0) { showToast('Select some lines first', false); return; }
+    var blockCount = selectedBlocks.size;
+    var label = blockCount === 1 ? '1 item' : blockCount + ' items';
     showConfirm(
-      'Delete line',
-      confirmMsg,
+      'Delete text',
+      'Delete ' + label + '? This cannot be undone.',
       'Delete',
       function() {
-        lines.splice(lineIndex, 1);
+        if (!currentNoteId || !notes[currentNoteId]) return;
+        var lines = (notes[currentNoteId].content || '').split('\n');
+        // Remove in reverse order so indices stay valid
+        var idxArr = [];
+        selectedBlocks.forEach(function(i) { idxArr.push(i); });
+        idxArr.sort(function(a,b) { return b - a; });
+        idxArr.forEach(function(i) { if (i < lines.length) lines.splice(i, 1); });
         notes[currentNoteId].content = lines.join('\n');
         document.getElementById('note-editor').value = notes[currentNoteId].content;
         saveNotes();
+        clearSelectedBlocks();
+        selectMode = false;
+        updateSelectModeBtn();
         document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
-        document.getElementById('note-viewer').classList.toggle('crossout-mode', deletingLine);
         updateViewOnlyBtns();
       },
       false, 'Cancel', null, 'centered'
     );
-  }, true); // use capture so this fires before the existing viewer click handler
+  });
 
   document.getElementById('tap-to-speak-banner').addEventListener('click', function(e) {
     this.style.display = 'none';
@@ -5534,94 +6223,111 @@ function init() {
     }
   });
   updateViewOnlyBtns = function() {
-    var crossoutBtn = document.getElementById('crossout-mode-btn');
-    var clearBtn = document.getElementById('clear-strikethroughs-btn');
-    var boldBtn = document.getElementById('bold-mode-btn');
-    var colorBtn = document.getElementById('color-mode-btn');
-    var swatches = document.getElementById('color-swatch-cycle');
-    var deleteLineBtn = document.getElementById('delete-line-btn');
-    var inView = isViewMode;
+    var crossoutBtn   = document.getElementById('crossout-mode-btn');
+    var clearBtn      = document.getElementById('clear-strikethroughs-btn');
+    var boldBtn       = document.getElementById('bold-mode-btn');
+    var colorBtn      = document.getElementById('color-mode-btn');
+    var deleteTextBtn = document.getElementById('delete-line-btn');
+    var inView        = isViewMode;
+    var hasBlocks     = selectedBlocks.size > 0;
 
-    [crossoutBtn, boldBtn, colorBtn].forEach(function(b) { b.style.display = inView ? '' : 'none'; });
-    deleteLineBtn.style.display = inView ? '' : 'none';
-    deleteLineBtn.style.marginLeft = inView ? 'auto' : '';
+    // Show view-only buttons in view mode
+    [crossoutBtn, boldBtn, colorBtn, deleteTextBtn].forEach(function(b) {
+      if (b) b.style.display = inView ? '' : 'none';
+    });
+
+    // Dim formatting buttons when no blocks selected (they need selection first)
+    [boldBtn, crossoutBtn, colorBtn, deleteTextBtn].forEach(function(b) {
+      if (!b) return;
+      b.style.opacity = (!inView || hasBlocks) ? '' : '0.35';
+      b.title = b.id === 'bold-mode-btn'      ? (hasBlocks ? 'Bold selected lines' : 'Bold (select lines first)') :
+                b.id === 'crossout-mode-btn'   ? (hasBlocks ? 'Strikethrough selected lines' : 'Strikethrough (select lines first)') :
+                b.id === 'color-mode-btn'      ? (hasBlocks ? 'Color selected lines' : 'Color (select lines first)') :
+                b.id === 'delete-line-btn'     ? (hasBlocks ? 'Delete selected text' : 'Delete text (select lines first)') : b.title;
+    });
+
     if (!inView) {
       deletingLine = false;
-      deleteLineBtn.classList.remove('active');
-      deleteLineBtn.style.color = '';
+      if (deleteTextBtn) { deleteTextBtn.classList.remove('active'); deleteTextBtn.style.color = ''; }
     }
+
     // Show indent/dedent in edit mode OR in view mode when blocks selected
-    var indentBtn  = document.getElementById('indent-btn');
-    var dedentBtn  = document.getElementById('dedent-btn');
-    var showIndent = !inView || selectedBlocks.size > 0;
-    if (indentBtn) { indentBtn.style.display = showIndent ? '' : 'none'; }
-    if (dedentBtn) { dedentBtn.style.display = showIndent ? '' : 'none'; }
+    var indentBtn = document.getElementById('indent-btn');
+    var dedentBtn = document.getElementById('dedent-btn');
+    var showIndent = !inView || hasBlocks;
+    if (indentBtn) indentBtn.style.display = showIndent ? '' : 'none';
+    if (dedentBtn) dedentBtn.style.display = showIndent ? '' : 'none';
 
-    // Update select button appearance
-    updateSelectModeBtn();
-    // Recheck toolbar scroll arrows since visible buttons may have changed
-    if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
-
-    // When minus is hidden (edit mode), plus needs margin-left:auto to push right
-    var quickAddBtn = document.getElementById('quick-add-btn');
-    if (quickAddBtn) quickAddBtn.style.marginLeft = inView ? '' : 'auto';
+    // Show clear-strikethroughs only when note has strikethroughs
     var hasStrikes = currentNoteId && notes[currentNoteId] &&
                      notes[currentNoteId].content && notes[currentNoteId].content.indexOf('~~') !== -1;
-    clearBtn.style.display = (inView && hasStrikes) ? '' : 'none';
-    swatches.style.display = (inView && colorMode) ? 'flex' : 'none';
-
-    // Show subtle box around crossout group when trash is visible
+    if (clearBtn) clearBtn.style.display = (inView && hasStrikes) ? '' : 'none';
+    // Show subtle border around crossout-group when trash is visible
     var crossoutGroup = document.getElementById('crossout-group');
     if (crossoutGroup) {
       crossoutGroup.style.borderColor = (inView && hasStrikes) ? 'var(--border)' : 'transparent';
     }
 
-    crossoutBtn.classList.toggle('active', crossoutMode);
-    boldBtn.classList.toggle('active', boldMode);
-    colorBtn.classList.toggle('active', colorMode);
+    // When delete-text hidden (edit mode), plus needs margin-left:auto
+    var quickAddBtn = document.getElementById('quick-add-btn');
+    if (quickAddBtn) quickAddBtn.style.marginLeft = inView ? '' : 'auto';
 
-    var viewer = document.getElementById('note-viewer');
-    if (viewer) viewer.classList.toggle('crossout-mode', (crossoutMode || boldMode || colorMode) && inView);
-
-    // Recheck toolbar scroll arrows after button visibility changes
+    updateSelectModeBtn();
     if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
+    if (typeof applyToolbarHiddenOverrides === 'function') applyToolbarHiddenOverrides();
   };
 
-  document.getElementById('crossout-mode-btn').addEventListener('click', function() {
-    crossoutMode = !crossoutMode;
-    if (crossoutMode) { boldMode = false; colorMode = false; }
-    updateViewOnlyBtns();
-  });
-
+  // ── Bold: one-shot on selected blocks ────────────────────────────────────
   document.getElementById('bold-mode-btn').addEventListener('click', function() {
-    boldMode = !boldMode;
-    if (boldMode) { crossoutMode = false; colorMode = false; }
-    updateViewOnlyBtns();
+    if (!isViewMode || selectedBlocks.size === 0) { showToast('Select some lines first', false); return; }
+    applyFormattingToBlocks('bold');
   });
 
+  // ── Strikethrough: one-shot on selected blocks ────────────────────────────
+  document.getElementById('crossout-mode-btn').addEventListener('click', function() {
+    if (!isViewMode || selectedBlocks.size === 0) { showToast('Select some lines first', false); return; }
+    applyFormattingToBlocks('strikethrough');
+  });
+
+  // ── Color: open picker popover ────────────────────────────────────────────
   document.getElementById('color-mode-btn').addEventListener('click', function() {
-    colorMode = !colorMode;
-    if (colorMode) { crossoutMode = false; boldMode = false; }
-    updateViewOnlyBtns();
+    if (!isViewMode || selectedBlocks.size === 0) { showToast('Select some lines first', false); return; }
+    openColorPicker();
   });
 
-  // Single cycling color swatch
-  var colorCycle = [
-    {name:'red',    bg:'#d94f4f'},
-    {name:'orange', bg:'#e07b2a'},
-    {name:'green',  bg:'#4a9e6b'},
-    {name:'blue',   bg:'#3b82c4'},
-    {name:'purple', bg:'#8b5cf6'}
-  ];
-  var colorCycleIdx = 0;
-  activeColor = colorCycle[0].name;
-  var swatchBtn = document.getElementById('color-swatch-cycle');
-  swatchBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    colorCycleIdx = (colorCycleIdx + 1) % colorCycle.length;
-    activeColor = colorCycle[colorCycleIdx].name;
-    swatchBtn.style.background = colorCycle[colorCycleIdx].bg;
-    swatchBtn.title = colorCycle[colorCycleIdx].name.charAt(0).toUpperCase() + colorCycle[colorCycleIdx].name.slice(1);
+  // ── Color picker popover ──────────────────────────────────────────────────
+  var colorPickerOpen = false;
+  function openColorPicker() {
+    var popover = document.getElementById('color-picker-popover');
+    var btn     = document.getElementById('color-mode-btn');
+    if (!popover || !btn) return;
+    popover.style.display = 'block';
+    var rect = btn.getBoundingClientRect();
+    var top  = rect.bottom + 4;
+    if (top + popover.offsetHeight > window.innerHeight - 20) top = rect.top - popover.offsetHeight - 4;
+    var left = rect.right - popover.offsetWidth;
+    popover.style.top  = Math.max(4, top) + 'px';
+    popover.style.left = Math.max(4, left) + 'px';
+    colorPickerOpen = true;
+  }
+  function closeColorPicker() {
+    var popover = document.getElementById('color-picker-popover');
+    if (popover) popover.style.display = 'none';
+    colorPickerOpen = false;
+  }
+  document.querySelectorAll('.color-picker-swatch').forEach(function(swatch) {
+    swatch.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    swatch.addEventListener('click', function() {
+      var color = this.dataset.color;
+      closeColorPicker();
+      applyFormattingToBlocks('color', color);
+    });
+  });
+  document.addEventListener('click', function(e) {
+    if (colorPickerOpen && !document.getElementById('color-picker-popover').contains(e.target)
+        && e.target.id !== 'color-mode-btn') {
+      closeColorPicker();
+    }
   });
 
   document.getElementById('clear-strikethroughs-btn').addEventListener('click', function() {
@@ -5635,6 +6341,7 @@ function init() {
         document.getElementById('note-editor').value = notes[currentNoteId].content;
         saveNotes();
         document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+        renderBlockSelections(); // preserve block selection highlights after re-render
         updateViewOnlyBtns();
       },
       false, 'Cancel', null, 'centered'
@@ -5659,6 +6366,10 @@ function init() {
       // Switch to view mode when activating select in edit mode
       setViewMode(true);
     }
+    if (!selectMode) {
+      // Deselecting select mode clears all light-blue block selections
+      clearSelectedBlocks();
+    }
     updateSelectModeBtn();
     if (window._updateToolbarArrows) window._updateToolbarArrows();
   });
@@ -5675,51 +6386,6 @@ function init() {
     e.stopPropagation();
     toggleBlockSelection(lineIndex);
     // Recheck arrow visibility and indent/dedent visibility after selection change
-    updateViewOnlyBtns();
-  });
-
-  document.getElementById('note-viewer').addEventListener('click', function(e) {
-    if (!isViewMode || deletingLine || (!crossoutMode && !boldMode && !colorMode)) return;
-    var lineDiv = e.target.closest('.viewer-line');
-    if (!lineDiv) return;
-    var lineIndex = parseInt(lineDiv.dataset.line);
-    if (isNaN(lineIndex)) return;
-
-    var content = currentNoteId && notes[currentNoteId] ? notes[currentNoteId].content || '' : '';
-    var lines = content.split('\n');
-    if (lineIndex >= lines.length) return;
-    var line = lines[lineIndex];
-    if (!line.trim()) return;
-
-    if (crossoutMode) {
-      if (line.startsWith('~~') && line.endsWith('~~') && line.length > 4) {
-        lines[lineIndex] = line.slice(2, -2);
-      } else {
-        lines[lineIndex] = '~~' + line.replace(/~~/g, '') + '~~';
-      }
-    } else if (boldMode) {
-      if (line.startsWith('**') && line.endsWith('**') && line.length > 4) {
-        lines[lineIndex] = line.slice(2, -2);
-      } else {
-        lines[lineIndex] = '**' + line.replace(/\*\*/g, '') + '**';
-      }
-    } else if (colorMode) {
-      // Remove any existing color markers first
-      var stripped = line.replace(/\{(?:red|orange|green|blue|purple)\}([^{]*)\{\/(?:red|orange|green|blue|purple)\}/g, '$1');
-      // Toggle off if same color already applied
-      var colorRe = new RegExp('^\\{' + activeColor + '\\}(.*)\\{\\/' + activeColor + '\\}$');
-      if (colorRe.test(line)) {
-        lines[lineIndex] = stripped;
-      } else {
-        lines[lineIndex] = '{' + activeColor + '}' + stripped + '{/' + activeColor + '}';
-      }
-    }
-
-    notes[currentNoteId].content = lines.join('\n');
-    document.getElementById('note-editor').value = notes[currentNoteId].content;
-    saveNotes();
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
-    document.getElementById('note-viewer').classList.toggle('crossout-mode', crossoutMode || boldMode || colorMode);
     updateViewOnlyBtns();
   });
 
@@ -5853,6 +6519,33 @@ function showSpeakError(noteName, debugInfo) {
       });
     }
   }, 0);
+}
+
+// ===== SHARE NOTE =====
+function shareNote() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  var note    = notes[currentNoteId];
+  var title   = note.name || 'Note';
+  var text    = stripForShare(note.content);
+  if (!text) { showToast('This note has no content to share', false); return; }
+
+  if (navigator.share) {
+    navigator.share({ title: title, text: text }).catch(function(err) {
+      // User cancelled — no message needed
+      if (err && err.name === 'AbortError') return;
+      // Any other failure — show friendly message, not raw error
+      showToast('Sharing is not available in this browser', true);
+    });
+  } else if (navigator.clipboard && navigator.clipboard.writeText) {
+    // Fallback: copy to clipboard
+    navigator.clipboard.writeText(text).then(function() {
+      showToast('Copied to clipboard (sharing not available on this browser)', false);
+    }).catch(function() {
+      showToast('Unable to share or copy on this browser', true);
+    });
+  } else {
+    showToast('Sharing is not available on this browser', true);
+  }
 }
 
 // ===== TAP TO SPEAK BANNER =====
