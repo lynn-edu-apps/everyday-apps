@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.326 -->
+<!-- Remember App - Version 0.332 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -810,6 +810,53 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 .note-item-preview .viewer-checkbox { width: 0.95em; height: 0.95em; pointer-events: none; }
 .note-item-preview a { pointer-events: none; color: inherit; text-decoration: underline; }
 .crossout-mode .viewer-line { cursor: pointer; }
+/* Paste mode — viewer lines get a tap target cursor */
+.paste-mode .viewer-line {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (hover: hover) {
+  .paste-mode .viewer-line:hover { background: rgba(128,128,128,0.08); }
+}
+
+/* Paste popover */
+#paste-popover {
+  display: none;
+  position: fixed;
+  z-index: 10002;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.paste-popover-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 18px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-size: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-sizing: border-box;
+}
+.paste-popover-btn:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+@media (hover: hover) {
+  .paste-popover-btn:hover { background: var(--bg3); }
+}
+.paste-popover-btn:focus { outline: none; }
+
 /* Only show hover tint on real pointer (mouse) devices — touch screens
    freeze :hover state after tap so it never clears, leaving a stale tint */
 @media (hover: hover) {
@@ -1535,8 +1582,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 
 #debug-toast {
   position: fixed;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 72px;
   left: 12px;
   right: 12px;
   background: #3a3a3a;
@@ -1557,7 +1603,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 }
 body:not(.dark) #debug-toast { background: #2a2a2a; }
 body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255,0.2); }
-#debug-toast.show { opacity: 1; pointer-events: all; }
+#debug-toast.show { opacity: 1; pointer-events: none; } /* no pointer-events — prevents accidental clipboard copy */
 
 /* Speaking highlight */
 .speak-highlight {
@@ -1781,7 +1827,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </button>
       <!-- Color mode toggle + swatch always adjacent — only shown in view mode -->
       <button class="icon-btn view-only-btn" id="color-mode-btn" aria-label="Toggle color mode" title="Color lines" style="display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
           <circle cx="12" cy="12" r="10"/>
           <path d="M12 2a10 10 0 010 20" fill="#aaaaaa" stroke="none"/>
           <path d="M12 2a10 10 0 0110 10" fill="#e07070" stroke="none"/>
@@ -1807,6 +1853,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <button class="icon-btn view-only-btn" id="delete-line-btn" tabindex="-1" aria-label="Delete selected text" title="Delete text" style="display:none;color:var(--fg3)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)">
           <line x1="4" y1="12" x2="20" y2="12"/>
+        </svg>
+      </button>
+      <!-- Paste — view mode only -->
+      <button class="icon-btn view-only-btn" id="paste-btn" tabindex="-1" aria-label="Paste text" title="Paste" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+          <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+          <line x1="12" y1="11" x2="12" y2="17"/>
+          <line x1="9" y1="14" x2="15" y2="14"/>
         </svg>
       </button>
       <!-- Quick add -->
@@ -1875,6 +1930,22 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 </div>
 
+<!-- ===== PASTE POPOVER ===== -->
+<div id="paste-popover">
+  <button class="paste-popover-btn" id="paste-before-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+      <polyline points="18 15 12 9 6 15"/>
+    </svg>
+    <span style="pointer-events:none">Paste before this line</span>
+  </button>
+  <button class="paste-popover-btn" id="paste-after-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+    <span style="pointer-events:none">Paste after this line</span>
+  </button>
+</div>
+
 <!-- ===== COLOR PICKER POPOVER ===== -->
 <div id="color-picker-popover" style="
   display:none;
@@ -1940,23 +2011,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
     </svg>
     <span style="pointer-events:none;flex:1">Share note</span>
-  </button>
-  <!-- Email note item -->
-  <button id="more-email-btn" style="
-    display:flex;align-items:center;gap:12px;
-    width:100%;padding:13px 18px;
-    background:none;border:none;
-    color:var(--fg);font-size:var(--font-ui);
-    text-align:left;cursor:pointer;
-    touch-action:manipulation;
-    user-select:none;-webkit-user-select:none;
-    box-sizing:border-box;
-  ">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-      <polyline points="22,6 12,13 2,6"/>
-    </svg>
-    <span style="pointer-events:none;flex:1">Email note</span>
   </button>
   <!-- Copy as plain text item -->
   <button id="more-copy-plain-btn" style="
@@ -2783,7 +2837,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.326';
+const APP_VERSION = '0.332';
 
 
 
@@ -4835,7 +4889,7 @@ function init() {
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['select-blocks-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'bold-mode-btn', 'color-mode-btn', 'crossout-group', 'delete-line-btn', 'quick-add-btn', 'print-btn', 'export-note-btn', 'delete-note-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
+  var DEFAULT_TOOLBAR_ORDER = ['select-blocks-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'bold-mode-btn', 'color-mode-btn', 'crossout-group', 'paste-btn', 'delete-line-btn', 'quick-add-btn', 'print-btn', 'export-note-btn', 'delete-note-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
 
   // Get effective order: stored order supplemented by any missing buttons
   function getEffectiveOrder() {
@@ -5192,12 +5246,6 @@ function init() {
   document.getElementById('more-share-btn').addEventListener('click', function() {
     closeMoreMenu();
     shareNote();
-  });
-
-  document.getElementById('more-email-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-  document.getElementById('more-email-btn').addEventListener('click', function() {
-    closeMoreMenu();
-    emailNote();
   });
 
   document.getElementById('more-copy-plain-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
@@ -5666,19 +5714,32 @@ function init() {
   });
   document.getElementById('copy-btn').addEventListener('click', function() {
     var ed = document.getElementById('note-editor');
-    // Copy selection if any, otherwise full note
     var text, msg;
-    if (!isViewMode && ed.selectionStart !== ed.selectionEnd) {
+
+    // Priority 1: light-blue block selections
+    if (selectedBlocks.size > 0 && currentNoteId && notes[currentNoteId]) {
+      var allLines = (notes[currentNoteId].content || '').split('\n');
+      var idxArr = [];
+      selectedBlocks.forEach(function(i) { idxArr.push(i); });
+      idxArr.sort(function(a,b) { return a - b; });
+      text = idxArr.map(function(i) { return allLines[i] || ''; }).join('\n');
+      msg  = idxArr.length + (idxArr.length === 1 ? ' line' : ' lines') + ' copied to clipboard';
+
+    // Priority 2: standard textarea selection (edit mode)
+    } else if (!isViewMode && ed.selectionStart !== ed.selectionEnd) {
       text = ed.value.substring(ed.selectionStart, ed.selectionEnd);
-      msg = 'Selection copied to clipboard';
+      msg  = 'Selection copied to clipboard';
+
+    // Priority 3: window selection (view mode drag-select)
     } else {
       var winSel = window.getSelection();
       if (winSel && winSel.toString().trim()) {
         text = winSel.toString();
-        msg = 'Selection copied to clipboard';
+        msg  = 'Selection copied to clipboard';
       } else {
+        // Priority 4: full note
         text = ed.value;
-        msg = 'Note copied to clipboard';
+        msg  = 'Note copied to clipboard';
       }
     }
     if (!text) return;
@@ -6274,13 +6335,16 @@ function init() {
     var boldBtn       = document.getElementById('bold-mode-btn');
     var colorBtn      = document.getElementById('color-mode-btn');
     var deleteTextBtn = document.getElementById('delete-line-btn');
+    var pasteBtn      = document.getElementById('paste-btn');
     var inView        = isViewMode;
     var hasBlocks     = selectedBlocks.size > 0;
 
     // Show view-only buttons in view mode
-    [crossoutBtn, boldBtn, colorBtn, deleteTextBtn].forEach(function(b) {
+    [crossoutBtn, boldBtn, colorBtn, deleteTextBtn, pasteBtn].forEach(function(b) {
       if (b) b.style.display = inView ? '' : 'none';
     });
+    // Exit paste mode when leaving view mode
+    if (!inView && typeof pasteMode !== 'undefined' && pasteMode) exitPasteMode();
 
     // Dim formatting buttons when no blocks selected (they need selection first)
     [boldBtn, crossoutBtn, colorBtn, deleteTextBtn].forEach(function(b) {
@@ -6322,6 +6386,41 @@ function init() {
     if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
     if (typeof applyToolbarHiddenOverrides === 'function') applyToolbarHiddenOverrides();
   };
+
+  // ── Paste mode ───────────────────────────────────────────────────────────
+  document.getElementById('paste-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('paste-btn').addEventListener('click', function() {
+    if (!isViewMode) return;
+    if (pasteMode) { exitPasteMode(); return; }
+    enterPasteMode();
+  });
+
+  // Paste before/after popover buttons
+  document.getElementById('paste-before-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('paste-before-btn').addEventListener('click', function() { doPaste(true); });
+  document.getElementById('paste-after-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('paste-after-btn').addEventListener('click', function() { doPaste(false); });
+
+  // Close paste popover on outside tap
+  document.addEventListener('click', function(e) {
+    if (!pasteMode) return;
+    var popover = document.getElementById('paste-popover');
+    if (popover && popover.style.display !== 'none' &&
+        !popover.contains(e.target)) {
+      closePastePopover();
+    }
+  });
+
+  // Tap viewer line in paste mode — open popover near that line
+  document.getElementById('note-viewer').addEventListener('click', function(e) {
+    if (!pasteMode) return;
+    var lineDiv = e.target.closest('.viewer-line');
+    if (!lineDiv) return;
+    var lineIndex = parseInt(lineDiv.dataset.line, 10);
+    if (isNaN(lineIndex)) return;
+    e.stopPropagation();
+    openPastePopover(lineIndex, lineDiv);
+  });
 
   // ── Bold: one-shot on selected blocks ────────────────────────────────────
   document.getElementById('bold-mode-btn').addEventListener('click', function() {
@@ -6594,14 +6693,81 @@ function shareNote() {
   }
 }
 
-// ===== EMAIL NOTE =====
-function emailNote() {
-  if (!currentNoteId || !notes[currentNoteId]) return;
-  var note    = notes[currentNoteId];
-  var subject = encodeURIComponent(note.name || 'Note');
-  var body    = encodeURIComponent(stripForShare(note.content));
-  if (!body) { showToast('This note has no content to email', false); return; }
-  window.open('mailto:?subject=' + subject + '&body=' + body);
+// ===== PASTE IN VIEW MODE =====
+var pasteMode     = false;
+var _pasteLineIdx = -1;   // line index the user tapped in paste mode
+
+function enterPasteMode() {
+  pasteMode = true;
+  var btn    = document.getElementById('paste-btn');
+  var viewer = document.getElementById('note-viewer');
+  if (btn)    btn.classList.add('active');
+  if (viewer) viewer.classList.add('paste-mode');
+  showToast('Tap a line to choose where to paste', false);
+}
+
+function exitPasteMode() {
+  pasteMode = false;
+  var btn    = document.getElementById('paste-btn');
+  var viewer = document.getElementById('note-viewer');
+  if (btn)    btn.classList.remove('active');
+  if (viewer) viewer.classList.remove('paste-mode');
+  closePastePopover();
+}
+
+function openPastePopover(lineIndex, lineDiv) {
+  _pasteLineIdx = lineIndex;
+  var popover = document.getElementById('paste-popover');
+  if (!popover) return;
+  popover.style.display = 'block';
+  // Position near the tapped line
+  var rect = lineDiv.getBoundingClientRect();
+  var top  = rect.bottom + 4;
+  if (top + popover.offsetHeight > window.innerHeight - 20) {
+    top = rect.top - popover.offsetHeight - 4;
+  }
+  var left = Math.max(8, Math.min(rect.left, window.innerWidth - popover.offsetWidth - 8));
+  popover.style.top  = Math.max(4, top) + 'px';
+  popover.style.left = left + 'px';
+}
+
+function closePastePopover() {
+  var popover = document.getElementById('paste-popover');
+  if (popover) popover.style.display = 'none';
+  _pasteLineIdx = -1;
+}
+
+function doPaste(before) {
+  var lineIndex = _pasteLineIdx;
+  exitPasteMode();
+  if (!currentNoteId || !notes[currentNoteId] || lineIndex < 0) return;
+
+  if (!navigator.clipboard || !navigator.clipboard.readText) {
+    showToast('Clipboard read not available on this browser', true);
+    return;
+  }
+  navigator.clipboard.readText().then(function(text) {
+    if (!text || !text.trim()) { showToast('Nothing to paste', false); return; }
+    var lines    = (notes[currentNoteId].content || '').split('\n');
+    var insertAt = before ? lineIndex : lineIndex + 1;
+    // Split pasted text into lines and insert
+    var pastedLines = text.split('\n');
+    lines.splice.apply(lines, [insertAt, 0].concat(pastedLines));
+    notes[currentNoteId].content = lines.join('\n');
+    notes[currentNoteId].editedAt = Date.now();
+    document.getElementById('note-editor').value = notes[currentNoteId].content;
+    saveNotes();
+    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    renderBlockSelections();
+    updateViewOnlyBtns();
+    showToast('Pasted ' + pastedLines.length + (pastedLines.length === 1 ? ' line' : ' lines'), false);
+  }).catch(function(err) {
+    if (err && err.name === 'NotAllowedError') {
+      showToast('Clipboard permission denied — tap Allow if prompted', true);
+    } else {
+      showToast('Unable to read clipboard', true);
+    }
+  });
 }
 
 // ===== COPY AS PLAIN TEXT =====
