@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.369 -->
+<!-- Remember App - Version 0.431 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -724,8 +724,14 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   0%, 100% { background: #c0392b; box-shadow: 0 0 0 0 rgba(192,57,43,0.5); }
   50% { background: #e74c3c; box-shadow: 0 0 0 7px rgba(192,57,43,0); }
 }
-#crossout-mode-btn, #bold-mode-btn, #color-mode-btn {
+#crossout-mode-btn, #bold-mode-btn, #color-mode-btn, #italic-mode-btn {
   color: var(--fg3);
+}
+/* When blocks are selected, formatting buttons become fully enabled — match other icon colors */
+#crossout-mode-btn.enabled, #bold-mode-btn.enabled,
+#color-mode-btn.enabled, #italic-mode-btn.enabled {
+  color: var(--fg);
+  opacity: 1;
 }
 #crossout-mode-btn.active, #bold-mode-btn.active, #color-mode-btn.active {
   color: var(--accent);
@@ -769,6 +775,122 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
 }
 #color-swatches { display: none; }
 
+/* ===== MOVE MODE ===== */
+/* Selected block for moving — amber/orange distinct from light-blue select */
+.viewer-line.move-selected {
+  background: rgba(230, 160, 30, 0.18);
+  border-radius: 4px;
+  outline: 2px solid rgba(200, 130, 20, 0.5);
+  outline-offset: -1px;
+}
+/* Move mode button active glow */
+#move-mode-btn.active {
+  color: var(--accent);
+  background: transparent;
+  box-shadow: 0 0 0 2px var(--accent);
+  border-radius: var(--radius-sm);
+}
+/* Step arrow buttons — stretch to fill toolbar height, don't push it taller */
+#move-step-up-btn, #move-step-down-btn {
+  align-self: stretch;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+#move-step-up-btn svg, #move-step-down-btn svg {
+  /* SVG fills most of the available button height */
+  width: calc(var(--font-size-base) * 1.6);
+  height: calc(var(--font-size-base) * 1.6);
+  min-width: 28px;
+  min-height: 28px;
+  max-width: 48px;
+  max-height: 48px;
+}
+
+/* ===== FIND IN NOTE BAR ===== */
+#find-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0; /* overridden by pinToolbars() */
+  z-index: 28;
+}
+#find-bar.open {
+  display: flex;
+}
+#find-input {
+  flex: 1;
+  padding: 7px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  outline: none;
+  min-width: 0;
+}
+#find-input:focus { border-color: var(--accent); }
+#find-count {
+  font-size: 0.82em;
+  color: var(--fg3);
+  white-space: nowrap;
+  min-width: 48px;
+  text-align: center;
+  font-family: var(--font-body);
+}
+.find-nav-btn {
+  background: none;
+  border: none;
+  color: var(--fg2);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.find-nav-btn:active { opacity: 0.6; }
+@media (hover: hover) { .find-nav-btn:hover { background: var(--bg3); } }
+.find-nav-btn:disabled { opacity: 0.3; pointer-events: none; }
+#find-close-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+/* Match highlights */
+mark.find-match {
+  background: rgba(255, 210, 50, 0.45);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+mark.find-match-current {
+  background: rgba(255, 150, 20, 0.65);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  outline: 1.5px solid rgba(255,150,20,0.8);
+}
+
 /* ===== FLOATING BOTTOM TOOLBAR ===== */
 .note-bottom-bar {
   display: flex;
@@ -793,7 +915,7 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px;
+  padding: 6px 0;
   overflow-x: auto;
   overflow-y: hidden;
   flex: 1 1 auto;
@@ -801,8 +923,39 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;       /* Firefox */
   -ms-overflow-style: none;    /* IE/Edge */
+  /* border-radius removed — rounded ends are drawn by cap divs inside the scroll */
 }
 .toolbar-scroll::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+/* Rounded end-caps that scroll with the toolbar content */
+.toolbar-scroll-cap {
+  flex-shrink: 0;
+  width: 24px;
+  align-self: stretch;
+  margin-top: -5px;
+  margin-bottom: -3px;
+  position: relative;
+  z-index: 5;         /* draw on top of neighboring buttons */
+  pointer-events: none;
+}
+.toolbar-scroll-cap-left {
+  border-left: 1.5px solid var(--fg3);
+  border-top: 1.5px solid var(--fg3);
+  border-bottom: 1.5px solid var(--fg3);
+  border-radius: 999px 0 0 999px;
+  opacity: 0.3;
+  /* Overlap the first button horizontally so cap visually encloses it */
+  margin-right: -18px;
+}
+.toolbar-scroll-cap-right {
+  border-right: 1.5px solid var(--fg3);
+  border-top: 1.5px solid var(--fg3);
+  border-bottom: 1.5px solid var(--fg3);
+  border-radius: 0 999px 999px 0;
+  opacity: 0.3;
+  /* Overlap the last button horizontally so cap visually encloses it */
+  margin-left: -18px;
+}
 
 /* Custom scrollbar indicator at bottom of toolbar */
 .toolbar-scrollbar-track {
@@ -1182,6 +1335,18 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   background: transparent;
   box-shadow: 0 0 0 2px var(--accent);
   border-radius: var(--radius-sm);
+}
+
+/* Paste highlight — briefly tints newly pasted lines */
+.viewer-line.paste-highlight {
+  background: rgba(var(--accent-rgb, 91,124,110), 0.15);
+  border-radius: 4px;
+  transition: background 0.4s;
+}
+.viewer-line.paste-highlight-fade {
+  background: transparent;
+  border-radius: 4px;
+  transition: background 1.2s;
 }
 
 /* Paste mode — viewer lines get a tap target cursor */
@@ -1956,7 +2121,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 
 #debug-toast {
   position: fixed;
-  top: 122px;
+  top: 172px;
   left: 12px;
   right: 12px;
   background: #3a3a3a;
@@ -1977,7 +2142,20 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 }
 body:not(.dark) #debug-toast { background: #2a2a2a; }
 body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255,0.2); }
-#debug-toast.show { opacity: 1; pointer-events: none; } /* no pointer-events — prevents accidental clipboard copy */
+/* Regular toast: blocks pointer pass-through, allows drag-to-select for copy */
+#debug-toast.show {
+  opacity: 1;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* Error toast: single tap copies text */
+#debug-toast.show.error-toast {
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: text;
+  -webkit-user-select: text;
+}
 
 /* Speaking highlight */
 .speak-highlight {
@@ -2139,6 +2317,27 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
   </header>
 
+  <!-- Find in Note bar — slides in below top toolbar -->
+  <div id="find-bar">
+    <input type="search" id="find-input" placeholder="Find in note…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <span id="find-count">0 of 0</span>
+    <button class="find-nav-btn" id="find-prev-btn" title="Previous match" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" style="pointer-events:none">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+    <button class="find-nav-btn" id="find-next-btn" title="Next match" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" style="pointer-events:none">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    </button>
+    <button id="find-close-btn" title="Close find">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" style="pointer-events:none">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+
   <!-- Second toolbar — always at top, below note header -->
   <!-- Floating bottom toolbar — stays above keyboard on mobile -->
   <div class="note-bottom-bar" id="note-bottom-bar">
@@ -2150,6 +2349,37 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
     <!-- Scrollable inner container -->
     <div class="toolbar-scroll" id="toolbar-scroll">
+      <div class="toolbar-scroll-cap toolbar-scroll-cap-left"></div>
+      <!-- Move mode button -->
+      <button class="icon-btn view-only-btn" id="move-mode-btn" tabindex="-1" aria-label="Move selected line" title="Move line" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+          <polyline points="12 3 12 21"/><polyline points="7 8 12 3 17 8"/><polyline points="7 16 12 21 17 16"/>
+        </svg>
+      </button>
+      <!-- Move jump to top -->
+      <button class="icon-btn view-only-btn" id="move-jump-top-btn" tabindex="-1" aria-label="Move to top" title="Move to top" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+          <line x1="5" y1="4" x2="19" y2="4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="20"/>
+        </svg>
+      </button>
+      <!-- Move step up — tall button, SVG scaled to font size -->
+      <button class="icon-btn view-only-btn" id="move-step-up-btn" tabindex="-1" aria-label="Move up one line" title="Move up" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <polyline points="6 15 12 9 18 15"/>
+        </svg>
+      </button>
+      <!-- Move step down — tall button, SVG scaled to font size -->
+      <button class="icon-btn view-only-btn" id="move-step-down-btn" tabindex="-1" aria-label="Move down one line" title="Move down" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      <!-- Move jump to bottom -->
+      <button class="icon-btn view-only-btn" id="move-jump-bottom-btn" tabindex="-1" aria-label="Move to bottom" title="Move to bottom" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+          <line x1="5" y1="20" x2="19" y2="20"/><polyline points="7 14 12 19 17 14"/><line x1="12" y1="19" x2="12" y2="4"/>
+        </svg>
+      </button>
       <!-- Select blocks — leftmost so indent/unindent appear just to its right -->
       <button class="icon-btn kb-hide" id="select-blocks-btn" tabindex="-1" aria-label="Select text blocks" title="Select text blocks">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)">
@@ -2238,8 +2468,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           </svg>
         </button>
         <button class="icon-btn view-only-btn" id="clear-strikethroughs-btn" aria-label="Clear all strikethroughs" title="Clear all strikethroughs" style="display:none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="19" y1="5" x2="5" y2="19"/>
           </svg>
         </button>
       </div>
@@ -2271,23 +2502,26 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
         </svg>
       </button>
+      <!-- Find in note button -->
+      <button class="icon-btn" id="find-btn" tabindex="-1" aria-label="Find in note" title="Find in note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </button>
       <!-- Print + Export — less-used, at far right requiring scroll -->
       <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
         </svg>
       </button>
-      <button class="icon-btn kb-hide" id="export-note-btn" tabindex="-1" aria-label="Export this note to JSON" title="Export note">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-      </button>
+
       <!-- Delete note — far right, requires scroll to reach -->
       <button class="icon-btn" id="delete-note-btn" tabindex="-1" aria-label="Delete note" title="Delete note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
         </svg>
       </button>
+      <div class="toolbar-scroll-cap toolbar-scroll-cap-right"></div>
     </div><!-- end .toolbar-scroll -->
   <!-- Custom scrollbar indicator -->
   <div class="toolbar-scrollbar-track" id="toolbar-scrollbar-track">
@@ -2423,6 +2657,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none">Paste after this line</span>
   </button>
+  <button class="paste-popover-btn" id="paste-cancel-btn" style="color:var(--fg3)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+    <span style="pointer-events:none">Cancel</span>
+  </button>
 </div>
 
 <!-- ===== COLOR PICKER POPOVER ===== -->
@@ -2490,8 +2730,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none;flex:1">Uncheck all checkboxes</span>
   </button>
-  <!-- Share note item -->
-  <button id="more-share-btn" style="
+  <!-- Find in note item -->
+  <button id="more-find-btn" style="
     display:flex;align-items:center;gap:12px;
     width:100%;padding:13px 18px;
     background:none;border:none;
@@ -2502,11 +2742,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     box-sizing:border-box;
   ">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
-    <span style="pointer-events:none;flex:1">Share note</span>
+    <span style="pointer-events:none;flex:1">Find in note</span>
   </button>
   <!-- Copy as plain text item -->
   <button id="more-copy-plain-btn" style="
@@ -2525,8 +2763,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none;flex:1">Copy as plain text</span>
   </button>
-  <!-- Placeholder italic item — no action yet -->
-  <button id="more-italic-btn" style="
+
+  <!-- Export note item -->
+  <button id="more-export-btn" style="
     display:flex;align-items:center;gap:12px;
     width:100%;padding:13px 18px;
     background:none;border:none;
@@ -2536,16 +2775,28 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     user-select:none;-webkit-user-select:none;
     box-sizing:border-box;
   ">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-      stroke-linecap="round" stroke-linejoin="round"
-      width="var(--icon-size)" height="var(--icon-size)"
-      style="flex-shrink:0;pointer-events:none">
-      <line x1="19" y1="4" x2="10" y2="4"/>
-      <line x1="14" y1="20" x2="5" y2="20"/>
-      <line x1="15" y1="4" x2="9" y2="20"/>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
-    <span style="pointer-events:none;flex:1">Italic</span>
-
+    <span style="pointer-events:none;flex:1">Export note</span>
+  </button>
+  <!-- Share note item -->
+  <button id="more-share-btn" style="
+    display:flex;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-size:var(--font-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+    </svg>
+    <span style="pointer-events:none;flex:1">Share note</span>
   </button>
 </div>
 
@@ -2914,6 +3165,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div>
       <div class="settings-row">
         <div>
+          <div class="settings-row-label">Triple-tap to edit</div>
+          <div class="settings-row-desc">In View mode, triple-tap any line to switch to Edit mode with the cursor placed at the end of that line.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Triple-tap to edit">
+          <input type="checkbox" id="triple-tap-edit-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
           <div class="settings-row-label">+ button inserts at</div>
           <div class="settings-row-desc">When you tap + to quickly add text, insert it at the beginning or end of the note.</div>
         </div>
@@ -2946,6 +3208,21 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </div>
         <div id="toolbar-visibility-rows">
           <!-- Rows generated by JS -->
+        </div>
+        <div style="padding:8px 0 4px">
+          <button id="reset-toolbar-order-btn" style="
+            background:none;
+            border:1px solid var(--border);
+            border-radius:var(--radius-sm);
+            color:var(--fg2);
+            font-family:var(--font-body);
+            font-size:0.85em;
+            padding:6px 14px;
+            cursor:pointer;
+            touch-action:manipulation;
+            user-select:none;
+            -webkit-user-select:none;
+          ">Reset to default order</button>
         </div>
       </div>
     </div>
@@ -3116,6 +3393,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <div class="help-section-title">About notes and formatting <span style="font-weight:400;font-size:0.85em;color:var(--fg3)">(formatting is optional)</span></div>
       <div class="help-section-body">
         <p>Remember stores your notes as <strong>plain text</strong> — the same simple format used by basic text editors. You can write and read notes in plain text alone, and that works perfectly well.</p>
+        <p style="background:var(--bg3);border-left:3px solid var(--accent);border-radius:4px;padding:10px 14px;margin-top:6px;font-size:0.95em"><strong>Security tip:</strong> Do not store passwords in any plain text app, including this one. Use a password manager that encrypts them — <strong>Bitwarden</strong> and <strong>Proton Pass</strong> are good free options.</p>
         <p>Optionally, you can switch to <strong>View mode</strong> (tap the pencil icon in the top toolbar) to see light formatting applied to your notes: <strong>bold</strong>, <em>italic</em>, <span style="text-decoration:line-through">strikethrough</span>, colors, and checkboxes. In View mode, checkboxes appear as real tappable boxes you can check and uncheck — not just <code>[ ]</code> characters.</p>
         <p>To add formatting, Remember uses small special characters called <em>Markdown</em> that you type directly into your note. For example, typing <code>**word**</code> makes <strong>word</strong> appear bold in View mode. You never have to use any of this — plain text notes work just as well, and the Speak button reads both kinds naturally.</p>
       </div>
@@ -3393,7 +3671,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.369';
+const APP_VERSION = '0.431';
 
 
 
@@ -3448,7 +3726,18 @@ function pinToolbars() {
 
   header.style.top  = offsetTop + 'px';
   toolbar.style.top = (offsetTop + _pinnedHeaderH) + 'px';
-  area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + 12) + 'px';
+
+  // Position find bar just below the lower toolbar
+  var findBar = document.getElementById('find-bar');
+  var findBarH = 0;
+  if (findBar && findBar.classList.contains('open')) {
+    findBar.style.top = (offsetTop + _pinnedHeaderH + _pinnedToolbarH) + 'px';
+    findBarH = findBar.offsetHeight;
+  } else if (findBar) {
+    findBar.style.top = (offsetTop + _pinnedHeaderH + _pinnedToolbarH) + 'px';
+  }
+
+  area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + findBarH + 12) + 'px';
 }
 
 // ===== STATE =====
@@ -3456,6 +3745,7 @@ const DEFAULT_SETTINGS = {
   theme: 'auto',
   uiSize: 'medium',
   font: "'Atkinson Hyperlegible', sans-serif",      // UI font
+  tripleTapToEdit: true,                             // triple-tap in view mode enters edit mode
   customColors: {},                                  // custom color picker values per row
   noteFont: "'Atkinson Hyperlegible', sans-serif",  // Note content font
   fontWeight: '400',
@@ -3992,6 +4282,7 @@ function checkboxSVG(checked) {
 }
 
 function urlsToLinks(text, addLineWrappers) {
+  // rawLine data-attribute is set after rendering by renderWithRawLines()
   var escaped = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -4026,6 +4317,7 @@ function urlsToLinks(text, addLineWrappers) {
 }
 
 function setViewMode(on, suppressFocus) {
+  if (!on && typeof _findActive !== 'undefined' && _findActive) closeFind();
   isViewMode = on;
   var editor = document.getElementById('note-editor');
   var viewer = document.getElementById('note-viewer');
@@ -4186,6 +4478,7 @@ function indentLines(ed) {
   if (selStart === selEnd) {
     // No text selection — indent the single line the cursor is on
     ed.value = val.substring(0, lineStart) + spaces + val.substring(lineStart);
+    ed._lastLength = ed.value.length;
     // Restore cursor position, shifted right by indent amount
     ed.setSelectionRange(selStart + n, selStart + n);
   } else {
@@ -4195,6 +4488,7 @@ function indentLines(ed) {
     var indented = lines.map(function(l) { return spaces + l; });
     var result   = indented.join('\n');
     ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
+    ed._lastLength = ed.value.length;
     // Restore cursor to same position within text (shifted by one indent level)
     ed.setSelectionRange(selStart + n, selEnd + indented.length * n);
   }
@@ -4218,6 +4512,8 @@ function dedentLines(ed) {
   });
   var result = dedented.join('\n');
   ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
+  // Update _lastLength so delete guard doesn't misfire on dedent
+  ed._lastLength = ed.value.length;
 
   // Mirror indentLines selection behavior:
   // - No text selection: restore cursor shifted left by spaces removed from this line
@@ -4396,6 +4692,7 @@ function getSelectedBlockContents() {
 // save the note, and re-render the viewer.
 function applyIndentToSelectedBlocks(isIndent) {
   if (!currentNoteId || !notes[currentNoteId]) return;
+  pushUndo();
   var n = notes[currentNoteId];
   var lines = (n.content || '').split('\n');
   var spaces = '';
@@ -5181,6 +5478,8 @@ function openSettings() {
   document.getElementById('check-strikethrough-toggle').checked = settings.checkStrikethrough !== false;
   document.getElementById('delete-guard-chars').value = settings.deleteGuardChars !== undefined ? settings.deleteGuardChars : 30;
   document.getElementById('show-oops-toggle').checked = settings.showOopsBtn !== false;
+  var tripleTapToggleEl = document.getElementById('triple-tap-edit-toggle');
+  if (tripleTapToggleEl) tripleTapToggleEl.checked = settings.tripleTapToEdit !== false;
   document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
   document.getElementById('indent-spaces-input').value = settings.indentSpaces !== undefined ? settings.indentSpaces : 2;
 
@@ -5443,7 +5742,11 @@ function init() {
     document.getElementById('importexport-sheet').classList.remove('open');
     if (this.files && this.files[0]) importNotes(this.files[0]);
   });
-  document.getElementById('export-note-btn').addEventListener('click', exportCurrentNote);
+  document.getElementById('more-export-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-export-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    exportCurrentNote();
+  });
   document.getElementById('about-btn').addEventListener('click', function() {
     showConfirm(
       'About Remember',
@@ -5568,6 +5871,7 @@ function init() {
   var HIDEABLE_BUTTONS = [
     { id: 'undo-btn',               label: 'Undo' },
     { id: 'redo-btn',               label: 'Redo' },
+    { id: 'move-mode-btn',           label: 'Move line' },
     { id: 'select-blocks-btn',      label: 'Select blocks' },
     { id: 'indent-btn',             label: 'Indent' },
     { id: 'dedent-btn',             label: 'Unindent' },
@@ -5580,15 +5884,15 @@ function init() {
     { id: 'check-mode-btn',          label: 'Check mode' },
     { id: 'paste-btn',               label: 'Paste' },
     { id: 'delete-line-btn',        label: 'Delete text' },
+    { id: 'find-btn',                label: 'Find in note' },
     { id: 'print-btn',              label: 'Print' },
-    { id: 'export-note-btn',        label: 'Export note' },
     { id: 'delete-note-btn',        label: 'Delete note' },
     { id: 'scroll-top-btn',         label: 'Scroll to top' },
     { id: 'scroll-bottom-btn',      label: 'Scroll to bottom' },
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['select-blocks-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'paste-btn', 'delete-line-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'color-mode-btn', 'crossout-group', 'print-btn', 'export-note-btn', 'delete-note-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
+  var DEFAULT_TOOLBAR_ORDER = ['select-blocks-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'quick-add-btn', 'delete-line-btn', 'paste-btn', 'bold-mode-btn', 'italic-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'print-btn', 'delete-note-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
 
   // Get effective order: stored order supplemented by any missing buttons
   function getEffectiveOrder() {
@@ -5615,6 +5919,19 @@ function init() {
         scroll.appendChild(el);
       }
     });
+    // Always keep move step/jump buttons immediately after move-mode-btn
+    var moveModeEl = document.getElementById('move-mode-btn');
+    if (moveModeEl && moveModeEl.parentElement === scroll) {
+      var moveGroupIds = ['move-jump-top-btn', 'move-step-up-btn', 'move-step-down-btn', 'move-jump-bottom-btn'];
+      var insertRef = moveModeEl.nextSibling;
+      moveGroupIds.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) scroll.insertBefore(el, insertRef);
+      });
+    }
+    // Always keep right cap as the very last child
+    var rightCap = scroll.querySelector('.toolbar-scroll-cap-right');
+    if (rightCap) scroll.appendChild(rightCap);
     // quick-add-btn is not in HIDEABLE_BUTTONS but must stay after ordered items
     // It's already in HTML so just ensure it stays — appendChild moves to end
     // Actually quick-add stays where it is since it's not in order list
@@ -5885,10 +6202,16 @@ function init() {
       });
 
       // Layout: label | toggle | ▲ ▼  (arrows at far right for right-handed use)
+      // Layout: label (flex:1) | ▲ | ▼ | toggle | right-padding
+      // Arrows immediately left of toggle, toggle at far right, padding prevents accidental toggle while scrolling
       row.appendChild(labelDiv);
-      row.appendChild(toggleLabel);
       row.appendChild(upSpan);
       row.appendChild(downSpan);
+      row.appendChild(toggleLabel);
+      // Right padding spacer so scrolling doesn't accidentally hit toggle
+      var spacer = document.createElement('div');
+      spacer.style.cssText = 'width:12px;flex-shrink:0';
+      row.appendChild(spacer);
       container.appendChild(row);
     });
   }
@@ -5959,12 +6282,7 @@ function init() {
     copyNoteAsPlainText();
   });
 
-  document.getElementById('more-italic-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-  document.getElementById('more-italic-btn').addEventListener('click', function() {
-    closeMoreMenu();
-    if (!isViewMode || selectedBlocks.size === 0) { showToast('Select some lines first', false); return; }
-    applyFormattingToBlocks('italic');
-  });
+
 
   // Load toolbar visibility settings when Settings opens
   var _origOpenSettings = document.getElementById('settings-btn').onclick;
@@ -5972,10 +6290,22 @@ function init() {
     buildToolbarVisibilityRows();
   });
 
-  // Migration: if saved toolbarOrder is missing new buttons, reset it
-  // so getEffectiveOrder() uses DEFAULT_TOOLBAR_ORDER as the base
-  var _requiredBtns = ['italic-mode-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'paste-btn'];
+  // Migration: remove retired buttons from saved order, add new ones
+  // Retired = moved out of toolbar to More menu or removed entirely
+  var _retiredBtns = ['export-note-btn', 'color-swatch-cycle'];
+  var _requiredBtns = ['italic-mode-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'paste-btn', 'find-btn', 'move-mode-btn'];
   var _savedOrder = settings.toolbarOrder || [];
+  // Remove any retired buttons from saved order
+  _savedOrder = _savedOrder.filter(function(id) { return _retiredBtns.indexOf(id) === -1; });
+  settings.toolbarOrder = _savedOrder;
+  // Also strip retired buttons from toolbarHidden
+  if (settings.toolbarHidden) {
+    settings.toolbarHidden = settings.toolbarHidden.filter(function(id) {
+      return _retiredBtns.indexOf(id) === -1;
+    });
+  }
+  // Persist cleaned settings immediately so stale data doesn't survive a reload
+  try { localStorage.setItem('remember_settings', JSON.stringify(settings)); } catch(e) {}
   var _needsReset = _requiredBtns.some(function(id) { return _savedOrder.indexOf(id) === -1; });
   if (_savedOrder.length > 0 && _needsReset) {
     // Merge: keep user's order but insert missing buttons at their default positions
@@ -6006,17 +6336,27 @@ function init() {
 
   document.getElementById('select-all-btn').addEventListener('click', function() {
     if (isViewMode) {
-      var viewer = document.getElementById('note-viewer');
-      if (isAllSelected) {
-        window.getSelection().removeAllRanges();
+      // In view mode: toggle Select lines mode with all blocks selected/deselected
+      if (isAllSelected && selectMode) {
+        // Deselect all — exit select mode and clear blocks
+        clearSelectedBlocks();
+        selectMode = false;
+        updateSelectModeBtn();
         isAllSelected = false;
         this.style.color = '';
       } else {
-        var range = document.createRange();
-        range.selectNodeContents(viewer);
-        var sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+        // Select all lines as light-blue blocks
+        if (!selectMode) {
+          selectMode = true;
+          updateSelectModeBtn();
+        }
+        if (currentNoteId && notes[currentNoteId]) {
+          var lineCount = (notes[currentNoteId].content || '').split('\n').length;
+          selectedBlocks.clear();
+          for (var i = 0; i < lineCount; i++) selectedBlocks.add(i);
+          renderBlockSelections();
+          updateViewOnlyBtns();
+        }
         isAllSelected = true;
         this.style.color = 'var(--accent)';
       }
@@ -6030,14 +6370,10 @@ function init() {
       isAllSelected = false;
       this.style.color = '';
     } else {
-      if (inEMTIP) {
-        // EMTIP: focus is fine, keyboard already showing
-        ed.focus({ preventScroll: true });
-        ed.setSelectionRange(0, ed.value.length);
-      } else {
-        // EMNI: just setSelectionRange — works without focus on most browsers
-        ed.setSelectionRange(0, ed.value.length);
-      }
+      // Always focus the editor first so the selection is visible
+      // preventScroll avoids viewport jumping in both EMNI and EMTIP
+      ed.focus({ preventScroll: true });
+      ed.setSelectionRange(0, ed.value.length);
       isAllSelected = true;
       this.style.color = 'var(--accent)';
     }
@@ -7087,6 +7423,21 @@ function init() {
     if (oopsBtn) oopsBtn.style.display = this.checked ? '' : 'none';
     updateSaveBtnState();
   });
+  document.getElementById('reset-toolbar-order-btn').addEventListener('click', function() {
+    // Reset order and hidden to defaults — keep other settings untouched
+    settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
+    settings.toolbarHidden = [];
+    buildToolbarVisibilityRows();
+    applyToolbarOrder();
+    applyToolbarVisibility();
+    updateSaveBtnState();
+    showToast('Toolbar order reset to default', false);
+  });
+
+  document.getElementById('triple-tap-edit-toggle').addEventListener('change', function() {
+    settings.tripleTapToEdit = this.checked;
+    updateSaveBtnState();
+  });
   document.getElementById('plus-position-select').addEventListener('change', function() {
     settings.plusPosition = this.value;
     updateSaveBtnState();
@@ -7402,6 +7753,7 @@ function init() {
     var deleteTextBtn = document.getElementById('delete-line-btn');
     var pasteBtn      = document.getElementById('paste-btn');
     var checkModeBtn  = document.getElementById('check-mode-btn');
+    var moveModeBtn   = document.getElementById('move-mode-btn');
     var inView        = isViewMode;
     var hasBlocks     = selectedBlocks.size > 0;
 
@@ -7409,14 +7761,34 @@ function init() {
     [crossoutBtn, boldBtn, italicBtn, colorBtn, deleteTextBtn, pasteBtn, checkModeBtn].forEach(function(b) {
       if (b) b.style.display = inView ? '' : 'none';
     });
+    // Move button: show/hide, and dim if selection is non-contiguous
+    if (moveModeBtn) {
+      moveModeBtn.style.display = inView ? '' : 'none';
+      if (inView && !moveMode) {
+        var isContiguous = selectedBlocks.size === 0 || _contiguousSelection() !== null;
+        moveModeBtn.style.opacity = isContiguous ? '' : '0.35';
+        moveModeBtn.title = isContiguous ? 'Move line' : 'Select a contiguous group to move';
+      } else if (inView && moveMode) {
+        moveModeBtn.style.opacity = '';
+      }
+    }
+    // Move step/jump buttons: only visible when move mode is active
+    var moveActive = typeof moveMode !== 'undefined' && moveMode;
+    ['move-step-up-btn','move-step-down-btn','move-jump-top-btn','move-jump-bottom-btn'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = (inView && moveActive) ? '' : 'none';
+    });
+    if (!inView && moveActive) exitMoveMode();
     // Exit paste and check mode when leaving view mode
     if (!inView && typeof pasteMode !== 'undefined' && pasteMode) exitPasteMode();
     if (!inView && checkMode) exitCheckMode();
 
     // Dim formatting buttons when no blocks selected (they need selection first)
+    // When blocks ARE selected, use --fg color (fully enabled); otherwise --fg3 (dimmed)
     [boldBtn, italicBtn, crossoutBtn, colorBtn, deleteTextBtn].forEach(function(b) {
       if (!b) return;
       b.style.opacity = (!inView || hasBlocks) ? '' : '0.35';
+      b.classList.toggle('enabled', inView && hasBlocks);
       b.title = b.id === 'bold-mode-btn'      ? (hasBlocks ? 'Bold selected lines' : 'Bold (select lines first)') :
                 b.id === 'italic-mode-btn'     ? (hasBlocks ? 'Italic selected lines' : 'Italic (select lines first)') :
                 b.id === 'crossout-mode-btn'   ? (hasBlocks ? 'Strikethrough selected lines' : 'Strikethrough (select lines first)') :
@@ -7482,6 +7854,53 @@ function init() {
     }
   });
 
+  // ── Move mode ────────────────────────────────────────────────────────────
+  document.getElementById('move-mode-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('move-mode-btn').addEventListener('click', function() {
+    if (!isViewMode) return;
+    if (moveMode) { exitMoveMode(); } else { enterMoveMode(); }
+  });
+  document.getElementById('move-jump-top-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('move-jump-top-btn').addEventListener('click', function() { if (moveMode) _moveJump(true); });
+  document.getElementById('move-jump-bottom-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('move-jump-bottom-btn').addEventListener('click', function() { if (moveMode) _moveJump(false); });
+  _bindMoveRepeat(document.getElementById('move-step-up-btn'),   function() { _moveStep(-1); });
+  _bindMoveRepeat(document.getElementById('move-step-down-btn'), function() { _moveStep(1); });
+
+  // ── Find in note ─────────────────────────────────────────────────────────
+  var findBtnEl = document.getElementById('find-btn');
+  if (findBtnEl) {
+    findBtnEl.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    findBtnEl.addEventListener('click', function() {
+      if (_findActive) { closeFind(); } else { openFind(); }
+    });
+  }
+  document.getElementById('more-find-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-find-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    openFind();
+  });
+  document.getElementById('find-close-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('find-close-btn').addEventListener('click', function() { closeFind(); });
+  document.getElementById('find-prev-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('find-prev-btn').addEventListener('click', function() { findPrev(); });
+  document.getElementById('find-next-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('find-next-btn').addEventListener('click', function() { findNext(); });
+  document.getElementById('find-input').addEventListener('input', function() { runFind(); });
+  document.getElementById('find-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.shiftKey ? findPrev() : findNext(); }
+    if (e.key === 'Escape') { closeFind(); }
+  });
+  // Keyboard shortcut: Cmd/Ctrl+F
+  document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+      if (document.getElementById('note-screen').classList.contains('active')) {
+        e.preventDefault();
+        if (_findActive) { closeFind(); } else { openFind(); }
+      }
+    }
+  });
+
   // ── Check mode ──────────────────────────────────────────────────────────
   document.getElementById('check-mode-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('check-mode-btn').addEventListener('click', function() {
@@ -7501,15 +7920,91 @@ function init() {
     var lines = (notes[currentNoteId].content || '').split('\n');
     if (lineIndex >= lines.length) return;
     var line = lines[lineIndex];
-    // Only act on lines that have a checkbox
-    if (!/\[[ x]\]/i.test(line)) return;
+    var isCheckbox = /\[[ x]\]/i.test(line);
+    // Also match hyphen-list items: lines starting with optional spaces then "- "
+    var isHyphenItem = /^(\s*)- /.test(line);
+
+    if (!isCheckbox && !isHyphenItem) return;
     e.stopPropagation();
-    // Simulate checkbox tap — reuse the existing checkbox click logic
-    var cb = lineDiv.querySelector('.viewer-checkbox');
-    if (cb) {
-      cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    if (isCheckbox) {
+      // Simulate checkbox tap — reuse existing checkbox click logic
+      var cb = lineDiv.querySelector('.viewer-checkbox');
+      if (cb) {
+        cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    } else {
+      // Hyphen item — toggle strikethrough on the text after the hyphen
+      pushUndo();
+      var m = line.match(/^(\s*- )(.*)/);
+      if (!m) return;
+      var prefix = m[1], body = m[2];
+      if (body.startsWith('~~') && body.endsWith('~~') && body.length > 4) {
+        lines[lineIndex] = prefix + body.slice(2, -2);
+      } else {
+        lines[lineIndex] = prefix + '~~' + body.replace(/~~/g, '') + '~~';
+      }
+      notes[currentNoteId].content = lines.join('\n');
+      document.getElementById('note-editor').value = notes[currentNoteId].content;
+      saveNotes();
+      document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+      renderBlockSelections();
     }
   });
+
+  // ── Triple-tap to edit ───────────────────────────────────────────────────
+  (function() {
+    var _tapTimes  = [];   // timestamps of recent taps
+    var _tapLine   = -1;   // line index of last tap
+    var TRIPLE_TAP_MS = 600; // max ms between taps
+
+    document.getElementById('note-viewer').addEventListener('click', function(e) {
+      if (!isViewMode || !settings.tripleTapToEdit) return;
+      // Don't trigger on checkboxes, links, marks
+      if (e.target.closest('.viewer-checkbox, a, mark')) return;
+
+      var lineDiv = e.target.closest('.viewer-line');
+      if (!lineDiv) return;
+      var lineIndex = parseInt(lineDiv.dataset.line, 10);
+      if (isNaN(lineIndex)) return;
+
+      var now = Date.now();
+
+      // Reset if too slow or different line
+      if (_tapLine !== lineIndex || (_tapTimes.length && now - _tapTimes[_tapTimes.length - 1] > TRIPLE_TAP_MS)) {
+        _tapTimes = [];
+      }
+      _tapLine = lineIndex;
+      _tapTimes.push(now);
+
+      // Keep only last 3
+      if (_tapTimes.length > 3) _tapTimes.shift();
+
+      // Three taps all within TRIPLE_TAP_MS of each other
+      if (_tapTimes.length === 3 && (_tapTimes[2] - _tapTimes[0]) <= TRIPLE_TAP_MS) {
+        _tapTimes = []; // reset
+        if (!currentNoteId || !notes[currentNoteId]) return;
+        var lines = (notes[currentNoteId].content || '').split('\n');
+        // Switch to edit mode
+        setViewMode(false);
+        var ed = document.getElementById('note-editor');
+        if (!ed) return;
+        ed.focus({ preventScroll: true });
+        // Place cursor at end of the tapped line
+        var charPos = 0;
+        for (var i = 0; i < lineIndex && i < lines.length; i++) {
+          charPos += lines[i].length + 1; // +1 for newline
+        }
+        charPos += (lines[lineIndex] || '').length;
+        ed.setSelectionRange(charPos, charPos);
+        // Scroll editor to show the cursor
+        setTimeout(function() {
+          var lineH = parseInt(getComputedStyle(ed).lineHeight) || 24;
+          ed.scrollTop = Math.max(0, lineIndex * lineH - ed.clientHeight / 2);
+        }, 50);
+      }
+    });
+  })();
 
   // ── Paste mode ───────────────────────────────────────────────────────────
   document.getElementById('paste-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
@@ -7524,6 +8019,8 @@ function init() {
   document.getElementById('paste-before-btn').addEventListener('click', function() { doPaste(true); });
   document.getElementById('paste-after-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('paste-after-btn').addEventListener('click', function() { doPaste(false); });
+  document.getElementById('paste-cancel-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('paste-cancel-btn').addEventListener('click', function() { exitPasteMode(); });
 
   // Close paste popover on outside tap
   document.addEventListener('click', function(e) {
@@ -7894,12 +8391,24 @@ function createInitialNotes() {
   ].join('\n');
   notes[welcomeId] = {
     id: welcomeId, name: 'Welcome to Remember', content: welcomeContent,
-    autoNamed: false, createdAt: now, editedAt: now + 2, viewedAt: now + 2
+    autoNamed: false, createdAt: now, editedAt: now + 4, viewedAt: now + 4
   };
 
   var samplerContent = [
-    '**{blue}Remember Sampler{/blue}**',
-    '*Tap the pencil icon to switch between Edit and View mode*',
+    '**{blue}Stuff I Want to Remember{/blue}**',
+    '*Tap the pencil icon to switch between Edit and View mode.*',
+    '',
+    '*Note: Using style formatting such as bold, italics, and colors makes the Edit view look more complicated. These styles are completely optional — you may prefer to enter plain text only, without any formatting at all.*',
+    '',
+    '**{red}Things I Tell Myself Every Sunday Night{/red}**',
+    '- This week will be different',
+    '- I will meal prep',
+    '- I will go to bed before midnight',
+    '- I will reply to all my emails',
+    '- I will finally read that book on my nightstand',
+    '- I will not check my phone first thing in the morning',
+    '- I will drink more water',
+    '- (narrator: none of these things happened)',
     '',
     '**{green}Grocery List{/green}**',
     '[x] Milk',
@@ -7909,6 +8418,10 @@ function createInitialNotes() {
     '[ ] Bananas',
     '[ ] ~~Pizza~~ — I mean salad',
     '[ ] Something healthy I will definitely eat',
+    '',
+    '*Tip: Tap the checkbox button in the lower toolbar to enter Check mode — then tap any item to check it off. The toolbar scrolls left and right to reveal more buttons.*',
+    '',
+    '*Tip: Use the + button in the toolbar to quickly add new items to the end of this note.*',
     '',
     '**{orange}Things I Will Not Procrastinate On{/orange}**',
     '[x] ~~Clean the garage~~ — moved to next year',
@@ -7920,25 +8433,31 @@ function createInitialNotes() {
     '**{purple}My Totally Realistic Goals{/purple}**',
     '[ ] *Become a morning person*',
     '[ ] *Learn to fold a fitted sheet*',
+    '[ ] *Read all the books I have bought but never opened*',
+    '[ ] *Finally understand how taxes work*',
     '[x] *Find the TV remote*',
     '[ ] *Finish everything on my to-do list*',
-    '[ ] *Add more things to my to-do list*',
+    '[ ] *Wake up naturally before my alarm*',
+    '[ ] *Learn to parallel park on the first try*',
     '',
     '**{red}Secret Evil Plans{/red}**',
     '[x] ~~Take over the world~~ — too much paperwork',
     '[ ] *Convince everyone pineapple belongs on pizza*',
     '[ ] **Nap at every opportunity**',
     '[ ] Find out who keeps eating my lunch at the office',
-    '[x] ~~Blame it on Dave~~ — it was totally Dave',
+    '   [x] ~~Blame it on Dave~~ — it was totally Dave',
     '',
-    '**{blue}Useful Link{/blue}**',
+    '**{blue}URLs are tappable in View mode!{/blue}**',
     'Tap the link below in View mode to visit Wikipedia:',
     'https://en.wikipedia.org/wiki/Note-taking',
+    '',
+    '',
+    '',
   ].join('\n');
   var samplerId = makeId();
   notes[samplerId] = {
     id: samplerId, name: 'Remember Sampler', content: samplerContent,
-    autoNamed: false, createdAt: now + 3, editedAt: now + 3, viewedAt: now + 3
+    autoNamed: false, createdAt: now + 2, editedAt: now + 2, viewedAt: now + 2
   };
 
   var featuresId = makeId();
@@ -8002,7 +8521,7 @@ function createInitialNotes() {
   ].join('\n');
   notes[featuresId] = {
     id: featuresId, name: 'Remember — Features Guide', content: featuresContent,
-    autoNamed: false, createdAt: now, editedAt: now, viewedAt: now
+    autoNamed: false, createdAt: now, editedAt: now + 3, viewedAt: now + 3
   };
 
   saveNotes();
@@ -8075,6 +8594,468 @@ function _updateUndoRedoBtns() {
   if (redoBtn) redoBtn.style.opacity = _redoStack.length ? '' : '0.35';
   if (undoBtn) undoBtn.title = _undoStack.length ? 'Undo (' + _undoStack.length + ')' : 'Undo';
   if (redoBtn) redoBtn.title = _redoStack.length ? 'Redo (' + _redoStack.length + ')' : 'Redo';
+}
+
+// ===== FIND IN NOTE =====
+var _findMatches    = [];  // array of {lineIndex, matchIndex, startOffset, length}
+var _findCurrent    = -1;  // index into _findMatches
+var _findQuery      = '';
+var _findActive     = false;
+
+function openFind() {
+  if (!isViewMode) {
+    setViewMode(true);
+  }
+  _findActive = true;
+  var bar = document.getElementById('find-bar');
+  if (bar) bar.classList.add('open');
+  var input = document.getElementById('find-input');
+  if (input) {
+    input.value = _findQuery;
+    setTimeout(function() { input.focus(); input.select(); }, 80);
+  }
+  var findBtn = document.getElementById('find-btn');
+  if (findBtn) findBtn.classList.add('active');
+  pinToolbars();
+  runFind();
+}
+
+function closeFind() {
+  _findActive = false;
+  _findQuery = '';
+  _findMatches = [];
+  _findCurrent = -1;
+  var bar = document.getElementById('find-bar');
+  if (bar) bar.classList.remove('open');
+  var input = document.getElementById('find-input');
+  if (input) input.value = '';
+  var findBtn = document.getElementById('find-btn');
+  if (findBtn) findBtn.classList.remove('active');
+  // Re-render viewer without highlights
+  if (currentNoteId && notes[currentNoteId]) {
+    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    renderBlockSelections();
+  }
+  pinToolbars();
+  updateFindUI();
+}
+
+function runFind() {
+  var input = document.getElementById('find-input');
+  _findQuery = input ? input.value : '';
+  _findMatches = [];
+  _findCurrent = -1;
+
+  if (!currentNoteId || !notes[currentNoteId]) { updateFindUI(); return; }
+  var content = notes[currentNoteId].content || '';
+
+  if (!_findQuery.trim()) {
+    // No query — re-render plain viewer
+    document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
+    renderBlockSelections();
+    updateFindUI();
+    return;
+  }
+
+  // Find all matches in content (case-insensitive)
+  var lower = content.toLowerCase();
+  var q     = _findQuery.toLowerCase();
+  var pos   = 0;
+  var matchPositions = []; // {start, end} in content string
+  while ((pos = lower.indexOf(q, pos)) !== -1) {
+    matchPositions.push({ start: pos, end: pos + q.length });
+    pos += q.length;
+  }
+
+  if (matchPositions.length === 0) {
+    document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
+    renderBlockSelections();
+    updateFindUI();
+    return;
+  }
+
+  // Build highlighted HTML — insert <mark> tags around matches before urlsToLinks
+  // Work backwards so offsets stay valid
+  var highlighted = content;
+  for (var i = matchPositions.length - 1; i >= 0; i--) {
+    var mp = matchPositions[i];
+    var matchText = content.substring(mp.start, mp.end);
+    highlighted = highlighted.substring(0, mp.start) +
+      '\x00MATCH' + i + '\x00' + matchText + '\x00ENDMATCH\x00' +
+      highlighted.substring(mp.end);
+  }
+
+  // Render through urlsToLinks
+  var rendered = urlsToLinks(highlighted, true);
+
+  // Replace placeholders with mark elements
+  for (var j = 0; j < matchPositions.length; j++) {
+    rendered = rendered.replace(
+      '\x00MATCH' + j + '\x00',
+      '<mark class="find-match" data-match="' + j + '">'
+    );
+  }
+  rendered = rendered.replace(/\x00ENDMATCH\x00/g, '</mark>');
+
+  document.getElementById('note-viewer').innerHTML = rendered;
+  renderBlockSelections();
+
+  // Build match list from rendered marks
+  _findMatches = [];
+  document.querySelectorAll('#note-viewer mark.find-match').forEach(function(el, idx) {
+    _findMatches.push(el);
+  });
+
+  // Wire tap on any match to make it current
+  _findMatches.forEach(function(el, idx) {
+    el.addEventListener('click', function(e) {
+      e.stopPropagation();
+      setCurrentMatch(idx);
+    });
+  });
+
+  // Set current to first match
+  if (_findMatches.length > 0) {
+    _findCurrent = 0;
+    setCurrentMatch(0);
+  }
+  updateFindUI();
+}
+
+function setCurrentMatch(idx) {
+  if (idx < 0 || idx >= _findMatches.length) return;
+  // Remove current class from all
+  _findMatches.forEach(function(el) { el.classList.remove('find-match-current'); });
+  _findCurrent = idx;
+  var el = _findMatches[idx];
+  el.classList.add('find-match-current');
+
+  // Scroll so match appears ~2 lines below the find bar
+  var area    = document.getElementById('note-content-area');
+  var findBar = document.getElementById('find-bar');
+  if (area && findBar) {
+    var findBarBottom = findBar.getBoundingClientRect().bottom;
+    var elTop         = el.getBoundingClientRect().top;
+    var lineHeight    = parseInt(getComputedStyle(document.getElementById('note-viewer')).lineHeight) || 28;
+    var targetOffset  = findBarBottom + lineHeight * 2; // 2 lines below find bar
+    var delta         = elTop - targetOffset;
+    area.scrollTop += delta;
+  } else {
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  updateFindUI();
+}
+
+function findNext() {
+  if (!_findMatches.length) return;
+  if (_findCurrent < _findMatches.length - 1) setCurrentMatch(_findCurrent + 1);
+}
+
+function findPrev() {
+  if (!_findMatches.length) return;
+  if (_findCurrent > 0) setCurrentMatch(_findCurrent - 1);
+}
+
+function updateFindUI() {
+  var count   = document.getElementById('find-count');
+  var prevBtn = document.getElementById('find-prev-btn');
+  var nextBtn = document.getElementById('find-next-btn');
+  var total   = _findMatches.length;
+  var current = total > 0 ? _findCurrent + 1 : 0;
+  if (count) {
+    if (!_findQuery.trim()) {
+      count.textContent = '';
+    } else if (total === 0) {
+      count.textContent = 'No results';
+      count.style.color = 'var(--danger, #d93025)';
+    } else {
+      count.textContent = current + ' of ' + total;
+      count.style.color = 'var(--fg3)';
+    }
+  }
+  if (prevBtn) prevBtn.disabled = total === 0 || _findCurrent <= 0;
+  if (nextBtn) nextBtn.disabled = total === 0 || _findCurrent >= total - 1;
+}
+
+// ===== RENDER VIEWER WITH RAW LINE DATA =====
+function renderViewer(content) {
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return;
+  viewer.innerHTML = urlsToLinks(content, true);
+  // Store raw line content on each .viewer-line for move-mode write-back
+  var rawLines = content.split('\n');
+  viewer.querySelectorAll('.viewer-line').forEach(function(el) {
+    var idx = parseInt(el.dataset.line, 10);
+    if (!isNaN(idx) && idx < rawLines.length) el.dataset.rawLine = rawLines[idx];
+  });
+}
+
+// ===== MOVE MODE =====
+var moveMode      = false;
+var _moveBlocks   = [];   // snapshot of .viewer-line divs
+var _moveSelIdx   = -1;   // index of selected block
+var _moveUndoPushed = false; // only push undo once per move session
+
+var MOVE_REPEAT_DELAY = 900;
+var MOVE_REPEAT_SPEED = 220;
+var _moveRepeatActive = false;
+var _moveRepeatTimeout = null;
+var _moveRepeatInterval = null;
+
+function _refreshMoveBlocks() {
+  var viewer = document.getElementById('note-viewer');
+  // Build as array indexed by DOM order (position), NOT by data-line value.
+  // Use _getMoveBlockByLine(lineIdx) to find a block by its data-line attribute.
+  _moveBlocks = viewer ? Array.from(viewer.querySelectorAll('.viewer-line')) : [];
+}
+
+function _getMoveBlockByLine(lineIdx) {
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return null;
+  return viewer.querySelector('.viewer-line[data-line="' + lineIdx + '"]');
+}
+
+function _reanchorMove(el) {
+  _refreshMoveBlocks();
+  _moveSelIdx = _moveBlocks.indexOf(el);
+  el.classList.add('move-selected');
+  _scrollToMoveSelected();
+  _updateMoveBtns();
+}
+
+function _scrollToMoveSelected() {
+  if (_moveSelIdx < 0 || _moveSelIdx >= _moveBlocks.length) return;
+  var el = _moveBlocks[_moveSelIdx];
+  var area     = document.getElementById('note-content-area');
+  var toolbar  = document.getElementById('note-bottom-bar');
+  var findBar  = document.getElementById('find-bar');
+  if (!area) return;
+  var panelH   = (toolbar ? toolbar.offsetHeight : 0) +
+                 (findBar && findBar.classList.contains('open') ? findBar.offsetHeight : 0);
+  var topMargin = 12, botMargin = 12;
+
+  function neighborH(idx) {
+    if (idx < 0 || idx >= _moveBlocks.length) return 0;
+    return _moveBlocks[idx].offsetHeight || 28;
+  }
+  var ctxAbove = neighborH(_moveSelIdx - 1) + neighborH(_moveSelIdx - 2);
+  var ctxBelow = neighborH(_moveSelIdx + 1) + neighborH(_moveSelIdx + 2);
+
+  var elRect    = el.getBoundingClientRect();
+  var areaRect  = area.getBoundingClientRect();
+  var visTop    = areaRect.top;
+  var visBot    = areaRect.bottom - panelH - botMargin;
+  var topEdge   = elRect.top - visTop;
+  var botEdge   = visBot - elRect.bottom;
+
+  if (topEdge < ctxAbove + topMargin) {
+    area.scrollTop -= (ctxAbove + topMargin - topEdge);
+  } else if (botEdge < ctxBelow + botMargin) {
+    area.scrollTop += (ctxBelow + botMargin - botEdge);
+  }
+}
+
+function _writeMoveContentBack() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  _refreshMoveBlocks();
+  var lines = _moveBlocks.map(function(el) {
+    return el.dataset.rawLine !== undefined ? el.dataset.rawLine : (el.textContent || '');
+  });
+  notes[currentNoteId].content = lines.join('\n');
+  notes[currentNoteId].editedAt = Date.now();
+  document.getElementById('note-editor').value = notes[currentNoteId].content;
+  saveNotes();
+}
+
+function _updateMoveBtns() {
+  var upBtn  = document.getElementById('move-step-up-btn');
+  var dnBtn  = document.getElementById('move-step-down-btn');
+  var topBtn = document.getElementById('move-jump-top-btn');
+  var botBtn = document.getElementById('move-jump-bottom-btn');
+  var hasBlock = _moveSelIdx >= 0;
+  var atTop    = _moveSelIdx <= 0;
+  var atBot    = _moveSelIdx + _moveGroupSize >= _moveBlocks.length;
+  if (upBtn)  { upBtn.style.opacity  = (hasBlock && !atTop) ? '' : '0.3'; }
+  if (dnBtn)  { dnBtn.style.opacity  = (hasBlock && !atBot) ? '' : '0.3'; }
+  if (topBtn) { topBtn.style.opacity = (hasBlock && !atTop) ? '' : '0.3'; }
+  if (botBtn) { botBtn.style.opacity = (hasBlock && !atBot) ? '' : '0.3'; }
+}
+
+// Returns sorted array of selected indices if contiguous (or single), else null
+function _contiguousSelection() {
+  if (selectedBlocks.size === 0) return null;
+  var indices = [];
+  selectedBlocks.forEach(function(i) { indices.push(i); });
+  indices.sort(function(a, b) { return a - b; });
+  for (var i = 1; i < indices.length; i++) {
+    if (indices[i] !== indices[i - 1] + 1) return null; // gap found
+  }
+  return indices;
+}
+
+// _moveGroupSize: number of lines in the moving group (1 for single block)
+var _moveGroupSize = 1;
+
+function enterMoveMode() {
+  if (selectedBlocks.size === 0) { showToast('Select a line first', false); return; }
+  var indices = _contiguousSelection();
+  if (!indices) {
+    showToast('Select a contiguous group of lines to move', false);
+    return;
+  }
+  _refreshMoveBlocks();
+  var rawLines = (notes[currentNoteId].content || '').split('\n');
+  _moveBlocks.forEach(function(b, i) {
+    b.dataset.rawLine = rawLines[i] || '';
+  });
+
+  moveMode = true;
+  _moveUndoPushed = false;
+  _moveGroupSize = indices.length;
+  // _moveSelIdx is DOM order index, not data-line value
+  // Find DOM position of the first selected line
+  var firstEl = _getMoveBlockByLine(indices[0]);
+  _moveSelIdx = firstEl ? _moveBlocks.indexOf(firstEl) : indices[0];
+
+  // Highlight all selected blocks by data-line lookup
+  indices.forEach(function(i) {
+    var el = _getMoveBlockByLine(i);
+    if (el) el.classList.add('move-selected');
+  });
+
+  var btn = document.getElementById('move-mode-btn');
+  if (btn) btn.classList.add('active');
+  _scrollToMoveSelected();
+  _updateMoveBtns();
+  updateViewOnlyBtns();
+  var lineWord = _moveGroupSize === 1 ? 'line' : _moveGroupSize + ' lines';
+  showToast('Moving ' + lineWord + '. Use ▲▼ to move. Tap Move again to finish.', false);
+}
+
+function exitMoveMode() {
+  moveMode = false;
+  _moveRepeatActive = false;
+  if (_moveRepeatTimeout)  { clearTimeout(_moveRepeatTimeout);   _moveRepeatTimeout  = null; }
+  if (_moveRepeatInterval) { clearInterval(_moveRepeatInterval); _moveRepeatInterval = null; }
+  document.querySelectorAll('.viewer-line.move-selected').forEach(function(el) {
+    el.classList.remove('move-selected');
+  });
+  var btn = document.getElementById('move-mode-btn');
+  if (btn) btn.classList.remove('active');
+  updateViewOnlyBtns();
+}
+
+function _resyncAfterMove() {
+  // After DOM reorder, update data-line attributes to match new positions
+  // and update selectedBlocks to match the new indices of the moved group
+  _refreshMoveBlocks();
+  _moveBlocks.forEach(function(el, i) {
+    el.dataset.line = i;
+    // Also update rawLine since content order changed
+    // rawLine is re-set by _writeMoveContentBack via renderViewer — handled there
+  });
+  // Rebuild selectedBlocks to match the new positions of move-selected elements
+  selectedBlocks.clear();
+  _moveBlocks.forEach(function(el, i) {
+    if (el.classList.contains('move-selected')) {
+      selectedBlocks.add(i);
+    }
+  });
+  renderBlockSelections();
+}
+
+function _getGroupEls() {
+  // Returns array of group elements in order (top to bottom)
+  var els = [];
+  for (var i = 0; i < _moveGroupSize; i++) {
+    var el = _moveBlocks[_moveSelIdx + i];
+    if (el) els.push(el);
+  }
+  return els;
+}
+
+function _reanchorMoveGroup(firstEl) {
+  _refreshMoveBlocks();
+  _moveSelIdx = _moveBlocks.indexOf(firstEl); // DOM order index
+  // Re-highlight all group members using DOM order
+  document.querySelectorAll('.viewer-line.move-selected').forEach(function(el) {
+    el.classList.remove('move-selected');
+  });
+  for (var i = 0; i < _moveGroupSize; i++) {
+    var el = _moveBlocks[_moveSelIdx + i];
+    if (el) el.classList.add('move-selected');
+  }
+  // Resync data-line attributes and selectedBlocks after DOM reorder
+  _resyncAfterMove();
+  _scrollToMoveSelected();
+  _updateMoveBtns();
+}
+
+function _moveStep(dir) {
+  _refreshMoveBlocks();
+  if (_moveSelIdx < 0) return;
+  var groupEls = _getGroupEls();
+  if (!groupEls.length) return;
+  if (!_moveUndoPushed) { pushUndo(); _moveUndoPushed = true; }
+  var viewer = document.getElementById('note-viewer');
+  var lastIdx = _moveSelIdx + _moveGroupSize - 1;
+
+  if (dir === -1) { // up — insert group before the block above the top
+    if (_moveSelIdx <= 0) return;
+    var anchor = _moveBlocks[_moveSelIdx - 1];
+    groupEls.forEach(function(el) { viewer.insertBefore(el, anchor); });
+  } else { // down — insert group after the block immediately below the bottom of group
+    if (lastIdx >= _moveBlocks.length - 1) return;
+    // The block we're jumping over is _moveBlocks[lastIdx + 1]
+    // Insert the group after it: find what comes after that block, insert before it
+    var insertBefore = _moveBlocks[lastIdx + 1].nextSibling;
+    groupEls.forEach(function(el) {
+      if (insertBefore) viewer.insertBefore(el, insertBefore);
+      else              viewer.appendChild(el);
+    });
+  }
+  _reanchorMoveGroup(groupEls[0]);
+  _writeMoveContentBack();
+}
+
+function _moveJump(toTop) {
+  _refreshMoveBlocks();
+  if (_moveSelIdx < 0) return;
+  var groupEls = _getGroupEls();
+  if (!groupEls.length) return;
+  if (!_moveUndoPushed) { pushUndo(); _moveUndoPushed = true; }
+  var viewer = document.getElementById('note-viewer');
+  if (toTop) {
+    var first = viewer.firstChild;
+    groupEls.forEach(function(el) { viewer.insertBefore(el, first); });
+  } else {
+    groupEls.forEach(function(el) { viewer.appendChild(el); });
+  }
+  _reanchorMoveGroup(groupEls[0]);
+  _writeMoveContentBack();
+}
+
+function _bindMoveRepeat(btn, fn) {
+  btn.addEventListener('pointerdown', function(e) {
+    if (_moveRepeatActive) return;
+    e.preventDefault();
+    _moveRepeatActive = true;
+    try { btn.setPointerCapture(e.pointerId); } catch(_) {}
+    fn();
+    _moveRepeatTimeout = setTimeout(function() {
+      _moveRepeatTimeout = null;
+      if (!_moveRepeatActive) return;
+      _moveRepeatInterval = setInterval(function() {
+        if (!_moveRepeatActive) { clearInterval(_moveRepeatInterval); return; }
+        fn();
+      }, MOVE_REPEAT_SPEED);
+    }, MOVE_REPEAT_DELAY);
+  });
+  function stopRepeat() { _moveRepeatActive = false; if (_moveRepeatTimeout) { clearTimeout(_moveRepeatTimeout); _moveRepeatTimeout = null; } if (_moveRepeatInterval) { clearInterval(_moveRepeatInterval); _moveRepeatInterval = null; } }
+  btn.addEventListener('pointerup',     stopRepeat);
+  btn.addEventListener('pointercancel', stopRepeat);
+  btn.addEventListener('touchend',      stopRepeat, { passive: true });
+  btn.addEventListener('touchcancel',   stopRepeat, { passive: true });
 }
 
 // ===== CHECK MODE =====
@@ -8202,6 +9183,21 @@ function doPaste(before) {
     renderBlockSelections();
     updateViewOnlyBtns();
     showToast('Pasted ' + pastedLines.length + (pastedLines.length === 1 ? ' line' : ' lines'), false);
+    // Briefly highlight the pasted lines
+    var viewer = document.getElementById('note-viewer');
+    if (viewer) {
+      var pastedDivs = [];
+      for (var pi = insertAt; pi < insertAt + pastedLines.length; pi++) {
+        var div = viewer.querySelector('.viewer-line[data-line="' + pi + '"]');
+        if (div) { div.classList.add('paste-highlight'); pastedDivs.push(div); }
+      }
+      // Scroll first pasted line into view
+      if (pastedDivs.length > 0) pastedDivs[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      setTimeout(function() {
+        pastedDivs.forEach(function(d) { d.classList.remove('paste-highlight'); d.classList.add('paste-highlight-fade'); });
+        setTimeout(function() { pastedDivs.forEach(function(d) { d.classList.remove('paste-highlight-fade'); }); }, 1200);
+      }, 1500);
+    }
   }).catch(function(err) {
     if (err && err.name === 'NotAllowedError') {
       showToast('Clipboard permission denied — tap Allow if prompted', true);
