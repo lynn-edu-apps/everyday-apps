@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.431 -->
+<!-- Remember App - Version 0.443 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
@@ -54,7 +54,7 @@
   --radius-sm: 8px;
 
   /* Button sizing - medium default */
-  --btn-pad: 14px 22px;
+  --btn-pad: 8px 22px;
   --btn-font: 1.05em;
   --btn-icon: 26px;
   --icon-size: 28px;
@@ -78,7 +78,7 @@ body.dark {
 
 /* UI Size: large */
 body.ui-large {
-  --btn-pad: 18px 30px;
+  --btn-pad: 10px 30px;
   --btn-font: 1.2em;
   --btn-icon: 36px;
   --icon-size: 38px;
@@ -1039,6 +1039,7 @@ mark.find-match-current {
   align-items: center;
   gap: 8px;
   padding: var(--btn-pad);
+  line-height: 1;
   font-family: var(--font-body);
   font-size: var(--btn-font);
   font-weight: 600;
@@ -1048,7 +1049,6 @@ mark.find-match-current {
   transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
   -webkit-tap-highlight-color: transparent;
   white-space: nowrap;
-  min-height: 44px;
 }
 .btn svg { width: var(--btn-icon); height: var(--btn-icon); }
 .btn:active { transform: scale(0.97); }
@@ -1955,7 +1955,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   z-index: 200;
   align-items: flex-end;
   justify-content: center;
-  padding: 20px 20px 18px;
+  padding: 20px 8px 18px;
 }
 .confirm-overlay.open { display: flex; }
 .confirm-overlay.top-anchored {
@@ -1969,8 +1969,8 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   background: var(--bg-dialog, var(--bg));
   border-radius: var(--radius);
   padding: 16px 18px;
-  max-width: 380px;
-  width: 100%;
+  max-width: 480px;
+  width: calc(100% - 8px);
   box-shadow: var(--shadow-lg);
 }
 .confirm-title {
@@ -1982,6 +1982,65 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 }
 .confirm-msg { font-size: 0.95em; color: var(--fg2); margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap; }
 .confirm-btns { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+
+/* Quick-add line-pick mode */
+.qa-line-pick .viewer-line { cursor: pointer; }
+@media (hover: hover) {
+  .qa-line-pick .viewer-line:hover { background: rgba(128,128,128,0.08); }
+}
+
+/* ===== QUICK-ADD POSITION SELECTOR ===== */
+/* Segmented control for quick-add position */
+.qa-pos-row {
+  display: inline-flex;  /* shrink-wrap to content width */
+  margin-bottom: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  width: 100%;           /* but still fill available space */
+  box-sizing: border-box;
+}
+.qa-pos-btn {
+  flex: 0 0 auto;        /* each segment is exactly as wide as its text */
+  padding: 6px 8px;
+  line-height: 1;
+  font-family: var(--font-body);
+  font-size: 0.82em;
+  font-weight: 500;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--fg2);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  text-align: center;
+}
+.qa-pos-btn:first-child {
+  border-left: none;
+}
+.qa-pos-btn:last-child {
+  flex: 1 0 auto;   /* last segment grows to fill remaining space */
+}
+.qa-pos-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-left-color: var(--accent);
+}
+/* When button to the right of active is present, hide its left border */
+.qa-pos-btn.active + .qa-pos-btn {
+  border-left-color: var(--accent);
+}
+.qa-pos-label {
+  font-size: 0.8em;
+  color: var(--fg3);
+  font-style: italic;
+  margin-bottom: 8px;
+  min-height: 1.2em;
+}
 
 /* ===== FONT PREVIEW ===== */
 .font-preview {
@@ -2819,10 +2878,18 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
 <!-- ===== QUICK ADD MODAL ===== -->
 <div class="confirm-overlay" id="quick-add-overlay" role="dialog" aria-modal="true">
-  <div class="confirm-box" id="quick-add-box">
-    <div class="confirm-title">Add text to note</div>
+  <div class="confirm-box" id="quick-add-box" style="padding-top:10px">
+    <div class="confirm-title" style="margin-bottom:10px">Add text to note</div>
+    <!-- Position selector -->
+    <div class="qa-pos-row">
+      <button class="qa-pos-btn" id="qa-pos-top" type="button">Top</button>
+      <button class="qa-pos-btn" id="qa-pos-before" type="button">Before line…</button>
+      <button class="qa-pos-btn" id="qa-pos-after" type="button">After line…</button>
+      <button class="qa-pos-btn" id="qa-pos-bottom" type="button">Bottom</button>
+    </div>
+    <div class="qa-pos-label" id="qa-pos-label">Will insert at bottom</div>
     <textarea id="quick-add-input" rows="4" placeholder="Type text to add…" spellcheck="true"
-      style="width:100%;font-family:var(--font-note);font-size:var(--font-size-editor);background:var(--bg2);color:var(--fg);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;resize:none;outline:none;box-sizing:border-box;line-height:var(--line-height);transition:border-color 0.2s;margin-top:10px"></textarea>
+      style="width:100%;font-family:var(--font-note);font-size:var(--font-size-editor);background:var(--bg2);color:var(--fg);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;resize:none;outline:none;box-sizing:border-box;line-height:var(--line-height);transition:border-color 0.2s"></textarea>
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
       <input type="checkbox" id="quick-add-blank-line" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
       Add a blank line after the new text
@@ -2841,9 +2908,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </label>
     <div class="confirm-btns" style="margin-top:12px">
       <button class="btn btn-ghost" id="quick-add-cancel-btn">Cancel</button>
-      <button class="btn btn-primary" id="quick-add-save-btn">Save</button>
-    
-    </div></div>
+      <button class="btn btn-primary" id="quick-add-save-btn">Add</button>
+    </div>
   </div>
 </div>
 
@@ -3642,6 +3708,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             Opens the note and shows a large full-screen Speak Note button. One tap starts reading aloud. Ideal for use with Siri Shortcuts — see the setup steps in the Optional Setup section above.</p>
             <p><strong>Quick-add text to a note:</strong><br>
             <code>…/remember/?action=quickadd&amp;content=Your+text+here&amp;name=Shopping+List</code><br>
+            <code>…/remember/?action=quickadd&amp;content=Your+text+here&amp;name=Shopping+List&amp;position=2</code><br>
             Appends (or prepends, per your Settings) the content to the named note, then opens it. If the name matches multiple notes, the most recently edited one is used. If no match is found, a new note is created with that name.</p>
           </div>
         </div>
@@ -3671,7 +3738,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.431';
+const APP_VERSION = '0.443';
 
 
 
@@ -7561,8 +7628,34 @@ function init() {
 
   // ===== QUICK ADD MODAL =====
   var quickAddDirty = false;
+  var _qaMode        = 'bottom';  // 'top' | 'bottom' | 'before' | 'after'
+  var _qaTargetLine  = null;      // line index for before/after
+  var _qaPending        = null;   // 'before' | 'after' while waiting for line pick
+  var _qaPendingLines   = null;   // lines array saved for after line-pick
+  var _qaPendingBlankLine = false;
+  var _qaPendingHyphen  = false;
+  var _qaPendingCheckbox = false;
+  var _qaPendingWasEditMode = false;  // true if we were in edit mode when Add was tapped
 
-  function openQuickAdd() {
+  function _qaSetMode(mode, targetLine, targetText) {
+    _qaMode = mode;
+    _qaTargetLine = (mode === 'before' || mode === 'after') ? targetLine : null;
+    var label = document.getElementById('qa-pos-label');
+    var desc = '';
+    if (mode === 'top')    desc = 'Will insert at top of note';
+    if (mode === 'bottom') desc = 'Will insert at bottom of note';
+    if (mode === 'before' && targetText !== undefined)
+      desc = 'Will insert before: “' + String(targetText).substring(0, 40) + '”';
+    if (mode === 'after' && targetText !== undefined)
+      desc = 'Will insert after: “' + String(targetText).substring(0, 40) + '”';
+    if (label) label.textContent = desc;
+    ['top','before','after','bottom'].forEach(function(m) {
+      var b = document.getElementById('qa-pos-' + m);
+      if (b) b.classList.toggle('active', m === mode);
+    });
+  }
+
+  function openQuickAdd(mode, targetLine, targetText) {
     var overlay = document.getElementById('quick-add-overlay');
     var input = document.getElementById('quick-add-input');
     var checkbox = document.getElementById('quick-add-blank-line');
@@ -7576,6 +7669,9 @@ function init() {
     checkboxBox.checked = !!settings.plusCheckbox;
     overlay.classList.add('open');
     overlay.classList.add('centered');
+    // Set default mode from passed-in mode or setting
+    var defaultMode = mode || (settings.plusPosition === 'top' ? 'top' : 'bottom');
+    _qaSetMode(defaultMode, targetLine !== undefined ? targetLine : null, targetText || '');
     setTimeout(function() { input.focus(); }, 100);
   }
 
@@ -7624,6 +7720,21 @@ function init() {
       return;
     }
 
+    // If before/after but no target line chosen yet — enter line-pick mode
+    if ((_qaMode === 'before' || _qaMode === 'after') && _qaTargetLine === null) {
+      _qaPending = _qaMode;
+      _qaPendingLines = lines;
+      _qaPendingBlankLine = addBlankLine;
+      _qaPendingHyphen = addHyphen;
+      _qaPendingCheckbox = addCheckbox;
+      _qaPendingWasEditMode = !isViewMode;
+      closeQuickAdd();
+      // Switch to view mode so viewer lines are visible and tappable
+      if (!isViewMode) setViewMode(true);
+      showToast((_qaMode === 'before' ? 'Tap a line to insert before it' : 'Tap a line to insert after it'), false);
+      document.getElementById('note-viewer').classList.add('qa-line-pick');
+      return;
+    }
     doInsert(lines, addBlankLine, addHyphen, addCheckbox);
   }
 
@@ -7655,12 +7766,35 @@ function init() {
 
     var insertText = processedLines.join('\n');
     var current = notes[currentNoteId].content || '';
-    var position = settings.plusPosition || 'top';
     var newContent;
-    if (position === 'top') {
+    if (_qaMode === 'top') {
       newContent = insertText + (current ? '\n' + current : '');
-    } else {
+    } else if (_qaMode === 'bottom') {
       newContent = (current ? current + '\n' : '') + insertText;
+    } else if ((_qaMode === 'before' || _qaMode === 'after') && _qaTargetLine !== null) {
+      var currentLines = current.split('\n');
+      var insertIdx = _qaMode === 'before' ? _qaTargetLine : _qaTargetLine + 1;
+      insertIdx = Math.max(0, Math.min(insertIdx, currentLines.length));
+      var toInsert = insertText.split('\n');
+      currentLines.splice.apply(currentLines, [insertIdx, 0].concat(toInsert));
+      newContent = currentLines.join('\n');
+    } else {
+      // Fallback to bottom
+      newContent = (current ? current + '\n' : '') + insertText;
+    }
+
+    // Calculate where inserted lines start in the new content
+    var insertedLines = insertText.split('\n');
+    var insertedCount = insertedLines.length;
+    var newLines = newContent.split('\n');
+    var insertStartIdx;
+    if (_qaMode === 'top') {
+      insertStartIdx = 0;
+    } else if (_qaMode === 'bottom') {
+      insertStartIdx = newLines.length - insertedCount;
+    } else {
+      // before/after — same insertIdx computed above
+      insertStartIdx = _qaMode === 'before' ? _qaTargetLine : _qaTargetLine + 1;
     }
 
     var ed = document.getElementById('note-editor');
@@ -7668,14 +7802,88 @@ function init() {
     ed.value = newContent;
     scheduleSave();
     resizeEditor();
+    closeQuickAdd();
     if (isViewMode) {
       document.getElementById('note-viewer').innerHTML = urlsToLinks(newContent, true);
       updateViewOnlyBtns();
+      // Scroll to and briefly highlight the inserted lines
+      setTimeout(function() {
+        var viewer = document.getElementById('note-viewer');
+        var area   = document.getElementById('note-content-area');
+        var toolbar = document.getElementById('note-bottom-bar');
+        if (!viewer || !area) return;
+        var highlightDivs = [];
+        for (var hi = insertStartIdx; hi < insertStartIdx + insertedCount; hi++) {
+          var div = viewer.querySelector('.viewer-line[data-line="' + hi + '"]');
+          if (div) { div.classList.add('paste-highlight'); highlightDivs.push(div); }
+        }
+        // Scroll first inserted line into view — 2 lines below toolbar
+        if (highlightDivs.length > 0) {
+          var toolbarBottom = toolbar ? toolbar.getBoundingClientRect().bottom : 0;
+          var elTop = highlightDivs[0].getBoundingClientRect().top;
+          var lineHeight = parseInt(getComputedStyle(viewer).lineHeight) || 28;
+          var targetOffset = toolbarBottom + lineHeight * 2;
+          var delta = elTop - targetOffset;
+          area.scrollTop += delta;
+        }
+        // Fade out highlight
+        setTimeout(function() {
+          highlightDivs.forEach(function(d) {
+            d.classList.remove('paste-highlight');
+            d.classList.add('paste-highlight-fade');
+          });
+          setTimeout(function() {
+            highlightDivs.forEach(function(d) { d.classList.remove('paste-highlight-fade'); });
+          }, 1200);
+        }, 1500);
+      }, 50);
     }
-    closeQuickAdd();
   }
 
-  document.getElementById('quick-add-btn').addEventListener('click', openQuickAdd);
+  // Position buttons
+  document.getElementById('qa-pos-top').addEventListener('click', function() { _qaSetMode('top'); });
+  document.getElementById('qa-pos-bottom').addEventListener('click', function() { _qaSetMode('bottom'); });
+  document.getElementById('qa-pos-before').addEventListener('click', function() {
+    // Just select the mode — line will be chosen when Add is tapped
+    _qaSetMode('before', null, '');
+    var lbl = document.getElementById('qa-pos-label');
+    if (lbl) lbl.textContent = 'Tap Add to choose which line to insert before';
+  });
+  document.getElementById('qa-pos-after').addEventListener('click', function() {
+    _qaSetMode('after', null, '');
+    var lbl = document.getElementById('qa-pos-label');
+    if (lbl) lbl.textContent = 'Tap Add to choose which line to insert after';
+  });
+
+  // Line-pick tap handler — used when Add was tapped with before/after but no line yet chosen
+  document.getElementById('note-viewer').addEventListener('click', function(e) {
+    if (!_qaPending) return;
+    var lineDiv = e.target.closest('.viewer-line');
+    if (!lineDiv) return;
+    var lineIndex = parseInt(lineDiv.dataset.line, 10);
+    if (isNaN(lineIndex)) return;
+    var lines = (notes[currentNoteId].content || '').split('\n');
+    var rawLine = (lines[lineIndex] || '').trim().substring(0, 40);
+    var mode = _qaPending;
+    var wasEdit = _qaPendingWasEditMode;
+    _qaPending = null;
+    _qaPendingWasEditMode = false;
+    document.getElementById('note-viewer').classList.remove('qa-line-pick');
+    // Now do the actual insert with the stored text
+    _qaMode = mode;
+    _qaTargetLine = lineIndex;
+    doInsert(_qaPendingLines, _qaPendingBlankLine, _qaPendingHyphen, _qaPendingCheckbox);
+    // Restore previous edit mode if needed
+    if (wasEdit) {
+      setTimeout(function() {
+        setViewMode(false);
+        var ed = document.getElementById('note-editor');
+        if (ed) ed.focus({ preventScroll: true });
+      }, 100);
+    }
+  });
+
+  document.getElementById('quick-add-btn').addEventListener('click', function() { openQuickAdd(); });
 
   document.getElementById('quick-add-save-btn').addEventListener('click', saveQuickAdd);
 
@@ -9325,14 +9533,25 @@ function handleUrlAction() {
       qaFoundId = qaId;
     }
 
-    // Append or prepend content per the user's plusPosition setting
+    // Insert content at position param, or per plusPosition setting if no position
     var qaN = notes[qaFoundId];
     if (qaContent) {
-      var qaPos = settings.plusPosition || 'bottom';
-      if (qaPos === 'top') {
-        qaN.content = qaContent + (qaN.content ? '\n' + qaN.content : '');
+      var qaPositionParam = params.get('position');
+      if (qaPositionParam !== null) {
+        // position param: 0 = top, N = after Nth existing block, > count = bottom
+        var qaPos2 = parseInt(qaPositionParam, 10);
+        if (isNaN(qaPos2) || qaPos2 < 0) qaPos2 = 0;
+        var qaLines = qaN.content ? qaN.content.split('\n') : [];
+        var qaInsertAt = Math.min(qaPos2, qaLines.length);
+        qaLines.splice(qaInsertAt, 0, qaContent);
+        qaN.content = qaLines.join('\n');
       } else {
-        qaN.content = (qaN.content ? qaN.content + '\n' : '') + qaContent;
+        var qaPos = settings.plusPosition || 'bottom';
+        if (qaPos === 'top') {
+          qaN.content = qaContent + (qaN.content ? '\n' + qaN.content : '');
+        } else {
+          qaN.content = (qaN.content ? qaN.content + '\n' : '') + qaContent;
+        }
       }
       qaN.editedAt = Date.now();
       if (qaN.autoNamed) {
