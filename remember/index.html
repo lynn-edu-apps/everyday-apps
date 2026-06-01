@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.503 -->
+<!-- Remember App - Version 0.505 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.503
+  Version 0.505
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -26,6 +26,8 @@
 <title>Remember</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzViN2M2ZSIvPgogIDx0ZXh0IHg9IjE2IiB5PSIyMyIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iMjIiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5SPC90ZXh0Pgo8L3N2Zz4=">
+<link rel="icon" type="image/png" sizes="32x32" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzViN2M2ZSIvPgogIDx0ZXh0IHg9IjE2IiB5PSIyMyIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iMjIiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5SPC90ZXh0Pgo8L3N2Zz4=">
 
 <style>
 /* ===== GOOGLE FONTS ===== */
@@ -4129,7 +4131,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.503';
+const APP_VERSION = '0.505';
 
 
 
@@ -4847,11 +4849,12 @@ function confirmDeleteNote(id) {
 }
 
 var _contextMenuNoteId = null;
-var _contextMenuOpenTime = 0; // timestamp when menu last opened
-var CTX_IGNORE_MS = 600; // ignore taps within this many ms of menu opening
+// True only after a fresh touchstart (or mousedown) on the menu since it opened.
+// Prevents the finger-lift from the long-press from firing a menu item.
+var _contextMenuReadyForTap = false;
 function showNoteContextMenu(id, x, y) {
   _contextMenuNoteId = id;
-  _contextMenuOpenTime = Date.now();
+  _contextMenuReadyForTap = false; // require a fresh touch before any item fires
   var menu = document.getElementById('note-item-context-menu');
   if (!menu) return;
   // Update pin label
@@ -6273,11 +6276,20 @@ function init() {
   // Home
   document.getElementById('new-note-btn').addEventListener('click', createNewNote);
 
-  // Context menu buttons — guard against accidental tap on open
-  // (long-press touchend can fire a synthetic click; ignore taps within CTX_IGNORE_MS)
+  // Context menu: require a fresh finger-down on the menu before any item fires.
+  // This prevents the touchend that ends the long-press from accidentally
+  // activating an item that happens to be under the finger when the menu opens.
+  var ctxMenu = document.getElementById('note-item-context-menu');
+  ctxMenu.addEventListener('touchstart', function() {
+    _contextMenuReadyForTap = true;
+  }, { passive: true });
+  ctxMenu.addEventListener('mousedown', function() {
+    // Mouse clicks are always intentional — always ready
+    _contextMenuReadyForTap = true;
+  });
   function ctxGuard(action) {
     return function() {
-      if (Date.now() - _contextMenuOpenTime < CTX_IGNORE_MS) return;
+      if (!_contextMenuReadyForTap) return;
       var id = _contextMenuNoteId;
       hideNoteContextMenu();
       if (id) action(id);
