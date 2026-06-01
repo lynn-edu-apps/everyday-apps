@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.508 -->
+<!-- Remember App - Version 0.509 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.508
+  Version 0.509
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -4135,7 +4135,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.508';
+const APP_VERSION = '0.509';
 
 
 
@@ -4858,8 +4858,8 @@ function confirmDeleteNote(id) {
 }
 
 var _contextMenuNoteId = null;
-// True only after a fresh touchstart (or mousedown) on the menu since it opened.
-// Prevents the finger-lift from the long-press from firing a menu item.
+// True only after the finger that triggered the long-press has fully lifted
+// (touchend on document). Prevents sliding from long-press into a menu item.
 var _contextMenuReadyForTap = false;
 function showNoteContextMenu(id, x, y) {
   _contextMenuNoteId = id;
@@ -6298,29 +6298,52 @@ function init() {
   // Home
   document.getElementById('new-note-btn').addEventListener('click', createNewNote);
 
-  // Context menu: require a fresh finger-down on the menu before any item fires.
-  // This prevents the touchend that ends the long-press from accidentally
-  // activating an item that happens to be under the finger when the menu opens.
-  var ctxMenu = document.getElementById('note-item-context-menu');
-  ctxMenu.addEventListener('touchstart', function() {
-    _contextMenuReadyForTap = true;
+  // Context menu: require finger LIFT (touchend) after the long-press before
+  // any menu item can fire. The long-press itself ends with a touchend on the
+  // note item — we listen on document so we catch that lift wherever it lands.
+  // Only after that lift does _contextMenuReadyForTap become true.
+  // Mouse clicks are always intentional and bypass this guard.
+  document.addEventListener('touchend', function() {
+    // Only arm the flag if the menu is currently visible
+    var menu = document.getElementById('note-item-context-menu');
+    if (menu && menu.style.display === 'block' && !_contextMenuReadyForTap) {
+      // Small delay so this touchend (the long-press lift) doesn't
+      // immediately re-arm and allow the next touchend to fire
+      setTimeout(function() { _contextMenuReadyForTap = true; }, 80);
+    }
   }, { passive: true });
-  ctxMenu.addEventListener('mousedown', function() {
-    // Mouse clicks are always intentional — always ready
-    _contextMenuReadyForTap = true;
-  });
-  function ctxGuard(action) {
-    return function() {
-      if (!_contextMenuReadyForTap) return;
-      var id = _contextMenuNoteId;
-      hideNoteContextMenu();
-      if (id) action(id);
+
+  function ctxAction(action) {
+    // For touch: wire touchstart+touchend directly on the button.
+    // Only fire if _contextMenuReadyForTap (finger was lifted after long-press).
+    // For mouse: wire click normally — always ready.
+    return function(btn) {
+      var touchStarted = false;
+      btn.addEventListener('touchstart', function(e) {
+        if (!_contextMenuReadyForTap) { e.preventDefault(); return; }
+        touchStarted = true;
+      }, { passive: false });
+      btn.addEventListener('touchend', function(e) {
+        if (!_contextMenuReadyForTap || !touchStarted) { e.preventDefault(); touchStarted = false; return; }
+        e.preventDefault(); // prevent ghost click
+        touchStarted = false;
+        var id = _contextMenuNoteId;
+        hideNoteContextMenu();
+        if (id) action(id);
+      }, { passive: false });
+      btn.addEventListener('click', function() {
+        // Mouse click path — always intentional
+        if (touchStarted) return; // already handled by touchend
+        var id = _contextMenuNoteId;
+        hideNoteContextMenu();
+        if (id) action(id);
+      });
     };
   }
-  document.getElementById('ctx-open-btn').addEventListener('click', ctxGuard(openNote));
-  document.getElementById('ctx-duplicate-btn').addEventListener('click', ctxGuard(duplicateNote));
-  document.getElementById('ctx-delete-btn').addEventListener('click', ctxGuard(confirmDeleteNote));
-  document.getElementById('ctx-pin-btn').addEventListener('click', ctxGuard(togglePinNote));
+  ctxAction(openNote)(document.getElementById('ctx-open-btn'));
+  ctxAction(duplicateNote)(document.getElementById('ctx-duplicate-btn'));
+  ctxAction(confirmDeleteNote)(document.getElementById('ctx-delete-btn'));
+  ctxAction(togglePinNote)(document.getElementById('ctx-pin-btn'));
 
   // Sort button
   document.getElementById('sort-btn').addEventListener('click', openSortSheet);
