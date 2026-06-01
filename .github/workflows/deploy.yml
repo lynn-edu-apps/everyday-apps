@@ -1,8 +1,25 @@
+# Remember App - Version 0.488
+# GitHub Actions workflow — deploys latest versioned HTML to index.html
+# for all app subdirectories in everyday-apps.
+#
+# Version sorting: uses sort -V which correctly handles both single (v12)
+# and major.minor (v0.488) version number schemes.
+#
+# Remember-specific: also updates service-worker.js CACHE_VERSION to match
+# the deployed HTML version, ensuring stale caches are cleared on each deploy.
+#
+# Cache strategy for Remember:
+#   HTML uses "no-cache, must-revalidate" (NOT no-store) so browsers always
+#   revalidate with the server when online, but fall back to service worker
+#   cache when offline. This gives fresh builds + offline use.
+#
+# Place this file at: .github/workflows/deploy.yml in your repo
+
 name: Deploy Latest App Versions
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -16,39 +33,35 @@ jobs:
 
       - name: Copy latest versioned HTML to index.html in each app folder
         run: |
-          version_summary=""
-
           for dir in */; do
             # Skip hidden dirs like .github
             [[ "$dir" == .* ]] && continue
 
             app="${dir%/}"
 
-            # Find the highest-versioned HTML file using version sort (-V)
-            # Handles major.minor versions like v0.9, v0.10, v0.73 correctly
-            latest=$(ls "$app"/"$app"-v*.html 2>/dev/null \
-              | sort -t'v' -k2 -V \
-              | tail -1)
+            # Find the highest-versioned HTML file using sort -V
+            # Handles both v12 and v0.488 style version numbers correctly
+            latest=$(ls "$app"/"$app"-v*.html 2>/dev/null | sort -V | tail -1)
 
             if [ -n "$latest" ]; then
               cp "$latest" "$app/index.html"
-              # Extract just the version number (e.g. v0.73) from the filename
-              version=$(echo "$latest" | grep -oE 'v[0-9]+\.[0-9]+')
               echo "✅ $app → copied $latest → index.html"
-              version_summary="$version_summary $app:$version"
+
+              # Remember-specific: update service worker cache version
+              if [ "$app" = "remember" ] && [ -f "$app/service-worker.js" ]; then
+                VERSION=$(echo "$latest" | grep -oP 'v[\d.]+')
+                sed -i "s/const CACHE_VERSION = 'remember-v[^']*'/const CACHE_VERSION = 'remember-$VERSION'/" "$app/service-worker.js"
+                echo "   ↳ service-worker.js cache version updated to: remember-$VERSION"
+              fi
             else
               echo "⏭️  $app → no versioned HTML found, skipping"
             fi
           done
 
-          # Save summary for use in commit message
-          echo "VERSION_SUMMARY=$version_summary" >> $GITHUB_ENV
-
-      - name: Commit and push updated index.html files
+      - name: Commit and push updated files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || git commit -m "Deploy$VERSION_SUMMARY — auto-update index.html"
+          git diff --staged --quiet || git commit -m "Auto-update index.html from latest versioned HTML"
           git push
-          
