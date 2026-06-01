@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.502 -->
+<!-- Remember App - Version 0.503 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.502
+  Version 0.503
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -861,6 +861,13 @@ body.in-iframe #home-screen {
 
 body.ui-large .fab { width: 78px; height: 78px; bottom: 32px; right: 28px; }
 body.ui-large .fab svg { width: 40px; height: 40px; }
+/* FAB: smaller on desktop/mouse — touch targets need 64px, mouse does not */
+@media (hover: hover) {
+  .fab { width: 44px; height: 44px; bottom: 20px; right: 20px; }
+  .fab svg { width: 22px; height: 22px; }
+  body.ui-large .fab { width: 52px; height: 52px; bottom: 24px; right: 24px; }
+  body.ui-large .fab svg { width: 28px; height: 28px; }
+}
 
 /* ===== NOTE SCREEN ===== */
 .note-header {
@@ -4122,7 +4129,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.502';
+const APP_VERSION = '0.503';
 
 
 
@@ -4840,20 +4847,26 @@ function confirmDeleteNote(id) {
 }
 
 var _contextMenuNoteId = null;
+var _contextMenuOpenTime = 0; // timestamp when menu last opened
+var CTX_IGNORE_MS = 600; // ignore taps within this many ms of menu opening
 function showNoteContextMenu(id, x, y) {
   _contextMenuNoteId = id;
+  _contextMenuOpenTime = Date.now();
   var menu = document.getElementById('note-item-context-menu');
   if (!menu) return;
   // Update pin label
   var pinLabel = document.getElementById('ctx-pin-label');
   if (pinLabel) pinLabel.textContent = (notes[id] && notes[id].pinned) ? 'Unpin note' : 'Pin note';
+  // Show menu briefly off-screen to measure its real size
+  menu.style.visibility = 'hidden';
   menu.style.display = 'block';
-  // Position near click, keep on screen
   var mw = menu.offsetWidth, mh = menu.offsetHeight;
+  menu.style.visibility = '';
+  // Position so menu is fully on screen, with 8px margin on all edges
   var left = Math.min(x, window.innerWidth  - mw - 8);
   var top  = Math.min(y, window.innerHeight - mh - 8);
-  menu.style.left = Math.max(4, left) + 'px';
-  menu.style.top  = Math.max(4, top)  + 'px';
+  menu.style.left = Math.max(8, left) + 'px';
+  menu.style.top  = Math.max(8, top)  + 'px';
 }
 function hideNoteContextMenu() {
   var menu = document.getElementById('note-item-context-menu');
@@ -6260,27 +6273,20 @@ function init() {
   // Home
   document.getElementById('new-note-btn').addEventListener('click', createNewNote);
 
-  // Context menu buttons
-  document.getElementById('ctx-open-btn').addEventListener('click', function() {
-    var id = _contextMenuNoteId;
-    hideNoteContextMenu();
-    if (id) openNote(id);
-  });
-  document.getElementById('ctx-duplicate-btn').addEventListener('click', function() {
-    var id = _contextMenuNoteId;
-    hideNoteContextMenu();
-    if (id) duplicateNote(id);
-  });
-  document.getElementById('ctx-delete-btn').addEventListener('click', function() {
-    var id = _contextMenuNoteId;
-    hideNoteContextMenu();
-    if (id) confirmDeleteNote(id);
-  });
-  document.getElementById('ctx-pin-btn').addEventListener('click', function() {
-    var id = _contextMenuNoteId;
-    hideNoteContextMenu();
-    if (id) togglePinNote(id);
-  });
+  // Context menu buttons — guard against accidental tap on open
+  // (long-press touchend can fire a synthetic click; ignore taps within CTX_IGNORE_MS)
+  function ctxGuard(action) {
+    return function() {
+      if (Date.now() - _contextMenuOpenTime < CTX_IGNORE_MS) return;
+      var id = _contextMenuNoteId;
+      hideNoteContextMenu();
+      if (id) action(id);
+    };
+  }
+  document.getElementById('ctx-open-btn').addEventListener('click', ctxGuard(openNote));
+  document.getElementById('ctx-duplicate-btn').addEventListener('click', ctxGuard(duplicateNote));
+  document.getElementById('ctx-delete-btn').addEventListener('click', ctxGuard(confirmDeleteNote));
+  document.getElementById('ctx-pin-btn').addEventListener('click', ctxGuard(togglePinNote));
 
   // Sort button
   document.getElementById('sort-btn').addEventListener('click', openSortSheet);
