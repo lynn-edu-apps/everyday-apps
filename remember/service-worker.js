@@ -1,12 +1,14 @@
-// Remember App - Version 0.450
+// Remember App - Version 0.514
 // Service Worker — network-first for HTML, cache-first for static assets
 
-const CACHE_VERSION = 'remember-v0.509';
+const CACHE_VERSION = 'remember-v0.513';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
-// Assets to pre-cache on install (fonts, icons — rarely change)
+// Assets to pre-cache on install.
+// Include both './' and './index.html' so offline fallback always has a match.
 const PRECACHE_ASSETS = [
   './',
+  './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
@@ -16,9 +18,15 @@ const PRECACHE_ASSETS = [
 self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(STATIC_CACHE).then(function(cache) {
-      return cache.addAll(PRECACHE_ASSETS);
+      // Use individual adds so one missing icon doesn't abort everything
+      return Promise.allSettled(
+        PRECACHE_ASSETS.map(function(url) {
+          return cache.add(url).catch(function(err) {
+            console.warn('[SW] Pre-cache failed for:', url, err);
+          });
+        })
+      );
     }).then(function() {
-      // Take control immediately without waiting for old SW to finish
       return self.skipWaiting();
     })
   );
@@ -31,7 +39,6 @@ self.addEventListener('activate', function(event) {
       return Promise.all(
         cacheNames
           .filter(function(name) {
-            // Delete any cache that doesn't match current version
             return name.startsWith('remember-') && name !== STATIC_CACHE;
           })
           .map(function(name) {
@@ -39,17 +46,30 @@ self.addEventListener('activate', function(event) {
           })
       );
     }).then(function() {
-      // Take control of all open pages immediately
       return self.clients.claim();
     })
   );
 });
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+// Try several fallback keys to find the cached app shell.
+// GitHub Pages may store the response under './', './index.html', or the
+// full URL — we try all three so offline always works.
+function getAppShellFromCache() {
+  var candidates = ['./', './index.html', '/everyday-apps/remember/', '/everyday-apps/remember/index.html'];
+  function tryNext(i) {
+    if (i >= candidates.length) return Promise.resolve(null);
+    return caches.match(candidates[i]).then(function(match) {
+      return match || tryNext(i + 1);
+    });
+  }
+  return tryNext(0);
+}
+
 // ── Fetch: network-first for HTML, cache-first for everything else ───────────
 self.addEventListener('fetch', function(event) {
   var url = new URL(event.request.url);
 
-  // Only handle same-origin and GitHub Pages requests
   if (event.request.method !== 'GET') return;
 
   // Network-first strategy for HTML (the main app file)
@@ -62,18 +82,21 @@ self.addEventListener('fetch', function(event) {
     event.respondWith(
       fetch(event.request)
         .then(function(networkResponse) {
-          // Got fresh response — update cache and return it
+          // Got fresh response — update cache under both the exact URL and './'
           var responseClone = networkResponse.clone();
           caches.open(STATIC_CACHE).then(function(cache) {
             cache.put(event.request, responseClone);
+            // Also store under './' and './index.html' as reliable fallback keys
+            networkResponse.clone && cache.put('./index.html', networkResponse.clone());
           });
           return networkResponse;
         })
         .catch(function() {
-          // Network failed — serve from cache (offline fallback)
-          return caches.match(event.request).then(function(cached) {
-            return cached || caches.match('./');
-          });
+          // Network failed — try exact match first, then app shell fallbacks
+          return caches.match(event.request, { ignoreSearch: true })
+            .then(function(cached) {
+              return cached || getAppShellFromCache();
+            });
         })
     );
     return;
@@ -89,6 +112,9 @@ self.addEventListener('fetch', function(event) {
           cache.put(event.request, responseClone);
         });
         return networkResponse;
+      }).catch(function() {
+        // Static asset not cached and network unavailable — fail silently
+        return new Response('', { status: 408, statusText: 'Offline' });
       });
     })
   );
