@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.509 -->
+<!-- Remember App - Version 0.513 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.509
+  Version 0.513
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -804,6 +804,7 @@ body.in-iframe #home-screen {
   -webkit-user-select: none;
   touch-action: manipulation;
   gap: 12px;
+  transition: background 0.35s, color 0.35s; /* smooth fade back after tap */
 }
 .sort-option:last-of-type { border-bottom: none; }
 @media (hover: hover) {
@@ -820,6 +821,12 @@ body.in-iframe #home-screen {
   opacity: 0;
 }
 .sort-option.active .sort-option-check { opacity: 1; }
+.sort-option.tapped {
+  background: var(--accent);
+  color: #fff;
+  transition: background 0s, color 0s; /* instant on */
+}
+.sort-option.tapped .sort-option-check { color: #fff; opacity: 1; }
 .sort-divider {
   border: none;
   border-top: 1px solid var(--border);
@@ -873,6 +880,32 @@ body.ui-large .fab svg { width: 40px; height: 40px; }
   .fab svg { width: 22px; height: 22px; }
   body.ui-large .fab { width: 52px; height: 52px; bottom: 24px; right: 24px; }
   body.ui-large .fab svg { width: 28px; height: 28px; }
+}
+
+
+/* ===== READING MODE ===== */
+/* Fades all toolbar content except back-btn and more-btn to near-invisible */
+body.reading-mode .note-header-right,
+body.reading-mode #toolbar-scroll {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+/* Back button and More button stay fully visible */
+body.reading-mode #back-btn,
+body.reading-mode #more-btn {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+/* Keep the note title readable */
+body.reading-mode #note-title {
+  opacity: 1;
+}
+/* Subtle indicator that reading mode is active */
+body.reading-mode #more-btn {
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(91,124,110,0.35);
+  border-radius: var(--radius-sm);
 }
 
 /* ===== NOTE SCREEN ===== */
@@ -3100,6 +3133,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none;flex:1">Scroll to bottom</span>
   </button>
+  <!-- Reading mode item -->
+  <button id="more-reading-mode-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M2 6h9a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H2z"/>
+      <path d="M22 6h-9a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h9z"/>
+      <line x1="5" y1="10" x2="9" y2="10"/><line x1="5" y1="13" x2="9" y2="13"/><line x1="5" y1="16" x2="8" y2="16"/>
+      <line x1="15" y1="10" x2="19" y2="10"/><line x1="15" y1="13" x2="19" y2="13"/><line x1="15" y1="16" x2="18" y2="16"/>
+    </svg>
+    <span id="more-reading-mode-label" style="pointer-events:none;flex:1">Reading mode</span>
+  </button>
   <!-- Uncheck all item -->
   <button id="more-uncheck-all-btn" style="
     display:flex;align-items:center;gap:12px;
@@ -4135,7 +4178,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.509';
+const APP_VERSION = '0.513';
 
 
 
@@ -4858,12 +4901,18 @@ function confirmDeleteNote(id) {
 }
 
 var _contextMenuNoteId = null;
-// True only after the finger that triggered the long-press has fully lifted
-// (touchend on document). Prevents sliding from long-press into a menu item.
+// Context menu tap guard:
+// After the menu opens, we eat ALL clicks for CTX_EAT_MS milliseconds.
+// This swallows the iOS synthesized click that follows the long-press touchend.
+// After that window, a fresh tap (touchstart+touchend) arms the flag and fires.
 var _contextMenuReadyForTap = false;
+var _contextMenuEatClicks = false; // true during the eat-clicks window
 function showNoteContextMenu(id, x, y) {
   _contextMenuNoteId = id;
-  _contextMenuReadyForTap = false; // require a fresh touch before any item fires
+  _contextMenuReadyForTap = false;
+  _contextMenuEatClicks = true;
+  // Eat clicks for 350ms — swallows the iOS synthesized click after long-press lift
+  setTimeout(function() { _contextMenuEatClicks = false; }, 350);
   var menu = document.getElementById('note-item-context-menu');
   if (!menu) return;
   // Update pin label
@@ -4884,6 +4933,25 @@ function hideNoteContextMenu() {
   var menu = document.getElementById('note-item-context-menu');
   if (menu) menu.style.display = 'none';
   _contextMenuNoteId = null;
+}
+
+// ===== READING MODE =====
+var _readingMode = false;
+function toggleReadingMode() {
+  _readingMode = !_readingMode;
+  document.body.classList.toggle('reading-mode', _readingMode);
+  // Force view mode when entering reading mode
+  if (_readingMode && !isViewMode) setViewMode(true);
+  // Update More menu label
+  var lbl = document.getElementById('more-reading-mode-label');
+  if (lbl) lbl.textContent = _readingMode ? 'Exit reading mode' : 'Reading mode';
+}
+function clearReadingMode() {
+  if (!_readingMode) return;
+  _readingMode = false;
+  document.body.classList.remove('reading-mode');
+  var lbl = document.getElementById('more-reading-mode-label');
+  if (lbl) lbl.textContent = 'Reading mode';
 }
 
 // ===== SORT SHEET =====
@@ -5695,6 +5763,7 @@ function importNotes(file) {
 }
 
 function goHome() {
+  clearReadingMode();
   stopSpeaking();
   var _banner = document.getElementById('tap-to-speak-banner');
   if (_banner) _banner.style.display = 'none';
@@ -6298,42 +6367,49 @@ function init() {
   // Home
   document.getElementById('new-note-btn').addEventListener('click', createNewNote);
 
-  // Context menu: require finger LIFT (touchend) after the long-press before
-  // any menu item can fire. The long-press itself ends with a touchend on the
-  // note item — we listen on document so we catch that lift wherever it lands.
-  // Only after that lift does _contextMenuReadyForTap become true.
-  // Mouse clicks are always intentional and bypass this guard.
+  // Context menu tap guard:
+  // 1. On menu open: eat all clicks for 350ms (swallows iOS synthesized click
+  //    that follows the long-press finger-lift).
+  // 2. After 350ms: arm _contextMenuReadyForTap on next document touchend
+  //    (the user has lifted their long-press finger).
+  // 3. Each button uses touchstart+touchend to fire the action, preventing
+  //    ghost clicks. Mouse uses click directly.
   document.addEventListener('touchend', function() {
-    // Only arm the flag if the menu is currently visible
     var menu = document.getElementById('note-item-context-menu');
-    if (menu && menu.style.display === 'block' && !_contextMenuReadyForTap) {
-      // Small delay so this touchend (the long-press lift) doesn't
-      // immediately re-arm and allow the next touchend to fire
-      setTimeout(function() { _contextMenuReadyForTap = true; }, 80);
+    if (menu && menu.style.display === 'block' && !_contextMenuEatClicks && !_contextMenuReadyForTap) {
+      _contextMenuReadyForTap = true;
     }
   }, { passive: true });
 
+  // Eat-clicks guard at document level — captures and kills any click
+  // during the eat window (the synthesized click after long-press lift)
+  document.addEventListener('click', function(e) {
+    if (_contextMenuEatClicks) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }, true); // capture phase so it fires before any button handlers
+
   function ctxAction(action) {
-    // For touch: wire touchstart+touchend directly on the button.
-    // Only fire if _contextMenuReadyForTap (finger was lifted after long-press).
-    // For mouse: wire click normally — always ready.
     return function(btn) {
-      var touchStarted = false;
+      var touchStartedOnBtn = false;
       btn.addEventListener('touchstart', function(e) {
         if (!_contextMenuReadyForTap) { e.preventDefault(); return; }
-        touchStarted = true;
+        touchStartedOnBtn = true;
       }, { passive: false });
       btn.addEventListener('touchend', function(e) {
-        if (!_contextMenuReadyForTap || !touchStarted) { e.preventDefault(); touchStarted = false; return; }
+        if (!_contextMenuReadyForTap || !touchStartedOnBtn) {
+          e.preventDefault(); touchStartedOnBtn = false; return;
+        }
         e.preventDefault(); // prevent ghost click
-        touchStarted = false;
+        touchStartedOnBtn = false;
         var id = _contextMenuNoteId;
         hideNoteContextMenu();
         if (id) action(id);
       }, { passive: false });
       btn.addEventListener('click', function() {
-        // Mouse click path — always intentional
-        if (touchStarted) return; // already handled by touchend
+        // Mouse-only path (touch is handled above via touchend)
+        if (touchStartedOnBtn) return;
         var id = _contextMenuNoteId;
         hideNoteContextMenu();
         if (id) action(id);
@@ -6350,13 +6426,16 @@ function init() {
   document.getElementById('sort-close-btn').addEventListener('click', closeSortSheet);
   document.getElementById('sort-overlay').addEventListener('click', closeSortSheet);
 
-  // Sort options
+  // Sort options — flash accent color on tap for clear feedback
   document.querySelectorAll('.sort-option').forEach(function(opt) {
     opt.addEventListener('click', function() {
       settings.sortBy = opt.dataset.sort;
       saveSettings();
       renderNotesList();
       updateSortSheet();
+      // Brief accent flash: add class instantly, remove after 220ms to fade out
+      opt.classList.add('tapped');
+      setTimeout(function() { opt.classList.remove('tapped'); }, 220);
     });
   });
 
@@ -6689,10 +6768,11 @@ function init() {
     { id: 'find-btn',                label: 'Find in note' },
     { id: 'print-btn',              label: 'Print' },
     { id: 'delete-note-btn',        label: 'Delete note' },
+    { id: 'reading-mode-btn',       label: 'Reading mode' },
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['select-blocks-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'delete-line-btn', 'paste-btn', 'bold-mode-btn', 'italic-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'print-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['select-blocks-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'delete-line-btn', 'paste-btn', 'bold-mode-btn', 'italic-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'print-btn', 'delete-note-btn', 'reading-mode-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   function getEffectiveOrder() {
@@ -6899,6 +6979,8 @@ function init() {
       // Find button info
       var info = HIDEABLE_BUTTONS.filter(function(b) { return b.id === btnId; })[0];
       if (!info) return;
+      // reading-mode-btn has no toolbar DOM element — it's always in the permanent section
+      if (btnId === 'reading-mode-btn') return;
 
       // Determine if this item should currently be visible in the menu
       // based on the same rules as the toolbar button
@@ -7055,6 +7137,8 @@ function init() {
       var isFirst   = idx === 0;
       var isLast    = idx === order.length - 1;
       var isLocked  = (b.id === 'select-blocks-btn');
+      // reading-mode-btn lives only in the More menu — skip reorder arrows, show as locked
+      if (b.id === 'reading-mode-btn') isLocked = true;
 
       var row = document.createElement('div');
       row.className = 'settings-row';
@@ -7192,6 +7276,10 @@ function init() {
   });
 
   document.getElementById('more-share-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-reading-mode-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    toggleReadingMode();
+  });
   document.getElementById('more-share-btn').addEventListener('click', function() {
     closeMoreMenu();
     shareNote();
