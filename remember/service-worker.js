@@ -1,7 +1,7 @@
 // Remember App - Version 0.514
 // Service Worker — network-first for HTML, cache-first for static assets
 
-const CACHE_VERSION = 'remember-v0.513';
+const CACHE_VERSION = 'remember-v0.509';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 // Assets to pre-cache on install.
