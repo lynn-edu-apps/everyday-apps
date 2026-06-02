@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.513 -->
+<!-- Remember App - Version 0.516 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.513
+  Version 0.516
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1375,7 +1375,7 @@ mark.find-match-current {
 
 .note-inline-title {
   font-family: var(--font-note);
-  font-size: 1.45em;
+  font-size: max(calc(var(--font-size-editor) * 1.2), 18px);
   font-weight: 700;
   color: var(--fg);
   background: transparent;
@@ -3786,7 +3786,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
   <div class="rename-footer">
     <button class="settings-cancel-btn" id="rename-cancel-btn">Cancel</button>
-    <button class="settings-save-btn" id="rename-save-btn">Save Name</button>
+    <button class="settings-save-btn dimmed" id="rename-save-btn">Save Name</button>
   </div>
 </div>
 
@@ -4178,7 +4178,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.513';
+const APP_VERSION = '0.516';
 
 
 
@@ -4911,8 +4911,9 @@ function showNoteContextMenu(id, x, y) {
   _contextMenuNoteId = id;
   _contextMenuReadyForTap = false;
   _contextMenuEatClicks = true;
-  // Eat clicks for 350ms — swallows the iOS synthesized click after long-press lift
-  setTimeout(function() { _contextMenuEatClicks = false; }, 350);
+  // Eat clicks for 600ms — PWA mode on iOS fires synthesized click faster
+  // than browser tabs; 600ms gives safe clearance in all contexts
+  setTimeout(function() { _contextMenuEatClicks = false; }, 600);
   var menu = document.getElementById('note-item-context-menu');
   if (!menu) return;
   // Update pin label
@@ -6163,8 +6164,10 @@ function settingsDirty() {
 
 function updateSaveBtnState() {
   var dirty = settingsDirty();
-  document.querySelectorAll('.settings-save-btn').forEach(function(btn) {
-    btn.classList.toggle('dimmed', !dirty);
+  // Only target the settings dialog Save buttons — NOT rename-save-btn
+  ['settings-save-btn-top', 'settings-save-btn-bottom'].forEach(function(id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.classList.toggle('dimmed', !dirty);
   });
 }
 
@@ -6368,27 +6371,31 @@ function init() {
   document.getElementById('new-note-btn').addEventListener('click', createNewNote);
 
   // Context menu tap guard:
-  // 1. On menu open: eat all clicks for 350ms (swallows iOS synthesized click
-  //    that follows the long-press finger-lift).
-  // 2. After 350ms: arm _contextMenuReadyForTap on next document touchend
-  //    (the user has lifted their long-press finger).
-  // 3. Each button uses touchstart+touchend to fire the action, preventing
-  //    ghost clicks. Mouse uses click directly.
-  document.addEventListener('touchend', function() {
-    var menu = document.getElementById('note-item-context-menu');
-    if (menu && menu.style.display === 'block' && !_contextMenuEatClicks && !_contextMenuReadyForTap) {
-      _contextMenuReadyForTap = true;
-    }
-  }, { passive: true });
+  // 1. On menu open: eat all clicks for 600ms (swallows iOS PWA synthesized
+  //    click that follows the long-press finger-lift).
+  // 2. After eat window: a fresh touchstart ON THE MENU arms the ready flag.
+  //    We require touchstart on the menu itself (not document) so that only
+  //    a deliberate new finger-down on a menu item can arm it — the long-press
+  //    touchend fires on the note item, not the menu, so it cannot arm the flag.
+  // 3. Each button uses touchstart+touchend to fire the action.
+  //    Mouse uses click directly — always intentional.
 
-  // Eat-clicks guard at document level — captures and kills any click
-  // during the eat window (the synthesized click after long-press lift)
+  // Eat-clicks guard at document level — capture phase fires before any handler
   document.addEventListener('click', function(e) {
     if (_contextMenuEatClicks) {
       e.stopImmediatePropagation();
       e.preventDefault();
     }
-  }, true); // capture phase so it fires before any button handlers
+  }, true);
+
+  // Arm ready flag only when a fresh touchstart fires on the menu itself,
+  // and only after the eat window has closed
+  var ctxMenu = document.getElementById('note-item-context-menu');
+  ctxMenu.addEventListener('touchstart', function() {
+    if (!_contextMenuEatClicks) {
+      _contextMenuReadyForTap = true;
+    }
+  }, { passive: true });
 
   function ctxAction(action) {
     return function(btn) {
@@ -6655,12 +6662,21 @@ function init() {
     }
     goHome();
   });
+  var _renameSnapshot = '';
+  function updateRenameSaveBtn() {
+    var input = document.getElementById('rename-input');
+    var btn   = document.getElementById('rename-save-btn');
+    var dirty = input.value.trim() !== _renameSnapshot;
+    btn.classList.toggle('dimmed', !dirty);
+  }
   function openRenameDialog() {
     var currentName = document.getElementById('note-title').textContent.trim();
     var input = document.getElementById('rename-input');
     input.value = currentName;
+    _renameSnapshot = currentName; // snapshot for dirty tracking
     document.getElementById('rename-overlay').classList.add('open');
     document.getElementById('rename-sheet').classList.add('open');
+    updateRenameSaveBtn(); // set initial dimmed state
     setTimeout(function() { input.focus(); }, 50);
     var isAuto = currentNoteId && notes[currentNoteId] && notes[currentNoteId].autoNamed;
     if (isAuto) {
@@ -6697,15 +6713,18 @@ function init() {
   document.getElementById('rename-overlay').addEventListener('pointerdown', function(e) {
     if (e.target === this) e.preventDefault();
   });
+  document.getElementById('rename-input').addEventListener('input', updateRenameSaveBtn);
   document.getElementById('rename-select-all-btn').addEventListener('click', function() {
     var input = document.getElementById('rename-input');
     input.focus();
     input.select();
+    updateRenameSaveBtn();
   });
   document.getElementById('rename-clear-btn').addEventListener('click', function() {
     var input = document.getElementById('rename-input');
     input.value = '';
     input.focus();
+    updateRenameSaveBtn();
   });
   document.getElementById('rename-save-btn').addEventListener('click', function() {
     var newName = document.getElementById('rename-input').value.trim();
