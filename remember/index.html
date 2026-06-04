@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.640 -->
+<!-- Remember App - Version 0.652 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.640
+  Version 0.652
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -3218,6 +3218,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 <div class="home-select-bar" id="home-select-bar">
   <span class="home-select-bar-count" id="home-select-count">Tap to select</span>
   <div class="home-select-btn-row">
+    <button class="home-select-action-btn" id="home-select-all-btn">Select All</button>
     <button class="home-select-action-btn move" id="home-select-move-btn">Move to…</button>
     <button class="home-select-action-btn delete" id="home-select-delete-btn">Delete</button>
     <button class="home-select-action-btn cancel" id="home-select-cancel-btn">Cancel</button>
@@ -5002,7 +5003,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.640';
+const APP_VERSION = '0.652';
 
 
 
@@ -6717,7 +6718,16 @@ function setViewMode(on, suppressFocus) {
     resizeEditor();
   }
   // Reset all formatting modes when leaving view mode
-  if (!on) { crossoutMode = false; deletingLine = false; }
+  if (!on) {
+    crossoutMode = false;
+    deletingLine = false;
+    // Also exit select-blocks mode
+    if (selectMode) {
+      selectMode = false;
+      clearSelectedBlocks();
+      if (typeof updateSelectModeBtn === 'function') updateSelectModeBtn();
+    }
+  }
   updateViewOnlyBtns();
 }
 
@@ -8387,6 +8397,13 @@ function init() {
     if (!e.target.closest('#folder-context-menu')) hideFolderContextMenu();
   }, true);
   // Select notes bar
+  document.getElementById('home-select-all-btn').addEventListener('click', function() {
+    selectAllInCurrentFolder();
+    var moveBtn = document.getElementById('home-select-move-btn');
+    var delBtn  = document.getElementById('home-select-delete-btn');
+    if (moveBtn) moveBtn.disabled = false;
+    if (delBtn)  delBtn.disabled  = false;
+  });
   document.getElementById('home-select-cancel-btn').addEventListener('click', exitSelectNotesMode);
   document.getElementById('home-select-delete-btn').addEventListener('click', function() {
     if (_selectedNoteIds.size === 0) return;
@@ -9434,6 +9451,12 @@ function init() {
     var ed = document.getElementById('note-editor');
 
     noteScreen.classList.add('keyboard-open');
+    // Entering EMTIP — exit select-blocks mode if active
+    if (selectMode) {
+      selectMode = false;
+      clearSelectedBlocks();
+      if (typeof updateSelectModeBtn === 'function') updateSelectModeBtn();
+    }
     updateDictateVisibility();
     // Re-pin toolbars immediately and again after keyboard animation settles.
     // On iOS webviews (Claude app) visualViewport events may not fire reliably,
@@ -11100,6 +11123,17 @@ function init() {
     enterCheckMode();
   });
 
+  // Exit check mode when any other toolbar button or more menu is tapped
+  document.getElementById('note-bottom-bar').addEventListener('click', function(e) {
+    if (!checkMode) return;
+    var btn = e.target.closest('button');
+    if (btn && btn.id !== 'check-mode-btn') exitCheckMode();
+  }, true); // capture phase so it fires before individual handlers
+  var _moreBtn = document.getElementById('more-btn');
+  if (_moreBtn) _moreBtn.addEventListener('click', function() {
+    if (checkMode) exitCheckMode();
+  });
+
   // Tap viewer line in check mode — toggle checkbox on that line
   document.getElementById('note-viewer').addEventListener('click', function(e) {
     if (!checkMode || !isViewMode) return;
@@ -11111,30 +11145,60 @@ function init() {
     var lines = (notes[currentNoteId].content || '').split('\n');
     if (lineIndex >= lines.length) return;
     var line = lines[lineIndex];
-    var isCheckbox = /\[[ x]\]/i.test(line);
-    // Also match hyphen-list items: lines starting with optional spaces then "- "
-    var isHyphenItem = /^(\s*)- /.test(line);
 
-    if (!isCheckbox && !isHyphenItem) return;
+    // Robustly strip ALL formatting wrappers to find the core content.
+    // Handles any combination of: # headings, **bold**, *italic*, _italic_,
+    // ~~strike~~, ==highlight==, {color}...{/color}, and whitespace.
+    function stripAllFormatting(s) {
+      var prev;
+      do {
+        prev = s;
+        s = s
+          .replace(/^#{1,6}\s+/, '')          // heading markers
+          .replace(/^\*\*/, '').replace(/\*\*$/, '')  // bold
+          .replace(/^\*/, '').replace(/\*$/, '')       // italic *
+          .replace(/^_/, '').replace(/_$/, '')           // italic _
+          .replace(/^~~/, '').replace(/~~$/, '')         // strikethrough
+          .replace(/^==/, '').replace(/==$/, '')         // highlight
+          .replace(/^\{[a-z]+\}/i, '')                  // color open tag
+          .replace(/\{\/?[a-z]+\}$/i, '')              // color close tag
+          .trim();
+      } while (s !== prev);
+      return s;
+    }
+
+    var core = stripAllFormatting(line);
+    var isCheckbox = /^\[[ x]\]/i.test(core);
+    var isHyphenItem = /^- /.test(core);
+
+    if (!isCheckbox && !isHyphenItem) {
+      showToast('Tap a line that starts with a checkbox or hyphen', false);
+      return;
+    }
     e.stopPropagation();
 
     if (isCheckbox) {
-      // Simulate checkbox tap — reuse existing checkbox click logic
+      // Dispatch click on the rendered checkbox SVG — works regardless of formatting
       var cb = lineDiv.querySelector('.viewer-checkbox');
-      if (cb) {
-        cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      }
+      if (cb) cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     } else {
-      // Hyphen item — toggle strikethrough on the text after the hyphen
+      // Hyphen item — find the '- ' in the core and apply strikethrough to the body,
+      // rebuilding the line by replacing just that portion in the original.
       pushUndo();
-      var m = line.match(/^(\s*- )(.*)/);
-      if (!m) return;
-      var prefix = m[1], body = m[2];
-      if (body.startsWith('~~') && body.endsWith('~~') && body.length > 4) {
-        lines[lineIndex] = prefix + body.slice(2, -2);
+      // Find position of '- ' in the original line by searching for it
+      var hyphenIdx = line.indexOf('- ');
+      if (hyphenIdx === -1) return;
+      var beforeHyphen = line.slice(0, hyphenIdx + 2); // everything up to and including '- '
+      var afterHyphen  = line.slice(hyphenIdx + 2);    // the body after '- '
+      // Toggle strikethrough on the body portion only
+      var toggled;
+      if (/^~~.+~~$/.test(afterHyphen.trim())) {
+        // Already struck — remove outermost ~~
+        toggled = afterHyphen.replace(/^(\s*)~~(.+)~~(\s*)$/, '$1$2$3');
       } else {
-        lines[lineIndex] = prefix + '~~' + body.replace(/~~/g, '') + '~~';
+        toggled = '~~' + afterHyphen.replace(/~~/g, '') + '~~';
       }
+      lines[lineIndex] = beforeHyphen + toggled;
       notes[currentNoteId].content = lines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
@@ -11480,6 +11544,7 @@ function init() {
   };
 
   document.getElementById('select-blocks-btn').addEventListener('click', function() {
+    if (checkMode) exitCheckMode();
     selectMode = !selectMode;
     if (selectMode && !isViewMode) {
       // Switch to view mode when activating select in edit mode
@@ -11886,7 +11951,7 @@ function createInitialNotes() {
   ].join('\n');
   var samplerId = makeId();
   notes[samplerId] = {
-    id: samplerId, name: 'Remember Sampler', content: samplerContent,
+    id: samplerId, name: 'Checklist Sampler', content: samplerContent,
     autoNamed: false, createdAt: now + 2, editedAt: now + 2, viewedAt: now + 2
   };
 
@@ -12007,30 +12072,29 @@ function createInitialNotes() {
     '==#FFB8D0:Soft pink — sweet and warm. Decidedly cheerful.==',
     '==#E8B8FF:Soft lavender — dreamy and creative. For poetry.==',
     '',
-    '*Tip: Change your highlight color in Settings → Colors.',
-    'Use ==double equals== in Edit mode, or the Highlight button in View mode.*',
+    '*Tip: In View mode, select lines and use the Highlight button (uses your default highlight color) or the Color button (lets you pick any highlight color). In Edit mode, use ==double equals==. Change the default highlight color in Settings → Colors.*',
     '',
     '- - -',
     '',
     '**Checkbox Colors**',
     '',
-    'The checkbox color is set in Settings → Colors.',
-    'It is always separate from the text after the checkbox.',
-    'These lines show checkbox color only — text stays default:',
+    'Each checkbox below uses its own individual color.',
+    'Checkbox color is independent from the text color.',
     '',
-    '[ ] Gray checkbox — the quiet default',
-    '[ ] Red checkbox — urgent and bold',
-    '[ ] Orange checkbox — warm and energetic',
-    '[ ] Yellow checkbox — bright and cheerful',
-    '[ ] Green checkbox — fresh and ready',
-    '[ ] Blue checkbox — calm and focused',
-    '[ ] Purple checkbox — creative and deep',
-    '[ ] Magenta checkbox — vibrant and bold',
-    '[ ] Pink checkbox — warm and joyful',
-    '[ ] Black/gray checkbox — elegant',
+    '[ :gray] Gray checkbox — the quiet default',
+    '[ :red] Red checkbox — urgent and bold',
+    '[ :orange] Orange checkbox — warm and energetic',
+    '[ :gold] Yellow/gold checkbox — bright and cheerful',
+    '[ :green] Green checkbox — fresh and ready',
+    '[ :blue] Blue checkbox — calm and focused',
+    '[ :purple] Purple checkbox — creative and deep',
+    '[ :magenta] Magenta checkbox — vibrant and bold',
+    '[ :pink] Pink checkbox — warm and joyful',
+    '[ :rose] Rose checkbox — deep and romantic',
+    '[ :violet] Violet checkbox — electric and vivid',
+    '[ :black] Black/gray checkbox — elegant',
     '',
-    '*Each line above uses whichever checkbox color you have',
-    'set in Settings. Change it there to see them all update.*',
+    '*Tip: In View mode, select lines and tap the Color button on the lower toolbar to apply checkbox colors easily. Or type [ :red] syntax directly in Edit mode.*',
     '',
     '- - -',
     '',
@@ -12068,8 +12132,10 @@ function createInitialNotes() {
     '',
     '- - -',
     '',
-    '*Tip: Colors look different in light and dark mode.',
-    'Try switching modes to see the difference.*',
+    '*Tip: Colors look different in light and dark mode. Try switching modes to see the difference.*',
+    '',
+    '',
+    '',
   ].join('\n');
   notes[colorSamplerId] = {
     id: colorSamplerId, name: 'Color Sampler', content: colorSamplerContent,
@@ -12696,7 +12762,7 @@ function enterCheckMode() {
   var viewer = document.getElementById('note-viewer');
   if (btn) btn.classList.add('active');
   if (viewer) viewer.classList.add('check-mode');
-  showToast('Tap any checkbox line to toggle it', false);
+  showToast('Tap a checkbox or hyphen line to toggle it', false);
 }
 
 function exitCheckMode() {
