@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.568 -->
+<!-- Remember App - Version 0.586 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.568
+  Version 0.586
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1304,6 +1304,7 @@ mark.find-match-current {
 }
 
 /* Custom scrollbar indicator at bottom of toolbar */
+/* Thin scrollbar track + thumb (original from v0.568) */
 .toolbar-scrollbar-track {
   position: absolute;
   bottom: 0;
@@ -1324,9 +1325,37 @@ mark.find-match-current {
   pointer-events: none;
   min-width: 20px;
 }
-/* Briefly brighten thumb when scrolling */
-.toolbar-scrollbar-thumb.scrolling {
-  opacity: 0.5;
+.toolbar-scrollbar-thumb.scrolling { opacity: 0.5; }
+/* Drag handle — small grip that rides along the scrollbar */
+.toolbar-drag-handle {
+  position: absolute;
+  bottom: -3px;
+  width: 22px;
+  height: 8px;
+  background: #f5f2ee;
+  border: 1.5px solid rgba(0,0,0,0.25);
+  border-radius: 4px;
+  cursor: ew-resize;
+  touch-action: none;
+  pointer-events: none;
+  display: none;
+  transform: translateX(-50%);
+  transition: box-shadow 0.15s;
+  z-index: 3;
+}
+/* Show drag handle only when a mouse is detected via pointermove event */
+body.has-mouse .toolbar-drag-handle {
+  display: block;
+  pointer-events: auto;
+}
+body.has-mouse .toolbar-drag-handle:hover {
+  background: #fff;
+  border-color: rgba(0,0,0,0.4);
+}
+body.has-mouse .toolbar-drag-handle.dragging {
+  background: #fff;
+  border-color: rgba(0,0,0,0.5);
+  box-shadow: 0 0 0 2px rgba(91,124,110,0.5);
 }
 
 /* Scroll arrow buttons */
@@ -2984,6 +3013,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   <!-- Custom scrollbar indicator -->
   <div class="toolbar-scrollbar-track" id="toolbar-scrollbar-track">
     <div class="toolbar-scrollbar-thumb" id="toolbar-scrollbar-thumb"></div>
+    <div class="toolbar-drag-handle" id="toolbar-drag-handle"></div>
   </div>
 
     <!-- More (⋯) button — always visible, never hideable -->
@@ -4423,7 +4453,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.568';
+const APP_VERSION = '0.586';
 
 
 
@@ -4527,7 +4557,7 @@ const DEFAULT_SETTINGS = {
   indentSpaces: 2,             // spaces per indent/dedent action
   toolbarHidden: [],           // array of button IDs hidden from bottom toolbar
   toolbarOrder: [],            // ordered array of button IDs (empty = use default order)
-  sortBy: 'viewedAt-desc',      // sort key: viewedAt/editedAt/createdAt desc/asc, name-asc/desc
+  sortBy: 'viewedAt',           // sort key: viewedAt/editedAt/createdAt/name
   sortDesc: true,               // direction toggle: true=newest/A-Z first, false=oldest/Z-A first
   noteMarginLeft: 0,            // extra left margin for note content area (px)
   noteMarginRight: 0,           // extra right margin for note content area (px)
@@ -4578,6 +4608,10 @@ function loadState() {
     const cur = localStorage.getItem('remember_current');
     if (cur && notes[cur]) currentNoteId = cur;
   } catch(e) {}
+
+  // Sanitize sortBy — legacy values like 'viewedAt-desc' don't match data-sort attrs
+  var _validSortKeys = ['viewedAt','editedAt','createdAt','name'];
+  if (_validSortKeys.indexOf(settings.sortBy) === -1) settings.sortBy = 'viewedAt';
 
   // First-time use: call createInitialNotes if no notes exist
   if (Object.keys(notes).length === 0) {
@@ -7993,12 +8027,23 @@ function init() {
     var fadeR   = document.getElementById('toolbar-fade-right');
 
     function updateArrows() {
+      var canScroll = scroll.scrollWidth > scroll.clientWidth + 2;
       var atStart = scroll.scrollLeft <= 2;
       var atEnd   = scroll.scrollLeft >= scroll.scrollWidth - scroll.clientWidth - 2;
-      btnL.style.display  = atStart ? 'none' : '';
+      // Always show arrows when there is overflow; disable rather than hide at limits
+      if (!canScroll) {
+        btnL.style.display = 'none'; btnR.style.display = 'none';
+        fadeL.style.display = 'none'; fadeR.style.display = 'none';
+        return;
+      }
+      btnL.style.display = ''; btnR.style.display = '';
       fadeL.style.display = atStart ? 'none' : '';
-      btnR.style.display  = atEnd   ? 'none' : '';
       fadeR.style.display = atEnd   ? 'none' : '';
+      // Dim and disable at limits
+      btnL.style.opacity = atStart ? '0.2' : '';
+      btnL.style.pointerEvents = atStart ? 'none' : '';
+      btnR.style.opacity = atEnd ? '0.2' : '';
+      btnR.style.pointerEvents = atEnd ? 'none' : '';
     }
     // Amount to scroll per arrow tap — roughly 3 button widths
     var SCROLL_AMT = 80;
@@ -8025,6 +8070,38 @@ function init() {
     arrowObserver.observe(scroll);
     updateArrows();
     updateToolbarScrollbar();
+    wireToolbarThumbDrag();
+    // Detect mouse via pointermove — reliable where CSS media queries fail (e.g. iOS)
+    var hasMouse = false; // defaults false — handle hidden until mouse confirmed
+    window.addEventListener('pointermove', function(e) {
+      if (e.pointerType === 'mouse') {
+        if (!hasMouse) {
+          hasMouse = true;
+          document.body.classList.add('has-mouse');
+        }
+      } else {
+        if (hasMouse) {
+          hasMouse = false;
+          document.body.classList.remove('has-mouse');
+        }
+      }
+    }, { passive: true });
+    // DEBUG: tap sort button area 3x rapidly to show mouse detection state
+    var _dbgTaps = 0, _dbgTimer = null;
+    var _sortBtn = document.getElementById('sort-btn');
+    if (_sortBtn) {
+      _sortBtn.addEventListener('pointerdown', function(e) {
+        if (e.pointerType !== 'touch') return; // only on touch
+        _dbgTaps++;
+        clearTimeout(_dbgTimer);
+        _dbgTimer = setTimeout(function() { _dbgTaps = 0; }, 800);
+        if (_dbgTaps >= 3) {
+          _dbgTaps = 0;
+          showToast('hasMouse=' + hasMouse + ' body.has-mouse=' + document.body.classList.contains('has-mouse') + ' pointerTypes seen via log below', false);
+          console.log('hasMouse:', hasMouse, 'has-mouse class:', document.body.classList.contains('has-mouse'));
+        }
+      }, { passive: true });
+    }
     // Export so other code can trigger a recheck after show/hiding toolbar buttons
     window._updateToolbarArrows = function() { updateArrows(); updateToolbarScrollbar(); };
   })();
@@ -10264,6 +10341,14 @@ function updateToolbarScrollbar() {
   var thumb  = document.getElementById('toolbar-scrollbar-thumb');
   var track  = document.getElementById('toolbar-scrollbar-track');
   if (!scroll || !thumb || !track) return;
+  // Align track to toolbar-scroll bounds (not full bar width)
+  var bar = document.getElementById('note-bottom-bar');
+  if (bar) {
+    var barRect    = bar.getBoundingClientRect();
+    var scrollRect = scroll.getBoundingClientRect();
+    track.style.left  = (scrollRect.left - barRect.left) + 'px';
+    track.style.right = (barRect.right - scrollRect.right) + 'px';
+  }
 
   var scrollWidth  = scroll.scrollWidth;
   var clientWidth  = scroll.clientWidth;
@@ -10271,27 +10356,104 @@ function updateToolbarScrollbar() {
   var trackWidth   = track.offsetWidth;
 
   if (scrollWidth <= clientWidth) {
-    // No overflow — hide the thumb
     thumb.style.display = 'none';
+    // drag handle hidden via CSS @media (hover:hover) — no JS needed
     return;
   }
   thumb.style.display = 'block';
-
-  // Calculate thumb width proportional to visible/total ratio
+  // Proportional thumb position (original behavior)
   var thumbWidth = Math.max(20, Math.round((clientWidth / scrollWidth) * trackWidth));
-  // Calculate thumb position
   var maxScroll  = scrollWidth - clientWidth;
   var thumbLeft  = Math.round((scrollLeft / maxScroll) * (trackWidth - thumbWidth));
-
   thumb.style.width = thumbWidth + 'px';
   thumb.style.left  = thumbLeft + 'px';
-
-  // Flash brighter while scrolling, then fade
+  // Position drag handle at center of thumb
+  // Visibility controlled by CSS body.has-mouse — never set display here
+  var handle = document.getElementById('toolbar-drag-handle');
+  if (handle) {
+    handle.style.left = (thumbLeft + thumbWidth / 2) + 'px';
+  }
   thumb.classList.add('scrolling');
   if (_scrollbarFadeTimer) clearTimeout(_scrollbarFadeTimer);
   _scrollbarFadeTimer = setTimeout(function() {
     thumb.classList.remove('scrolling');
   }, 600);
+}
+
+// Wire thumb drag (mouse and touch) — called once after init
+function wireToolbarThumbDrag() {
+  var scroll = document.getElementById('toolbar-scroll');
+  var track  = document.getElementById('toolbar-scrollbar-track');
+  var handle = document.getElementById('toolbar-drag-handle');
+  if (!scroll || !track || !handle) return;
+
+  var thumb = document.getElementById('toolbar-scrollbar-thumb');
+
+  function startDrag(clientX, isTouch) {
+    // Read geometry once
+    var hRect = handle.getBoundingClientRect();
+    var tRect = track.getBoundingClientRect();
+    var maxScroll = scroll.scrollWidth - scroll.clientWidth;
+    var grabX = clientX - (hRect.left + hRect.width / 2);
+
+    // Hide thumb so only the handle moves — prevents double-element flicker
+    if (thumb) thumb.style.visibility = 'hidden';
+    // Remove scroll listener so setting scrollLeft doesn't trigger updateToolbarScrollbar
+    scroll.removeEventListener('scroll', updateToolbarScrollbar);
+    handle.classList.add('dragging');
+
+    function move(cx) {
+      var clamped = Math.max(tRect.left, Math.min(tRect.right, cx - grabX));
+      var frac = (clamped - tRect.left) / tRect.width;
+      scroll.scrollLeft = frac * maxScroll;
+      // left is relative to track (handle is child of track)
+      handle.style.left = (frac * tRect.width) + 'px';
+    }
+
+    function end() {
+      handle.classList.remove('dragging');
+      if (thumb) thumb.style.visibility = '';
+      // Restore scroll listener
+      scroll.addEventListener('scroll', updateToolbarScrollbar, { passive: true });
+      updateToolbarScrollbar();
+    }
+
+    if (!isTouch) {
+      function onMouseMove(e) {
+        e.preventDefault();
+        // Safety: if mouse button is no longer pressed, end drag
+        if (e.buttons === 0) { onMouseUp(); return; }
+        move(e.clientX);
+      }
+      function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove, true);
+        document.removeEventListener('mouseup',   onMouseUp,   true);
+        window.removeEventListener('blur',         onMouseUp);
+        end();
+      }
+      document.addEventListener('mousemove', onMouseMove, true);
+      document.addEventListener('mouseup',   onMouseUp,   true);
+      window.addEventListener('blur', onMouseUp);
+    } else {
+      function onTouchMove(e) { e.preventDefault(); move(e.touches[0].clientX); }
+      function onTouchEnd()   {
+        handle.removeEventListener('touchmove', onTouchMove);
+        handle.removeEventListener('touchend',  onTouchEnd);
+        end();
+      }
+      handle.addEventListener('touchmove', onTouchMove, { passive: false });
+      handle.addEventListener('touchend',  onTouchEnd);
+    }
+  }
+
+  handle.addEventListener('mousedown', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    startDrag(e.clientX, false);
+  });
+  handle.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    startDrag(e.touches[0].clientX, true);
+  }, { passive: false });
 }
 
 // ===== HEX LABEL HELPER =====
