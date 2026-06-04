@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.603 -->
+<!-- Remember App - Version 0.606 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.603
+  Version 0.606
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1248,6 +1248,45 @@ body.select-notes-mode .folder-item-select-check { display: flex; }
   display: none;
   touch-action: manipulation;
 }
+
+
+/* ===== NOTE EDITOR FAB ===== */
+#note-fab {
+  position: fixed;
+  bottom: 28px;
+  right: 24px;
+  background: white;
+  color: var(--accent);
+  border: 2.5px solid var(--accent);
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  display: none; /* shown via JS when setting enabled */
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.22);
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  z-index: 5;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+#note-fab svg { width: 28px; height: 28px; pointer-events: none; }
+@media (hover: hover) {
+  #note-fab:hover { background: var(--accent); color: white; transform: scale(1.07); }
+}
+#note-fab:active { transform: scale(0.96); }
+body.ui-large #note-fab { width: 68px; height: 68px; bottom: 32px; right: 28px; }
+body.ui-large #note-fab svg { width: 34px; height: 34px; }
+@media (hover: hover) {
+  #note-fab { width: 40px; height: 40px; bottom: 20px; right: 20px; }
+  #note-fab svg { width: 20px; height: 20px; }
+  body.ui-large #note-fab { width: 48px; height: 48px; bottom: 24px; right: 24px; }
+  body.ui-large #note-fab svg { width: 24px; height: 24px; }
+}
+/* Hide in reading mode and keyboard-open (EMTIP-VKS) */
+body.reading-mode #note-fab,
+#note-screen.keyboard-open #note-fab { display: none !important; }
 
 /* ===== NOTE SCREEN ===== */
 .note-header {
@@ -2933,6 +2972,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   <button class="update-banner-btn" id="update-later-btn">Later</button>
 </div>
 
+
 <!-- ===== HOME SCREEN ===== -->
 <div id="home-screen" class="screen active">
   <header class="home-header">
@@ -3364,6 +3404,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <button class="oops-btn" id="oops-btn" title="Restore note to how it was when you opened it">⟲ Oops! Restore note</button>
     </div>
   </div>
+
+  <!-- Note editor FAB — inside note-screen so keyboard-open selector works -->
+  <button id="note-fab" aria-label="Quick add text" title="Quick add text">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  </button>
 
   </div>
 </div>
@@ -4200,6 +4247,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-row">
         <div>
+          <div class="settings-row-label">Show floating + button in editor</div>
+          <div class="settings-row-desc">Shows a floating + button at the lower right of the note editor screen. Tap it to quickly add text. Hidden in reading mode and when the keyboard is open.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show floating add button in note editor">
+          <input type="checkbox" id="show-note-fab-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
           <div class="settings-row-label">Spaces per indent / unindent</div>
           <div class="settings-row-desc">Number of spaces added or removed when you press Tab / Shift+Tab, or tap the Indent / Unindent buttons.</div>
         </div>
@@ -4783,7 +4841,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.603';
+const APP_VERSION = '0.606';
 
 
 
@@ -4888,6 +4946,7 @@ const DEFAULT_SETTINGS = {
   toolbarHidden: [],           // array of button IDs hidden from bottom toolbar
   toolbarOrder: [],            // ordered array of button IDs (empty = use default order)
   sortBy: 'viewedAt',           // sort key: viewedAt/editedAt/createdAt/name
+  showNoteFab: true,            // show floating + button in note editor
   sortDesc: true,               // direction toggle: true=newest/A-Z first, false=oldest/Z-A first
   noteMarginLeft: 0,            // extra left margin for note content area (px)
   noteMarginRight: 0,           // extra right margin for note content area (px)
@@ -5130,6 +5189,9 @@ function applySettings() {
   document.documentElement.style.setProperty('--font-weight-heading', Math.max(parseInt(settings.uiFontWeight || 400), 700));
   document.documentElement.style.setProperty('--note-margin-left',  (settings.noteMarginLeft  || 0) + 'px');
   document.documentElement.style.setProperty('--note-margin-right', (settings.noteMarginRight || 0) + 'px');
+  // Note editor FAB visibility
+  var _noteFab = document.getElementById('note-fab');
+  if (_noteFab) _noteFab.style.display = settings.showNoteFab !== false ? 'flex' : 'none';
   document.documentElement.style.setProperty('--list-margin-left',  (settings.listMarginLeft  || 0) + 'px');
   document.documentElement.style.setProperty('--list-margin-right', (settings.listMarginRight || 0) + 'px');
   document.documentElement.style.setProperty('--highlight-color', settings.highlightColor || '#ffe066');
@@ -7595,6 +7657,8 @@ function openSettings() {
   document.getElementById('check-strikethrough-toggle').checked = settings.checkStrikethrough !== false;
   document.getElementById('delete-guard-chars').value = settings.deleteGuardChars !== undefined ? settings.deleteGuardChars : 30;
   document.getElementById('show-oops-toggle').checked = settings.showOopsBtn !== false;
+  var _fabToggle = document.getElementById('show-note-fab-toggle');
+  if (_fabToggle) _fabToggle.checked = settings.showNoteFab !== false;
   var tripleTapToggleEl = document.getElementById('triple-tap-edit-toggle');
   if (tripleTapToggleEl) tripleTapToggleEl.checked = settings.tripleTapToEdit !== false;
   document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
@@ -10061,6 +10125,15 @@ function init() {
     if (oopsBtn) oopsBtn.style.display = this.checked ? '' : 'none';
     updateSaveBtnState();
   });
+  document.getElementById('show-note-fab-toggle').addEventListener('change', function() {
+    settings.showNoteFab = this.checked;
+    var _fab = document.getElementById('note-fab');
+    if (_fab) _fab.style.display = this.checked ? 'flex' : 'none';
+    updateSaveBtnState();
+  });
+  // Note FAB click — same action as quick-add button
+  var noteFabBtn = document.getElementById('note-fab');
+  if (noteFabBtn) noteFabBtn.addEventListener('click', function() { openQuickAdd(); });
   document.getElementById('reset-toolbar-order-btn').addEventListener('click', function() {
     // Reset order and hidden to defaults — keep other settings untouched
     settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
