@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.664 -->
+<!-- Remember App - Version 0.667 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.664
+  Version 0.667
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1406,6 +1406,34 @@ body.reading-mode #note-fab,
 @media (hover: hover) { .heading-picker-item:hover { background: var(--bg3); } }
 .heading-picker-item.active { color: var(--accent); font-weight: 700; }
 .heading-picker-item:not(:last-child) { border-bottom: 1px solid var(--border); }
+
+
+/* ===== QUIET MODE FAB (⋯ button) ===== */
+#quiet-more-fab {
+  display: none; /* shown via JS in quiet mode */
+  position: fixed;
+  z-index: 32; /* above note-header (z-index 30) */
+  right: 12px;
+  top: 6px; /* vertically centered in upper toolbar */
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  color: var(--fg);
+}
+#quiet-more-fab svg { pointer-events: none; }
+@media (hover: hover) {
+  #quiet-more-fab:hover { background: var(--bg3); }
+}
+/* In quiet mode: hide lower toolbar, show FAB */
+body.reading-mode #note-bottom-bar { display: none !important; }
 
 /* ===== NOTE SCREEN ===== */
 .note-header {
@@ -3584,6 +3612,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
   </div>
 
+  <!-- Quiet mode More FAB — top-right, only visible in quiet mode -->
+  <button id="quiet-more-fab" aria-label="More options">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+      <circle cx="5" cy="12" r="2"/>
+      <circle cx="12" cy="12" r="2"/>
+      <circle cx="19" cy="12" r="2"/>
+    </svg>
+  </button>
+
   <!-- Note editor FAB — inside note-screen so keyboard-open selector works -->
   <button id="note-fab" aria-label="Quick add text" title="Quick add text">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -4437,6 +4474,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-row">
         <div>
+          <div class="settings-row-label">Keep quiet mode between notes</div>
+          <div class="settings-row-desc">When on, quiet mode stays active when you go back and open another note. When off (default), quiet mode is always cleared when you leave a note.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Keep quiet mode between notes">
+          <input type="checkbox" id="retain-quiet-mode-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
           <div class="settings-row-label">Show floating + button in editor</div>
           <div class="settings-row-desc">Shows a floating + button at the lower right of the note editor screen. Tap it to quickly add text. Hidden in quiet mode and when the keyboard is open.</div>
         </div>
@@ -5066,7 +5114,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.664';
+const APP_VERSION = '0.667';
 
 
 
@@ -5175,6 +5223,7 @@ const DEFAULT_SETTINGS = {
   toolbarOrder: [],            // ordered array of button IDs (empty = use default order)
   sortBy: 'viewedAt',           // sort key: viewedAt/editedAt/createdAt/name
   showNoteFab: true,            // show floating + button in note editor
+  retainQuietMode: false,       // keep quiet mode on when navigating between notes
   sortDesc: true,               // direction toggle: true=newest/A-Z first, false=oldest/Z-A first
   noteMarginLeft: 0,            // extra left margin for note content area (px)
   noteMarginRight: 0,           // extra right margin for note content area (px)
@@ -6563,6 +6612,10 @@ function toggleReadingMode() {
   document.body.classList.toggle('reading-mode', _readingMode);
   // Force view mode when entering reading mode
   if (_readingMode && !isViewMode) setViewMode(true);
+  // Show/hide quiet mode FAB and re-pin toolbars
+  var qfab = document.getElementById('quiet-more-fab');
+  if (qfab) qfab.style.display = _readingMode ? 'flex' : 'none';
+  pinToolbars();
   // Update More menu label
   var lbl = document.getElementById('more-reading-mode-label');
   if (lbl) lbl.textContent = _readingMode ? 'Exit quiet mode' : 'Quiet mode';
@@ -6571,6 +6624,9 @@ function clearReadingMode() {
   if (!_readingMode) return;
   _readingMode = false;
   document.body.classList.remove('reading-mode');
+  var qfab = document.getElementById('quiet-more-fab');
+  if (qfab) qfab.style.display = 'none';
+  pinToolbars();
   var lbl = document.getElementById('more-reading-mode-label');
   if (lbl) lbl.textContent = 'Quiet mode';
 }
@@ -7538,7 +7594,7 @@ function importNotes(file) {
 }
 
 function goHome() {
-  clearReadingMode();
+  if (settings.retainQuietMode !== true) clearReadingMode();
   stopSpeaking();
   var _banner = document.getElementById('tap-to-speak-banner');
   if (_banner) _banner.style.display = 'none';
@@ -8025,6 +8081,8 @@ function openSettings() {
   document.getElementById('show-oops-toggle').checked = settings.showOopsBtn !== false;
   var _fabToggle = document.getElementById('show-note-fab-toggle');
   if (_fabToggle) _fabToggle.checked = settings.showNoteFab !== false;
+  var retainQmToggle = document.getElementById('retain-quiet-mode-toggle');
+  if (retainQmToggle) retainQmToggle.checked = !!settings.retainQuietMode;
   var tripleTapToggleEl = document.getElementById('triple-tap-edit-toggle');
   if (tripleTapToggleEl) tripleTapToggleEl.checked = settings.tripleTapToEdit !== false;
   document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
@@ -9208,7 +9266,10 @@ function init() {
   // Toggle More menu open/closed
   var moreMenuOpen = false;
   function openMoreMenu() {
-    var btn   = document.getElementById('toolbar-more-btn');
+    // In quiet mode use the FAB as anchor, otherwise use the toolbar button
+    var btn = (_readingMode && document.getElementById('quiet-more-fab'))
+      ? document.getElementById('quiet-more-fab')
+      : document.getElementById('toolbar-more-btn');
     var menu  = document.getElementById('toolbar-more-menu');
     if (!btn || !menu) return;
     // Rebuild hidden items fresh every open so mode-based visibility is current
@@ -9234,6 +9295,14 @@ function init() {
   }
 
   document.getElementById('toolbar-more-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  var _quietFab = document.getElementById('quiet-more-fab');
+  if (_quietFab) {
+    _quietFab.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _quietFab.addEventListener('click', function(e) {
+      e.stopPropagation(); // prevent document click handler from closing menu immediately
+      if (moreMenuOpen) { closeMoreMenu(); } else { openMoreMenu(); }
+    });
+  }
   document.getElementById('toolbar-more-btn').addEventListener('click', function(e) {
     e.stopPropagation();
     if (moreMenuOpen) { closeMoreMenu(); } else { openMoreMenu(); }
@@ -10549,6 +10618,10 @@ function init() {
     settings.showOopsBtn = this.checked;
     var oopsBtn = document.getElementById('oops-btn');
     if (oopsBtn) oopsBtn.style.display = this.checked ? '' : 'none';
+    updateSaveBtnState();
+  });
+  document.getElementById('retain-quiet-mode-toggle').addEventListener('change', function() {
+    settings.retainQuietMode = this.checked;
     updateSaveBtnState();
   });
   document.getElementById('show-note-fab-toggle').addEventListener('change', function() {
