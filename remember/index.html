@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.652 -->
+<!-- Remember App - Version 0.662 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.652
+  Version 0.662
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -3253,13 +3253,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/>
           </svg>
-          Speak
+          <span id="speak-btn-label">Speak</span>
         </button>
         <button class="btn" id="stop-btn" aria-label="Stop speaking">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="6" y="6" width="12" height="12" rx="2"/>
           </svg>
-          Stop
+          <span id="stop-btn-label">Stop</span>
         </button>
         <!-- select-all-btn moved to More menu — kept hidden here for event handler wiring -->
         <button class="icon-btn" id="select-all-btn" aria-label="Select all text" title="Select all / deselect" style="display:none">
@@ -4063,17 +4063,14 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <div class="settings-row-label">Button Size</div>
           <div class="settings-row-desc">Affects buttons and icons everywhere</div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px;width:100%">
-          <div class="seg-control" id="ui-size-seg-row1" style="display:flex">
-            <button class="seg-btn" data-val="small">Normal</button>
-            <button class="seg-btn active" data-val="medium">Medium</button>
-          </div>
-          <div class="seg-control" id="ui-size-seg-row2" style="display:flex">
-            <button class="seg-btn" data-val="large">Large</button>
-            <button class="seg-btn" data-val="xlarge">Extra Large</button>
-          </div>
+        <div class="seg-control" id="ui-size-seg" style="flex-wrap:wrap;max-width:220px">
+          <button class="seg-btn" data-val="small">Normal</button>
+          <button class="seg-btn active" data-val="medium">Medium</button>
+          <button class="seg-btn" data-val="large">Large</button>
+          <button class="seg-btn" data-val="xlarge">Extra Large</button>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- Typography -->
@@ -4535,6 +4532,39 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </div>
         <input type="range" class="settings-range" id="speech-pause-range" min="0" max="2000" step="200" value="400">
         <span class="range-val" id="speech-pause-val">0.4s</span>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Show Speak button</div>
+          <div class="settings-row-desc">Show the Speak button in the note editor toolbar</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show Speak button">
+          <input type="checkbox" id="show-speak-btn-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Speak button: icon only</div>
+          <div class="settings-row-desc">Hide the "Speak" label, show only the speaker icon</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show only icon on Speak button">
+          <input type="checkbox" id="speak-icon-only-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Speak button: accent color</div>
+          <div class="settings-row-desc">Use the accent color on the Speak button. Turn off for a neutral style.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Use accent color on Speak button">
+          <input type="checkbox" id="speak-accent-color-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
       </div>
 
       <div class="settings-row">
@@ -5003,7 +5033,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.652';
+const APP_VERSION = '0.662';
 
 
 
@@ -5091,6 +5121,9 @@ const DEFAULT_SETTINGS = {
   accentColor: '#5b7c6e',
   voiceURI: '',
   speechRate: 0.9,
+  showSpeakBtn: true,        // show the Speak button at all
+  speakBtnIconOnly: false,   // show only the icon, not the word "Speak"
+  speakBtnAccentColor: true, // use accent color on Speak button
   speechPause: 400,          // ms pause between spoken lines (0-2000)
   skipListMarkers: true,     // if true, skip checkboxes, leading hyphens and bullets when speaking
   autoSpeak: false,
@@ -5364,6 +5397,29 @@ function applySettings() {
   // Note editor FAB visibility
   var _noteFab = document.getElementById('note-fab');
   if (_noteFab) _noteFab.style.display = settings.showNoteFab !== false ? 'flex' : 'none';
+  // Speak button appearance
+  var _speakBtn = document.getElementById('speak-btn');
+  var _speakLbl = document.getElementById('speak-btn-label');
+  var _stopLbl  = document.getElementById('stop-btn-label');
+  if (_speakBtn) {
+    _speakBtn.dataset.hideSpeak = settings.showSpeakBtn === false ? '1' : '0';
+    if (_speakLbl) _speakLbl.style.display = settings.speakBtnIconOnly ? 'none' : '';
+    if (_stopLbl)  _stopLbl.style.display  = settings.speakBtnIconOnly ? 'none' : '';
+    if (settings.speakBtnAccentColor === false) {
+      _speakBtn.style.background = 'var(--bg3)';
+      _speakBtn.style.color = 'var(--fg)';
+    } else {
+      _speakBtn.style.background = '';
+      _speakBtn.style.color = '';
+    }
+  }
+  // Sync speak toggles in settings sheet
+  var _showSpeakTog = document.getElementById('show-speak-btn-toggle');
+  var _iconOnlyTog  = document.getElementById('speak-icon-only-toggle');
+  var _accentTog    = document.getElementById('speak-accent-color-toggle');
+  if (_showSpeakTog) _showSpeakTog.checked = settings.showSpeakBtn !== false;
+  if (_iconOnlyTog)  _iconOnlyTog.checked  = !!settings.speakBtnIconOnly;
+  if (_accentTog)    _accentTog.checked     = settings.speakBtnAccentColor !== false;
   document.documentElement.style.setProperty('--list-margin-left',  (settings.listMarginLeft  || 0) + 'px');
   document.documentElement.style.setProperty('--list-margin-right', (settings.listMarginRight || 0) + 'px');
   document.documentElement.style.setProperty('--highlight-color', settings.highlightColor || '#ffe066');
@@ -7292,6 +7348,11 @@ function getCursorY(ed) {
 function updateSpeakBtnState() {
   var btn = document.getElementById('speak-btn');
   if (!btn) return;
+  // Hide entirely if showSpeakBtn is off
+  if (settings.showSpeakBtn === false) {
+    btn.style.display = 'none';
+    return;
+  }
   var hasContent = document.getElementById('note-editor').value.trim().length > 0;
   btn.disabled = !hasContent;
   btn.classList.toggle('dimmed', !hasContent);
@@ -7865,9 +7926,7 @@ function openSettings() {
 
   // Sync UI to current settings
   setSegActive('theme-seg', settings.theme);
-  document.querySelectorAll('#ui-size-seg-row1 .seg-btn, #ui-size-seg-row2 .seg-btn').forEach(function(b) {
-    b.classList.toggle('active', b.dataset.val === (settings.uiSize || 'medium'));
-  });
+  setSegActive('ui-size-seg', settings.uiSize);
 
   var fs = document.getElementById('font-select');
   fs.value = settings.font;
@@ -8208,13 +8267,10 @@ function init() {
 
   // Collapsible section headers
   document.querySelectorAll('#settings-sheet .settings-section-header').forEach(function(header, idx) {
-    // Use touchHandled pattern (from lessons learned) to prevent iOS ghost-click
-    // when layout shifts during section expand/collapse.
-    // touchend + preventDefault fires the action; click is suppressed if touch already handled.
     var touchHandled = false;
 
     function toggleSection() {
-      var section = header.parentElement; // parentElement is more precise than closest()
+      var section = header.parentElement;
       var isOpen = section.classList.toggle('open');
       if (!settings.sectionStates) settings.sectionStates = {};
       settings.sectionStates['section_' + idx] = isOpen;
@@ -8228,15 +8284,16 @@ function init() {
     }, { passive: true });
 
     header.addEventListener('touchend', function(e) {
-      e.preventDefault(); // prevent ghost click after layout shift
+      e.preventDefault();
       toggleSection();
     }, { passive: false });
 
     header.addEventListener('click', function() {
-      if (touchHandled) { touchHandled = false; return; } // already handled by touchend
+      if (touchHandled) { touchHandled = false; return; }
       toggleSection();
     });
   });
+
   document.getElementById('help-btn').addEventListener('click', function() {
     document.getElementById('help-version').textContent = 'v' + APP_VERSION;
     document.getElementById('help-overlay').classList.add('open');
@@ -8326,7 +8383,9 @@ function init() {
   // Same touchHandled pattern to prevent ghost clicks on layout shift
   function wireCollapsibleHeader(header) {
     var touchHandled = false;
-    header.addEventListener('touchstart', function() { touchHandled = true; }, { passive: true });
+    header.addEventListener('touchstart', function() {
+      touchHandled = true;
+    }, { passive: true });
     header.addEventListener('touchend', function(e) {
       e.preventDefault();
       header.parentElement.classList.toggle('open');
@@ -9904,20 +9963,13 @@ function init() {
     setSegActive('theme-seg', settings.theme);
     applySettings();
   });
-  // Button size — two-row layout
-  ['ui-size-seg-row1','ui-size-seg-row2'].forEach(function(rowId) {
-    var rowEl = document.getElementById(rowId);
-    if (!rowEl) return;
-    rowEl.addEventListener('click', function(e) {
-      var btn = e.target.closest('.seg-btn');
-      if (!btn) return;
-      settings.uiSize = btn.dataset.val;
-      document.querySelectorAll('#ui-size-seg-row1 .seg-btn, #ui-size-seg-row2 .seg-btn').forEach(function(b) {
-        b.classList.toggle('active', b.dataset.val === settings.uiSize);
-      });
-      applySettings();
-      updateSaveBtnState();
-    });
+  document.getElementById('ui-size-seg').addEventListener('click', function(e) {
+    var btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    settings.uiSize = btn.dataset.val;
+    setSegActive('ui-size-seg', settings.uiSize);
+    applySettings();
+    updateSaveBtnState();
   });
 
   // Font select
@@ -10406,6 +10458,22 @@ function init() {
     var v = parseInt(this.value);
     settings.speechPause = v;
     document.getElementById('speech-pause-val').textContent = (v / 1000).toFixed(1) + 's';
+    updateSaveBtnState();
+  });
+  document.getElementById('show-speak-btn-toggle').addEventListener('change', function() {
+    settings.showSpeakBtn = this.checked;
+    applySettings();
+    updateSpeakBtnState();
+    updateSaveBtnState();
+  });
+  document.getElementById('speak-icon-only-toggle').addEventListener('change', function() {
+    settings.speakBtnIconOnly = this.checked;
+    applySettings();
+    updateSaveBtnState();
+  });
+  document.getElementById('speak-accent-color-toggle').addEventListener('change', function() {
+    settings.speakBtnAccentColor = this.checked;
+    applySettings();
     updateSaveBtnState();
   });
   document.getElementById('speak-checkboxes-toggle').addEventListener('change', function() {
