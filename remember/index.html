@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.681 -->
+<!-- Remember App - Version 0.683 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.681
+  Version 0.683
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -5182,7 +5182,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.681';
+const APP_VERSION = '0.683';
 
 
 
@@ -12830,8 +12830,9 @@ function _cleanDragState() {
 function _initMoveDragDrop() {
   var viewer = document.getElementById('note-viewer');
   if (!viewer) return;
-  viewer.querySelectorAll('.viewer-line.move-selected').forEach(function(el) {
-    // Inject a drag handle at the start of the line
+  // Inject a single drag handle on the first selected line only
+  var firstSelected = viewer.querySelector('.viewer-line.move-selected');
+  if (firstSelected) {
     var handle = document.createElement('span');
     handle.className = 'drag-handle';
     handle.setAttribute('draggable', 'true');
@@ -12840,8 +12841,8 @@ function _initMoveDragDrop() {
     handle.addEventListener('dragstart', _onDragStart);
     handle.addEventListener('dragend',   _onDragEnd);
     handle.addEventListener('touchstart', _onTouchDragStart, { passive: false });
-    el.insertBefore(handle, el.firstChild);
-  });
+    firstSelected.insertBefore(handle, firstSelected.firstChild);
+  }
   viewer.addEventListener('dragover',   _onDragOver,       false);
   viewer.addEventListener('dragleave',  _onDragLeave,      false);
   viewer.addEventListener('drop',       _onDragDrop,       false);
@@ -12958,14 +12959,23 @@ function _performDrop(target, position) {
   if (!_moveUndoPushed) { pushUndo(); _moveUndoPushed = true; }
   var viewer = document.getElementById('note-viewer');
   var srcs = Array.from(document.querySelectorAll('.viewer-line.move-selected'));
+  // Sort by current DOM position to preserve line order regardless of which handle was dragged
+  var allLines = Array.from(viewer.querySelectorAll('.viewer-line'));
+  srcs.sort(function(a, b) { return allLines.indexOf(a) - allLines.indexOf(b); });
   // Remove from current positions
   srcs.forEach(function(el) { el.parentNode.removeChild(el); });
-  // Re-insert before/after target
+  // Re-insert before/after target, maintaining order
   if (position === 'above') {
-    srcs.reverse().forEach(function(el) { viewer.insertBefore(el, target); });
+    // Insert in forward order, all before target — target stays fixed as anchor
+    // insertBefore(Milk, Bread), insertBefore(Eggs, Bread) → Milk, Eggs, Bread ✓
+    srcs.forEach(function(el) { viewer.insertBefore(el, target); });
   } else {
+    // Insert in forward order after target, advancing ref each time
     var ref = target.nextSibling;
-    srcs.forEach(function(el) { viewer.insertBefore(el, ref); });
+    srcs.forEach(function(el) {
+      viewer.insertBefore(el, ref);
+      ref = el.nextSibling;
+    });
   }
   _resyncAfterMove();
   _writeMoveContentBack();
