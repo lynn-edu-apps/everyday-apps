@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.662 -->
+<!-- Remember App - Version 0.664 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.662
+  Version 0.664
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -2420,10 +2420,20 @@ body:not(.dark) .note-item {
   align-items: center;
   justify-content: space-between;
   padding: 13px 20px 11px 20px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
   -webkit-user-select: none;
   gap: 8px;
+  position: relative;
+}
+.help-collapsible-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 70px;
+  cursor: pointer;
 }
 @media (hover: none) {
   .help-collapsible-header:active { opacity: 0.7; }
@@ -2443,9 +2453,10 @@ body:not(.dark) .note-item {
   color: var(--fg2);
   pointer-events: none;
   transition: transform 0.2s;
+  transform: rotate(-90deg);
 }
 .help-collapsible.open .help-collapsible-chevron {
-  transform: rotate(180deg);
+  transform: rotate(0deg);
 }
 .help-collapsible-body {
   display: none;
@@ -2465,10 +2476,20 @@ body:not(.dark) .note-item {
   align-items: center;
   justify-content: space-between;
   padding: 10px 0 8px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
   -webkit-user-select: none;
   gap: 8px;
+  position: relative;
+}
+.help-sub-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 70px;
+  cursor: pointer;
 }
 @media (hover: none) {
   .help-sub-header:active { opacity: 0.7; }
@@ -2489,7 +2510,8 @@ body:not(.dark) .note-item {
   pointer-events: none;
   transition: transform 0.2s;
 }
-.help-sub.open .help-sub-chevron { transform: rotate(180deg); }
+.help-sub-chevron { transform: rotate(-90deg); }
+.help-sub.open .help-sub-chevron { transform: rotate(0deg); }
 .help-sub-body {
   display: none;
   padding-bottom: 10px;
@@ -2514,9 +2536,20 @@ body:not(.dark) .note-item {
   align-items: center;
   justify-content: space-between;
   padding: 14px 20px 12px 20px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
   gap: 8px;
+  position: relative;
+}
+/* Tap zone: covers only the right ~70px (chevron area) */
+.settings-section-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 70px;
+  cursor: pointer;
 }
 /* Active state: suppress color/background changes with !important to prevent
    stuck state on iOS. Opacity dip gives subtle tap feedback without sticking. */
@@ -2548,12 +2581,12 @@ body:not(.dark) .note-item {
   height: 22px;
   flex-shrink: 0;
   color: var(--fg2);
-  /* Prevent SVG from being the e.target — ensures click fires on the header */
   pointer-events: none;
   transition: transform 0.2s;
+  transform: rotate(-90deg); /* collapsed = right-pointing > */
 }
 .settings-section.open .settings-section-chevron {
-  transform: rotate(180deg);
+  transform: rotate(0deg); /* open = down-pointing ∨ */
 }
 
 .settings-section-body {
@@ -5033,7 +5066,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.662';
+const APP_VERSION = '0.664';
 
 
 
@@ -8268,6 +8301,13 @@ function init() {
   // Collapsible section headers
   document.querySelectorAll('#settings-sheet .settings-section-header').forEach(function(header, idx) {
     var touchHandled = false;
+    var TAP_ZONE = 70; // px from right edge that counts as a tap on the chevron
+
+    function inChevronZone(e) {
+      var r = header.getBoundingClientRect();
+      var x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+      return (r.right - x) <= TAP_ZONE;
+    }
 
     function toggleSection() {
       var section = header.parentElement;
@@ -8279,17 +8319,19 @@ function init() {
       if (isOpen && section.querySelector('#toolbar-visibility-rows')) buildToolbarVisibilityRows();
     }
 
-    header.addEventListener('touchstart', function() {
-      touchHandled = true;
+    header.addEventListener('touchstart', function(e) {
+      if (inChevronZone(e)) touchHandled = true;
     }, { passive: true });
 
     header.addEventListener('touchend', function(e) {
+      if (!touchHandled) return;
+      touchHandled = false;
       e.preventDefault();
       toggleSection();
     }, { passive: false });
 
-    header.addEventListener('click', function() {
-      if (touchHandled) { touchHandled = false; return; }
+    header.addEventListener('click', function(e) {
+      if (!inChevronZone(e)) return;
       toggleSection();
     });
   });
@@ -8383,15 +8425,25 @@ function init() {
   // Same touchHandled pattern to prevent ghost clicks on layout shift
   function wireCollapsibleHeader(header) {
     var touchHandled = false;
-    header.addEventListener('touchstart', function() {
-      touchHandled = true;
+    var TAP_ZONE = 70;
+
+    function inChevronZone(e) {
+      var r = header.getBoundingClientRect();
+      var x = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+      return (r.right - x) <= TAP_ZONE;
+    }
+
+    header.addEventListener('touchstart', function(e) {
+      if (inChevronZone(e)) touchHandled = true;
     }, { passive: true });
     header.addEventListener('touchend', function(e) {
+      if (!touchHandled) return;
+      touchHandled = false;
       e.preventDefault();
       header.parentElement.classList.toggle('open');
     }, { passive: false });
-    header.addEventListener('click', function() {
-      if (touchHandled) { touchHandled = false; return; }
+    header.addEventListener('click', function(e) {
+      if (!inChevronZone(e)) return;
       header.parentElement.classList.toggle('open');
     });
   }
