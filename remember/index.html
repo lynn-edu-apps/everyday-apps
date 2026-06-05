@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.672 -->
+<!-- Remember App - Version 0.681 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.672
+  Version 0.681
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -152,6 +152,12 @@ body.ui-small {
 #note-viewer * {
   user-select: text;
   -webkit-user-select: text;
+}
+/* Disable text selection in move mode */
+body.move-mode #note-viewer,
+body.move-mode #note-viewer * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 /* Input and textarea fields: always selectable */
 input, textarea {
@@ -1434,6 +1440,30 @@ body.reading-mode #note-fab,
 }
 /* In quiet mode: hide lower toolbar, show FAB */
 body.reading-mode #note-bottom-bar { display: none !important; }
+
+/* ===== DRAG AND DROP IN MOVE MODE ===== */
+/* Drag handle injected into each move-selected line */
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  cursor: grab;
+  color: var(--fg3);
+  opacity: 0.6;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  touch-action: none;
+  flex-shrink: 0;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.drag-handle:active { cursor: grabbing; opacity: 1; }
+.drag-handle svg { pointer-events: none; }
+.viewer-line.drag-over-above { border-top: 2.5px solid var(--accent); }
+.viewer-line.drag-over-below { border-bottom: 2.5px solid var(--accent); }
+.viewer-line.drag-ghost { opacity: 0.4; }
 
 /* ===== NOTE SCREEN ===== */
 .note-header {
@@ -3958,23 +3988,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span id="more-reading-mode-label" style="pointer-events:none;flex:1">Quiet mode</span>
   </button>
-  <!-- Uncheck all item -->
-  <button id="more-uncheck-all-btn" style="
-    display:flex;align-items:center;gap:12px;
-    width:100%;padding:13px 18px;
-    background:none;border:none;
-    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
-    text-align:left;cursor:pointer;
-    touch-action:manipulation;
-    user-select:none;-webkit-user-select:none;
-    box-sizing:border-box;
-  ">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <rect x="3" y="3" width="18" height="18" rx="3"/>
-      <line x1="8" y1="12" x2="16" y2="12"/>
-    </svg>
-    <span style="pointer-events:none;flex:1">Uncheck all checkboxes</span>
-  </button>
   <!-- Find in note item -->
   <button id="more-find-btn" style="
     display:flex;align-items:center;gap:12px;
@@ -4007,6 +4020,23 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <span id="more-theme-dark-label" style="pointer-events:none;flex:1">Dark</span>
   </button>
   <div id="more-theme-divider-bottom" style="height:1px;background:var(--border);margin:2px 0"></div>
+  <!-- Uncheck all item -->
+  <button id="more-uncheck-all-btn" style="
+    display:flex;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <rect x="3" y="3" width="18" height="18" rx="3"/>
+      <line x1="8" y1="12" x2="16" y2="12"/>
+    </svg>
+    <span style="pointer-events:none;flex:1">Uncheck all checkboxes</span>
+  </button>
   <!-- Copy as plain text item -->
   <button id="more-copy-plain-btn" style="
     display:flex;align-items:center;gap:12px;
@@ -5152,7 +5182,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.672';
+const APP_VERSION = '0.681';
 
 
 
@@ -11842,6 +11872,11 @@ function init() {
     var lineIndex = parseInt(lineDiv.dataset.line, 10);
     if (isNaN(lineIndex)) return;
     e.stopPropagation();
+    // In move mode, selection is locked — tap does nothing (use Move button to exit)
+    if (moveMode) {
+      showToast('Tap \u2195 Move again to exit move mode', false);
+      return;
+    }
     toggleBlockSelection(lineIndex);
     // Recheck arrow visibility and indent/dedent visibility after selection change
     updateViewOnlyBtns();
@@ -12778,6 +12813,167 @@ function _writeMoveContentBack() {
   saveNotes();
 }
 
+
+// ===== DRAG AND DROP FOR MOVE MODE =====
+var _dragSrcLines = null;
+var _dragTouchId = null;
+var _dragLastTarget = null;
+
+function _cleanDragState() {
+  document.querySelectorAll('.drag-over-above, .drag-over-below, .drag-ghost').forEach(function(el) {
+    el.classList.remove('drag-over-above', 'drag-over-below', 'drag-ghost');
+  });
+  _dragSrcLines = null;
+  _dragLastTarget = null;
+}
+
+function _initMoveDragDrop() {
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return;
+  viewer.querySelectorAll('.viewer-line.move-selected').forEach(function(el) {
+    // Inject a drag handle at the start of the line
+    var handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.setAttribute('draggable', 'true');
+    handle.setAttribute('title', 'Drag to reorder');
+    handle.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="4" r="1.3"/><circle cx="11" cy="4" r="1.3"/><circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/><circle cx="5" cy="12" r="1.3"/><circle cx="11" cy="12" r="1.3"/></svg>';
+    handle.addEventListener('dragstart', _onDragStart);
+    handle.addEventListener('dragend',   _onDragEnd);
+    handle.addEventListener('touchstart', _onTouchDragStart, { passive: false });
+    el.insertBefore(handle, el.firstChild);
+  });
+  viewer.addEventListener('dragover',   _onDragOver,       false);
+  viewer.addEventListener('dragleave',  _onDragLeave,      false);
+  viewer.addEventListener('drop',       _onDragDrop,       false);
+  viewer.addEventListener('touchmove',  _onTouchDragMove,  { passive: false });
+  viewer.addEventListener('touchend',   _onTouchDragEnd,   { passive: false });
+}
+
+function _onDragStart(e) {
+  _dragSrcLines = Array.from(document.querySelectorAll('.viewer-line.move-selected'));
+  _dragSrcLines.forEach(function(el) { el.classList.add('drag-ghost'); });
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 'move');
+  if (e.dataTransfer.setDragImage && _dragSrcLines[0]) {
+    e.dataTransfer.setDragImage(_dragSrcLines[0], 20, 10);
+  }
+}
+function _onDragEnd() { _cleanDragState(); }
+
+function _getDragPosition(e, target) {
+  var rect = target.getBoundingClientRect();
+  return (e.clientY - rect.top) < rect.height / 2 ? 'above' : 'below';
+}
+function _setDropIndicator(target, pos) {
+  document.querySelectorAll('.drag-over-above, .drag-over-below').forEach(function(el) {
+    el.classList.remove('drag-over-above', 'drag-over-below');
+  });
+  if (target) {
+    target.classList.add(pos === 'above' ? 'drag-over-above' : 'drag-over-below');
+    _dragLastTarget = target;
+  }
+}
+
+function _onDragOver(e) {
+  if (!_dragSrcLines) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var line = e.target && e.target.closest ? e.target.closest('.viewer-line') : null;
+  if (line) {
+    if (_dragSrcLines.indexOf(line) === -1) {
+      // Normal case: hovering over a non-selected line
+      _setDropIndicator(line, _getDragPosition(e, line));
+    } else {
+      // Hovering over a selected line — show indicator above first or below last
+      var sorted = _dragSrcLines.slice().sort(function(a, b) {
+        return a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+      });
+      var firstRect = sorted[0].getBoundingClientRect();
+      var lastRect  = sorted[sorted.length - 1].getBoundingClientRect();
+      if (e.clientY < firstRect.top + firstRect.height / 2) {
+        _setDropIndicator(sorted[0], 'above');
+      } else {
+        _setDropIndicator(sorted[sorted.length - 1], 'below');
+      }
+    }
+  }
+  // Auto-scroll when dragging near top/bottom of the visible content area.
+  // Use _pinnedHeaderH + _pinnedToolbarH as the true visible top — the toolbars
+  // overlap the content area and intercept pointer events in quiet mode or not.
+  var area = document.getElementById('note-content-area');
+  if (area) {
+    var visibleTop    = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0);
+    var visibleBottom = window.innerHeight;
+    var zone = 80;
+    if (e.clientY < visibleTop + zone)    area.scrollTop -= 14;
+    else if (e.clientY > visibleBottom - zone) area.scrollTop += 14;
+  }
+}
+function _onDragLeave(e) {
+  var viewer = document.getElementById('note-viewer');
+  if (!e.relatedTarget || !viewer.contains(e.relatedTarget)) _setDropIndicator(null, null);
+}
+function _onDragDrop(e) {
+  if (!_dragSrcLines) return;
+  e.preventDefault();
+  var line = e.target && e.target.closest ? e.target.closest('.viewer-line') : null;
+  if (!line) line = _dragLastTarget; // fallback to last known indicator target
+  if (!line || _dragSrcLines.indexOf(line) !== -1) { _cleanDragState(); return; }
+  var pos = _getDragPosition(e, line);
+  _cleanDragState();
+  _performDrop(line, pos);
+}
+
+// Touch drag
+function _onTouchDragStart(e) {
+  if (e.touches.length !== 1) return;
+  _dragSrcLines = Array.from(document.querySelectorAll('.viewer-line.move-selected'));
+  _dragSrcLines.forEach(function(el) { el.classList.add('drag-ghost'); });
+  _dragTouchId = e.touches[0].identifier;
+}
+function _onTouchDragMove(e) {
+  if (!_dragSrcLines) return;
+  var touch = null;
+  for (var i = 0; i < e.touches.length; i++) {
+    if (e.touches[i].identifier === _dragTouchId) { touch = e.touches[i]; break; }
+  }
+  if (!touch) return;
+  e.preventDefault();
+  var target = document.elementFromPoint(touch.clientX, touch.clientY);
+  var line = target ? target.closest('.viewer-line') : null;
+  if (!line || _dragSrcLines.indexOf(line) !== -1) return;
+  var rect = line.getBoundingClientRect();
+  _setDropIndicator(line, (touch.clientY - rect.top) < rect.height / 2 ? 'above' : 'below');
+}
+function _onTouchDragEnd(e) {
+  if (!_dragSrcLines) { _cleanDragState(); return; }
+  var target = _dragLastTarget;
+  var above = target && target.classList.contains('drag-over-above');
+  _cleanDragState();
+  if (target) _performDrop(target, above ? 'above' : 'below');
+}
+
+function _performDrop(target, position) {
+  if (!moveMode || !currentNoteId || !notes[currentNoteId]) return;
+  if (!_moveUndoPushed) { pushUndo(); _moveUndoPushed = true; }
+  var viewer = document.getElementById('note-viewer');
+  var srcs = Array.from(document.querySelectorAll('.viewer-line.move-selected'));
+  // Remove from current positions
+  srcs.forEach(function(el) { el.parentNode.removeChild(el); });
+  // Re-insert before/after target
+  if (position === 'above') {
+    srcs.reverse().forEach(function(el) { viewer.insertBefore(el, target); });
+  } else {
+    var ref = target.nextSibling;
+    srcs.forEach(function(el) { viewer.insertBefore(el, ref); });
+  }
+  _resyncAfterMove();
+  _writeMoveContentBack();
+  _moveSelIdx = _moveBlocks.indexOf(srcs[0]);
+  _updateMoveBtns();
+  _scrollToMoveSelected();
+}
+
 function _updateMoveBtns() {
   var upBtn  = document.getElementById('move-step-up-btn');
   var dnBtn  = document.getElementById('move-step-down-btn');
@@ -12829,6 +13025,7 @@ function enterMoveMode() {
   });
 
   moveMode = true;
+  document.body.classList.add('move-mode');
   _moveUndoPushed = false;
   _moveGroupSize = indices.length;
   // _moveSelIdx is DOM order index, not data-line value
@@ -12841,6 +13038,8 @@ function enterMoveMode() {
     var el = _getMoveBlockByLine(i);
     if (el) el.classList.add('move-selected');
   });
+  // Wire drag-and-drop (injects handles, sets up listeners)
+  _initMoveDragDrop();
 
   var btn = document.getElementById('move-mode-btn');
   if (btn) btn.classList.add('active');
@@ -12854,12 +13053,17 @@ function enterMoveMode() {
 
 function exitMoveMode() {
   moveMode = false;
+  document.body.classList.remove('move-mode');
   _moveRepeatActive = false;
   if (_moveRepeatTimeout)  { clearTimeout(_moveRepeatTimeout);   _moveRepeatTimeout  = null; }
   if (_moveRepeatInterval) { clearInterval(_moveRepeatInterval); _moveRepeatInterval = null; }
   document.querySelectorAll('.viewer-line.move-selected').forEach(function(el) {
     el.classList.remove('move-selected');
+    // Remove injected drag handle
+    var h = el.querySelector('.drag-handle');
+    if (h) el.removeChild(h);
   });
+  _cleanDragState();
   var btn = document.getElementById('move-mode-btn');
   if (btn) btn.classList.remove('active');
   _updateMoveGroupBorder();
