@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.738 -->
+<!-- Remember App - Version 0.742 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.738
+  Version 0.742
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -2553,7 +2553,7 @@ body:not(.dark) .note-item {
 }
 
 .oops-bar {
-  padding-top: 20px;
+  padding-top: 195px; /* large top padding keeps Oops far from content to avoid accidental taps */
   display: flex;
   justify-content: center;
   pointer-events: none;  /* padding area won't intercept taps meant for textarea */
@@ -5587,7 +5587,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.738';
+const APP_VERSION = '0.742';
 
 
 
@@ -10200,31 +10200,33 @@ function init() {
     setTimeout(pinToolbars, 100);
     setTimeout(pinToolbars, 350);
     setTimeout(pinToolbars, 600);
-    var alreadyAskedPaste = noteScreen.dataset.askedPaste === '1';
+    // Only check clipboard on first focus of a fresh empty note.
+    // Do NOT call readText on every focus — triggers iOS 'Paste and Speak' banner.
+    // Only ask if this clipboard content hasn't been asked about before.
     var isFresh = noteScreen.dataset.freshlyOpened === '1';
-    noteScreen.dataset.freshlyOpened = '0'; // clear immediately — only first focus counts
-    if (!alreadyAskedPaste && isFresh && ed.value.trim() === '' && navigator.clipboard && navigator.clipboard.readText) {
-      noteScreen.dataset.askedPaste = '1';
+    noteScreen.dataset.freshlyOpened = '0';
+    if (isFresh && ed.value.trim() === '' && navigator.clipboard && navigator.clipboard.readText) {
       navigator.clipboard.readText().then(function(clipText) {
-        if (clipText && clipText.trim()) {
-          ed.blur();
-          showConfirm(
-            'Paste from clipboard?',
-            'You have copied text. Would you like to paste it into this note?',
-            'Paste',
-            function() {
-              ed.value = clipText;
-              resizeEditor();
-              scheduleSave();
-              ed.focus();
-              ed.setSelectionRange(clipText.length, clipText.length);
-            },
-            false,
-            'No thanks',
-            null,
-            'centered'
-          );
-        }
+        if (!clipText || !clipText.trim()) return;
+        if (_hasAskedForClip(clipText)) return;
+        _markClipAsked(clipText);
+        ed.blur();
+        showConfirm(
+          'Paste from clipboard?',
+          'You have copied text. Would you like to paste it into this note?',
+          'Paste',
+          function() {
+            ed.value = clipText;
+            resizeEditor();
+            scheduleSave();
+            ed.focus();
+            ed.setSelectionRange(clipText.length, clipText.length);
+          },
+          false,
+          'No thanks',
+          null,
+          'centered'
+        );
       }).catch(function() { /* silent */ });
     }
   });
@@ -11664,19 +11666,30 @@ function init() {
   }
 
   // Position buttons
-  document.getElementById('qa-pos-top').addEventListener('click', function() { _qaSetMode('top'); });
-  document.getElementById('qa-pos-rule').addEventListener('click', function() { _qaSetMode('rule'); });
-  document.getElementById('qa-pos-bottom').addEventListener('click', function() { _qaSetMode('bottom'); });
+  // Refocus textarea at end after tapping a position button,
+  // only if the textarea is empty (to avoid disrupting existing text).
+  // Encourages the virtual keyboard to reappear on Android/iOS.
+  function _qaRefocusInput() {
+    var inp = document.getElementById('quick-add-input');
+    if (!inp || inp.value.length > 0) return;
+    inp.focus();
+    inp.setSelectionRange(0, 0);
+  }
+  document.getElementById('qa-pos-top').addEventListener('click', function() { _qaSetMode('top'); _qaRefocusInput(); });
+  document.getElementById('qa-pos-rule').addEventListener('click', function() { _qaSetMode('rule'); _qaRefocusInput(); });
+  document.getElementById('qa-pos-bottom').addEventListener('click', function() { _qaSetMode('bottom'); _qaRefocusInput(); });
   document.getElementById('qa-pos-before').addEventListener('click', function() {
     // Just select the mode — line will be chosen when Add is tapped
     _qaSetMode('before', null, '');
     var lbl = document.getElementById('qa-pos-label');
     if (lbl) lbl.textContent = 'Tap Add to choose which line to insert before';
+    _qaRefocusInput();
   });
   document.getElementById('qa-pos-after').addEventListener('click', function() {
     _qaSetMode('after', null, '');
     var lbl = document.getElementById('qa-pos-label');
     if (lbl) lbl.textContent = 'Tap Add to choose which line to insert after';
+    _qaRefocusInput();
   });
 
   // Line-pick tap handler — used when Add was tapped with before/after but no line yet chosen
@@ -14174,6 +14187,17 @@ function unCheckAll() {
 }
 
 // ===== PASTE IN VIEW MODE =====
+// Clipboard paste tracking — fingerprint of last clipboard content we asked about.
+// Persisted to localStorage so it survives app restarts.
+var _CLIP_KEY = 'remember_last_clip_asked';
+function _getClipFingerprint(text) { return (text || '').slice(0, 200); }
+function _hasAskedForClip(text) {
+  try { return localStorage.getItem(_CLIP_KEY) === _getClipFingerprint(text); } catch(e) { return false; }
+}
+function _markClipAsked(text) {
+  try { localStorage.setItem(_CLIP_KEY, _getClipFingerprint(text)); } catch(e) {}
+}
+
 var pasteMode     = false;
 var _pasteLineIdx = -1;   // line index the user tapped in paste mode
 
@@ -14228,6 +14252,7 @@ function doPaste(before) {
   }
   navigator.clipboard.readText().then(function(text) {
     if (!text || !text.trim()) { showToast('Nothing to paste', false); return; }
+    _markClipAsked(text); // user just pasted this — don't auto-prompt for same content again
     pushUndo();
     var lines    = (notes[currentNoteId].content || '').split('\n');
     var insertAt = before ? lineIndex : lineIndex + 1;
