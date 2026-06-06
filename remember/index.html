@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.690 -->
+<!-- Remember App - Version 0.700 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.690
+  Version 0.700
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -574,6 +574,23 @@ body.in-iframe #home-screen {
   #toolbar-more-menu button:hover { background: var(--bg3); }
 }
 #toolbar-more-menu button:focus { outline: none; }
+#more-menu-fade {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--bg2) 75%);
+  margin-top: -52px;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6px;
+  font-size: 0.75em;
+  color: var(--fg3);
+  font-family: var(--font-body);
+}
 .icon-btn svg { width: var(--icon-size); height: var(--icon-size); }
 
 .notes-list {
@@ -1445,6 +1462,8 @@ body.reading-mode #note-fab,
 }
 /* In quiet mode: hide lower toolbar, show FAB */
 body.reading-mode #note-bottom-bar { display: none !important; }
+/* Hide reading ruler in EMTIP (keyboard showing) */
+#note-screen.keyboard-open #reading-ruler { display: none !important; }
 
 /* ===== DRAG AND DROP IN MOVE MODE ===== */
 /* Drag handle injected into each move-selected line */
@@ -1469,6 +1488,91 @@ body.reading-mode #note-bottom-bar { display: none !important; }
 .viewer-line.drag-over-above { border-top: 2.5px solid var(--accent); }
 .viewer-line.drag-over-below { border-bottom: 2.5px solid var(--accent); }
 .viewer-line.drag-ghost { opacity: 0.4; }
+
+
+/* ===== READING RULER ===== */
+#reading-ruler {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 28;
+  pointer-events: none; /* touch passes through by default */
+  box-sizing: border-box;
+}
+#reading-ruler.ruler-visible {
+  display: block;
+}
+/* On mouse devices: always receive pointer events so hover works */
+@media (hover: hover) {
+  #reading-ruler.ruler-visible { pointer-events: auto; }
+}
+/* On touch: only receive events when activated by tap */
+#reading-ruler.ruler-active {
+  pointer-events: auto;
+}
+.ruler-bar {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+/* Handle spans full width, tall enough to grab easily */
+.ruler-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  min-height: 44px; /* generous touch/click target */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+  color: rgba(128,128,128,0.9);
+}
+/* Show on hover (mouse) */
+@media (hover: hover) {
+  #reading-ruler:hover .ruler-handle { opacity: 0.8; }
+  #reading-ruler:hover { cursor: grab; }
+}
+/* Show fully when activated (tap on touch) */
+#reading-ruler.ruler-active .ruler-handle {
+  opacity: 1;
+}
+.ruler-handle svg { pointer-events: none; }
+
+/* Ruler preview in settings */
+.ruler-preview-area {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 14px;
+  position: relative;
+  overflow: hidden;
+  min-height: 100px;
+  margin-bottom: 8px;
+}
+.ruler-preview-text-line {
+  font-family: var(--font-note);
+  font-size: 0.9em;
+  color: var(--fg2);
+  line-height: 1.7;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ruler-preview-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
 
 /* ===== NOTE SCREEN ===== */
 .note-header {
@@ -3262,6 +3366,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
 <!-- ===== HOME MORE MENU ===== -->
 <div id="home-more-menu" style="display:none;position:fixed;z-index:10002;background:var(--bg2);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.25);min-width:180px;user-select:none;-webkit-user-select:none;touch-action:manipulation;">
+  <div style="display:flex;align-items:center;justify-content:flex-end;padding:1px 6px 0">
+    <button id="home-more-close-btn" style="background:none;border:none;cursor:pointer;padding:2px 6px;color:var(--fg);font-size:1.1em;font-weight:bold;line-height:1;touch-action:manipulation;opacity:0.7" aria-label="Close menu">✕</button>
+  </div>
   <button id="home-more-search-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:12px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;line-height:1;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <span style="pointer-events:none">Search notes</span>
@@ -3658,6 +3765,14 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
   </div>
 
+  <!-- Reading ruler (fixed overlay, not part of note content) -->
+  <div id="reading-ruler" aria-hidden="true">
+    <div class="ruler-bar" id="ruler-bar"></div>
+    <div class="ruler-handle" id="ruler-handle">
+      <svg width="40" height="16" viewBox="0 0 40 16" fill="currentColor"><circle cx="8" cy="5" r="2.2"/><circle cx="20" cy="5" r="2.2"/><circle cx="32" cy="5" r="2.2"/><circle cx="8" cy="11" r="2.2"/><circle cx="20" cy="11" r="2.2"/><circle cx="32" cy="11" r="2.2"/></svg>
+    </div>
+  </div>
+
   <!-- Quiet mode More FAB — top-right, only visible in quiet mode -->
   <button id="quiet-more-fab" aria-label="More options">
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
@@ -3947,6 +4062,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   -webkit-user-select:none;
   touch-action:manipulation;
 ">
+  <div style="display:flex;align-items:center;justify-content:flex-end;padding:1px 6px 0;position:sticky;top:0;background:var(--bg2);z-index:2">
+    <button id="more-menu-close-btn" style="background:none;border:none;cursor:pointer;padding:2px 6px;color:var(--fg);font-size:1.1em;font-weight:bold;line-height:1;touch-action:manipulation;opacity:0.7" aria-label="Close menu">✕</button>
+  </div>
   <!-- Hidden toolbar buttons will be inserted here dynamically -->
   <div id="toolbar-more-hidden-items"></div>
   <!-- Divider — shown only when hidden items are present -->
@@ -4010,6 +4128,21 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <span style="pointer-events:none;flex:1">Find in note</span>
   </button>
 
+  <!-- Reading ruler toggle -->
+  <button id="more-ruler-btn" style="
+    display:none;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="8" x2="22" y2="8" stroke-opacity="0.3"/><line x1="2" y1="16" x2="22" y2="16" stroke-opacity="0.3"/></svg>
+    <span id="more-ruler-label" style="pointer-events:none;flex:1">Reading ruler</span>
+  </button>
+
   <!-- Theme switcher group -->
   <div id="more-theme-divider-top" style="height:1px;background:var(--border);margin:2px 0"></div>
   <button id="more-theme-light-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
@@ -4040,7 +4173,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <rect x="3" y="3" width="18" height="18" rx="3"/>
       <line x1="8" y1="12" x2="16" y2="12"/>
     </svg>
-    <span style="pointer-events:none;flex:1">Uncheck all checkboxes</span>
+    <span id="more-uncheck-label" style="pointer-events:none;flex:1">Uncheck / unstrikethrough all</span>
   </button>
   <!-- Copy as plain text item -->
   <button id="more-copy-plain-btn" style="
@@ -4095,6 +4228,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none;flex:1">Share note</span>
   </button>
+  <div id="more-menu-fade">more ▼</div>
 </div>
 
 <!-- ===== TAP TO SPEAK OVERLAY ===== -->
@@ -4761,6 +4895,69 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
     </div>
 
+
+    <!-- Reading Ruler settings section -->
+    <div class="settings-section" id="ruler-settings-section">
+    <div class="settings-section-header">
+      <div class="settings-label">Reading Ruler</div>
+      <svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="settings-section-body">
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Show ruler toggle in More menu</div>
+          <div class="settings-row-desc">Adds a Reading ruler on/off item to the note editor More menu.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show reading ruler toggle in More menu">
+          <input type="checkbox" id="ruler-enabled-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <!-- Preview -->
+      <div class="settings-row-label" style="margin-top:8px">Preview</div>
+      <div class="ruler-preview-area" id="ruler-preview-area">
+        <div class="ruler-preview-text-line">The quick brown fox jumps over the lazy dog</div>
+        <div class="ruler-preview-text-line">Pack my box with five dozen liquor jugs</div>
+        <div class="ruler-preview-text-line">How vexingly quick daft zebras jump</div>
+        <div class="ruler-preview-bar" id="ruler-preview-bar"></div>
+      </div>
+
+      <!-- Color -->
+      <div class="settings-subsection-title" style="margin-top:4px">Ruler Color</div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="color-swatch-row" id="ruler-color-swatches">
+          <button class="settings-color-swatch" data-value="#808080" style="background:#808080" title="Gray (default)"></button>
+          <button class="settings-color-swatch" data-value="#e83535" style="background:#e83535" title="Red"></button>
+          <button class="settings-color-swatch" data-value="#e07b2a" style="background:#e07b2a" title="Orange"></button>
+          <button class="settings-color-swatch" data-value="#e0c020" style="background:#e0c020" title="Gold"></button>
+          <button class="settings-color-swatch" data-value="#4a9e6b" style="background:#4a9e6b" title="Green"></button>
+          <button class="settings-color-swatch" data-value="#3b82c4" style="background:#3b82c4" title="Blue"></button>
+          <button class="settings-color-swatch" data-value="#8b5cf6" style="background:#8b5cf6" title="Violet"></button>
+          <button class="settings-color-swatch" data-value="#e05090" style="background:#e05090" title="Rose"></button>
+          <button class="settings-color-swatch" data-value="#1a1a1a" style="background:#1a1a1a" title="Black"></button>
+          <button class="custom-color-btn" id="ccp-btn-ruler-color" data-rowkey="ruler-color" title="Custom color">+</button>
+          <span class="swatch-hex-label" id="hex-label-ruler-color">#808080</span>
+        </div>
+      </div>
+
+      <!-- Opacity -->
+      <div class="settings-row range-row" style="margin-top:8px">
+        <div class="settings-row-label">Transparency <span id="ruler-opacity-val">60</span>%</div>
+        <input type="range" id="ruler-opacity-slider" min="0" max="100" step="1" value="60" style="width:100%">
+      </div>
+      <div class="settings-row-desc" style="margin-top:-8px">0% = fully opaque, 100% = invisible</div>
+
+      <!-- Thickness -->
+      <div class="settings-row range-row" style="margin-top:8px">
+        <div class="settings-row-label">Thickness <span id="ruler-thickness-val">6</span>px</div>
+        <input type="range" id="ruler-thickness-slider" min="2" max="80" step="1" value="6" style="width:100%">
+      </div>
+
+    </div>
+    </div>
+
     <div class="modal-close-row">
       <div class="settings-btn-row">
         <button class="settings-cancel-btn" id="settings-cancel-btn-bottom">Cancel</button>
@@ -5214,7 +5411,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.690';
+const APP_VERSION = '0.700';
 
 
 
@@ -5324,6 +5521,12 @@ const DEFAULT_SETTINGS = {
   sortBy: 'viewedAt',           // sort key: viewedAt/editedAt/createdAt/name
   showNoteFab: true,            // show floating + button in note editor
   retainQuietMode: false,       // keep quiet mode on when navigating between notes
+  rulerEnabled: false,          // show reading ruler toggle in More menu
+  rulerVisible: false,          // ruler currently on (sticky)
+  rulerColor: '#808080',        // hex color
+  rulerOpacity: 60,             // 0-100
+  rulerThickness: 6,            // px, 2-80
+  rulerPosition: 33,            // % of note viewport height, 5-90
   smartIndentBlankLine: false,  // insert blank line before each new smart-indent item
   sortDesc: true,               // direction toggle: true=newest/A-Z first, false=oldest/Z-A first
   noteMarginLeft: 0,            // extra left margin for note content area (px)
@@ -5580,6 +5783,9 @@ function applySettings() {
   // Note editor FAB visibility
   var _noteFab = document.getElementById('note-fab');
   if (_noteFab) _noteFab.style.display = settings.showNoteFab !== false ? 'flex' : 'none';
+  // Reading ruler
+  applyRuler();
+
   // Speak button appearance
   var _speakBtn = document.getElementById('speak-btn');
   var _speakLbl = document.getElementById('speak-btn-label');
@@ -7022,6 +7228,7 @@ function openNote(id, speakDelay) {
     startInView = !!settings.lastViewMode && n.content && n.content.trim().length > 0;
   }
   setViewMode(startInView, true); // true = suppress focus to avoid triggering keyboard-open on open
+  applyRuler(); // show ruler if enabled
   // Trigger find-in-note if note was opened from search results
   if (_pendingSearchScroll) {
     var _termToFind = _pendingSearchScroll;
@@ -7700,6 +7907,9 @@ function importNotes(file) {
 }
 
 function goHome() {
+  // Hide ruler when leaving note
+  var _ruler = document.getElementById('reading-ruler');
+  if (_ruler) _ruler.classList.remove('ruler-visible');
   if (settings.retainQuietMode !== true) clearReadingMode();
   stopSpeaking();
   var _banner = document.getElementById('tap-to-speak-banner');
@@ -8640,6 +8850,9 @@ function init() {
     var menu = document.getElementById('home-more-menu');
     if (menu) menu.style.display = 'none';
   }
+  document.getElementById('home-more-close-btn').addEventListener('click', function() {
+    document.getElementById('home-more-menu').style.display = 'none';
+  });
   document.getElementById('home-more-btn').addEventListener('click', function(e) {
     e.stopPropagation();
     var menu = document.getElementById('home-more-menu');
@@ -9383,6 +9596,18 @@ function init() {
     // Rebuild hidden items fresh every open so mode-based visibility is current
     rebuildMoreMenuItems();
     updateMoreThemeLabels(); // sync checkmarks to current theme
+    // Show/hide bottom fade based on whether menu is scrollable
+    setTimeout(function() {
+      var fade = document.getElementById('more-menu-fade');
+      if (fade) {
+        var scrollable = menu.scrollHeight > menu.clientHeight + 4;
+        fade.style.display = scrollable ? 'flex' : 'none';
+        menu.onscroll = function() {
+          var atBottom = menu.scrollTop + menu.clientHeight >= menu.scrollHeight - 8;
+          fade.style.display = (scrollable && !atBottom) ? 'flex' : 'none';
+        };
+      }
+    }, 0);
     var rect = btn.getBoundingClientRect();
     // Position menu below the button (toolbars are at top)
     menu.style.display = 'block';
@@ -9403,6 +9628,7 @@ function init() {
     moreMenuOpen = false;
   }
 
+  document.getElementById('more-menu-close-btn').addEventListener('click', function() { closeMoreMenu(); });
   document.getElementById('toolbar-more-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   var _quietFab = document.getElementById('quiet-more-fab');
   if (_quietFab) {
@@ -10586,9 +10812,11 @@ function init() {
       settings.customColors[_ccpRowKey]=_ccpColor;
       // Map rowKey to settingKey
       var keyMap={'light-bg':'lightBgColor','light-fg':'lightFgColor',
-                  'dark-bg':'darkBgColor','dark-fg':'darkFgColor','accent':'accentColor'};
+                  'dark-bg':'darkBgColor','dark-fg':'darkFgColor','accent':'accentColor',
+                  'ruler-color':'rulerColor','highlight-color':'highlightColor'};
       var settingKey=keyMap[_ccpRowKey];
       if(settingKey) settings[settingKey]=_ccpColor;
+      if(_ccpRowKey==='ruler-color') { applyRuler(); }
       // Update the + button appearance
       var btn=document.getElementById('ccp-btn-'+_ccpRowKey);
       if(btn){
@@ -10748,6 +10976,37 @@ function init() {
     settings.smartIndentBlankLine = this.checked;
     updateSaveBtnState();
   });
+  // Reading ruler controls
+  document.getElementById('ruler-enabled-toggle').addEventListener('change', function() {
+    settings.rulerEnabled = this.checked;
+    applyRuler();
+    updateSaveBtnState();
+  });
+  document.getElementById('ruler-opacity-slider').addEventListener('input', function() {
+    settings.rulerOpacity = parseInt(this.value);
+    applyRuler();
+    updateSaveBtnState();
+  });
+  document.getElementById('ruler-thickness-slider').addEventListener('input', function() {
+    settings.rulerThickness = parseInt(this.value);
+    applyRuler();
+    updateSaveBtnState();
+  });
+  document.querySelectorAll('#ruler-color-swatches .settings-color-swatch').forEach(function(sw) {
+    sw.addEventListener('click', function() {
+      settings.rulerColor = sw.dataset.value;
+      applyRuler();
+      updateSaveBtnState();
+    });
+  });
+  document.getElementById('more-ruler-btn').addEventListener('click', function() {
+    settings.rulerVisible = !settings.rulerVisible;
+    saveSettings();
+    applyRuler();
+    closeMoreMenu();
+  });
+  initRulerDrag();
+
   document.getElementById('retain-quiet-mode-toggle').addEventListener('change', function() {
     settings.retainQuietMode = this.checked;
     updateSaveBtnState();
@@ -10818,12 +11077,12 @@ function init() {
     var doStrike = settings.checkStrikethrough !== false;
 
     if (isChecked) {
-      // Uncheck: [x] → [ ]
-      var unchecked = line.replace(/\[x\]/i, '[ ]');
+      // Uncheck: [x] → [ ]  and  [x:color] → [ :color]
+      var unchecked = line
+        .replace(/\[x:([a-z]+)\]/gi, '[ :$1]')  // colored: [x:red] → [ :red]
+        .replace(/\[x\]/i, '[ ]');               // plain: [x] → [ ]
       if (doStrike && unchecked !== line) {
-        // Only strip ~~ if the body is fully wrapped by auto-strikethrough
-        // i.e. body starts AND ends with ~~ (not partial/intentional strikethrough)
-        var bodyMatch = unchecked.match(/^(\[[ x]\]\s*)(.*?)$/is);
+        var bodyMatch = unchecked.match(/^(\[[ x][^\]]*\]\s*)(.*?)$/is);
         var body = bodyMatch ? bodyMatch[2] : '';
         if (body.startsWith('~~') && body.endsWith('~~')) {
           unchecked = unchecked.replace(/~~([^~\n]*)~~/g, '$1');
@@ -10831,11 +11090,13 @@ function init() {
       }
       lines[lineIndex] = unchecked;
     } else {
-      // Check: [ ] or [] → [x]
-      var checked = line.replace(/\[ \]|\[\]/, '[x]');
+      // Check: [ ] → [x]  and  [ :color] → [x:color]
+      var checked = line
+        .replace(/\[ :([a-z]+)\]/gi, '[x:$1]')  // colored: [ :red] → [x:red]
+        .replace(/\[ \]|\[\]/, '[x]');           // plain: [ ] → [x]
       if (doStrike) {
-        checked = checked.replace(/^(\[x\]\s*)(.+)$/, function(m, prefix, text) {
-          if (text.indexOf('~~') !== -1) return m; // has any strikethrough — skip
+        checked = checked.replace(/^(\[[x ][^\]]*\]\s*)(.+)$/, function(m, prefix, text) {
+          if (text.indexOf('~~') !== -1) return m;
           return prefix + '~~' + text + '~~';
         });
       }
@@ -11464,7 +11725,13 @@ function init() {
   document.getElementById('check-mode-btn').addEventListener('click', function() {
     if (!isViewMode) return;
     if (checkMode) { exitCheckMode(); return; }
-    // Deactivate select mode if active — confusing to have both on at once
+    // If blocks are selected: one-shot toggle on selected checkbox lines
+    if (selectMode && selectedBlocks.size > 0) {
+      toggleCheckStateOnSelection();
+      return;
+    }
+    // No selection: enter persistent check-tap mode
+    // (deactivate select mode first if somehow active with no blocks)
     if (selectMode) {
       selectMode = false;
       clearSelectedBlocks();
@@ -11518,7 +11785,10 @@ function init() {
     }
 
     var core = stripAllFormatting(line);
-    var isCheckbox = /^\[[ x]\]/i.test(core);
+    // Match: [ ]/[x] plain, [ :color]/[x:color] colored checkboxes
+    var isCheckbox = /^\[[ x]\]/i.test(core)
+                  || /^\[x?:[a-z]+\]/i.test(core)
+                  || /^\[ ?:[a-z]+\]/i.test(core);
     var isHyphenItem = /^- /.test(core);
 
     if (!isCheckbox && !isHyphenItem) {
@@ -12110,9 +12380,13 @@ function updateToolbarScrollbar() {
 
   if (scrollWidth <= clientWidth) {
     thumb.style.display = 'none';
-    // drag handle hidden via CSS @media (hover:hover) — no JS needed
+    var _dh = document.getElementById('toolbar-drag-handle');
+    if (_dh) _dh.style.display = 'none';
     return;
   }
+  // Restore drag handle (CSS body.has-mouse shows it when applicable)
+  var _dh2 = document.getElementById('toolbar-drag-handle');
+  if (_dh2) _dh2.style.display = '';
   thumb.style.display = 'block';
   // Proportional thumb position (original behavior)
   var thumbWidth = Math.max(20, Math.round((clientWidth / scrollWidth) * trackWidth));
@@ -13037,6 +13311,157 @@ function _performDrop(target, position) {
   _scrollToMoveSelected();
 }
 
+
+// ===== READING RULER =====
+function hexToRgba(hex, alpha) {
+  var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return 'rgba(128,128,128,' + alpha + ')';
+  return 'rgba(' + parseInt(result[1],16) + ',' + parseInt(result[2],16) + ',' + parseInt(result[3],16) + ',' + alpha + ')';
+}
+
+function applyRuler() {
+  var ruler = document.getElementById('reading-ruler');
+  var bar   = document.getElementById('ruler-bar');
+  var prev  = document.getElementById('ruler-preview-bar');
+  if (!ruler || !bar) return;
+  var color     = settings.rulerColor     || '#808080';
+  var opacity   = (settings.rulerOpacity  !== undefined ? settings.rulerOpacity  : 60) / 100;
+  var thickness = settings.rulerThickness !== undefined ? settings.rulerThickness : 6;
+  var position  = settings.rulerPosition  !== undefined ? settings.rulerPosition  : 33;
+  var rgba = hexToRgba(color, opacity);
+  bar.style.background = rgba;
+  bar.style.height = thickness + 'px';
+  ruler.style.height = thickness + 'px';
+  ruler.style.top = position + 'vh';
+  var noteActive = !!(document.getElementById('note-screen') &&
+                   document.getElementById('note-screen').classList.contains('active'));
+  var show = !!(settings.rulerEnabled && settings.rulerVisible && noteActive);
+  ruler.classList.toggle('ruler-visible', show);
+  var moreBtn = document.getElementById('more-ruler-btn');
+  var moreLabel = document.getElementById('more-ruler-label');
+  if (moreBtn) {
+    moreBtn.style.display = settings.rulerEnabled ? 'flex' : 'none';
+    if (moreLabel) moreLabel.textContent = settings.rulerVisible ? '\u2713 Reading ruler' : '   Reading ruler';
+  }
+  if (prev) {
+    prev.style.background = rgba;
+    prev.style.height = thickness + 'px';
+  }
+  var opVal = document.getElementById('ruler-opacity-val');
+  var thVal = document.getElementById('ruler-thickness-val');
+  var opSl  = document.getElementById('ruler-opacity-slider');
+  var thSl  = document.getElementById('ruler-thickness-slider');
+  var enTog = document.getElementById('ruler-enabled-toggle');
+  if (opVal) opVal.textContent = settings.rulerOpacity !== undefined ? settings.rulerOpacity : 60;
+  if (thVal) thVal.textContent = thickness;
+  if (opSl)  opSl.value  = settings.rulerOpacity !== undefined ? settings.rulerOpacity : 60;
+  if (thSl)  thSl.value  = thickness;
+  if (enTog) enTog.checked = !!settings.rulerEnabled;
+  document.querySelectorAll('#ruler-color-swatches .settings-color-swatch').forEach(function(sw) {
+    sw.classList.toggle('selected', sw.dataset.value === color);
+  });
+  var hexLabel = document.getElementById('hex-label-ruler-color');
+  if (hexLabel) hexLabel.textContent = color;
+}
+
+function initRulerDrag() {
+  var ruler  = document.getElementById('reading-ruler');
+  var handle = document.getElementById('ruler-handle');
+  if (!ruler || !handle) return;
+  var _dragging = false;
+  var _startY = 0;
+  var _startTop = 0;
+  var _activateTimeout = null;
+
+  ruler.addEventListener('click', function(e) {
+    if (_dragging) return;
+    ruler.classList.add('ruler-active');
+    clearTimeout(_activateTimeout);
+    _activateTimeout = setTimeout(function() {
+      if (!_dragging) ruler.classList.remove('ruler-active');
+    }, 2500);
+    e.stopPropagation();
+  });
+
+  // On mouse devices: drag from anywhere on the ruler (not just handle)
+  ruler.addEventListener('mousedown', function(e) {
+    _dragging = true;
+    _startY = e.clientY;
+    _startTop = ruler.getBoundingClientRect().top;
+    e.preventDefault();
+    function onMove(e) {
+      var pct = Math.max(5, Math.min(90, ((_startTop + (e.clientY - _startY)) / window.innerHeight) * 100));
+      ruler.style.top = pct + 'vh';
+      settings.rulerPosition = Math.round(pct);
+    }
+    function onUp() {
+      _dragging = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      saveSettings();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  handle.addEventListener('mousedown', function(e) {
+    if (!ruler.classList.contains('ruler-active')) return;
+    _dragging = true;
+    _startY = e.clientY;
+    _startTop = ruler.getBoundingClientRect().top;
+    e.preventDefault();
+    function onMove(e) {
+      var newTop = _startTop + (e.clientY - _startY);
+      var pct = Math.max(5, Math.min(90, (newTop / window.innerHeight) * 100));
+      ruler.style.top = pct + 'vh';
+      settings.rulerPosition = Math.round(pct);
+    }
+    function onUp() {
+      _dragging = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      saveSettings();
+      clearTimeout(_activateTimeout);
+      _activateTimeout = setTimeout(function() { ruler.classList.remove('ruler-active'); }, 1000);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  var _touchId = null;
+  handle.addEventListener('touchstart', function(e) {
+    if (!ruler.classList.contains('ruler-active')) return;
+    if (e.touches.length !== 1) return;
+    _dragging = true;
+    _touchId = e.touches[0].identifier;
+    _startY = e.touches[0].clientY;
+    _startTop = ruler.getBoundingClientRect().top;
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!_dragging || _touchId === null) return;
+    var touch = null;
+    for (var i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === _touchId) { touch = e.touches[i]; break; }
+    }
+    if (!touch) return;
+    e.preventDefault();
+    var pct = Math.max(5, Math.min(90, (((_startTop + (touch.clientY - _startY)) / window.innerHeight) * 100)));
+    ruler.style.top = pct + 'vh';
+    settings.rulerPosition = Math.round(pct);
+  }, { passive: false });
+
+  document.addEventListener('touchend', function(e) {
+    if (!_dragging) return;
+    _dragging = false;
+    _touchId = null;
+    saveSettings();
+    clearTimeout(_activateTimeout);
+    _activateTimeout = setTimeout(function() { ruler.classList.remove('ruler-active'); }, 1000);
+  });
+}
+
 function _updateMoveBtns() {
   var upBtn  = document.getElementById('move-step-up-btn');
   var dnBtn  = document.getElementById('move-step-down-btn');
@@ -13294,6 +13719,64 @@ function toggleCheckboxOnBlocks() {
   updateViewOnlyBtns();
 }
 
+// Toggle check state on selected blocks (one-shot, no check mode entered)
+function toggleCheckStateOnSelection() {
+  if (!currentNoteId || !notes[currentNoteId] || selectedBlocks.size === 0) return;
+  var lines = (notes[currentNoteId].content || '').split('\n');
+  var found = 0;
+  var changed = false;
+
+  selectedBlocks.forEach(function(lineIndex) {
+    if (lineIndex >= lines.length) return;
+    var line = lines[lineIndex];
+    var core = stripFormattingForDetect(line);
+
+    // Detect checkbox-ish: plain [ ]/[x], colored [ :color]/[x:color]
+    var isCheckbox = /^\[[ x]\]/i.test(core)
+                  || /^\[x?:[a-z]+\]/i.test(core)
+                  || /^\[ ?:[a-z]+\]/i.test(core);
+    var isHyphen   = /^- /.test(core);
+    if (!isCheckbox && !isHyphen) return;
+    found++;
+
+    if (isCheckbox) {
+      // Dispatch click on the rendered SVG — reuses existing toggle logic
+      var viewer = document.getElementById('note-viewer');
+      var lineDiv = viewer ? viewer.querySelector('[data-line="' + lineIndex + '"]') : null;
+      var cb = lineDiv ? lineDiv.querySelector('.viewer-checkbox') : null;
+      if (cb) {
+        if (!changed) pushUndo(); // push undo once before first change
+        changed = true;
+        cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        // Re-read lines since dispatch may have updated content
+        lines = (notes[currentNoteId].content || '').split('\n');
+      }
+    } else {
+      // Hyphen item: toggle strikethrough on body
+      if (!changed) pushUndo();
+      changed = true;
+      var hyphenIdx = line.indexOf('- ');
+      if (hyphenIdx === -1) return;
+      var before = line.slice(0, hyphenIdx + 2);
+      var after  = line.slice(hyphenIdx + 2);
+      if (/^~~.+~~$/.test(after.trim())) {
+        lines[lineIndex] = before + after.replace(/^(\s*)~~(.+)~~(\s*)$/, '$1$2$3');
+      } else {
+        lines[lineIndex] = before + '~~' + after.replace(/~~/g, '') + '~~';
+      }
+      notes[currentNoteId].content = lines.join('\n');
+      document.getElementById('note-editor').value = notes[currentNoteId].content;
+      saveNotes();
+      document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+      renderBlockSelections();
+    }
+  });
+
+  if (found === 0) {
+    showToast('No checklist items in selection', false);
+  }
+}
+
 // ===== CHECK MODE =====
 var checkMode = false;
 
@@ -13314,37 +13797,80 @@ function exitCheckMode() {
   if (viewer) viewer.classList.remove('check-mode');
 }
 
+// Strips outer formatting wrappers to find the core content of a line.
+// Used by unCheckAll and other functions that need to detect line type.
+// Same logic as the local stripAllFormatting in the viewer click handler.
+function stripFormattingForDetect(s) {
+  var prev;
+  do {
+    prev = s;
+    s = s.replace(/^#{1,6}\s+/, '')
+      .replace(/^\*\*/, '').replace(/\*\*$/, '')
+      .replace(/^\*/, '').replace(/\*$/, '')
+      .replace(/^_/, '').replace(/_$/, '')
+      .replace(/^~~/, '').replace(/~~$/, '')
+      .replace(/^==/, '').replace(/==$/, '')
+      .replace(/^\{[a-z]+\}/i, '').replace(/\{\/?[a-z]+\}$/i, '')
+      .trim();
+  } while (s !== prev);
+  return s;
+}
+
 function unCheckAll() {
   if (!currentNoteId || !notes[currentNoteId]) return;
   var content = notes[currentNoteId].content || '';
-  if (content.indexOf('[x]') === -1 && content.indexOf('[X]') === -1) {
-    showToast('No checked items to uncheck', false);
+  var lines = content.split('\n');
+
+  // Quick check: anything to do at all?
+  var hasAny = lines.some(function(line) {
+    return /\[x[:\]]/i.test(line) || /^\s*- ~~/.test(line);
+  });
+  if (!hasAny) {
+    showToast('No checked or struck-through items to clear', false);
     return;
   }
-  var count = (content.match(/\[x\]/gi) || []).length;
-  var label = count === 1 ? '1 checked item' : count + ' checked items';
+
   showConfirm(
-    'Uncheck all?',
-    'Uncheck ' + label + '? Strikethroughs on those lines will also be removed.',
-    'Uncheck all',
+    'Uncheck / unstrikethrough all?',
+    'Clear all checked checkboxes and struck-through list items?',
+    'Clear all',
     function() {
       pushUndo();
-      var lines = content.split('\n');
-      lines = lines.map(function(line) {
-        // Replace [x] with [ ]
-        var unchecked = line.replace(/\[x\]/gi, '[ ]');
-        // Remove any strikethrough markers added by auto-strikethrough
-        if (unchecked !== line) {
-          unchecked = unchecked.replace(/~~([^~\n]*)~~/g, '$1');
+      var newLines = lines.map(function(line) {
+        var core = stripFormattingForDetect(line);
+        // Checked checkbox: uncheck and remove outermost ~~ from whole line
+        // Handles plain [x] and colored [x:color]
+        if (/^\[x\]/i.test(core) || /^\[x:[a-z]+\]/i.test(core)) {
+          var unchecked = line
+            .replace(/\[x:([a-z]+)\]/gi, '[ :$1]')  // colored: [x:red] → [ :red]
+            .replace(/\[x\]/gi, '[ ]');               // plain: [x] → [ ]
+          return unchecked.replace(/~~([^~\n]*)~~/g, '$1');
         }
-        return unchecked;
+        // Struck hyphen item: only remove outermost ~~ if body is fully wrapped
+        if (/^- /.test(core)) {
+          var hyphenIdx = line.indexOf('- ');
+          if (hyphenIdx !== -1) {
+            var before = line.slice(0, hyphenIdx + 2);
+            var body   = line.slice(hyphenIdx + 2);
+            if (/^~~.+~~$/.test(body.trim())) {
+              return before + body.replace(/^(\s*)~~(.+)~~(\s*)$/, '$1$2$3');
+            }
+          }
+        }
+        return line;
       });
-      notes[currentNoteId].content = lines.join('\n');
+      // Count actual changes made
+      var changed = 0;
+      for (var ci = 0; ci < lines.length; ci++) {
+        if (lines[ci] !== newLines[ci]) changed++;
+      }
+      notes[currentNoteId].content = newLines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
       document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
       renderBlockSelections();
       updateViewOnlyBtns();
+      showToast('Cleared ' + changed + (changed === 1 ? ' item' : ' items'), false);
     },
     false, 'Cancel', null, 'centered'
   );
