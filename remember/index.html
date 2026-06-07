@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.759 -->
+<!-- Remember App - Version 0.765 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.759
+  Version 0.765
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1575,6 +1575,75 @@ body.reading-mode #note-bottom-bar { display: none !important; }
   pointer-events: none;
 }
 
+
+/* ===== JUMP TO HEADING BAR ===== */
+#jump-to-bar {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  flex-direction: column;
+  max-height: 55vh;
+  padding-bottom: calc(env(safe-area-inset-bottom, 34px) + 8px);
+}
+#jump-to-bar.visible { display: flex; }
+#jump-to-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 6px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+#jump-to-bar-title {
+  font-family: var(--font-body);
+  font-size: 0.82em;
+  color: var(--fg3);
+  user-select: none;
+  -webkit-user-select: none;
+}
+#jump-to-bar-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg3);
+  font-size: 1em;
+  font-weight: bold;
+  padding: 2px 6px;
+  touch-action: manipulation;
+  line-height: 1;
+}
+#jump-to-list {
+  overflow-y: auto;
+  flex: 1;
+}
+.jump-to-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  font-family: var(--font-note);
+  color: var(--fg);
+  padding: 10px 16px;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.jump-to-item:last-child { border-bottom: none; }
+.jump-to-item.level-1 { font-size: calc(var(--font-ui) * 1.1); font-weight: 700; }
+.jump-to-item.level-2 { font-size: var(--font-ui); font-weight: 600; padding-left: 28px; }
+.jump-to-item.level-3 { font-size: calc(var(--font-ui) * 0.95); padding-left: 42px; }
+.jump-to-item.level-4 { font-size: calc(var(--font-ui) * 0.9); padding-left: 56px; color: var(--fg2); }
+.jump-to-item.level-5, .jump-to-item.level-6 { font-size: calc(var(--font-ui) * 0.85); padding-left: 70px; color: var(--fg3); }
+@media (hover: hover) { .jump-to-item:hover { background: var(--bg3); } }
 
 /* ===== FONT FACE BAR ===== */
 #font-face-bar {
@@ -4144,6 +4213,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 
   <!-- Font Face quick bar -->
+  <!-- Jump to heading bar -->
+  <div id="jump-to-bar">
+    <div id="jump-to-bar-header">
+      <span id="jump-to-bar-title">Jump to heading</span>
+      <button id="jump-to-bar-close" aria-label="Close">✕</button>
+    </div>
+    <div id="jump-to-list"></div>
+  </div>
+
   <div id="font-face-bar">
     <div id="font-face-bar-title">
       <span>Note Font Face</span>
@@ -4575,6 +4653,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
     <span style="pointer-events:none;flex:1">Find in note</span>
+  </button>
+
+  <!-- Jump to heading item (only shown when note has headings) -->
+  <button id="more-jump-to-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="15" y2="12"/>
+      <line x1="3" y1="18" x2="18" y2="18"/>
+      <polyline points="18 15 21 18 18 21"/>
+    </svg>
+    <span style="pointer-events:none;flex:1">Jump to heading…</span>
   </button>
 
   <!-- Font face item -->
@@ -5946,7 +6035,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.759';
+const APP_VERSION = '0.765';
 
 
 
@@ -10200,6 +10289,7 @@ function init() {
     // Rebuild hidden items fresh every open so mode-based visibility is current
     rebuildMoreMenuItems();
     updateThemeBar(); // sync active state on theme bar buttons
+    updateJumpToBtn(); // show/hide based on whether note has headings
     // Show/hide bottom fade based on whether menu is scrollable
     setTimeout(function() {
       var fade = document.getElementById('more-menu-fade');
@@ -11690,7 +11780,7 @@ function init() {
     closeMoreMenu();
   });
   function closeAllBars() {
-    var bars = ['font-size-bar','theme-bar','font-face-bar'];
+    var bars = ['font-size-bar','theme-bar','font-face-bar','jump-to-bar'];
     bars.forEach(function(id) {
       var b = document.getElementById(id);
       if (b) b.classList.remove('visible');
@@ -11719,6 +11809,54 @@ function init() {
       p.classList.toggle('active', p.dataset.font === cur);
     });
   }
+  // Jump to heading bar
+  function buildJumpToList() {
+    var list = document.getElementById('jump-to-list');
+    if (!list) return;
+    list.innerHTML = '';
+    var viewer = document.getElementById('note-viewer');
+    if (!viewer) return;
+    var headings = viewer.querySelectorAll('.viewer-h1,.viewer-h2,.viewer-h3,.viewer-h4,.viewer-h5,.viewer-h6');
+    if (headings.length === 0) {
+      list.innerHTML = '<div style="padding:16px;color:var(--fg3);font-family:var(--font-body);font-size:var(--font-ui)">No headings found. Add headings using # syntax.</div>';
+      return;
+    }
+    headings.forEach(function(el) {
+      var level = parseInt(el.className.replace('viewer-h','')) || 1;
+      var lineDiv = el.parentElement;
+      var btn = document.createElement('button');
+      btn.className = 'jump-to-item level-' + level;
+      btn.textContent = el.textContent || '(untitled)';
+      btn.addEventListener('click', function() {
+        closeAllBars();
+        if (lineDiv) lineDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      list.appendChild(btn);
+    });
+  }
+  function updateJumpToBtn() {
+    var btn = document.getElementById('more-jump-to-btn');
+    if (!btn) return;
+    // Check raw note content for headings (works in both view and edit mode)
+    var hasHeadings = false;
+    if (currentNoteId && notes[currentNoteId]) {
+      hasHeadings = /^#{1,6} /m.test(notes[currentNoteId].content || '');
+    }
+    btn.style.display = hasHeadings ? 'flex' : 'none';
+  }
+  document.getElementById('more-jump-to-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    closeAllBars();
+    if (!isViewMode) setViewMode(true);
+    setTimeout(function() {
+      buildJumpToList();
+      document.getElementById('jump-to-bar').classList.add('visible');
+    }, isViewMode ? 0 : 80);
+  });
+  document.getElementById('jump-to-bar-close').addEventListener('click', function() {
+    document.getElementById('jump-to-bar').classList.remove('visible');
+  });
+
   document.getElementById('more-font-face-btn').addEventListener('click', function() {
     closeAllBars();
     updateFontFaceBar();
@@ -13671,6 +13809,85 @@ function createInitialNotes() {
   notes[colorSamplerId] = {
     id: colorSamplerId, name: 'Color Sampler', content: colorSamplerContent,
     autoNamed: false, createdAt: now + 1, editedAt: now + 1, viewedAt: now + 1
+  };
+
+  // Heading Sampler — demonstrates Jump to Heading feature
+  var headingSamplerId = 'note-heading-sampler';
+  var headingSamplerContent = [
+    '# The Remember Field Guide',
+    '',
+    'This note demonstrates heading navigation.',
+    'Open the More menu (⋯) and tap **Jump to heading…** to jump directly to any section.',
+    '',
+    '## Getting Started',
+    '',
+    '### Creating Notes',
+    'Tap the + button on the home screen to create a new note. The title is set automatically from the first line of your content.',
+    '',
+    '### Opening Notes',
+    'Tap any note in the list to open it. Notes remember which mode you left them in.',
+    '',
+    '### Editing vs Viewing',
+    'Toggle between Edit mode (keyboard visible) and View mode (formatted, links active) using the pencil button.',
+    '',
+    '## Writing & Formatting',
+    '',
+    '### Headings',
+    'Start a line with # for H1, ## for H2, up to ###### for H6. Headings enable Jump to Heading navigation.',
+    '',
+    '#### Heading Level 4',
+    'Useful for sub-sections within a sub-section.',
+    '',
+    '##### Heading Level 5',
+    'Getting quite specific now.',
+    '',
+    '###### Heading Level 6',
+    'The deepest heading level available.',
+    '',
+    '### Bold and Italic',
+    'Wrap text in **double asterisks** for bold, or use the B button in View mode.',
+    '',
+    '### Strikethrough',
+    'Wrap in ~~double tildes~~ for strikethrough. Great for crossing off completed tasks.',
+    '',
+    '### Checkboxes',
+    '[ ] Start a line with [ ] for a checkbox.',
+    '[x] This one is already checked. Tap it in View mode to toggle.',
+    '',
+    '## Organisation',
+    '',
+    '### Folders',
+    'Long-press or right-click the home screen to create a folder. Drag notes in, or use Move to…',
+    '',
+    '### Favourites',
+    'Long-press a note and choose Favourite to pin it near the top of your list.',
+    '',
+    '### Search',
+    'Use Find in note (More menu) to search within the current note.',
+    '',
+    '## Speaking & Dictation',
+    '',
+    '### Speak',
+    'Tap the Speak button to have your note read aloud. The current sentence highlights as it is read.',
+    '',
+    '### Dictation',
+    'Tap the microphone button to dictate text directly into the note.',
+    '',
+    '## Settings & Customisation',
+    '',
+    '### Font & Size',
+    'Choose your note font and size from the More menu (Text size, Font face) or in Settings.',
+    '',
+    '### Advanced Typography',
+    'Settings → Text → Advanced Typography: adjust line spacing, letter spacing, word spacing, ligatures, and number style.',
+    '',
+    '### Themes',
+    'Switch between Light, Auto, and Dark mode from the More menu (Light / Dark).',
+    '',
+  ].join('\n');
+  notes[headingSamplerId] = {
+    id: headingSamplerId, name: 'The Remember Field Guide', content: headingSamplerContent,
+    autoNamed: false, createdAt: now, editedAt: now + 4, viewedAt: now + 4
   };
 
   saveNotes();
