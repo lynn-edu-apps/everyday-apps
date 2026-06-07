@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.778 -->
+<!-- Remember App - Version 0.782 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.778
+  Version 0.782
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1583,26 +1583,31 @@ body.reading-mode #note-bottom-bar { display: none !important; }
 .viewer-line { position: relative; }
 .outline-chevron {
   display: none;
-  position: absolute;
-  left: -22px;
-  top: 0;
-  bottom: 0;
-  margin: auto 0;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
+  /* inline-block flows with text baseline — reliable on iOS/Android */
+  vertical-align: middle;
+  /* Match checkbox size exactly (1.1em), but use font-size:1em so the
+     glyph inside is the same size as the surrounding text */
+  width: 1.1em;
+  height: 1.1em;
+  /* Negative margin compensates for padding so layout doesn't shift */
+  margin-right: 0.1em;
+  margin-left: -0.4em;
+  /* Extra invisible padding for a larger tap target without changing visual size */
+  padding: 0.3em;
+  box-sizing: content-box;
+  text-align: center;
+  line-height: 1.1em;
   cursor: pointer;
   color: var(--accent);
-  font-size: 0.85em;
+  font-size: 1em;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
-  z-index: 2;
-  border-radius: 3px;
+  border-radius: 4px;
   transition: transform 0.15s;
+  transform-origin: center center;
 }
-body.outline-mode .outline-chevron { display: flex; }
+body.outline-mode .outline-chevron { display: inline-block; }
 .outline-chevron.collapsed { transform: rotate(-90deg); }
 .viewer-line.outline-hidden { display: none !important; }
 .outline-badge {
@@ -1618,7 +1623,7 @@ body.outline-mode .outline-chevron { display: flex; }
   user-select: none;
   -webkit-user-select: none;
 }
-body.outline-mode #note-viewer { padding-left: 24px; }
+body.outline-mode #note-viewer { padding-left: 0; } /* no longer needed since chevron is inline */
 
 /* ===== JUMP TO HEADING BAR ===== */
 #jump-to-bar {
@@ -4189,6 +4194,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </svg>
       </button>
       <!-- Print + Export — less-used, at far right requiring scroll -->
+      <!-- Print note -->
+      <button class="icon-btn kb-hide" id="print-btn" tabindex="-1" aria-label="Print note" title="Print note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+        </svg>
+      </button>
+
       <!-- Delete note — far right, requires scroll to reach -->
       <button class="icon-btn" id="delete-note-btn" tabindex="-1" aria-label="Delete note" title="Delete note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -4801,6 +4813,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </button>
 
   <!-- Export note item -->
+  <!-- Delete note — also in More menu for easy access -->
+  <button id="more-delete-note-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <polyline points="3 6 5 6 21 6" style="pointer-events:none"/>
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" style="pointer-events:none"/>
+      <path d="M10 11v6M14 11v6" style="pointer-events:none"/>
+      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" style="pointer-events:none"/>
+    </svg>
+    <span style="pointer-events:none;flex:1">Delete note</span>
+  </button>
+
   <button id="more-export-btn" style="
     display:flex;align-items:center;gap:12px;
     width:100%;padding:13px 18px;
@@ -6184,7 +6207,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.778';
+const APP_VERSION = '0.782';
 
 
 
@@ -6693,6 +6716,8 @@ function notePreview(content) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
     if (line.length > 0) {
+      // Strip heading markers so # doesn't appear in preview
+      line = line.replace(/^#{1,6}\s+/, '');
       // Truncate raw text before rendering to avoid very long previews
       var truncated = line.length > 120 ? line.slice(0, 120) + '…' : line;
       // Render through urlsToLinks (no line wrappers) for formatting + checkboxes
@@ -8188,6 +8213,8 @@ function nameFromContent(content) {
     var line = lines[i].trim();
     // Strip leading checkbox markers ([ ], [], [x]) so they don't appear in title
     line = line.replace(/^\[[ xX]?\]\s*/, '');
+    // Strip heading markers (# ## etc) so they don't appear in title
+    line = line.replace(/^#{1,6}\s+/, '');
     // Strip markdown formatting characters so they don't appear in title
     line = line.replace(/~~([^~]+)~~/g, '$1');  // strikethrough
     line = line.replace(/\*\*([^*]+)\*\*/g, '$1');  // bold
@@ -9952,6 +9979,7 @@ function init() {
   document.getElementById('stop-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('stop-btn').addEventListener('click', stopSpeaking);
   document.getElementById('delete-note-btn').addEventListener('click', deleteCurrentNote);
+  document.getElementById('more-delete-note-btn').addEventListener('click', function() { closeMoreMenu(); deleteCurrentNote(); });
 
   // ===== MORE MENU =====
   // Map of hideable button IDs to their display labels and icons for Settings
@@ -9972,12 +10000,13 @@ function init() {
     { id: 'toggle-checkbox-btn',      label: 'Toggle checkbox' },
     { id: 'check-mode-btn',          label: 'Check state' },
     { id: 'find-btn',                label: 'Find in note' },
+    { id: 'print-btn',               label: 'Print' },
     { id: 'delete-note-btn',        label: 'Delete note' },
     { id: 'reading-mode-btn',       label: 'Quiet mode' },
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'delete-note-btn', 'reading-mode-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'print-btn', 'delete-note-btn', 'reading-mode-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   function getEffectiveOrder() {
@@ -10445,6 +10474,12 @@ function init() {
     rebuildMoreMenuItems();
     updateThemeBar(); // sync active state on theme bar buttons
     updateJumpToBtn(); // show/hide based on whether note has headings
+    // Hide view-only items in edit mode
+    var _viewOnlyMoreItems = ['more-jump-to-btn', 'more-outline-btn'];
+    _viewOnlyMoreItems.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = isViewMode ? '' : 'none';
+    });
     // Show/hide bottom fade based on whether menu is scrollable
     setTimeout(function() {
       var fade = document.getElementById('more-menu-fade');
@@ -11120,6 +11155,7 @@ function init() {
       printWin.close();
     }, 400);
   }
+  document.getElementById('print-btn').addEventListener('click', function() { doPrintNote(); });
   document.getElementById('more-print-btn').addEventListener('click', function() { closeMoreMenu(); doPrintNote(); });
   document.getElementById('copy-btn').addEventListener('click', function() {
     var ed = document.getElementById('note-editor');
@@ -12120,7 +12156,8 @@ function init() {
       chev.className = 'outline-chevron' + (_collapsedLines.has(idx) ? ' collapsed' : '');
       chev.textContent = '\u2228';
       chev.dataset.parentLine = idx;
-      lineDiv.appendChild(chev);
+      // Insert BEFORE first child so chevron appears inline before the checkbox/hyphen
+      lineDiv.insertBefore(chev, lineDiv.firstChild);
       if (_collapsedLines.has(idx)) {
         descendants.forEach(function(di) {
           var dDiv = document.querySelector('.viewer-line[data-line="' + di + '"]');
