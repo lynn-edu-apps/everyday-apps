@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.819 -->
+<!-- Remember App - Version 0.820 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.819
+  Version 0.820
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -6516,7 +6516,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.819';
+const APP_VERSION = '0.820';
 
 
 
@@ -12719,6 +12719,35 @@ function init() {
     }
     return descendants;
   }
+  // ── Heading collapse helpers ─────────────────────────────────────────
+  function isHeadingRaw(rawLine) {
+    return /^#{1,6} /.test(rawLine);
+  }
+  function getHeadingLevel(rawLine) {
+    var m = rawLine.match(/^(#{1,6}) /);
+    return m ? m[1].length : 0;
+  }
+  function getHeadingDescendants(lines, parentIdx) {
+    var level = getHeadingLevel(lines[parentIdx]);
+    if (level === 0) return [];
+    var descendants = [];
+    for (var i = parentIdx + 1; i < lines.length; i++) {
+      if (isHeadingRaw(lines[i]) && getHeadingLevel(lines[i]) <= level) break;
+      descendants.push(i);
+    }
+    while (descendants.length > 0 && lines[descendants[descendants.length-1]].trim() === '') {
+      descendants.pop();
+    }
+    return descendants;
+  }
+  function isParentLine(rawLine) {
+    return isCheckboxRaw(rawLine) || isHeadingRaw(rawLine);
+  }
+  function getParentDescendants(lines, idx) {
+    if (isHeadingRaw(lines[idx])) return getHeadingDescendants(lines, idx);
+    return getDescendants(lines, idx);
+  }
+
   // Re-apply outline chevrons whenever the viewer content is replaced
   // (e.g. after checkbox click, strikethrough toggle, etc.)
   (function() {
@@ -12751,8 +12780,8 @@ function init() {
       var idx = parseInt(lineDiv.dataset.line);
       if (isNaN(idx)) return;
       var rawLine = lines[idx] || '';
-      if (!isCheckboxRaw(rawLine)) return;
-      var descendants = getDescendants(lines, idx);
+      if (!isParentLine(rawLine)) return;
+      var descendants = getParentDescendants(lines, idx);
       if (descendants.length === 0) return;
       var chev = document.createElement('span');
       chev.className = 'outline-chevron' + (_collapsedLines.has(idx) ? ' collapsed' : '');
@@ -12778,12 +12807,13 @@ function init() {
         var pLines = (notes[currentNoteId].content || '').split('\n');
 
         if (e.altKey && e.shiftKey) {
-          // Alt+Shift+Click: toggle parent check state, apply same to all descendants
-          var isCurrentlyChecked = /^\s*\[x\]/i.test(pLines[pIdx])
-            || /^\s*\[x:[a-z]+\]/i.test(pLines[pIdx])
-            || /^\s*- ~~/.test(pLines[pIdx]);
-          var newState = !isCurrentlyChecked;
-          checkUncheckChildren(pIdx, newState);
+          // Alt+Shift+Click: toggle check state (skip headings — no check state)
+          if (!isHeadingRaw(pLines[pIdx])) {
+            var isCurrentlyChecked = /^\s*\[x\]/i.test(pLines[pIdx])
+              || /^\s*\[x:[a-z]+\]/i.test(pLines[pIdx])
+              || /^\s*- ~~/.test(pLines[pIdx]);
+            checkUncheckChildren(pIdx, !isCurrentlyChecked);
+          }
           return;
         }
 
@@ -12811,15 +12841,15 @@ function init() {
     var lines = (notes[currentNoteId].content || '').split('\n');
     var parents = [];
     lines.forEach(function(line, idx) {
-      if (!isCheckboxRaw(line)) return;
-      if (getDescendants(lines, idx).length > 0) parents.push(idx);
+      if (!isParentLine(line)) return;
+      if (getParentDescendants(lines, idx).length > 0) parents.push(idx);
     });
     return parents;
   }
   function getAllDescendantParents(lines, parentIdx) {
     var result = [];
-    getDescendants(lines, parentIdx).forEach(function(di) {
-      if (isCheckboxRaw(lines[di]) && getDescendants(lines, di).length > 0) {
+    getParentDescendants(lines, parentIdx).forEach(function(di) {
+      if (isParentLine(lines[di]) && getParentDescendants(lines, di).length > 0) {
         result.push(di);
         getAllDescendantParents(lines, di).forEach(function(x) { result.push(x); });
       }
@@ -12880,7 +12910,7 @@ function init() {
   function checkUncheckChildren(parentIdx, checkState) {
     if (!currentNoteId || !notes[currentNoteId]) return;
     var lines = (notes[currentNoteId].content || '').split('\n');
-    var desc = getDescendants(lines, parentIdx);
+    var desc = getParentDescendants(lines, parentIdx);
     pushUndo();
     // Also apply to the parent itself if it is a checkbox
     if (isCheckboxRaw(lines[parentIdx])) setCheckState(lines, parentIdx, checkState);
@@ -12908,19 +12938,28 @@ function init() {
       var raw = lines[idx] || '';
       var indent = raw.match(/^(\s*)/)[1];
       var level = Math.floor(indent.length / 4);
-      var core = raw.slice(indent.length).replace(/^\[[ x]\]\s*/i, '').replace(/^-\s+/, '').trim();
+      var core = raw.slice(indent.length)
+        .replace(/^#{1,6}\s+/, '')
+        .replace(/^\[[ x]\]\s*/i, '')
+        .replace(/^-\s+/, '').trim();
       var prefix = level > 0 ? '\u00a0\u00a0\u00a0\u00a0'.repeat(level) : '';
       var label = prefix + core.slice(0, 50);
       var isCollapsed = _collapsedLines.has(idx);
       var row = document.createElement('div');
       row.className = 'outline-parent-row';
+      var isHeadRow = isHeadingRaw(lines[idx] || '');
+      var headingMark = isHeadRow ? ('#'.repeat(getHeadingLevel(lines[idx])) + ' ') : '';
+      var checkBtns = isHeadRow ? '' :
+        '<button class="outline-parent-action-btn check-btn" data-action="check" data-idx="' + idx + '">&#9745; All</button>'
+        + '<button class="outline-parent-action-btn uncheck-btn" data-action="uncheck" data-idx="' + idx + '">&#9744; All</button>';
       row.innerHTML =
-        '<span class="outline-parent-label">' + (isCollapsed ? '\u203a ' : '\u2228 ') + label + '</span>'
+        '<span class="outline-parent-label">' + (isCollapsed ? '\u203a ' : '\u2228 ')
+        + '<span style="opacity:0.5;font-size:0.85em;margin-right:3px">' + headingMark + '</span>'
+        + label + '</span>'
         + '<div class="outline-parent-actions">'
         + '<button class="outline-parent-action-btn" data-action="expand" data-idx="' + idx + '">Expand</button>'
         + '<button class="outline-parent-action-btn" data-action="collapse" data-idx="' + idx + '">Collapse</button>'
-        + '<button class="outline-parent-action-btn check-btn" data-action="check" data-idx="' + idx + '">&#9745; All</button>'
-        + '<button class="outline-parent-action-btn uncheck-btn" data-action="uncheck" data-idx="' + idx + '">&#9744; All</button>'
+        + checkBtns
         + '</div>';
       list.appendChild(row);
     });
@@ -15183,8 +15222,7 @@ function createInitialNotes() {
     '# Project Planner Sampler',
     '',
     'Turn on Settings → Note Display → Collapsible outline, then view this note.',
-    'Tap the ∨ chevron next to any top-level task to collapse its sub-tasks.',
-    'Works with both checkboxes [ ] and hyphen - list items.',
+    'Tap the ∨ chevron to collapse/expand. Works on headings, checkboxes, and hyphen items!',
     '',
     '- - - - -',
     '',
