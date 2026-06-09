@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.867 -->
+<!-- Remember App - Version 0.882 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.867
+  Version 0.882
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1583,6 +1583,8 @@ body.reading-mode #note-bottom-bar { display: none !important; }
 /* ===== COLLAPSIBLE OUTLINE ===== */
 .viewer-line { position: relative; }
 .viewer-line.blank-viewer-line { height: calc(var(--blank-line-height-factor, 1) * var(--font-size-editor, 20px)); display: block; }
+.viewer-line.paragraph-end { border-bottom: 1px solid var(--border); padding-bottom: 0.35em; }
+.viewer-line.block-rule { border-bottom: 1px solid var(--border); }
 .outline-chevron {
   display: none;
   position: absolute;
@@ -5859,6 +5861,50 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-row">
         <div>
+          <div class="settings-row-label">Paragraph rules (view mode)</div>
+          <div class="settings-row-desc">Show a subtle horizontal line between paragraphs in View mode. A paragraph boundary is a non-blank line followed by one or more blank lines.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show paragraph rules in view mode">
+          <input type="checkbox" id="paragraph-rules-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">List item rules (view mode)</div>
+          <div class="settings-row-desc">Show a subtle horizontal line below each checkbox or hyphen list item in View mode.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show list item rules in view mode">
+          <input type="checkbox" id="block-rules-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Bullets for hyphens (view mode)</div>
+          <div class="settings-row-desc">Display leading hyphens ( - ) as bullet points (•) in View mode. The note text is unchanged.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show bullets for hyphen list items in view mode">
+          <input type="checkbox" id="bullets-for-hyphens-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row" id="multi-level-bullets-row" style="padding-left:28px;display:none">
+        <div>
+          <div class="settings-row-label">Multi-level bullet styles</div>
+          <div class="settings-row-desc">Cycle bullet style by indent level: • ◦ ▪ (repeating), like Word.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Multi-level bullet styles">
+          <input type="checkbox" id="multi-level-bullets-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row">
+        <div>
           <div class="settings-row-label">Spaces per indent / unindent</div>
           <div class="settings-row-desc">Number of spaces added or removed when you press Tab / Shift+Tab, or tap the Indent / Unindent buttons.</div>
         </div>
@@ -5876,6 +5922,14 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div>
       <div class="settings-section-body">
         <div class="settings-row-desc" style="padding:0 0 8px">Add extra space to the left or right edges. Useful on wide screens to center content. Does not affect toolbars.</div>
+
+        <div class="settings-row range-row">
+          <div class="settings-row-label">Indent width in view mode <span class="range-val" id="view-indent-width-val">1.5 em</span></div>
+          <input type="range" class="settings-range" id="view-indent-width-range" min="0.5" max="4.0" step="0.25" value="1.5">
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-desc" style="padding:0 0 6px">How much each indent level is indented in View mode. Larger values make nested lists more dramatic. Does not change note text.</div>
+        </div>
 
         <div class="settings-row range-row">
           <div class="settings-row-label">Maximum characters per line</div>
@@ -6726,7 +6780,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.867';
+const APP_VERSION = '0.882';
 
 
 
@@ -6855,10 +6909,15 @@ const DEFAULT_SETTINGS = {
   listMarginLeft: 0,            // extra left margin for notes list (px)
   listMarginRight: 0,           // extra right margin for notes list (px)
   charsPerLine: 0,              // max line width in ch units; 0 = unlimited
+  viewIndentWidth: 1.5,          // em per indent level in view mode (visual only)
   highlightColor: '#ffe066',    // color used for ==highlight== rendering
   checkboxColor: 'gray',        // default checkbox color (named palette key)
   customColor: '#9b59b6',       // user-defined custom color for {custom} tag
-  sortGroupByDate: true         // show date group headings when sorting by date
+  sortGroupByDate: true,        // show date group headings when sorting by date
+  showParagraphRules: false,     // show horizontal rules between paragraphs in view mode
+  showBlockRules: false,         // show horizontal rule below each checkbox/hyphen list item in view mode
+  showBulletsForHyphens: false,  // render leading '- ' as bullet • in view mode
+  showMultiLevelBullets: false   // cycle bullet style by indent level (•, ◦, ▪)
 };
 
 let settings = Object.assign({}, DEFAULT_SETTINGS);
@@ -6886,6 +6945,7 @@ var selectMode = false;      // whether block-select mode is active
 var isAllSelected = false;   // whether select-all is currently active
 var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
 var updateViewOnlyBtns = function() {}; // replaced in init
+var isCheckboxRaw = function() { return false; }; // replaced in init
 var applyOutlineMode = function() {}; // replaced in init
 var closeAllBars = function() {}; // replaced in init
 var updateTagFilterIndicator = function() {}; // replaced in init
@@ -7152,6 +7212,16 @@ function applySettings() {
   var _showSpeakTog = document.getElementById('show-speak-btn-toggle');
   var _outlineTog = document.getElementById('outline-mode-toggle');
   if (_outlineTog) _outlineTog.checked = !!settings.outlineMode;
+  var _parRulesTog = document.getElementById('paragraph-rules-toggle');
+  if (_parRulesTog) _parRulesTog.checked = !!settings.showParagraphRules;
+  var _blockRulesTog = document.getElementById('block-rules-toggle');
+  if (_blockRulesTog) _blockRulesTog.checked = !!settings.showBlockRules;
+  var _bulletsTog = document.getElementById('bullets-for-hyphens-toggle');
+  if (_bulletsTog) _bulletsTog.checked = !!settings.showBulletsForHyphens;
+  var _multiLevelTog = document.getElementById('multi-level-bullets-toggle');
+  if (_multiLevelTog) _multiLevelTog.checked = !!settings.showMultiLevelBullets;
+  var _multiLevelRow = document.getElementById('multi-level-bullets-row');
+  if (_multiLevelRow) _multiLevelRow.style.display = settings.showBulletsForHyphens ? '' : 'none';
   var _iconOnlyTog  = document.getElementById('speak-icon-only-toggle');
   var _accentTog    = document.getElementById('speak-accent-color-toggle');
   if (_showSpeakTog) _showSpeakTog.checked = settings.showSpeakBtn !== false;
@@ -7785,12 +7855,7 @@ function toggleSelectItem(id) {
   checks.forEach(function(el) {
     el.classList.toggle('checked', _selectedNoteIds.has(id));
   });
-  // Enable/disable action buttons
-  var hasSel = _selectedNoteIds.size > 0;
-  var moveBtn = document.getElementById('home-select-move-btn');
-  var delBtn  = document.getElementById('home-select-delete-btn');
-  if (moveBtn) moveBtn.disabled = !hasSel;
-  if (delBtn)  delBtn.disabled  = !hasSel;
+  // Buttons stay enabled so toast can fire when nothing is selected
 }
 
 function selectAllInCurrentFolder() {
@@ -8562,7 +8627,33 @@ function urlsToLinks(text, addLineWrappers) {
           + '</div>';
       }
       if (!line) return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
-      return '<div class="viewer-line" data-line="' + i + '">' + line + '</div>';
+      // View indent width: compute indent level from raw leading spaces, apply as padding-left
+      var _viw = settings.viewIndentWidth !== undefined ? settings.viewIndentWidth : 1.5;
+      var _indSp = settings.indentSpaces || 2;
+      var _rawLeading = rawLine.match(/^(\s*)/)[1].length;
+      var _indentLevel = _rawLeading > 0 ? Math.floor(_rawLeading / _indSp) : 0;
+      var _indentStyle = _indentLevel > 0 ? ' style="padding-left:' + (_indentLevel * _viw) + 'em"' : '';
+      // Strip leading spaces from rendered line when applying visual indent
+      if (_indentLevel > 0) line = line.replace(/^\s+/, '');
+      // Bullets for hyphens: replace leading '- ' with bullet in rendered line
+      if (settings.showBulletsForHyphens && /^(\s*)- /.test(rawLine)) {
+        var _bulletChar = '•'; // default: filled circle
+        if (settings.showMultiLevelBullets) {
+          var _indentSpaces = (settings.indentSpaces || 2);
+          var _leadingSpaces = rawLine.match(/^(\s*)/)[1].length;
+          var _level = Math.floor(_leadingSpaces / _indentSpaces);
+          var _bullets = ['•', '▪', '◦']; // •, ▪, ◦
+          _bulletChar = _bullets[_level % 3];
+        }
+        line = line.replace(/^(\s*)- /, '$1' + _bulletChar + ' ');
+      }
+      // Paragraph rules: mark non-blank lines immediately before a blank line
+      var nextRaw = text.split('\n')[i + 1];
+      var isParEnd = settings.showParagraphRules && nextRaw !== undefined && nextRaw.trim() === '';
+      var parEndClass = isParEnd ? ' paragraph-end' : '';
+      // Block rules: rule after checkbox-ish lines only
+      var blockRuleClass = (settings.showBlockRules && isCheckboxRaw(rawLine)) ? ' block-rule' : '';
+      return '<div class="viewer-line' + parEndClass + blockRuleClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + '</div>';
     }).join('');
   }
   return escaped;
@@ -9857,6 +9948,12 @@ function openSettings() {
   document.getElementById('line-height-val').textContent = parseFloat(settings.lineHeight).toFixed(1);
 
   // Characters per line slider
+  var _viwRange = document.getElementById('view-indent-width-range');
+  var _viwVal   = document.getElementById('view-indent-width-val');
+  var _viwCur   = settings.viewIndentWidth !== undefined ? settings.viewIndentWidth : 1.5;
+  if (_viwRange) _viwRange.value = _viwCur;
+  if (_viwVal)   _viwVal.textContent = _viwCur + ' em';
+
   var _cplRange = document.getElementById('chars-per-line-range');
   var _cplVal   = document.getElementById('chars-per-line-val');
   if (_cplRange) _cplRange.value = settings.charsPerLine || 0;
@@ -10557,14 +10654,11 @@ function init() {
   // Select notes bar
   document.getElementById('home-select-all-btn').addEventListener('click', function() {
     selectAllInCurrentFolder();
-    var moveBtn = document.getElementById('home-select-move-btn');
-    var delBtn  = document.getElementById('home-select-delete-btn');
-    if (moveBtn) moveBtn.disabled = false;
-    if (delBtn)  delBtn.disabled  = false;
+
   });
   document.getElementById('home-select-cancel-btn').addEventListener('click', exitSelectNotesMode);
   document.getElementById('home-select-delete-btn').addEventListener('click', function() {
-    if (_selectedNoteIds.size === 0) return;
+    if (_selectedNoteIds.size === 0) { showToast('Select at least one item first', false); return; }
     var n = _selectedNoteIds.size;
     showConfirm('Delete ' + n + ' item' + (n !== 1 ? 's' : ''), 'This cannot be undone.', 'Delete', function() {
       _selectedNoteIds.forEach(function(id) {
@@ -10576,7 +10670,7 @@ function init() {
     }, false, 'Cancel');
   });
   document.getElementById('home-select-move-btn').addEventListener('click', function() {
-    if (_selectedNoteIds.size === 0) return;
+    if (_selectedNoteIds.size === 0) { showToast('Select at least one item first', false); return; }
     var ids = Array.from(_selectedNoteIds);
     openFolderPicker(function(targetId) {
       ids.forEach(function(id) {
@@ -12445,6 +12539,20 @@ function init() {
     applySettings();
   });
 
+  // View indent width slider
+  (function() {
+    var rangeEl = document.getElementById('view-indent-width-range');
+    var valEl   = document.getElementById('view-indent-width-val');
+    if (!rangeEl) return;
+    rangeEl.addEventListener('input', function() {
+      var v = parseFloat(this.value);
+      settings.viewIndentWidth = v;
+      if (valEl) valEl.textContent = v + ' em';
+      applySettings();
+      updateSaveBtnState();
+    });
+  })();
+
   // Characters per line slider
   (function() {
     var rangeEl = document.getElementById('chars-per-line-range');
@@ -13501,7 +13609,7 @@ function init() {
     var m = rawLine.match(/^(\s*)/);
     return m ? m[1].length : 0;
   }
-  function isCheckboxRaw(rawLine) {
+  isCheckboxRaw = function(rawLine) {
     var core = rawLine.replace(/^\s*/, '');
     return /^\[[ x]\]/i.test(core)
         || /^\[x?:[a-z]+\]/i.test(core)
@@ -13971,6 +14079,39 @@ function init() {
   if (_outlineModeToggle) _outlineModeToggle.addEventListener('change', function() {
     settings.outlineMode = this.checked;
     if (!settings.outlineMode) _collapsedLines.clear();
+    applySettings();
+    updateSaveBtnState();
+  });
+
+  var _parRulesToggle = document.getElementById('paragraph-rules-toggle');
+  if (_parRulesToggle) _parRulesToggle.addEventListener('change', function() {
+    settings.showParagraphRules = this.checked;
+    applySettings();
+    updateSaveBtnState();
+  });
+
+  var _blockRulesToggle = document.getElementById('block-rules-toggle');
+  if (_blockRulesToggle) _blockRulesToggle.addEventListener('change', function() {
+    settings.showBlockRules = this.checked;
+    applySettings();
+    updateSaveBtnState();
+  });
+
+  var _bulletsToggle = document.getElementById('bullets-for-hyphens-toggle');
+  if (_bulletsToggle) _bulletsToggle.addEventListener('change', function() {
+    settings.showBulletsForHyphens = this.checked;
+    var mlRow = document.getElementById('multi-level-bullets-row');
+    if (mlRow) mlRow.style.display = this.checked ? '' : 'none';
+    if (!this.checked) settings.showMultiLevelBullets = false;
+    var mlTog = document.getElementById('multi-level-bullets-toggle');
+    if (mlTog) mlTog.checked = !!settings.showMultiLevelBullets;
+    applySettings();
+    updateSaveBtnState();
+  });
+
+  var _multiLevelBulletsToggle = document.getElementById('multi-level-bullets-toggle');
+  if (_multiLevelBulletsToggle) _multiLevelBulletsToggle.addEventListener('change', function() {
+    settings.showMultiLevelBullets = this.checked;
     applySettings();
     updateSaveBtnState();
   });
@@ -16279,6 +16420,115 @@ function createInitialNotes() {
     autoNamed: false, createdAt: now + 7, editedAt: now + 35, viewedAt: now + 35
   };
   notes[imgSamplerId].folderId = sampleFolderId;
+
+  // Bullet Sampler note — showcases Bullets for Hyphens + Multi-level + List Item Rules
+  var bulletSamplerId = 'note-bullet-sampler';
+  var bulletSamplerContent = [
+    '# Bullet Styles Sampler',
+    '',
+    'Try these settings in Settings → Note Display:',
+    '- Bullets for hyphens (view mode)',
+    '- Multi-level bullet styles',
+    '- List item rules (view mode)',
+    '',
+    'Then view this note to see the effect.',
+    '',
+    '- - - - -',
+    '',
+    '## Weekly Groceries',
+    '',
+    '- Fruit and vegetables',
+    '  - Apples',
+    '  - Bananas',
+    '  - Salad leaves',
+    '    - Rocket',
+    '    - Spinach',
+    '    - Watercress',
+    '  - Tomatoes',
+    '  - Avocados',
+    '- Dairy',
+    '  - Milk',
+    '  - Butter',
+    '  - Cheddar cheese',
+    '    - Mild',
+    '    - Extra mature',
+    '  - Greek yoghurt',
+    '- Bakery',
+    '  - Sourdough loaf',
+    '  - Bagels',
+    '    - Plain',
+    '    - Sesame',
+    '- Pantry',
+    '  - Olive oil',
+    '  - Pasta',
+    '    - Spaghetti',
+    '    - Penne',
+    '  - Tinned tomatoes',
+    '  - Lentils',
+    '',
+    '- - - - -',
+    '',
+    '## Home Projects',
+    '',
+    '- Fix things',
+    '  - Kitchen',
+    '    - Replace dripping tap washer',
+    '    - Tighten loose cabinet hinge',
+    '    - Clean extractor fan filter',
+    '  - Bathroom',
+    '    - Re-grout shower tiles',
+    '    - Replace shower head',
+    '  - Garden',
+    '    - Repair fence panel',
+    '    - Replace broken paving slab',
+    '    - Fix gate latch',
+    '- Redecorate',
+    '  - Living room',
+    '    - Choose a new paint colour',
+    '    - Buy rollers and dust sheets',
+    '    - Paint walls',
+    '    - Touch up skirting boards',
+    '  - Hallway',
+    '    - Strip old wallpaper',
+    '    - Fill cracks',
+    '    - Hang new wallpaper',
+    '',
+    '- - - - -',
+    '',
+    '## Weekend Plans',
+    '',
+    '- Saturday morning',
+    '  - Farmers market',
+    '    - Bread from the artisan baker',
+    '    - Honey from the local stall',
+    '    - Fresh flowers',
+    '  - Coffee with friends',
+    '    - Text Sarah to confirm',
+    '    - Book table at the café',
+    '- Saturday afternoon',
+    '  - Walk in the park',
+    '    - Charge camera battery',
+    '    - Download a podcast',
+    '  - Tidy the shed',
+    '    - Sort tools by type',
+    '    - Throw away broken items',
+    '- Sunday',
+    '  - Cook a big batch meal',
+    '    - Choose recipe',
+    '      - Chilli con carne',
+    '      - Vegetable curry',
+    '      - Minestrone soup',
+    '    - Write shopping list',
+    '    - Portion and freeze',
+    '  - Rest and read',
+    '    - Pick next book from the pile',
+    '    - Make a cup of tea',
+  ].join('\n');
+  notes[bulletSamplerId] = {
+    id: bulletSamplerId, name: 'Bullet Styles Sampler', content: bulletSamplerContent,
+    autoNamed: false, createdAt: now + 8, editedAt: now + 8, viewedAt: now + 8
+  };
+  notes[bulletSamplerId].folderId = sampleFolderId;
 
   saveFolders();
   saveNotes();
