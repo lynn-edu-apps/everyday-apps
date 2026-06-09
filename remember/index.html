@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.855 -->
+<!-- Remember App - Version 0.857 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.855
+  Version 0.857
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -6728,7 +6728,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.855';
+const APP_VERSION = '0.857';
 
 
 
@@ -7551,8 +7551,8 @@ function countFolderContents(folderId) {
 }
 
 function createFolder(name, parentId) {
-  if (getFolderDepth(parentId) >= 3) {
-    showToast('Maximum folder depth (3) reached', false);
+  if (getFolderDepth(parentId) >= 8) {
+    showToast('Maximum folder depth (8) reached', false);
     return null;
   }
   var id = genFolderId();
@@ -7578,8 +7578,8 @@ function moveFolderTo(folderId, newParentId) {
     if (id === folderId) { showToast('Cannot move folder into itself', false); return; }
     id = folders[id] ? folders[id].parentId : null;
   }
-  if (getFolderDepth(newParentId) >= 3) {
-    showToast('Maximum folder depth (3) reached', false);
+  if (getFolderDepth(newParentId) >= 8) {
+    showToast('Maximum folder depth (8) reached', false);
     return;
   }
   folders[folderId].parentId = newParentId || null;
@@ -10602,6 +10602,19 @@ function init() {
     });
   }
   if (_searchClear) _searchClear.addEventListener('click', closeHomeSearch);
+  // Format a dated folder name for third-party imports
+  function makeImportFolderName(label) {
+    var d = new Date();
+    var mo = d.getMonth() + 1;
+    var day = d.getDate();
+    var yr = String(d.getFullYear()).slice(-2);
+    var hr = d.getHours();
+    var min = String(d.getMinutes()).padStart(2, '0');
+    var ampm = hr >= 12 ? 'pm' : 'am';
+    hr = hr % 12 || 12;
+    return label + ' ' + mo + '/' + day + '/' + yr + ' ' + hr + ':' + min + ampm;
+  }
+
   document.getElementById('importexport-close-btn').addEventListener('click', function() {
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
@@ -10683,15 +10696,20 @@ function init() {
         var imported = parseOPML(ev.target.result);
         if (imported.length === 0) { showToast('No outlines found in file', false); return; }
         var now = Date.now();
+        var importFolderName = makeImportFolderName('OPML Import');
+        var importFolderId = genFolderId();
+        folders[importFolderId] = { id: importFolderId, name: importFolderName, parentId: null, createdAt: now };
+        saveFolders();
         imported.forEach(function(item, i) {
           var id = makeId();
           notes[id] = { id: id, name: item.name, content: item.content,
-            autoNamed: false, createdAt: now + i, editedAt: now + i, viewedAt: now + i };
+            autoNamed: false, createdAt: now + i, editedAt: now + i, viewedAt: now + i,
+            folderId: importFolderId };
         });
         saveNotes();
         renderNotesList();
         document.getElementById('importexport-overlay').click();
-        showToast('Imported ' + imported.length + ' note' + (imported.length === 1 ? '' : 's') + ' from OPML', false);
+        showToast('Imported ' + imported.length + ' note' + (imported.length === 1 ? '' : 's') + ' into “' + importFolderName + '”', false);
       } catch(err) {
         showToast('Import failed: ' + err.message, true);
       }
@@ -10785,15 +10803,20 @@ function init() {
         var imported = parseTickTickCSV(ev.target.result);
         if (imported.length === 0) { showToast('No tasks found in file', false); return; }
         var now = Date.now();
+        var importFolderName = makeImportFolderName('TickTick Import');
+        var importFolderId = genFolderId();
+        folders[importFolderId] = { id: importFolderId, name: importFolderName, parentId: null, createdAt: now };
+        saveFolders();
         imported.forEach(function(item, i) {
           var id = makeId();
           notes[id] = { id: id, name: item.name, content: item.content,
-            autoNamed: false, createdAt: now + i, editedAt: now + i, viewedAt: now + i };
+            autoNamed: false, createdAt: now + i, editedAt: now + i, viewedAt: now + i,
+            folderId: importFolderId };
         });
         saveNotes();
         renderNotesList();
         document.getElementById('importexport-overlay').click();
-        showToast('Imported ' + imported.length + ' list' + (imported.length === 1 ? '' : 's') + ' from TickTick', false);
+        showToast('Imported ' + imported.length + ' list' + (imported.length === 1 ? '' : 's') + ' into “' + importFolderName + '”', false);
       } catch(err) {
         showToast('Import failed: ' + err.message, true);
       }
