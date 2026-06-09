@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.860 -->
+<!-- Remember App - Version 0.867 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.860
+  Version 0.867
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1182,9 +1182,6 @@ body.dark .note-viewer span.viewer-highlight {
 .folder-breadcrumb-name {
   font-weight: var(--font-weight-heading);
   color: var(--fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Select notes mode */
@@ -1584,7 +1581,8 @@ body.reading-mode #note-bottom-bar { display: none !important; }
 
 
 /* ===== COLLAPSIBLE OUTLINE ===== */
-.viewer-line { position: relative; margin-top: var(--paragraph-spacing, 0em); margin-bottom: var(--paragraph-spacing, 0em); }
+.viewer-line { position: relative; }
+.viewer-line.blank-viewer-line { height: calc(var(--blank-line-height-factor, 1) * var(--font-size-editor, 20px)); display: block; }
 .outline-chevron {
   display: none;
   position: absolute;
@@ -5521,7 +5519,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             border-radius:var(--radius-sm);
             padding:10px 14px;
             margin-bottom:10px;
-          ">The quick brown fox jumps over the lazy dog.<br>fi fl ff ffi — 1234567890</div>
+          "><div class="viewer-line">The quick brown fox jumps over the lazy dog.</div><div class="viewer-line">Pack my box with five dozen liquor jugs.</div><div class="viewer-line blank-viewer-line"></div><div class="viewer-line">Sphinx of black quartz, judge my vow.</div><div class="viewer-line">How vexingly quick daft zebras jump.</div><div class="viewer-line blank-viewer-line"></div><div class="viewer-line">fi fl ff ffi &mdash; 1234567890</div></div>
 
           <!-- Line Spacing -->
           <div class="settings-row range-row">
@@ -5529,13 +5527,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <input type="range" class="settings-range" id="line-height-range" min="1.0" max="3.0" step="0.1" value="1.5">
           </div>
 
-          <!-- Paragraph Spacing -->
+          <!-- Blank Line Height -->
           <div class="settings-row range-row">
-            <div class="settings-row-label">Paragraph Spacing <span class="range-val" id="paragraph-spacing-val">Off</span></div>
-            <input type="range" class="settings-range" id="paragraph-spacing-range" min="0" max="1.0" step="0.05" value="0">
+            <div class="settings-row-label">Blank Line Height <span class="range-val" id="paragraph-spacing-val">1 em</span></div>
+            <input type="range" class="settings-range" id="paragraph-spacing-range" min="0.5" max="3.0" step="0.1" value="1.0">
           </div>
           <div class="settings-row">
-            <div class="settings-row-desc" style="padding:0 0 4px">Extra space above and below each line in View mode. Combines with Line Spacing. 0 = off.</div>
+            <div class="settings-row-desc" style="padding:0 0 4px">Height of empty lines in View mode. Larger values add space between paragraphs. Does not affect spacing within wrapped text.</div>
           </div>
 
           <!-- Letter Spacing -->
@@ -6728,7 +6726,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.860';
+const APP_VERSION = '0.867';
 
 
 
@@ -6809,7 +6807,7 @@ const DEFAULT_SETTINGS = {
   uiFontSize: 20,
   editorFontSize: 20,
   lineHeight: 1.5,          // unitless line-height
-  paragraphSpacing: 0,      // extra margin-top/bottom per viewer-line in em; 0 = off
+  blankLineHeight: 1,       // height of blank viewer-line divs in em; 1 = same as text line
   letterSpacing: null,      // em value or null = unset
   wordSpacing: null,        // em value or null = unset
   disableLigatures: false,  // font-variant-ligatures: none when true
@@ -7127,7 +7125,7 @@ function applySettings() {
     if (_noteEditor) { _noteEditor.style.maxWidth = ''; _noteEditor.style.marginInline = ''; }
   }
   // Paragraph spacing
-  document.documentElement.style.setProperty('--paragraph-spacing', (settings.paragraphSpacing || 0) + 'em');
+  document.documentElement.style.setProperty('--blank-line-height-factor', (settings.blankLineHeight !== undefined ? settings.blankLineHeight : 1));
   // Note editor FAB visibility
   var _noteFab = document.getElementById('note-fab');
   if (_noteFab) _noteFab.style.display = settings.showNoteFab !== false ? 'flex' : 'none';
@@ -7210,6 +7208,12 @@ function applySettings() {
     advPrev.style.wordSpacing = ws;
     advPrev.style.fontVariantLigatures = flv;
     advPrev.style.fontVariantNumeric = fvn;
+    // Blank line height preview — use same calc as CSS but resolved via JS
+    var _blhFactor = (settings.blankLineHeight !== undefined ? settings.blankLineHeight : 1);
+    var _editorPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-size-editor')) || 20;
+    advPrev.querySelectorAll('.blank-viewer-line').forEach(function(vl) {
+      vl.style.height = (_blhFactor * _editorPx) + 'px';
+    });
   }
 
   // Custom colors — apply to body so they override the body.dark class variables correctly.
@@ -8557,7 +8561,8 @@ function urlsToLinks(text, addLineWrappers) {
           + '<div class="viewer-h' + level + '">' + (content || '&nbsp;') + '</div>'
           + '</div>';
       }
-      return '<div class="viewer-line" data-line="' + i + '">' + (line || '&nbsp;') + '</div>';
+      if (!line) return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
+      return '<div class="viewer-line" data-line="' + i + '">' + line + '</div>';
     }).join('');
   }
   return escaped;
@@ -14005,10 +14010,11 @@ function init() {
 
   document.getElementById('paragraph-spacing-range').addEventListener('input', function() {
     var v = parseFloat(this.value);
-    settings.paragraphSpacing = v;
+    settings.blankLineHeight = v;
     var valEl = document.getElementById('paragraph-spacing-val');
-    if (valEl) valEl.textContent = v > 0 ? String(v.toFixed(2)).replace(/\.?0+$/, '') + ' em' : 'Off';
-    applySettings(); updateSaveBtnState();
+    if (valEl) valEl.textContent = String(v.toFixed(1)).replace(/\.?0+$/, '') + ' em';
+    applySettings();
+    updateSaveBtnState();
   });
 
   function _updateLetterSpacingUI() {
@@ -14056,11 +14062,11 @@ function init() {
 
   document.getElementById('reset-adv-typography-btn').addEventListener('click', function() {
     showConfirm('Reset Advanced Typography?',
-      'Reset line spacing, paragraph spacing, letter spacing, word spacing and ligatures to defaults?',
+      'Reset line spacing, blank line height, letter spacing, word spacing and ligatures to defaults?',
       'Reset',
       function() {
         settings.lineHeight = 1.5;
-        settings.paragraphSpacing = 0;
+        settings.blankLineHeight = 1;
         settings.letterSpacing = null;
         settings.wordSpacing = null;
         settings.disableLigatures = false;
@@ -14091,9 +14097,9 @@ function init() {
     if (dlt) dlt.checked = !!settings.disableLigatures;
     var psr = document.getElementById('paragraph-spacing-range');
     var psv = document.getElementById('paragraph-spacing-val');
-    var psVal = settings.paragraphSpacing || 0;
+    var psVal = settings.blankLineHeight !== undefined ? settings.blankLineHeight : 1;
     if (psr) psr.value = psVal;
-    if (psv) psv.textContent = psVal > 0 ? String(psVal.toFixed(2)).replace(/\.?0+$/, '') + ' em' : 'Off';
+    if (psv) psv.textContent = String(psVal.toFixed(1)).replace(/\.?0+$/, '') + ' em';
     _updateLetterSpacingUI();
     _updateWordSpacingUI();
     var cur = settings.fontVariantNumeric || '';
