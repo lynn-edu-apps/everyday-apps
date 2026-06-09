@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.851 -->
+<!-- Remember App - Version 0.855 -->
 <!--
   Remember — A senior-friendly note-taking progressive web app (PWA)
-  Version 0.851
+  Version 0.855
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with Claude AI (Anthropic).
@@ -1584,7 +1584,7 @@ body.reading-mode #note-bottom-bar { display: none !important; }
 
 
 /* ===== COLLAPSIBLE OUTLINE ===== */
-.viewer-line { position: relative; }
+.viewer-line { position: relative; margin-top: var(--paragraph-spacing, 0em); margin-bottom: var(--paragraph-spacing, 0em); }
 .outline-chevron {
   display: none;
   position: absolute;
@@ -3537,7 +3537,7 @@ select.settings-select {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 5px 20px;
+  padding: 10px 20px;
   line-height: 1;
   box-sizing: border-box;
   cursor: pointer;
@@ -5529,6 +5529,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <input type="range" class="settings-range" id="line-height-range" min="1.0" max="3.0" step="0.1" value="1.5">
           </div>
 
+          <!-- Paragraph Spacing -->
+          <div class="settings-row range-row">
+            <div class="settings-row-label">Paragraph Spacing <span class="range-val" id="paragraph-spacing-val">Off</span></div>
+            <input type="range" class="settings-range" id="paragraph-spacing-range" min="0" max="1.0" step="0.05" value="0">
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-desc" style="padding:0 0 4px">Extra space above and below each line in View mode. Combines with Line Spacing. 0 = off.</div>
+          </div>
+
           <!-- Letter Spacing -->
           <div class="settings-row range-row" style="flex-wrap:wrap;gap:4px">
             <div class="settings-row-label" style="width:100%;display:flex;align-items:center;justify-content:space-between">
@@ -5870,6 +5879,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <div class="settings-section-body">
         <div class="settings-row-desc" style="padding:0 0 8px">Add extra space to the left or right edges. Useful on wide screens to center content. Does not affect toolbars.</div>
 
+        <div class="settings-row range-row">
+          <div class="settings-row-label">Maximum characters per line</div>
+          <input type="range" class="settings-range" id="chars-per-line-range" min="0" max="120" step="5" value="0">
+          <span class="range-val" id="chars-per-line-val">Off</span>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-desc" style="padding:0 0 6px">Limits how wide each line of text can be. Uses the <em>ch</em> unit (width of one character). 0 = unlimited. Recommended: 60–80 for comfortable reading.</div>
+        </div>
+
         <div class="settings-subsection-title">Note Content</div>
 
         <div class="settings-row range-row">
@@ -6095,7 +6113,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="reset-row">
       <button class="reset-defaults-btn" id="reset-defaults-btn">Reset All Settings to Defaults</button>
     </div>
-    <div class="reset-row" style="margin-top:0;padding-bottom:4px">
+    <div class="reset-row" style="margin-top:0;padding-bottom:32px">
       <button class="reset-defaults-btn" id="reinstall-samples-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Reinstall Sample Notes</button>
     </div>
     </div>
@@ -6710,7 +6728,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.851';
+const APP_VERSION = '0.855';
 
 
 
@@ -6791,6 +6809,7 @@ const DEFAULT_SETTINGS = {
   uiFontSize: 20,
   editorFontSize: 20,
   lineHeight: 1.5,          // unitless line-height
+  paragraphSpacing: 0,      // extra margin-top/bottom per viewer-line in em; 0 = off
   letterSpacing: null,      // em value or null = unset
   wordSpacing: null,        // em value or null = unset
   disableLigatures: false,  // font-variant-ligatures: none when true
@@ -6837,6 +6856,7 @@ const DEFAULT_SETTINGS = {
   noteMarginRight: 0,           // extra right margin for note content area (px)
   listMarginLeft: 0,            // extra left margin for notes list (px)
   listMarginRight: 0,           // extra right margin for notes list (px)
+  charsPerLine: 0,              // max line width in ch units; 0 = unlimited
   highlightColor: '#ffe066',    // color used for ==highlight== rendering
   checkboxColor: 'gray',        // default checkbox color (named palette key)
   customColor: '#9b59b6',       // user-defined custom color for {custom} tag
@@ -7094,6 +7114,20 @@ function applySettings() {
   document.documentElement.style.setProperty('--font-weight-heading', Math.max(parseInt(settings.uiFontWeight || 400), 700));
   document.documentElement.style.setProperty('--note-margin-left',  (settings.noteMarginLeft  || 0) + 'px');
   document.documentElement.style.setProperty('--note-margin-right', (settings.noteMarginRight || 0) + 'px');
+  // Characters per line: apply max-width in ch units to viewer and editor
+  var _cpl = settings.charsPerLine || 0;
+  if (_cpl > 0) _cpl = Math.max(15, _cpl); // minimum useful value
+  var _noteViewer = document.getElementById('note-viewer');
+  var _noteEditor = document.getElementById('note-editor');
+  if (_cpl > 0) {
+    if (_noteViewer) { _noteViewer.style.maxWidth = _cpl + 'ch'; _noteViewer.style.marginInline = 'auto'; }
+    if (_noteEditor) { _noteEditor.style.maxWidth = _cpl + 'ch'; _noteEditor.style.marginInline = 'auto'; }
+  } else {
+    if (_noteViewer) { _noteViewer.style.maxWidth = ''; _noteViewer.style.marginInline = ''; }
+    if (_noteEditor) { _noteEditor.style.maxWidth = ''; _noteEditor.style.marginInline = ''; }
+  }
+  // Paragraph spacing
+  document.documentElement.style.setProperty('--paragraph-spacing', (settings.paragraphSpacing || 0) + 'em');
   // Note editor FAB visibility
   var _noteFab = document.getElementById('note-fab');
   if (_noteFab) _noteFab.style.display = settings.showNoteFab !== false ? 'flex' : 'none';
@@ -9811,6 +9845,12 @@ function openSettings() {
   lhr.value = settings.lineHeight;
   document.getElementById('line-height-val').textContent = parseFloat(settings.lineHeight).toFixed(1);
 
+  // Characters per line slider
+  var _cplRange = document.getElementById('chars-per-line-range');
+  var _cplVal   = document.getElementById('chars-per-line-val');
+  if (_cplRange) _cplRange.value = settings.charsPerLine || 0;
+  if (_cplVal)   _cplVal.textContent = (settings.charsPerLine || 0) > 0 ? (settings.charsPerLine + ' ch') : 'Off';
+
   // Margin sliders — populate from settings
   [['note-margin-left','noteMarginLeft'],['note-margin-right','noteMarginRight'],
    ['list-margin-left','listMarginLeft'],['list-margin-right','listMarginRight']
@@ -9893,6 +9933,9 @@ function clearSettingsSearch() {
   document.querySelectorAll('#settings-sheet .settings-subsection-title').forEach(function(t) {
     t.style.display = '';
   });
+  document.querySelectorAll('#settings-sheet .settings-subsection').forEach(function(sub) {
+    sub.style.display = '';
+  });
   document.querySelectorAll('#settings-sheet .settings-row').forEach(function(row) {
     row.style.display = '';
     var arrow = row.querySelector('.settings-go-arrow');
@@ -9940,6 +9983,9 @@ function applySettingsSearch(query) {
     var secVisible = false;
     var subsecTitles = Array.from(sec.querySelectorAll('.settings-subsection-title'));
     subsecTitles.forEach(function(t) { t.style.display = 'none'; });
+    // Also hide nested subsection blocks (e.g. Advanced Typography)
+    var subsecBlocks = Array.from(sec.querySelectorAll('.settings-subsection'));
+    subsecBlocks.forEach(function(sub) { sub.style.display = 'none'; });
 
     // Check if the section header label itself matches — if so, show ALL rows
     var headerLabelEl = sec.querySelector('.settings-section-header .settings-label');
@@ -9951,6 +9997,7 @@ function applySettingsSearch(query) {
       var descEl  = row.querySelector('.settings-row-desc');
       var labelTxt = labelEl ? labelEl.textContent.toLowerCase() : '';
       var descTxt  = descEl  ? descEl.textContent.toLowerCase()  : '';
+      // Check nearest preceding subsection-title
       var prevSubsec = '';
       var prev = row.previousElementSibling;
       while (prev) {
@@ -9960,13 +10007,23 @@ function applySettingsSearch(query) {
         }
         prev = prev.previousElementSibling;
       }
+      // Also check if this row is inside a .settings-subsection — match its header label
+      var parentSubsecTxt = '';
+      var parentSub = row.closest('.settings-subsection');
+      if (parentSub) {
+        var subHdrLbl = parentSub.querySelector('.settings-subsection-header-label');
+        parentSubsecTxt = subHdrLbl ? subHdrLbl.textContent.toLowerCase() : '';
+      }
       var match = sectionHeaderMatch
         || labelTxt.indexOf(q) !== -1
         || descTxt.indexOf(q) !== -1
-        || prevSubsec.indexOf(q) !== -1;
+        || prevSubsec.indexOf(q) !== -1
+        || parentSubsecTxt.indexOf(q) !== -1;
       row.style.display = match ? '' : 'none';
       if (match) {
         secVisible = true;
+        // Show and expand the parent subsection block if this row is inside one
+        if (parentSub) { parentSub.style.display = ''; parentSub.classList.add('open'); }
         // Restore nearest preceding subsection title for context
         var prevEl = row.previousElementSibling;
         while (prevEl) {
@@ -12354,6 +12411,20 @@ function init() {
     applySettings();
   });
 
+  // Characters per line slider
+  (function() {
+    var rangeEl = document.getElementById('chars-per-line-range');
+    var valEl   = document.getElementById('chars-per-line-val');
+    if (!rangeEl) return;
+    rangeEl.addEventListener('input', function() {
+      var v = parseInt(this.value);
+      settings.charsPerLine = v;
+      valEl.textContent = v > 0 ? (v + ' ch') : 'Off';
+      applySettings();
+      updateSaveBtnState();
+    });
+  })();
+
   // Margin sliders
   [['note-margin-left','noteMarginLeft'],['note-margin-right','noteMarginRight'],
    ['list-margin-left','listMarginLeft'],['list-margin-right','listMarginRight']
@@ -13903,6 +13974,14 @@ function init() {
     applySettings(); updateSaveBtnState();
   });
 
+  document.getElementById('paragraph-spacing-range').addEventListener('input', function() {
+    var v = parseFloat(this.value);
+    settings.paragraphSpacing = v;
+    var valEl = document.getElementById('paragraph-spacing-val');
+    if (valEl) valEl.textContent = v > 0 ? String(v.toFixed(2)).replace(/\.?0+$/, '') + ' em' : 'Off';
+    applySettings(); updateSaveBtnState();
+  });
+
   function _updateLetterSpacingUI() {
     var v = settings.letterSpacing;
     var lbl = document.getElementById('letter-spacing-val');
@@ -13948,10 +14027,11 @@ function init() {
 
   document.getElementById('reset-adv-typography-btn').addEventListener('click', function() {
     showConfirm('Reset Advanced Typography?',
-      'Reset line spacing, letter spacing, word spacing and ligatures to defaults?',
+      'Reset line spacing, paragraph spacing, letter spacing, word spacing and ligatures to defaults?',
       'Reset',
       function() {
         settings.lineHeight = 1.5;
+        settings.paragraphSpacing = 0;
         settings.letterSpacing = null;
         settings.wordSpacing = null;
         settings.disableLigatures = false;
@@ -13980,6 +14060,11 @@ function init() {
     if (lhr) lhr.value = settings.lineHeight || 1.5;
     if (lhv) lhv.textContent = settings.lineHeight || 1.5;
     if (dlt) dlt.checked = !!settings.disableLigatures;
+    var psr = document.getElementById('paragraph-spacing-range');
+    var psv = document.getElementById('paragraph-spacing-val');
+    var psVal = settings.paragraphSpacing || 0;
+    if (psr) psr.value = psVal;
+    if (psv) psv.textContent = psVal > 0 ? String(psVal.toFixed(2)).replace(/\.?0+$/, '') + ' em' : 'Off';
     _updateLetterSpacingUI();
     _updateWordSpacingUI();
     var cur = settings.fontVariantNumeric || '';
