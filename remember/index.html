@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.957 -->
+<!-- Remember App - Version 0.960 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.957
+  Version 0.960
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -6136,6 +6136,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <div class="settings-row">
           <div class="settings-row-desc" style="padding:0 0 6px">How much each indent level is indented in Read &amp; Revise mode. Larger values make nested lists more dramatic. Does not change note text.</div>
         </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Indent headings by level (R&amp;R mode)</div>
+            <div class="settings-row-desc">H1 stays flush left; H2 indents by one step, H3 by two, and so on. Uses the indent width value above.</div>
+          </div>
+          <label class="toggle-switch" aria-label="Indent headings by level">
+            <input type="checkbox" id="heading-indent-toggle">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
 
         <div class="settings-row range-row">
           <div class="settings-row-label">Maximum characters per line</div>
@@ -7036,7 +7046,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.957';
+const APP_VERSION = '0.960';
 
 
 
@@ -7167,6 +7177,7 @@ const DEFAULT_SETTINGS = {
   listMarginRight: 0,           // extra right margin for notes list (px)
   charsPerLine: 0,              // max line width in ch units; 0 = unlimited
   viewIndentWidth: 1.5,          // em per indent level in view mode (visual only)
+  headingIndent: false,          // indent headings by level in R&R mode (uses viewIndentWidth)
   highlightColor: '#ffe066',    // color used for ==highlight== rendering
   checkboxColor: 'gray',        // default checkbox color (named palette key)
   customColor: '#9b59b6',       // user-defined custom color for {custom} tag
@@ -7188,6 +7199,7 @@ const THEMEABLE_SETTINGS=[
 ['blankLineHeight','Blank line height',0],['letterSpacing','Letter spacing',0],
 ['wordSpacing','Word spacing',0],['disableLigatures','Disable ligatures',0],
 ['fontVariantNumeric','Numeric style',0],['viewIndentWidth','Indent width (view)',0],
+['headingIndent','Indent headings by level (R&R)',0],
 ['indentSpaces','Spaces per indent',0],['checkStrikethrough','Strikethrough when checked',0],
 ['showParagraphRules','Paragraph rules',0],['showBlockRules','List item rules',0],
 ['showBlockRulesTop','Rule above checkbox sections',0],
@@ -7518,6 +7530,8 @@ function applySettings() {
   if (_parRulesTog) _parRulesTog.checked = !!settings.showParagraphRules;
   var _blockRulesTog = document.getElementById('block-rules-toggle');
   if (_blockRulesTog) _blockRulesTog.checked = !!settings.showBlockRules;
+  var _headingIndentTog = document.getElementById('heading-indent-toggle');
+  if (_headingIndentTog) _headingIndentTog.checked = !!settings.headingIndent;
   var _blockRulesTopRow = document.getElementById('block-rules-top-row');
   if (_blockRulesTopRow) _blockRulesTopRow.style.display = settings.showBlockRules ? '' : 'none';
   var _blockRulesTopTog = document.getElementById('block-rules-top-toggle');
@@ -8925,9 +8939,28 @@ function urlsToLinks(text, addLineWrappers) {
   }
   if (addLineWrappers) {
     var renderedLines = escaped.split('\n');
+    var _rawLines = text.split('\n');
+    // Heading indent pre-pass: find min heading level used, compute section depth per line
+    var _viw = settings.viewIndentWidth !== undefined ? settings.viewIndentWidth : 1.5;
+    var _indSp = settings.indentSpaces || 2;
+    var _sectionDepth = [];
+    if (settings.headingIndent) {
+      var _minHLevel = 7;
+      _rawLines.forEach(function(rl) {
+        var m = rl.match(/^(#{1,6}) /);
+        if (m && m[1].length < _minHLevel) _minHLevel = m[1].length;
+      });
+      if (_minHLevel === 7) _minHLevel = 1; // no headings found
+      var _curDepth = 0;
+      _rawLines.forEach(function(rl) {
+        var m = rl.match(/^(#{1,6}) /);
+        if (m) _curDepth = m[1].length - _minHLevel;
+        _sectionDepth.push(_curDepth);
+      });
+    }
     return renderedLines.map(function(line, i) {
       // Horizontal rule: line of 3+ hyphens only (raw before HTML escaping was ---+)
-      var rawForHr = text.split('\n')[i] || '';
+      var rawForHr = _rawLines[i] || '';
       if (/^(-\s*){3,}$/.test(rawForHr.trim())) {
         return '<div class="viewer-line" data-line="' + i + '" data-raw-line="' + rawForHr + '"><hr class="viewer-hr"></div>';
       }
@@ -8937,17 +8970,20 @@ function urlsToLinks(text, addLineWrappers) {
       if (headingMatch) {
         var level = headingMatch[1].length;
         var content = line.replace(/^#+\s*/, '');
+        var _hPad = settings.headingIndent ? (_sectionDepth[i] * _viw) : 0;
+        var _hStyle = _hPad > 0 ? ' style="padding-left:' + _hPad + 'em"' : '';
         return '<div class="viewer-line" data-line="' + i + '">'
-          + '<div class="viewer-h' + level + '">' + (content || '&nbsp;') + '</div>'
+          + '<div class="viewer-h' + level + '"' + _hStyle + '>' + (content || '&nbsp;') + '</div>'
           + '</div>';
       }
       if (!line) return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
       // View indent width: compute indent level from raw leading spaces, apply as padding-left
-      var _viw = settings.viewIndentWidth !== undefined ? settings.viewIndentWidth : 1.5;
-      var _indSp = settings.indentSpaces || 2;
       var _rawLeading = rawLine.match(/^(\s*)/)[1].length;
       var _indentLevel = _rawLeading > 0 ? Math.floor(_rawLeading / _indSp) : 0;
-      var _indentStyle = _indentLevel > 0 ? ' style="padding-left:' + (_indentLevel * _viw) + 'em"' : '';
+      // Section indent from heading hierarchy (additive with user spaces)
+      var _secDepth = settings.headingIndent ? (_sectionDepth[i] || 0) : 0;
+      var _totalIndent = _indentLevel + _secDepth;
+      var _indentStyle = _totalIndent > 0 ? ' style="padding-left:' + (_totalIndent * _viw) + 'em"' : '';
       // Strip leading spaces from rendered line when applying visual indent
       if (_indentLevel > 0) line = line.replace(/^\s+/, '');
       // Bullets for hyphens: replace leading '- ' with bullet in rendered line
@@ -8963,14 +8999,14 @@ function urlsToLinks(text, addLineWrappers) {
         line = line.replace(/^(\s*)- /, '$1' + _bulletChar + ' ');
       }
       // Paragraph rules: mark non-blank lines immediately before a blank line
-      var nextRaw = text.split('\n')[i + 1];
+      var nextRaw = _rawLines[i + 1];
       var isParEnd = settings.showParagraphRules && nextRaw !== undefined && nextRaw.trim() === '';
       var parEndClass = isParEnd ? ' paragraph-end' : '';
       // Block rules: rule after checkbox-ish lines (exclude HR lines like '- - -')
       var isHrLine = /^(-\s*){3,}$/.test(rawLine.trim());
       var blockRuleClass = (settings.showBlockRules && !isHrLine && isCheckboxRaw(rawLine)) ? ' block-rule' : '';
       // Block rule top: separate setting, rule above a checkbox section when preceded by blank line
-      var prevRaw = i > 0 ? text.split('\n')[i - 1] : undefined;
+      var prevRaw = i > 0 ? _rawLines[i - 1] : undefined;
       var blockRuleTopClass = (settings.showBlockRulesTop && !isHrLine && isCheckboxRaw(rawLine) && (prevRaw === undefined || prevRaw.trim() === '')) ? ' block-rule-top' : '';
       return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + '</div>';
     }).join('');
@@ -14900,6 +14936,12 @@ function init() {
     applySettings();
     updateSaveBtnState();
   });
+  var _headingIndentToggle = document.getElementById('heading-indent-toggle');
+  if (_headingIndentToggle) _headingIndentToggle.addEventListener('change', function() {
+    settings.headingIndent = this.checked;
+    applySettings();
+    updateSaveBtnState();
+  });
   var _blockRulesTopToggle = document.getElementById('block-rules-top-toggle');
   if (_blockRulesTopToggle) _blockRulesTopToggle.addEventListener('change', function() {
     settings.showBlockRulesTop = this.checked;
@@ -17198,7 +17240,8 @@ function createInitialNotes() {
   ].join('\n');
   notes[headingSamplerId] = {
     id: headingSamplerId, name: 'The Remember Field Guide', content: headingSamplerContent,
-    autoNamed: false, createdAt: now, editedAt: now + 30, viewedAt: now + 30
+    autoNamed: false, createdAt: now, editedAt: now + 30, viewedAt: now + 30,
+    themeId: 'theme-sample-field-guide'
   };
 
   // Outline Sampler
@@ -17640,6 +17683,12 @@ function createInitialNotes() {
       folderId: sampleFolderId, themeId: 'theme-sample-cosy'
     };
   }
+
+  var themeFieldGuideId = 'theme-sample-field-guide';
+  themes[themeFieldGuideId] = {
+    id: themeFieldGuideId, name: 'Field Guide', createdAt: now,
+    values: { headingIndent: true, defaultViewMode: true }
+  };
 
   // ── Additional prototype themes ──────────────────────────────────────
 
