@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.978 -->
+<!-- Remember App - Version 0.980 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.978
+  Version 0.980
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -6523,6 +6523,35 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 
   <div class="ie-section" style="border-top:1px solid var(--border);margin-top:0">
+    <div class="ie-label" style="padding:10px 0 4px;font-weight:600;color:var(--fg2)">Export current note</div>
+    <div class="ie-row">
+      <div>
+        <div class="ie-label">Export as Markdown</div>
+        <div class="ie-desc">Download current note as a .md file (works in Obsidian, Notion, Bear, VS Code, and more)</div>
+      </div>
+      <button class="btn btn-ghost" id="export-md-btn">Export .md</button>
+    </div>
+    <div class="ie-row">
+      <div>
+        <div class="ie-label">Export as plain text</div>
+        <div class="ie-desc">Download current note as a .txt file with formatting markers removed</div>
+      </div>
+      <button class="btn btn-ghost" id="export-txt-btn">Export .txt</button>
+    </div>
+  </div>
+
+  <div class="ie-section" style="border-top:1px solid var(--border);margin-top:0">
+    <div class="ie-label" style="padding:10px 0 4px;font-weight:600;color:var(--fg2)">Export all notes</div>
+    <div class="ie-row">
+      <div>
+        <div class="ie-label">Export all as OPML</div>
+        <div class="ie-desc">Download all notes as an OPML file (for WorkFlowy, Dynalist, OmniOutliner, and others)</div>
+      </div>
+      <button class="btn btn-ghost" id="export-opml-btn">Export OPML</button>
+    </div>
+  </div>
+
+  <div class="ie-section" style="border-top:1px solid var(--border);margin-top:0">
     <div class="ie-label" style="padding:10px 0 4px;font-weight:600;color:var(--fg2)">Import from other apps</div>
     <div class="ie-row">
       <div>
@@ -7133,7 +7162,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.978';
+const APP_VERSION = '0.980';
 
 
 
@@ -9850,6 +9879,115 @@ function downloadJSON(data, filename) {
   }, 100);
 }
 
+function downloadText(text, filename, mimeType) {
+  var blob = new Blob([text], { type: mimeType || 'text/plain' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+function exportCurrentNoteMarkdown() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  saveCurrentNote();
+  var n = notes[currentNoteId];
+  var safeName = n.name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 40);
+  // Content is already Markdown — just download it
+  var content = '# ' + n.name + '\n\n' + (n.content || '');
+  downloadText(content, 'remember-' + safeName + '.md', 'text/markdown');
+}
+
+function exportCurrentNoteTxt() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  saveCurrentNote();
+  var n = notes[currentNoteId];
+  var safeName = n.name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 40);
+  // Strip Markdown formatting markers
+  var content = (n.content || '')
+    .replace(/^#{1,6} /gm, '')           // headings
+    .replace(/\*\*([^*]*)\*\*/g, '$1')   // bold
+    .replace(/\*([^*\n]*)\*/g, '$1')     // italic
+    .replace(/~~([^~]*)~~/g, '$1')       // strikethrough
+    .replace(/\[x\]/gi, '[x]')           // keep checkbox state readable
+    .replace(/\[\s*\]/g, '[ ]')
+    .replace(/\{[a-z]+\}([^{]*)\{\/[a-z]+\}/g, '$1') // color tags
+    .replace(/- - -+/g, '---');          // HR
+  downloadText(n.name + '\n\n' + content, 'remember-' + safeName + '.txt', 'text/plain');
+}
+
+function exportAllNotesOPML() {
+  var esc = function(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  };
+  var lines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<opml version="2.0">',
+    '  <head>',
+    '    <title>Remember Notes Export</title>',
+    '    <dateCreated>' + new Date().toUTCString() + '</dateCreated>',
+    '  </head>',
+    '  <body>'
+  ];
+
+  // Sort notes by name for readability
+  var noteList = Object.values(notes).filter(function(n) { return n && n.name; });
+  noteList.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+  noteList.forEach(function(n) {
+    var noteLines = (n.content || '').split('\n');
+    var indentSpaces = settings.indentSpaces || 2;
+
+    // Parse lines into a tree based on leading whitespace
+    function getIndentLevel(line) {
+      var match = line.match(/^(\s*)/);
+      return match ? Math.floor(match[1].length / indentSpaces) : 0;
+    }
+    function lineToText(line) {
+      // Strip checkbox markers for OPML text attribute, keep the content
+      return line.trim()
+        .replace(/^\[[ x]\]\s*/i, '')
+        .replace(/^\[[ x]:[a-z]+\]\s*/i, '')
+        .replace(/^-\s+/, '');
+    }
+    function isChecked(line) {
+      return /^\s*\[x\]/i.test(line) || /^\s*\[x:[a-z]+\]/i.test(line) || /^\s*-\s+~~/.test(line);
+    }
+
+    // Open note outline
+    lines.push('    <outline text="' + esc(n.name) + '" _note="note">');
+
+    // Build outline hierarchy
+    var stack = [{ level: -1, indent: '      ' }];
+    noteLines.forEach(function(rawLine) {
+      if (!rawLine.trim()) return; // skip blank lines
+      var level = getIndentLevel(rawLine);
+      var text = lineToText(rawLine);
+      if (!text) return;
+      var checked = isChecked(rawLine);
+      var isTask = /^\s*\[/.test(rawLine) || /^\s*-\s+~~/.test(rawLine);
+      var indent = '      ' + '  '.repeat(level);
+
+      var attrs = 'text="' + esc(text) + '"';
+      if (isTask) attrs += ' type="task"';
+      if (checked) attrs += ' checked="true" _status="complete"';
+
+      lines.push(indent + '<outline ' + attrs + '/>');
+    });
+
+    lines.push('    </outline>');
+  });
+
+  lines.push('  </body>');
+  lines.push('</opml>');
+
+  downloadText(lines.join('\n'), 'remember-notes-' + new Date().toISOString().slice(0,10) + '.opml', 'text/x-opml');
+  showToast(noteList.length + ' note' + (noteList.length === 1 ? '' : 's') + ' exported as OPML', false);
+}
+
 function exportFolder(folderId) {
   if (!folders[folderId]) return;
   // Collect this folder and all descendants recursively
@@ -11608,6 +11746,21 @@ function init() {
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
     exportAllNotes();
+  });
+  document.getElementById('export-md-btn').addEventListener('click', function() {
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+    exportCurrentNoteMarkdown();
+  });
+  document.getElementById('export-txt-btn').addEventListener('click', function() {
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+    exportCurrentNoteTxt();
+  });
+  document.getElementById('export-opml-btn').addEventListener('click', function() {
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+    exportAllNotesOPML();
   });
   document.getElementById('import-btn').addEventListener('click', function() {
     document.getElementById('import-file-input').value = '';
@@ -18376,6 +18529,84 @@ function createInitialNotes() {
       id: funNoteId, name: 'Saturday Debrief', content: funContent,
       autoNamed: false, createdAt: now + 16, editedAt: now + 16, viewedAt: now + 16,
       folderId: sampleFolderId, themeId: 'theme-sample-fun'
+    };
+  }
+
+  var whyNoteId = 'note-why-remember';
+  if (!notes[whyNoteId]) {
+    var whyContent = [
+      '# Why Remember?',
+      '',
+      '## It\'s completely free',
+      '',
+      'Remember is free. Not "free with ads," not "free for 30 days," not "free but the good features cost extra." Everything in the app is free, forever, for personal use. Schools and organizations can use it free too. No account required, no login, no subscription.',
+      '',
+      '## What is Remember, exactly?',
+      '',
+      'Remember is a note-taking app that runs in your web browser — on any phone, tablet, or computer. You can also save it to your home screen and it behaves just like a regular app, without any browser toolbars getting in the way. This is called a PWA (Progressive Web App).',
+      '',
+      'It is a plain text editor — think of it as a smarter, more personal version of Notepad. It is great for jotting things down, keeping checklists, and organising your thoughts. It is not a word processor like Microsoft Word, it does not have calendar features, and it will not send you reminders.',
+      '',
+      '## Checklists that actually work',
+      '',
+      'Remember has some of the best checklist features of any free note app. Tap any checkbox to check or uncheck it. Long-press a parent item\'s chevron to check or uncheck all its sub-items at once. Items can be nested to any depth — tap the chevron to collapse or expand a whole section so you only see what is relevant right now. You can also check off hyphen-style bullet items with a tap, which applies a strikethrough.',
+      '',
+      'Checklists work beautifully on a phone — which matters, because that is where you actually use them.',
+      '',
+      '## Your notes stay private — and safe from viruses',
+      '',
+      'Your notes are stored only on your device. Nothing is sent to any server or cloud service. There is no company storing your data, no risk of a data breach, and no one reading your notes.',
+      '',
+      'Because Remember runs inside a browser, it is protected by the browser\'s security sandbox. Even if someone modified the app\'s code, they could not use it to put a virus on your machine — the browser prevents that. This is the same protection that keeps you safe on websites every day.',
+      '',
+      'Use the Export feature to back up your notes — save the file to Google Drive, iCloud, Dropbox, or email it to yourself. You can also **import notes from other apps**. Remember can import from WorkFlowy, Dynalist, OmniOutliner, CarbonFin Outliner (OPML format), and TickTick (CSV format), so you can bring your existing notes with you.',
+      '',
+      '## For people who find other apps difficult',
+      '',
+      'This is the heart of why Remember was built. Most note apps assume you are a healthy 30-year-old with perfect vision and steady hands. Remember does not.',
+      '',
+      '### For seniors',
+      '',
+      'You can make the font as large as you want — much larger than most apps allow. One tap reads your note aloud. You can edit notes using toolbar buttons without ever needing to drag and drop or carefully place a cursor. Caregivers can hide buttons that are not needed to reduce clutter.',
+      '',
+      '### For people with low vision or dyslexia',
+      '',
+      'There is a built-in Dyslexia Friendly theme that sets a larger font, wider letter and word spacing, and extra line spacing. You can use the Atkinson Hyperlegible font, designed specifically for low-vision readers. A reading ruler helps you track your place on the screen. You can choose high-contrast colors. The app can read any note aloud, at whatever speed you prefer.',
+      '',
+      '### For people with ADHD',
+      '',
+      'You can color-code lines inside a note to make things stand out. Checklists can be organised into collapsible sections so you see only what matters right now. Notes can be organised into folders. The distraction-free Quiet Mode hides the toolbars so you can focus on reading. You can use Siri or Google Assistant to add notes on the go without unlocking your phone and navigating menus.',
+      '',
+      '### For students',
+      '',
+      'Remember works completely offline — no internet required. Students in schools that restrict internet access can still use it. College students can organise study notes with collapsible headings, and because it runs in a browser, tools like Apple\'s Writing Tools or browser AI assistants can still work on the text.',
+      '',
+      '### For people with hand or motor difficulties',
+      '',
+      'Many note apps require precise gestures — dragging to select text, drag-and-drop to reorder, pinch-zoom to resize. Remember provides toolbar buttons for all of these so you never have to drag anything if you do not want to.',
+      '',
+      '## Customisation — for people who like to tinker',
+      '',
+      'All customisation is completely optional. Many people use Remember with the default settings and never look at any of it. But if you enjoy this sort of thing, you can:',
+      '',
+      '- Choose from many fonts including serif, sans-serif, monospace, and accessibility-focused faces',
+      '- Set font size, weight, line spacing, letter spacing, and word spacing',
+      '- Choose your own colors, or switch between light mode, dark mode, and auto',
+      '- Save any combination of settings as a named "theme" and apply it to specific notes',
+      '- Rearrange or hide toolbar buttons to show only what you use',
+      '- Give each note its own visual style — a poetry note could have wide margins and generous spacing, while a checklist note could be compact and monospace',
+      '',
+      '## What makes Remember different?',
+      '',
+      'Most note apps are built for the average user. Remember is built for everyone else — the person who needs larger text, the person who wants their notes to feel calm and personal rather than corporate and cluttered, the student who cannot afford a subscription, the senior who wants one button that reads the note aloud.',
+      '',
+      'It is also genuinely free, works on every device, requires no account, and keeps your data private on your own device.',
+      '',
+      '',
+    ].join('\n');
+    notes[whyNoteId] = {
+      id: whyNoteId, name: 'Why Remember?', content: whyContent,
+      autoNamed: false, createdAt: now + 1, editedAt: now + 45, viewedAt: now + 45
     };
   }
 
