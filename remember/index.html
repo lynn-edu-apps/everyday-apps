@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.974 -->
+<!-- Remember App - Version 0.976 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.974
+  Version 0.976
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -4028,6 +4028,14 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   font-family: var(--font-body);
   padding: 8px 0 0;
 }
+mark.help-highlight {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 2px;
+  font-style: inherit;
+  font-weight: inherit;
+}
 .help-go-arrow {
   flex-shrink: 0;
   margin-left: auto;
@@ -7121,7 +7129,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.974';
+const APP_VERSION = '0.976';
 
 
 
@@ -10942,6 +10950,7 @@ function init() {
   });
 
   // ===== HELP SEARCH =====
+  var _helpBodyOrig = null; // saved on first search, restored on clear
   function clearHelpSearch() {
     var inp = document.getElementById('help-search-input');
     if (inp) inp.value = '';
@@ -10949,22 +10958,12 @@ function init() {
     if (clr) clr.style.display = 'none';
     var noRes = document.getElementById('help-no-results');
     if (noRes) noRes.style.display = 'none';
-    // Restore all top-level containers including share block
-    document.querySelectorAll('#help-sheet .help-section, #help-sheet .help-collapsible').forEach(function(c) {
-      c.style.display = '';
-      if (c.dataset.searchOpened) { c.classList.remove('open'); delete c.dataset.searchOpened; }
-    });
-    var shareBlock = document.getElementById('help-share-block');
-    if (shareBlock) shareBlock.style.display = '';
-    // Restore subs
-    document.querySelectorAll('#help-sheet .help-sub').forEach(function(sub) {
-      sub.style.display = '';
-    });
-    // Restore title display styles
-    document.querySelectorAll('#help-sheet .help-section-title, #help-sheet .help-collapsible-title').forEach(function(t) {
-      t.style.display = ''; t.style.alignItems = '';
-    });
-    document.querySelectorAll('#help-sheet .help-go-arrow').forEach(function(a) { a.remove(); });
+    // Restore original HTML (removes highlights, show/hide states, Go arrows)
+    var helpBody = document.getElementById('help-sheet').querySelector('.help-body');
+    if (_helpBodyOrig && helpBody) {
+      helpBody.innerHTML = _helpBodyOrig;
+      _reAttachHelpListeners();
+    }
   }
   function jumpToHelpSection(el) {
     clearHelpSearch();
@@ -10995,6 +10994,64 @@ function init() {
     arrow.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); doJump(); }, { passive: false });
     return arrow;
   }
+  // Save original help body HTML before first search
+  function _saveHelpBodyOrig() {
+    if (_helpBodyOrig) return;
+    var helpBody = document.getElementById('help-sheet').querySelector('.help-body');
+    if (helpBody) _helpBodyOrig = helpBody.innerHTML;
+  }
+
+  // Re-attach JS listeners after innerHTML restore (help-sub toggles, copy button etc.)
+  function _reAttachHelpListeners() {
+    // Re-wire help-sub toggle clicks
+    document.querySelectorAll('#help-sheet .help-sub-header').forEach(function(hdr) {
+      hdr.addEventListener('click', function(e) {
+        if (e.target.closest('.help-go-arrow')) return;
+        var sub = hdr.closest('.help-sub');
+        if (sub) sub.classList.toggle('open');
+      });
+    });
+    // Re-wire help-collapsible toggle clicks
+    document.querySelectorAll('#help-sheet .help-collapsible-header').forEach(function(hdr) {
+      hdr.addEventListener('click', function() {
+        var col = hdr.closest('.help-collapsible');
+        if (col) col.classList.toggle('open');
+      });
+    });
+  }
+
+  // Highlight all occurrences of q in text nodes within el
+  function _highlightInElement(el, q) {
+    if (!el || !q) return;
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+    var nodes = [];
+    var node;
+    while ((node = walker.nextNode())) nodes.push(node);
+    nodes.forEach(function(textNode) {
+      var txt = textNode.nodeValue;
+      var lower = txt.toLowerCase();
+      var idx = lower.indexOf(q);
+      if (idx === -1) return;
+      // Split into before / match / after and wrap match in <mark>
+      var frag = document.createDocumentFragment();
+      var remaining = txt;
+      var remainingLower = lower;
+      var offset = 0;
+      while (true) {
+        var found = remainingLower.indexOf(q);
+        if (found === -1) { frag.appendChild(document.createTextNode(remaining)); break; }
+        if (found > 0) frag.appendChild(document.createTextNode(remaining.slice(0, found)));
+        var mark = document.createElement('mark');
+        mark.className = 'help-highlight';
+        mark.textContent = remaining.slice(found, found + q.length);
+        frag.appendChild(mark);
+        remaining = remaining.slice(found + q.length);
+        remainingLower = remainingLower.slice(found + q.length);
+      }
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+  }
+
   function _helpSearchContainer(container, titleSelector, q) {
     // Returns true if this container should be visible
     var titleEl = container.querySelector(titleSelector);
@@ -11051,6 +11108,13 @@ function init() {
     if (clr) clr.style.display = q ? '' : 'none';
     var noRes = document.getElementById('help-no-results');
     if (!q) { clearHelpSearch(); return; }
+    _saveHelpBodyOrig();
+    // Restore clean HTML before re-filtering (removes previous highlight marks)
+    var _helpBody = document.getElementById('help-sheet').querySelector('.help-body');
+    if (_helpBody && _helpBodyOrig) {
+      _helpBody.innerHTML = _helpBodyOrig;
+      _reAttachHelpListeners();
+    }
     document.querySelectorAll('#help-sheet .help-go-arrow').forEach(function(a) { a.remove(); });
     // Hide non-searchable blocks during search
     var shareBlock = document.getElementById('help-share-block');
@@ -11063,6 +11127,12 @@ function init() {
       if (_helpSearchContainer(col, '.help-collapsible-title', q)) anyVisible = true;
     });
     if (noRes) noRes.style.display = anyVisible ? 'none' : '';
+    // Highlight matches in all visible containers
+    if (anyVisible) {
+      document.querySelectorAll('#help-sheet .help-section, #help-sheet .help-collapsible').forEach(function(c) {
+        if (c.style.display !== 'none') _highlightInElement(c, q);
+      });
+    }
   }
   var _helpSearchInp = document.getElementById('help-search-input');
   if (_helpSearchInp) {
