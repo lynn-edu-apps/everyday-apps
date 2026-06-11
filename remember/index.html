@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.960 -->
+<!-- Remember App - Version 0.964 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.960
+  Version 0.964
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -782,6 +782,19 @@ body.in-iframe #home-screen {
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
   overflow: hidden;
   min-width: 160px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#cb-longpress-menu {
+  display: none;
+  position: fixed;
+  z-index: 10003;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  overflow: hidden;
+  min-width: 180px;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -4923,6 +4936,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </button>
 </div>
 
+<div id="cb-longpress-menu">
+  <button class="context-menu-item" id="cb-check-all-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+    <span style="pointer-events:none">Check all sub-items</span>
+  </button>
+  <button class="context-menu-item" id="cb-uncheck-all-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+    <span style="pointer-events:none">Uncheck all sub-items</span>
+  </button>
+</div>
+
 
 <!-- ===== FOLDER NAME DIALOG ===== -->
 <div class="modal-overlay" id="folder-name-overlay" style="z-index:300;display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
@@ -7046,7 +7070,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.960';
+const APP_VERSION = '0.964';
 
 
 
@@ -9936,6 +9960,8 @@ function getSpeechVoice() {
 
 // Strip markdown formatting from a line so TTS doesn't speak raw markers.
 function stripMarkdownForSpeech(line) {
+  // Skip horizontal rules entirely — return empty string
+  if (/^(-\s*){3,}$/.test(line.trim())) return '';
   // Remove color markers {red}...{/red} etc.
   line = line.replace(/\{(?:red|orange|green|blue|purple)\}([^{]*)\{\/(?:red|orange|green|blue|purple)\}/g, '$1');
   // Remove bold **...**
@@ -10080,32 +10106,19 @@ function speakNote() {
   }
 
   if (selText) {
-    // Speak the selection as a single utterance (no line splitting)
-    var cleaned = stripMarkdownForSpeech(selText);
-    if (!cleaned) { alert('The selected text has no speakable content.'); return; }
-    _speakLines   = [{ lineIndex: -1, text: cleaned }];
+    // Split selection into lines and speak with pauses — same as block-selection path
+    var selLines = selText.split('\n');
+    var selItems = [];
+    selLines.forEach(function(ln) {
+      var stripped = stripMarkdownForSpeech(ln);
+      if (stripped) selItems.push({ lineIndex: -1, text: stripped });
+    });
+    if (selItems.length === 0) { alert('The selected text has no speakable content.'); return; }
+    _speakLines   = selItems;
     _speakLinePos = 0;
     isSpeaking    = true;
     _speakShowButtons(true);
-
-    var utt = new SpeechSynthesisUtterance(cleaned);
-    utt.rate = parseFloat(settings.speechRate) || 0.9;
-    var voice = getSpeechVoice();
-    if (voice) utt.voice = voice;
-    utt.onend = utt.onerror = function() {
-      isSpeaking = false;
-      _speakShowButtons(false);
-      clearViewerHighlight();
-      setTimeout(function() {
-        if (savedEditorStart !== null) {
-          ed.focus({ preventScroll: true });
-          ed.setSelectionRange(savedEditorStart, savedEditorEnd);
-        } else if (savedWindowRange) {
-          try { var s=window.getSelection(); s.removeAllRanges(); s.addRange(savedWindowRange); } catch(e2){}
-        }
-      }, 50);
-    };
-    window.speechSynthesis.speak(utt);
+    _speakNextLine();
     return;
   }
 
@@ -14142,6 +14155,30 @@ function init() {
         badge.textContent = '\u25b8 ' + descendants.length + ' hidden';
         lineDiv.appendChild(badge);
       }
+      // Long-press on chevron: show check/uncheck menu (touch only, non-heading parents)
+      if (!isHeadingRaw(rawLine)) {
+        var _chevLpTimer = null;
+        var _chevLpFired = false;
+        chev.addEventListener('touchstart', function(e) {
+          e.stopPropagation();
+          var lines2 = (notes[currentNoteId].content || '').split('\n');
+          var hasCbDesc = getParentDescendants(lines2, idx).some(function(di) { return isCheckboxRaw(lines2[di]); });
+          if (!hasCbDesc) return;
+          var tx = e.touches[0].clientX, ty = e.touches[0].clientY;
+          _chevLpFired = false;
+          _chevLpTimer = setTimeout(function() {
+            _chevLpFired = true;
+            showCbMenu(tx, ty, idx);
+          }, 500);
+        }, { passive: true });
+        chev.addEventListener('touchmove', function() {
+          if (_chevLpTimer) { clearTimeout(_chevLpTimer); _chevLpTimer = null; }
+        }, { passive: true });
+        chev.addEventListener('touchend', function(e) {
+          if (_chevLpTimer) { clearTimeout(_chevLpTimer); _chevLpTimer = null; }
+          if (_chevLpFired) { e.preventDefault(); e.stopPropagation(); _chevLpFired = false; }
+        }, { passive: false });
+      }
       chev.addEventListener('click', function(e) {
         e.stopPropagation();
         var pIdx = parseInt(this.dataset.parentLine);
@@ -15161,6 +15198,41 @@ function init() {
     settings.lastViewMode = newMode;
     saveSettings();
     setViewMode(newMode, true); // suppress focus to avoid triggering keyboard
+  });
+
+  // ===== CHEVRON LONG-PRESS MENU — wired per-chevron in applyOutlineMode =====
+  var _cbLpLineIdx = -1;
+  var _cbLpMenu = document.getElementById('cb-longpress-menu');
+  function closeCbMenu() {
+    if (_cbLpMenu) _cbLpMenu.style.display = 'none';
+  }
+  function showCbMenu(x, y, lineIdx) {
+    if (!_cbLpMenu) return;
+    _cbLpLineIdx = lineIdx;
+    var mw = 200, mh = 96;
+    var left = Math.min(x, window.innerWidth - mw - 8);
+    var top = Math.min(y + 8, window.innerHeight - mh - 8);
+    _cbLpMenu.style.left = left + 'px';
+    _cbLpMenu.style.top = top + 'px';
+    _cbLpMenu.style.display = 'block';
+  }
+  document.addEventListener('touchstart', function(e) {
+    if (_cbLpMenu && _cbLpMenu.style.display !== 'none') {
+      if (!_cbLpMenu.contains(e.target)) closeCbMenu();
+    }
+  }, { passive: true });
+  document.addEventListener('mousedown', function(e) {
+    if (_cbLpMenu && _cbLpMenu.style.display !== 'none') {
+      if (!_cbLpMenu.contains(e.target)) closeCbMenu();
+    }
+  });
+  document.getElementById('cb-check-all-btn').addEventListener('click', function() {
+    closeCbMenu();
+    if (_cbLpLineIdx >= 0) checkUncheckChildren(_cbLpLineIdx, true);
+  });
+  document.getElementById('cb-uncheck-all-btn').addEventListener('click', function() {
+    closeCbMenu();
+    if (_cbLpLineIdx >= 0) checkUncheckChildren(_cbLpLineIdx, false);
   });
 
   // ===== CHECKBOX TAP TO TOGGLE =====
