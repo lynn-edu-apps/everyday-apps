@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.980 -->
+<!-- Remember App - Version 0.981 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.980
+  Version 0.981
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -6568,9 +6568,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <button class="btn btn-ghost" id="import-ticktick-btn">Import CSV</button>
     </div>
   </div>
+  <div class="ie-row">
+      <div>
+        <div class="ie-label">Import text or Markdown files</div>
+        <div class="ie-desc">Import one or more .txt or .md files — each file becomes a new note</div>
+      </div>
+      <button class="btn btn-ghost" id="import-textmd-btn">Import .txt/.md</button>
+    </div>
   <!-- Hidden file inputs -->
   <input type="file" id="import-opml-file" accept=".opml,.xml" style="display:none">
   <input type="file" id="import-ticktick-file" accept=".csv" style="display:none">
+  <input type="file" id="import-textmd-file" accept=".txt,.md,.markdown" multiple style="display:none">
 
   <div class="ie-close-row">
     <button class="modal-close-btn-plain" id="importexport-close-btn">Close</button>
@@ -7162,7 +7170,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.980';
+const APP_VERSION = '0.981';
 
 
 
@@ -11710,6 +11718,53 @@ function init() {
 
   document.getElementById('import-ticktick-btn').addEventListener('click', function() {
     document.getElementById('import-ticktick-file').click();
+  });
+  document.getElementById('import-textmd-btn').addEventListener('click', function() {
+    document.getElementById('import-textmd-file').value = '';
+    document.getElementById('import-textmd-file').click();
+  });
+  document.getElementById('import-textmd-file').addEventListener('change', function(e) {
+    var files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+    var now = Date.now();
+    var imported = 0;
+    var pending = files.length;
+    files.forEach(function(file, idx) {
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var content = ev.target.result || '';
+        // Derive note name from filename, strip extension
+        var name = file.name.replace(/\.(txt|md|markdown)$/i, '').trim() || file.name;
+        // If a note with this name exists, append a number
+        var baseName = name;
+        var counter = 2;
+        while (Object.values(notes).some(function(n) { return n.name === name; })) {
+          name = baseName + ' (' + counter + ')';
+          counter++;
+        }
+        var id = makeId();
+        notes[id] = { id: id, name: name, content: content,
+          autoNamed: false, createdAt: now + idx, editedAt: now + idx, viewedAt: now + idx };
+        imported++;
+        pending--;
+        if (pending === 0) {
+          saveNotes();
+          renderNotesList();
+          showToast(imported + ' note' + (imported === 1 ? '' : 's') + ' imported', false);
+        }
+      };
+      reader.onerror = function() {
+        pending--;
+        if (pending === 0 && imported > 0) {
+          saveNotes();
+          renderNotesList();
+          showToast(imported + ' note' + (imported === 1 ? '' : 's') + ' imported', false);
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+    });
   });
   document.getElementById('import-ticktick-file').addEventListener('change', function(e) {
     var file = e.target.files[0];
