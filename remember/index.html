@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1007 -->
+<!-- Remember App - Version 0.1010 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1007
+  Version 0.1010
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1126,6 +1126,8 @@ body.view-only-mode #delete-line-btn,
 body.view-only-mode #paste-btn,
 body.view-only-mode #select-all-btn,
 body.view-only-mode #view-mode-btn,
+body.typing-mode-only #view-mode-btn,
+body.rronly-mode-only #view-mode-btn,
 body.view-only-mode #select-blocks-btn,
 body.view-only-mode #toolbar-scroll,
 body.view-only-mode #toolbar-scrollbar-track,
@@ -4078,9 +4080,8 @@ mark.help-highlight {
   font-weight: inherit;
 }
 #tour-overlay { display: none; }
-#tour-overlay.open { display: flex; }
-#tour-card { touch-action: pan-y; }
-/* tour-card uses flex column; buttons pinned at bottom */
+#tour-overlay.open { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* tour-card: flex column, buttons pinned at bottom */
 #tour-card { display: flex; flex-direction: column; touch-action: pan-y; }
 #tour-card-inner {
   flex: 1;
@@ -6072,6 +6073,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-row">
         <div>
+          <div class="settings-row-label">Note editing mode</div>
+          <div class="settings-row-desc">Choose which editing modes are available. Disabling one mode simplifies the interface.</div>
+        </div>
+        <select id="note-editing-mode-select" class="settings-select" style="min-width:110px">
+          <option value="both">Both modes</option>
+          <option value="typing">Typing mode only</option>
+          <option value="rronly">Read &amp; Revise only</option>
+        </select>
+      </div>
+      <div id="default-view-mode-row" class="settings-row">
+        <div>
           <div class="settings-row-label">Open notes in Read &amp; Revise mode</div>
           <div class="settings-row-desc">When opening an existing note with text, show it in Read &amp; Revise mode with clickable links. New and empty notes always open in Typing mode.</div>
         </div>
@@ -6079,6 +6091,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <input type="checkbox" id="default-view-mode-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
+      </div>
       </div>
       <div class="settings-row">
         <div>
@@ -6110,7 +6123,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
-      <div class="settings-row">
+      <div id="triple-tap-edit-row" class="settings-row">
         <div>
           <div class="settings-row-label">Triple-tap to edit</div>
           <div class="settings-row-desc">In Read &amp; Revise mode, triple-tap any line to switch to Typing mode with the cursor placed at the end of that line.</div>
@@ -6716,8 +6729,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 </div>
 
 <!-- ===== ONBOARDING TOUR ===== -->
-<div id="tour-overlay" style="position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">
-  <div id="tour-card" style="background:var(--bg);border-radius:16px;max-width:420px;width:100%;padding:32px 28px 24px;box-sizing:border-box;position:relative;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+<div id="tour-overlay" style="position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.85);padding:20px;box-sizing:border-box;">
+  <div id="tour-card" style="background:var(--bg);border-radius:16px;max-width:420px;width:100%;padding:32px 28px 24px;box-sizing:border-box;position:relative;margin:0 auto;">
     <button id="tour-skip-btn" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--fg3);font-family:var(--font-body);font-size:var(--font-ui);cursor:pointer;padding:4px 6px;line-height:1;">Skip</button>
     <div id="tour-card-inner">
       <div id="tour-icon" style="font-size:3.2em;text-align:center;margin-bottom:16px;line-height:1.2;"></div>
@@ -7304,7 +7317,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1007';
+const APP_VERSION = '0.1010';
 
 
 
@@ -7376,6 +7389,7 @@ function pinToolbars() {
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
   globalViewOnly: false,
+  noteEditingMode: 'both', // 'both', 'typing', 'rronly'
   theme: 'auto',
   uiSize: 'medium',
   font: "'Atkinson Hyperlegible', sans-serif",      // UI font
@@ -7715,6 +7729,9 @@ function lightenHex(hex, amount) {
 }
 
 function applySettings() {
+  var _nem = settings.noteEditingMode || 'both';
+  document.body.classList.toggle('typing-mode-only', _nem === 'typing');
+  document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
   const body = document.body;
 
   // Theme
@@ -9300,9 +9317,13 @@ function urlsToLinks(text, addLineWrappers) {
 }
 
 function setViewMode(on, suppressFocus) {
+  // Block switching to Read & Revise mode in typing-only mode
+  if (on && settings.noteEditingMode === 'typing') return;
+  // Block switching to Typing mode in R&R-only mode (view-only overrides)
+  if (!on && settings.noteEditingMode === 'rronly' && !isViewOnlyNote(currentNoteId)) return;
   // Block switching to edit mode when note is view-only
   if (!on && isViewOnlyNote(currentNoteId)) {
-    if (!on) on = true; // force view mode
+    if (!on) on = true; // force R&R mode
   }
   if (!on && typeof _findActive !== 'undefined' && _findActive) closeFind();
   isViewMode = on;
@@ -9422,6 +9443,9 @@ function openNote(id, speakDelay) {
   var qfab = document.getElementById('quiet-more-fab');
   if (qfab && !_readingMode) qfab.style.display = _isViewOnly ? 'flex' : 'none';
   if (_isViewOnly) startInView = true;
+  // Force mode based on noteEditingMode setting
+  if (settings.noteEditingMode === 'typing') startInView = false;
+  if (settings.noteEditingMode === 'rronly') startInView = true;
   setViewMode(startInView, true); // true = suppress focus to avoid triggering keyboard-open on open
   applyRuler(); // show ruler if enabled
   if (notes[id]&&notes[id].themeId&&themes[notes[id].themeId])applyNoteTheme(notes[id].themeId);
@@ -10805,6 +10829,9 @@ function openSettings() {
   var _fabToggle = document.getElementById('show-note-fab-toggle');
   if (_fabToggle) _fabToggle.checked = settings.showNoteFab !== false;
   var globalVoToggle=document.getElementById('global-view-only-toggle'); if(globalVoToggle)globalVoToggle.checked=!!settings.globalViewOnly; renderViewOnlyNotesList();
+  var nemSel=document.getElementById('note-editing-mode-select'); if(nemSel)nemSel.value=settings.noteEditingMode||'both';
+  var dvmRow=document.getElementById('default-view-mode-row'); if(dvmRow)dvmRow.style.display=(settings.noteEditingMode==='typing'||settings.noteEditingMode==='rronly')?'none':'';
+  var ttRow=document.getElementById('triple-tap-edit-row'); if(ttRow)ttRow.style.display=(settings.noteEditingMode==='rronly'||settings.noteEditingMode==='typing')?'none':'';
   var retainQmToggle = document.getElementById('retain-quiet-mode-toggle');
   if (retainQmToggle) retainQmToggle.checked = !!settings.retainQuietMode;
   var smartIndentBlankToggle = document.getElementById('smart-indent-blank-toggle');
@@ -12863,7 +12890,8 @@ function init() {
     var moreDictateBtn = document.getElementById('more-dictate-btn');
     if (moreDictateBtn) {
       var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      moreDictateBtn.style.display = (SR && navigator.onLine) ? '' : 'none';
+      var _isRROnly = settings.noteEditingMode === 'rronly';
+      moreDictateBtn.style.display = (SR && navigator.onLine && !_isRROnly) ? '' : 'none';
     }
     // Hide view-only items in edit mode
     var _viewOnlyMoreItems = ['more-jump-to-btn', 'more-outline-btn', 'more-outline-actions-btn', 'more-ruler-btn'];
@@ -13630,8 +13658,16 @@ function init() {
     printWin.document.close();
     printWin.focus();
     setTimeout(function() {
+      // Use afterprint event to close — fires after user dismisses print dialog
+      // This prevents PWA from closing the window before print dialog is shown
+      printWin.addEventListener('afterprint', function() {
+        printWin.close();
+      });
       printWin.print();
-      printWin.close();
+      // Fallback: if afterprint never fires (some browsers), close after 2 minutes
+      setTimeout(function() {
+        try { if (!printWin.closed) printWin.close(); } catch(e) {}
+      }, 120000);
     }, 500);
   }
   document.getElementById('print-btn').addEventListener('click', function() { doPrintNote(); });
@@ -16090,6 +16126,16 @@ function init() {
   }
 
 
+  document.getElementById('note-editing-mode-select').addEventListener('change', function() {
+    settings.noteEditingMode = this.value;
+    var dvmRow=document.getElementById('default-view-mode-row');
+    if(dvmRow)dvmRow.style.display=(this.value==='typing'||this.value==='rronly')?'none':'';
+    var ttRow=document.getElementById('triple-tap-edit-row');
+    if(ttRow)ttRow.style.display=(this.value==='rronly'||this.value==='typing')?'none':'';
+    document.body.classList.toggle('typing-mode-only', this.value==='typing');
+    document.body.classList.toggle('rronly-mode-only', this.value==='rronly');
+    updateSaveBtnState();
+  });
   document.getElementById('global-view-only-toggle').addEventListener('change', function() { settings.globalViewOnly=this.checked; updateSaveBtnState(); });
   document.getElementById('retain-quiet-mode-toggle').addEventListener('change', function() {
     settings.retainQuietMode = this.checked;
