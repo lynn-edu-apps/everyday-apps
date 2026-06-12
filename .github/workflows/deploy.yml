@@ -1,17 +1,11 @@
-# Remember App - Version 0.488
+# Remember App - Version 0.1034
 # GitHub Actions workflow — deploys latest versioned HTML to index.html
 # for all app subdirectories in everyday-apps.
 #
-# Version sorting: uses sort -V which correctly handles both single (v12)
-# and major.minor (v0.488) version number schemes.
-#
-# Remember-specific: also updates service-worker.js CACHE_VERSION to match
-# the deployed HTML version, ensuring stale caches are cleared on each deploy.
-#
-# Cache strategy for Remember:
-#   HTML uses "no-cache, must-revalidate" (NOT no-store) so browsers always
-#   revalidate with the server when online, but fall back to service worker
-#   cache when offline. This gives fresh builds + offline use.
+# Remember Stable:
+#   To bless a version: edit remember-stable/stable-version.txt
+#   File should contain just the version number, e.g.: v0.1034
+#   The workflow finds remember/remember-v0.1034.html and copies it here.
 #
 # Place this file at: .github/workflows/deploy.yml in your repo
 
@@ -34,30 +28,47 @@ jobs:
       - name: Copy latest versioned HTML to index.html in each app folder
         run: |
           for dir in */; do
-            # Skip hidden dirs like .github
             [[ "$dir" == .* ]] && continue
-
             app="${dir%/}"
+            [ "$app" = "remember-stable" ] && continue
 
-            # Find the highest-versioned HTML file using sort -V
-            # Handles both v12 and v0.488 style version numbers correctly
             latest=$(ls "$app"/"$app"-v*.html 2>/dev/null | sort -V | tail -1)
 
             if [ -n "$latest" ]; then
               cp "$latest" "$app/index.html"
               echo "✅ $app → copied $latest → index.html"
 
-              # Remember-specific: update service worker cache version
               if [ "$app" = "remember" ] && [ -f "$app/service-worker.js" ]; then
                 VERSION=$(echo "$latest" | grep -oP 'v[\d.]+')
-            VERSION=${VERSION%.}  # strip trailing dot if present
+                VERSION=${VERSION%.}
                 sed -i "s/const CACHE_VERSION = 'remember-v[^']*'/const CACHE_VERSION = 'remember-$VERSION'/" "$app/service-worker.js"
-                echo "   ↳ service-worker.js cache version updated to: remember-$VERSION"
+                echo "   ↳ service-worker.js updated to: remember-$VERSION"
               fi
             else
               echo "⏭️  $app → no versioned HTML found, skipping"
             fi
           done
+
+      - name: Deploy remember-stable from stable-version.txt
+        run: |
+          if [ -f "remember-stable/stable-version.txt" ]; then
+            VERSION=$(cat remember-stable/stable-version.txt | tr -d '[:space:]')
+            SRC="remember/remember-${VERSION}.html"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "remember-stable/index.html"
+              echo "✅ remember-stable → deployed $VERSION → index.html"
+
+              if [ -f "remember-stable/service-worker.js" ]; then
+                sed -i "s/const CACHE_VERSION = 'remember-stable-v[^']*'/const CACHE_VERSION = 'remember-stable-${VERSION}'/" "remember-stable/service-worker.js"
+                echo "   ↳ service-worker.js updated to: remember-stable-${VERSION}"
+              fi
+            else
+              echo "❌ remember-stable → $SRC not found"
+              echo "   Make sure remember/remember-${VERSION}.html is committed"
+            fi
+          else
+            echo "⏭️  remember-stable → no stable-version.txt, skipping"
+          fi
 
       - name: Commit and push updated files
         run: |
