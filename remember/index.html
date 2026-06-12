@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1014 -->
+<!-- Remember App - Version 0.1015 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1014
+  Version 0.1015
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -7319,7 +7319,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1014';
+const APP_VERSION = '0.1015';
 
 
 
@@ -13650,25 +13650,40 @@ function init() {
       '<div id="note-viewer">' + rendered + '</div>' +
       '</body></html>';
 
-    var printWin = window.open('', '_blank', 'width=800,height=600');
-    if (!printWin) {
-      showToast('Please allow popups to print', true);
-      return;
+    // Use a hidden iframe for printing — avoids iOS PWA popup/autoprint warnings
+    var printFrame = document.createElement('iframe');
+    printFrame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;';
+    document.body.appendChild(printFrame);
+    var frameDoc = printFrame.contentDocument || printFrame.contentWindow.document;
+    frameDoc.open();
+    frameDoc.write(printHTML);
+    frameDoc.close();
+    function doFramePrint() {
+      try {
+        printFrame.contentWindow.focus();
+        printFrame.contentWindow.print();
+      } catch(e) {
+        showToast('Print failed. Try using your browser\'s print function.', true);
+      }
+      // Remove iframe after a delay to allow print dialog to fully initialise
+      setTimeout(function() {
+        try { document.body.removeChild(printFrame); } catch(e) {}
+      }, 60000);
+      // Also remove on afterprint
+      try {
+        printFrame.contentWindow.addEventListener('afterprint', function() {
+          setTimeout(function() {
+            try { document.body.removeChild(printFrame); } catch(e) {}
+          }, 500);
+        });
+      } catch(e) {}
     }
-    printWin.document.open();
-    printWin.document.write(printHTML);
-    printWin.document.close();
-    printWin.focus();
-    printWin.addEventListener('afterprint', function() {
-      printWin.close();
-    });
-    // Call print() directly — still within user gesture chain
-    // setTimeout causes iOS PWA to show 'automatic printing blocked' warning
-    printWin.print();
-    // Fallback close if afterprint never fires
-    setTimeout(function() {
-      try { if (!printWin.closed) printWin.close(); } catch(e) {}
-    }, 120000);
+    // Wait for iframe content to load before printing
+    printFrame.onload = function() { doFramePrint(); };
+    // Fallback: if onload already fired (sync write), call directly
+    if (printFrame.contentDocument && printFrame.contentDocument.readyState === 'complete') {
+      doFramePrint();
+    }
   }
   document.getElementById('print-btn').addEventListener('click', function() { doPrintNote(); });
   document.getElementById('more-print-btn').addEventListener('click', function() { closeMoreMenu(); doPrintNote(); });
