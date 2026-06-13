@@ -1,6 +1,5 @@
 // Remember App - Version 0.1034
-// Service Worker for remember-stable — separate cache from dev deployment
-// IMPORTANT: This file must be named service-worker.js in the remember-stable/ folder
+// Service Worker for remember-stable (stable deployment)
 
 const CACHE_VERSION = 'remember-stable-v0.1034';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
@@ -8,8 +7,8 @@ const STATIC_CACHE  = CACHE_VERSION + '-static';
 const PRECACHE_ASSETS = [
   './',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  './icon192.png',
+  './icon512.png',
 ];
 
 self.addEventListener('install', function(event) {
@@ -28,7 +27,6 @@ self.addEventListener('activate', function(event) {
       return Promise.all(
         cacheNames
           .filter(function(name) {
-            // Only delete remember-stable- caches, never touch remember-v caches
             return name.startsWith('remember-stable-') && name !== STATIC_CACHE;
           })
           .map(function(name) { return caches.delete(name); })
