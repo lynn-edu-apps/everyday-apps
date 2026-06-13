@@ -1,11 +1,14 @@
-# Remember App - Version 0.1034
+# Remember App - Version 0.1063
 # GitHub Actions workflow — deploys latest versioned HTML to index.html
 # for all app subdirectories in everyday-apps.
 #
-# Remember Stable:
-#   To bless a version: edit remember-stable/stable-version.txt
-#   File should contain just the version number, e.g.: v0.1034
-#   The workflow finds remember/remember-v0.1034.html and copies it here.
+# Remember Stable & Dev:
+#   To bless a version: edit the stable-version.txt in the relevant folder
+#   File should contain just the version number, e.g.: v0.1063
+#   The workflow finds remember/remember-v0.1063.html and copies it to index.html
+#
+#   remember-stable/stable-version.txt  →  remember-stable/index.html
+#   remember-dev/stable-version.txt     →  remember-dev/index.html
 #
 # Place this file at: .github/workflows/deploy.yml in your repo
 
@@ -30,7 +33,9 @@ jobs:
           for dir in */; do
             [[ "$dir" == .* ]] && continue
             app="${dir%/}"
+            # Skip remember-stable and remember-dev — handled separately below
             [ "$app" = "remember-stable" ] && continue
+            [ "$app" = "remember-dev" ] && continue
 
             latest=$(ls "$app"/"$app"-v*.html 2>/dev/null | sort -V | tail -1)
 
@@ -57,7 +62,6 @@ jobs:
             if [ -f "$SRC" ]; then
               cp "$SRC" "remember-stable/index.html"
               echo "✅ remember-stable → deployed $VERSION → index.html"
-
               if [ -f "remember-stable/service-worker.js" ]; then
                 sed -i "s/const CACHE_VERSION = 'remember-stable-v[^']*'/const CACHE_VERSION = 'remember-stable-${VERSION}'/" "remember-stable/service-worker.js"
                 echo "   ↳ service-worker.js updated to: remember-stable-${VERSION}"
@@ -68,6 +72,26 @@ jobs:
             fi
           else
             echo "⏭️  remember-stable → no stable-version.txt, skipping"
+          fi
+
+      - name: Deploy remember-dev from stable-version.txt
+        run: |
+          if [ -f "remember-dev/stable-version.txt" ]; then
+            VERSION=$(cat remember-dev/stable-version.txt | tr -d '[:space:]')
+            SRC="remember/remember-${VERSION}.html"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "remember-dev/index.html"
+              echo "✅ remember-dev → deployed $VERSION → index.html"
+              if [ -f "remember-dev/service-worker.js" ]; then
+                sed -i "s/const CACHE_VERSION = 'remember-dev-v[^']*'/const CACHE_VERSION = 'remember-dev-${VERSION}'/" "remember-dev/service-worker.js"
+                echo "   ↳ service-worker.js updated to: remember-dev-${VERSION}"
+              fi
+            else
+              echo "❌ remember-dev → $SRC not found"
+              echo "   Make sure remember/remember-${VERSION}.html is committed"
+            fi
+          else
+            echo "⏭️  remember-dev → no stable-version.txt, skipping"
           fi
 
       - name: Commit and push updated files
