@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1035 -->
+<!-- Remember App - Version 0.1063 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1035
+  Version 0.1063
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1543,7 +1543,7 @@ body.reading-mode #note-fab,
 
 /* ===== QUIET MODE FAB (⋯ button) ===== */
 #quiet-more-fab {
-  display: none; /* shown via JS in quiet mode */
+  display: none; /* shown via CSS when note-screen-active */
   position: fixed;
   z-index: 32; /* above note-header (z-index 30) */
   right: 12px;
@@ -1562,6 +1562,9 @@ body.reading-mode #note-fab,
   color: var(--fg);
 }
 #quiet-more-fab svg { pointer-events: none; }
+/* quiet-more-fab shown via JS in quiet mode and view-only mode only */
+/* top-more-btn handles normal mode */
+body.reading-mode #quiet-more-fab { display: flex !important; }
 @media (hover: hover) {
   #quiet-more-fab:hover { background: var(--bg3); }
 }
@@ -2592,6 +2595,29 @@ mark.find-match-current {
 }
 
 /* ===== FLOATING BOTTOM TOOLBAR ===== */
+#toolbar-collapse-tab {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: 48px;
+  height: 18px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 0;
+}
+#toolbar-collapse-tab svg { pointer-events: none; transition: transform 0.2s; }
+body.note-screen-active #toolbar-collapse-tab { display: flex; }
+body.toolbar-collapsed #toolbar-collapse-tab svg { transform: rotate(180deg); }
 .note-bottom-bar {
   display: flex;
   align-items: center;
@@ -2600,15 +2626,20 @@ mark.find-match-current {
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  /* position:fixed keeps toolbar pinned below the header regardless of iOS
-     scroll-to-cursor behavior. top is set dynamically by pinToolbars() in JS. */
   position: fixed;
-  top: 0; /* overridden by pinToolbars() immediately on load */
+  top: 0;
   left: 0;
   right: 0;
   z-index: 29;
-  overflow: visible; /* allow scrollbar track to sit at bottom edge */
+  overflow: visible;
 }
+body.toolbar-collapsed #note-bottom-bar { display: none !important; }
+body.reading-mode #toolbar-collapse-tab { display: none !important; }
+body.view-only-mode #toolbar-collapse-tab { display: none !important; }
+/* Hide top-more-btn in quiet/view-only (FAB used instead) */
+body.reading-mode #top-more-btn { display: none !important; }
+body.view-only-mode #top-more-btn { display: none !important; }
+body.hide-toolbar-collapse-tab #toolbar-collapse-tab { display: none !important; }
 
 /* Scrollable inner row of toolbar buttons */
 .toolbar-scroll {
@@ -4518,6 +4549,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           </svg>
         </button>
         <!-- Cut button — upper toolbar, right of copy -->
+        <!-- delete-line-btn: despite the ID name, this button functions as CUT —
+             it removes selected lines and puts them in the clipboard (scissors icon) -->
         <button class="icon-btn" id="delete-line-btn" aria-label="Cut selected lines" title="Cut lines" style="display:none;color:var(--fg3)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
             <circle cx="6" cy="6" r="3"/>
@@ -4574,6 +4607,14 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <polyline points="18 16 21 19 18 22" stroke-width="2"/>
           </svg>
         </button>
+        <!-- More button — always visible in top toolbar in normal mode -->
+        <!-- Hidden in quiet mode and view-only mode (those use quiet-more-fab) -->
+        <button class="icon-btn" id="top-more-btn" aria-label="More options" title="More"
+          style="margin-left:auto;flex-shrink:0;">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+            <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
+          </svg>
+        </button>
       </div>
     </div>
   </header>
@@ -4601,6 +4642,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
   <!-- Second toolbar — always at top, below note header -->
   <!-- Floating bottom toolbar — stays above keyboard on mobile -->
+  <button id="toolbar-collapse-tab" aria-label="Toggle toolbar" title="Toggle toolbar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6 9 12 15 18 9"/></svg>
+  </button>
+
   <div class="note-bottom-bar" id="note-bottom-bar">
     <!-- Scroll-left arrow (shown only when content is scrolled right) -->
     <button class="toolbar-scroll-arrow" id="toolbar-scroll-left" aria-label="Scroll toolbar left" style="display:none">
@@ -4817,9 +4862,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)"><polygon points="8,4 16,12 8,20"/></svg>
     </button>
     <!-- More (⋯) button — at far right, always visible -->
+    <!-- toolbar-more-btn removed — More button moved permanently to quiet-more-fab in top area -->
+    <!-- Keeping element hidden for event handler compatibility -->
     <button class="icon-btn toolbar-more-btn" id="toolbar-more-btn" tabindex="-1"
       aria-label="More options" title="More"
-      style="flex-shrink:0;padding:0 10px;border-radius:0;border-left:1px solid var(--border)">
+      style="display:none">
       <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
         <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
       </svg>
@@ -5364,7 +5411,25 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none;flex:1">Scroll to bottom</span>
   </button>
-  <!-- Reading mode item -->
+  <!-- Cut/Copy/Paste overflow items — shown when top toolbar is too narrow -->
+  <button id="more-overflow-copy-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+    <span style="pointer-events:none;flex:1">Copy</span>
+  </button>
+  <!-- Copy as plain text — moved here, below overflow items -->
+  <button id="more-copy-plain-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><text x="15.5" y="20" font-size="10" font-weight="900" fill="currentColor" stroke="currentColor" stroke-width="0.6" paint-order="stroke fill" font-family="serif" text-anchor="middle" style="pointer-events:none">T</text></svg>
+    <span style="pointer-events:none;flex:1">Copy as plain text</span>
+  </button>
+  <button id="more-overflow-cut-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><circle cx="6" cy="20" r="2"/><circle cx="18" cy="20" r="2"/><line x1="2" y1="4" x2="22" y2="4"/><line x1="6" y1="18" x2="18" y2="6"/><line x1="18" y1="18" x2="6" y2="6"/></svg>
+    <span style="pointer-events:none;flex:1">Cut</span>
+  </button>
+  <button id="more-overflow-paste-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+    <span style="pointer-events:none;flex:1">Paste</span>
+  </button>
+    <!-- Reading mode item -->
   <button id="more-reading-mode-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
       <path d="M2 6h9a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H2z"/>
@@ -5537,25 +5602,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="8" x2="22" y2="8" stroke-opacity="0.3"/><line x1="2" y1="16" x2="22" y2="16" stroke-opacity="0.3"/></svg>
     <span id="more-ruler-label" style="pointer-events:none;flex:1">Reading ruler</span>
     <span id="more-ruler-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
-  </button>
-
-  <!-- Copy as plain text item -->
-  <button id="more-copy-plain-btn" style="
-    display:flex;align-items:center;gap:12px;
-    width:100%;padding:13px 18px;
-    background:none;border:none;
-    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
-    text-align:left;cursor:pointer;
-    touch-action:manipulation;
-    user-select:none;-webkit-user-select:none;
-    box-sizing:border-box;
-  ">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <rect x="9" y="9" width="13" height="13" rx="2"/>
-      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-      <text x="15.5" y="20" font-size="10" font-weight="900" fill="currentColor" stroke="currentColor" stroke-width="0.6" paint-order="stroke fill" font-family="serif" text-anchor="middle" style="pointer-events:none">T</text>
-    </svg>
-    <span style="pointer-events:none;flex:1">Copy as plain text</span>
   </button>
 
   <!-- Export note item -->
@@ -6178,6 +6224,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <label class="settings-radio-label"><input type="radio" name="note-editing-mode" value="typing"> Typing mode only</label>
           <label class="settings-radio-label"><input type="radio" name="note-editing-mode" value="rronly"> Read &amp; Revise only</label>
         </div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Show toolbar collapse button</div>
+          <div class="settings-row-desc">Shows a small chevron pill above the lower toolbar that you can tap to hide or show the toolbar. Turn off if users accidentally collapse the toolbar.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show toolbar collapse button">
+          <input type="checkbox" id="show-toolbar-collapse-tab-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
       </div>
       <div class="settings-row">
         <div>
@@ -7447,7 +7503,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1035';
+const APP_VERSION = '0.1063';
 
 
 
@@ -7474,6 +7530,18 @@ const APP_VERSION = '0.1035';
 // so it's safe to apply on all platforms without detection.
 var _pinnedHeaderH  = 0;
 var _pinnedToolbarH = 0;
+
+function applyToolbarCollapsed(collapsed) {
+  document.body.classList.toggle('toolbar-collapsed', collapsed);
+  pinToolbars();
+}
+
+function toggleToolbarCollapse() {
+  var collapsed = !document.body.classList.contains('toolbar-collapsed');
+  settings.toolbarCollapsed = collapsed;
+  saveSettings();
+  applyToolbarCollapsed(collapsed);
+}
 
 function pinToolbars() {
   var header  = document.getElementById('note-top-bar');
@@ -7502,6 +7570,8 @@ function pinToolbars() {
 
   header.style.top  = offsetTop + 'px';
   toolbar.style.top = (offsetTop + _pinnedHeaderH) + 'px';
+  var _colTab = document.getElementById('toolbar-collapse-tab');
+  if (_colTab) _colTab.style.top = (offsetTop + _pinnedHeaderH - 18) + 'px';
 
   // Position find bar just below the lower toolbar
   var findBar = document.getElementById('find-bar');
@@ -7514,11 +7584,15 @@ function pinToolbars() {
   }
 
   area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + findBarH + 12) + 'px';
+  // Check overflow here — pinToolbars runs after layout is complete
+  checkTopBarOverflow();
 }
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
   globalViewOnly: false,
+  toolbarCollapsed: false,
+  showToolbarCollapseTab: true,
   noteEditingMode: 'both', // 'both', 'typing', 'rronly'
   wrapNoteNames: false,
   speakInQuiet: false,
@@ -7649,7 +7723,8 @@ var isAllSelected = false;   // whether select-all is currently active
 var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
 var updateViewOnlyBtns = function() {}; // replaced in init
 var isCheckboxRaw = function() { return false; }; // replaced in init
-var applyOutlineMode = function() {}; // replaced in init
+var applyOutlineMode = function() {};
+var checkTopBarOverflow = function() {}; // defined inside init() // replaced in init
 var closeAllBars = function() {}; // replaced in init
 var updateTagFilterIndicator = function() {}; // replaced in init
 var applyTagFilter = function() {}; // replaced in init
@@ -7868,6 +7943,8 @@ function applySettings() {
   document.body.classList.toggle('typing-mode-only', _nem === 'typing');
   document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
   document.body.classList.toggle('wrap-note-names', !!settings.wrapNoteNames);
+  document.body.classList.toggle('toolbar-collapsed', !!settings.toolbarCollapsed);
+  document.body.classList.toggle('hide-toolbar-collapse-tab', !settings.showToolbarCollapseTab);
   document.body.classList.toggle('speak-in-quiet', !!settings.speakInQuiet);
   const body = document.body;
 
@@ -8103,6 +8180,7 @@ function applySettings() {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(function(s) { s.classList.remove('active'); });
   document.getElementById(id).classList.add('active');
+  document.body.classList.toggle('note-screen-active', id === 'note-screen');
 }
 
 // ===== HOME SCREEN =====
@@ -9185,8 +9263,7 @@ function toggleReadingMode() {
     }
   }
   // Show/hide quiet mode FAB and re-pin toolbars
-  var qfab = document.getElementById('quiet-more-fab');
-  if (qfab) qfab.style.display = _readingMode ? 'flex' : 'none';
+  // quiet-more-fab always shown via CSS in note screen; no JS needed here
   pinToolbars();
   // Update More menu label
   var lbl = document.getElementById('more-reading-mode-label');
@@ -9196,8 +9273,7 @@ function clearReadingMode() {
   if (!_readingMode) return;
   _readingMode = false;
   document.body.classList.remove('reading-mode');
-  var qfab = document.getElementById('quiet-more-fab');
-  if (qfab) qfab.style.display = 'none';
+  // quiet-more-fab always shown via CSS in note screen
   pinToolbars();
   var lbl = document.getElementById('more-reading-mode-label');
   if (lbl) lbl.textContent = 'Quiet mode';
@@ -9552,6 +9628,9 @@ function setViewMode(on, suppressFocus) {
     }
   }
   updateViewOnlyBtns();
+  // Recheck overflow after mode switch — visible buttons change
+  setTimeout(checkTopBarOverflow, 50);
+  setTimeout(checkTopBarOverflow, 200);
 }
 
 // ===== NOTE SCREEN =====
@@ -9610,8 +9689,9 @@ function openNote(id, speakDelay) {
   }
   var _isViewOnly = isViewOnlyNote(id);
   document.body.classList.toggle('view-only-mode', _isViewOnly);
-  var qfab = document.getElementById('quiet-more-fab');
-  if (qfab && !_readingMode) qfab.style.display = _isViewOnly ? 'flex' : 'none';
+  // Re-check overflow after note screen becomes active
+  setTimeout(checkTopBarOverflow, 100);
+  // quiet-more-fab always shown via CSS in note screen
   if (_isViewOnly) startInView = true;
   // Force mode based on noteEditingMode setting
   if (settings.noteEditingMode === 'typing') startInView = false;
@@ -10500,7 +10580,7 @@ function goHome() {
   if (settings.retainQuietMode !== true) clearReadingMode();
   stopSpeaking();
   document.body.classList.remove('view-only-mode');
-  if (!_readingMode) { var _qfab = document.getElementById('quiet-more-fab'); if (_qfab) _qfab.style.display = 'none'; }
+  // quiet-more-fab hidden via CSS when not in note screen (note-screen-active removed by showScreen)
   var _banner = document.getElementById('tap-to-speak-banner');
   if (_banner) _banner.style.display = 'none';
   // Remember the mode we were in when leaving this note
@@ -11009,6 +11089,7 @@ function openSettings() {
   var _nem = settings.noteEditingMode || 'both';
   var _nemRadio = document.querySelector('#note-editing-mode-seg input[value="' + _nem + '"]');
   if (_nemRadio) _nemRadio.checked = true;
+  var sctToggle=document.getElementById('show-toolbar-collapse-tab-toggle'); if(sctToggle)sctToggle.checked=(settings.showToolbarCollapseTab !== false);
   var wnnToggle=document.getElementById('wrap-note-names-toggle'); if(wnnToggle)wnnToggle.checked=!!settings.wrapNoteNames;
   var siqToggle=document.getElementById('speak-in-quiet-toggle'); if(siqToggle)siqToggle.checked=!!settings.speakInQuiet;
   var aswToggle=document.getElementById('always-speak-whole-toggle'); if(aswToggle)aswToggle.checked=!!settings.alwaysSpeakWholeNote;
@@ -12448,6 +12529,61 @@ function init() {
   });
 
   // Note screen
+  // Toolbar collapse tab listener
+  var _collapseTab = document.getElementById('toolbar-collapse-tab');
+  if (_collapseTab) {
+    _collapseTab.addEventListener('click', function() {
+      toggleToolbarCollapse();
+    });
+  }
+
+  // Top toolbar overflow detection — moves cut/copy/paste to More menu if no room
+  var _topBarOverflow = false;
+  var _overflowDebounce = null;
+  checkTopBarOverflow = function() {
+    var moreBtn = document.getElementById('top-more-btn');
+    if (!moreBtn) { showToast('top-more-btn missing', true); return; }
+    // More button is pushed right by margin-left:auto
+    // Overflow = its left edge is beyond viewport (button is off screen)
+    var moreLeft = moreBtn.getBoundingClientRect().left;
+    var vw = window.innerWidth;
+    var overflow = moreLeft > vw - moreBtn.offsetWidth - 2;
+    showToast('moreLeft=' + Math.round(moreLeft) + ' vw=' + vw + ' btnW=' + moreBtn.offsetWidth + ' overflow=' + overflow, true);
+    _topBarOverflow = overflow;
+    var copyBtn  = document.getElementById('copy-btn');
+    var cutBtn   = document.getElementById('delete-line-btn');
+    var pasteBtn = document.getElementById('paste-btn');
+    // More menu overflow items
+    var mCopy  = document.getElementById('more-overflow-copy-btn');
+    var mCut   = document.getElementById('more-overflow-cut-btn');
+    var mPaste = document.getElementById('more-overflow-paste-btn');
+    if (overflow) {
+      // Hide from top toolbar — show in More menu
+      if (copyBtn)  copyBtn.style.display  = 'none';
+      if (cutBtn)   cutBtn.style.display   = 'none';
+      if (pasteBtn) pasteBtn.style.display = 'none';
+      if (mCopy)  mCopy.style.display  = 'flex';
+      if (mCut)   mCut.style.display   = 'flex';
+      if (mPaste) mPaste.style.display = 'flex';
+    } else {
+      // Restore to top toolbar
+      if (copyBtn)  copyBtn.style.display  = '';
+      if (cutBtn)   cutBtn.style.display   = '';
+      if (pasteBtn) pasteBtn.style.display = '';
+      if (mCopy)  mCopy.style.display  = 'none';
+      if (mCut)   mCut.style.display   = 'none';
+      if (mPaste) mPaste.style.display = 'none';
+    }
+  }
+  var debouncedCheckTopBarOverflow = function() {
+    clearTimeout(_overflowDebounce);
+    _overflowDebounce = setTimeout(checkTopBarOverflow, 150);
+  };
+  window.addEventListener('resize', debouncedCheckTopBarOverflow);
+  // Run multiple checks as layout settles — fonts/icons may load late
+  setTimeout(checkTopBarOverflow, 100);
+  setTimeout(checkTopBarOverflow, 500);
+  setTimeout(checkTopBarOverflow, 1500);
   document.getElementById('back-btn').addEventListener('mousedown', function(e) {
     e.preventDefault(); // prevent blur firing before our click handler
   });
@@ -13054,10 +13190,10 @@ function init() {
   // Toggle More menu open/closed
   var moreMenuOpen = false;
   function openMoreMenu() {
-    // In quiet mode or view-only mode use the FAB as anchor, otherwise use toolbar button
-    var btn = ((_readingMode || document.body.classList.contains('view-only-mode')) && document.getElementById('quiet-more-fab'))
-      ? document.getElementById('quiet-more-fab')
-      : document.getElementById('toolbar-more-btn');
+    // Use FAB in quiet/view-only mode, top-more-btn in normal mode
+    var btn = (_readingMode || document.body.classList.contains('view-only-mode'))
+      ? (document.getElementById('quiet-more-fab') || document.getElementById('top-more-btn'))
+      : (document.getElementById('top-more-btn') || document.getElementById('quiet-more-fab'));
     var menu  = document.getElementById('toolbar-more-menu');
     if (!btn || !menu) return;
     // Rebuild hidden items fresh every open so mode-based visibility is current
@@ -13145,6 +13281,12 @@ function init() {
     });
   }
   document.getElementById('toolbar-more-btn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (isSpeaking) stopSpeaking();
+    if (moreMenuOpen) { closeMoreMenu(); } else { openMoreMenu(); }
+  });
+  document.getElementById('top-more-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('top-more-btn').addEventListener('click', function(e) {
     e.stopPropagation();
     if (isSpeaking) stopSpeaking();
     if (moreMenuOpen) { closeMoreMenu(); } else { openMoreMenu(); }
@@ -13291,6 +13433,19 @@ function init() {
     document.getElementById('note-content-area').scrollTo({ top: 0, behavior: 'smooth' });
   });
   document.getElementById('more-scroll-bottom-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  // Wire overflow More menu items to same actions as toolbar buttons
+  document.getElementById('more-overflow-copy-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    document.getElementById('copy-btn').click();
+  });
+  document.getElementById('more-overflow-cut-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    document.getElementById('delete-line-btn').click();
+  });
+  document.getElementById('more-overflow-paste-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    document.getElementById('paste-btn').click();
+  });
   document.getElementById('more-scroll-bottom-btn').addEventListener('click', function() {
     closeMoreMenu();
     var area = document.getElementById('note-content-area');
@@ -13514,6 +13669,11 @@ function init() {
     var ed = document.getElementById('note-editor');
 
     noteScreen.classList.add('keyboard-open');
+    // Auto-expand toolbar when keyboard opens
+    if (document.body.classList.contains('toolbar-collapsed')) {
+      document.body.classList.remove('toolbar-collapsed');
+      pinToolbars();
+    }
     // Entering EMTIP — exit select-blocks mode if active
     if (selectMode) {
       selectMode = false;
@@ -13572,6 +13732,11 @@ function init() {
     kbBlurTimer = setTimeout(function() {
       if (document.activeElement !== noteEditor) {
         noteScreen.classList.remove('keyboard-open');
+        // Restore collapsed state when keyboard closes
+        if (settings.toolbarCollapsed) {
+          document.body.classList.add('toolbar-collapsed');
+          pinToolbars();
+        }
         isAllSelected = false;
         document.getElementById('select-all-btn').style.color = '';
         updateDictateVisibility();
@@ -16319,6 +16484,11 @@ function init() {
   }
 
 
+  document.getElementById('show-toolbar-collapse-tab-toggle').addEventListener('change', function() {
+    settings.showToolbarCollapseTab = this.checked;
+    document.body.classList.toggle('hide-toolbar-collapse-tab', !this.checked);
+    updateSaveBtnState();
+  });
   document.getElementById('wrap-note-names-toggle').addEventListener('change', function() {
     settings.wrapNoteNames = this.checked;
     document.body.classList.toggle('wrap-note-names', this.checked);
