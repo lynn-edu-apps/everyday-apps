@@ -8,8 +8,8 @@ const STATIC_CACHE  = CACHE_VERSION + '-static';
 const PRECACHE_ASSETS = [
   './',
   './manifest.json',
-  './icon192.png',
-  './icon512.png',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
 ];
 
 self.addEventListener('install', function(event) {
