@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1063 -->
+<!-- Remember App - Version 0.1069 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1063
+  Version 0.1069
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1685,6 +1685,23 @@ body.reading-mode #note-bottom-bar { display: none !important; }
 
 /* ===== COLLAPSIBLE OUTLINE ===== */
 .viewer-line { position: relative; }
+/* Tag color borders — shown when settings.tagColorBorders is on */
+.tag-border { border-left: 4px solid transparent; padding-left: 6px !important; box-sizing: border-box; }
+/* Blank lines between tagged blocks need extra height so colored borders don't appear to touch */
+body.tag-color-borders .viewer-line.blank-viewer-line {
+  border-left: 4px solid transparent;
+  min-height: calc(var(--blank-line-height-factor, 1) * var(--font-size-editor, 20px));
+}
+body.tag-color-borders .tag-border-1 { border-left-color: var(--color-red); }
+body.tag-color-borders .tag-border-2 { border-left-color: var(--color-orange); }
+body.tag-color-borders .tag-border-3 { border-left-color: var(--color-gold); }
+body.tag-color-borders .tag-border-4 { border-left-color: var(--color-green); }
+body.tag-color-borders .tag-border-5 { border-left-color: var(--color-blue); }
+body.tag-color-borders .tag-border-6 { border-left-color: var(--color-purple); }
+body.tag-color-borders .tag-border-7 { border-left-color: var(--color-magenta); }
+body.tag-color-borders .tag-border-8 { border-left-color: var(--color-pink); }
+body.tag-color-borders .tag-border-9 { border-left-color: var(--color-rose); }
+body.tag-color-borders .tag-border-10 { border-left-color: var(--color-violet); }
 .viewer-line.blank-viewer-line { height: calc(var(--blank-line-height-factor, 1) * var(--font-size-editor, 20px)); display: block; }
 .viewer-line.paragraph-end { border-bottom: 1px solid var(--border); padding-bottom: 0.35em; }
 /* Theme pill */
@@ -1871,6 +1888,7 @@ body.outline-mode #note-viewer { padding-left: 30px; }
   box-shadow: 0 0 0 2px rgba(255,255,255,0.35);
 }
 #tag-filter-indicator.active { display: inline-flex; }
+#tag-filter-indicator.paused { display: inline-flex; background: var(--bg3); color: var(--fg2); box-shadow: 0 0 0 2px var(--border); }
 #hide-completed-indicator.active { display: inline-flex; }
 .viewer-line.completed-hidden { display: none !important; }
 body.tags-hidden .note-tag { display: none !important; }
@@ -1896,6 +1914,8 @@ body.tags-hidden .note-tag { display: none !important; }
 .tag-andor-btn { font-family:var(--font-body); font-size:0.78em; padding:0; line-height:1; height:1.7em; padding-left:10px; padding-right:10px; border:none; background:var(--bg3); color:var(--fg2); cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none; white-space:nowrap; }
 .tag-andor-btn.active { background:var(--accent); color:#fff; }
 #tag-filter-clear { font-family:var(--font-body); font-size:0.82em; font-weight:600; padding:0; line-height:1; height:1.9em; padding-left:14px; padding-right:14px; border:none; border-radius:999px; background:#d97706; color:#fff; cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none; margin-left:auto; flex-shrink:0; }
+#tag-filter-pause { font-family:var(--font-body); font-size:0.82em; font-weight:600; padding:0; line-height:1; height:1.9em; padding-left:14px; padding-right:14px; border:none; border-radius:999px; background:var(--fg3); color:var(--bg); cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none; flex-shrink:0; }
+#tag-filter-pause:disabled { background:var(--bg3); color:var(--fg3); cursor:default; }
 #tag-filter-chips { overflow-y:auto; flex:1; padding:8px 12px; display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; }
 .tag-chip { font-family:var(--font-body); font-size:0.85em; padding:0; line-height:1; height:2em; padding-left:12px; padding-right:12px; border:1.5px solid var(--border); border-radius:999px; background:var(--bg3); color:var(--fg2); cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none; display:inline-flex; align-items:center; flex-shrink:0; white-space:nowrap; transition:background 0.12s,color 0.12s; }
 .tag-chip.include { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -4918,6 +4938,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <button class="tag-andor-btn active" id="tag-and-btn" data-mode="and">AND</button>
         <button class="tag-andor-btn" id="tag-or-btn" data-mode="or">OR</button>
       </div>
+      <button id="tag-filter-pause">Pause filter</button>
       <button id="tag-filter-clear">Clear filter</button>
       <label style="display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;-webkit-user-select:none;flex-shrink:0;margin-left:4px">
         <input type="checkbox" id="tag-filter-show-tags-toggle" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
@@ -6235,6 +6256,26 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+      <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div>
+          <div class="settings-row-label">Tag scope</div>
+          <div class="settings-row-desc">Controls whether a tag on a parent line applies to its indented children. "Block" = inherited. "Line only" = direct tag only. Also fixes filter issues with tag-list lines at left margin.</div>
+        </div>
+        <div class="settings-radio-group" id="tag-scope-seg">
+          <label class="settings-radio-label"><input type="radio" name="tag-scope" value="block"> Block (inherited by children)</label>
+          <label class="settings-radio-label"><input type="radio" name="tag-scope" value="line"> Line only (direct tag only)</label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Color-code lines by tag</div>
+          <div class="settings-row-desc">In Read &amp; Revise mode, adds a colored left border to lines based on their @tag. Each unique tag gets a different color automatically. Useful for priority tagging (e.g. @prio1 through @prio8).</div>
+        </div>
+        <label class="toggle-switch" aria-label="Color-code lines by tag">
+          <input type="checkbox" id="tag-color-borders-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Wrap long note names</div>
@@ -7503,7 +7544,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1063';
+const APP_VERSION = '0.1069';
 
 
 
@@ -7592,6 +7633,8 @@ function pinToolbars() {
 const DEFAULT_SETTINGS = {
   globalViewOnly: false,
   toolbarCollapsed: false,
+  tagColorBorders: false,
+  tagScope: 'block',
   showToolbarCollapseTab: true,
   noteEditingMode: 'both', // 'both', 'typing', 'rronly'
   wrapNoteNames: false,
@@ -7731,6 +7774,7 @@ var applyTagFilter = function() {}; // replaced in init
 var _tagFilterState = {}; // module-level so goHome() can clear it
 var _tagFilterMode = 'and';
 var _tagFilterActive = false;
+var _tagFilterPaused = false;
 var _hideCompleted = false; // module-level so goHome()/openNote() can clear it
 var _editBlockMode = false; // Tap to edit mode
 var themes = {};
@@ -7943,6 +7987,7 @@ function applySettings() {
   document.body.classList.toggle('typing-mode-only', _nem === 'typing');
   document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
   document.body.classList.toggle('wrap-note-names', !!settings.wrapNoteNames);
+  document.body.classList.toggle('tag-color-borders', !!settings.tagColorBorders);
   document.body.classList.toggle('toolbar-collapsed', !!settings.toolbarCollapsed);
   document.body.classList.toggle('hide-toolbar-collapse-tab', !settings.showToolbarCollapseTab);
   document.body.classList.toggle('speak-in-quiet', !!settings.speakInQuiet);
@@ -9506,6 +9551,45 @@ function urlsToLinks(text, addLineWrappers) {
         _sectionDepth.push(_curDepth);
       });
     }
+    // Build tag→color index map for this note (auto-assign colors in encounter order)
+    var _tagColorMap = {};
+    var _tagColorIdx = 0;
+    var _TAG_COLORS = 10; // number of border color classes
+    function _getTagColor(tagName) {
+      if (!(_tagColorMap.hasOwnProperty(tagName))) {
+        _tagColorMap[tagName] = (++_tagColorIdx);
+      }
+      return _tagColorMap[tagName];
+    }
+    // Pre-scan: assign colors in order of first appearance
+    if (settings && settings.tagColorBorders) {
+      _rawLines.forEach(function(rl) {
+        (rl.match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t) {
+          _getTagColor(t.slice(1));
+        });
+      });
+    }
+    function _isPureTagLineLocal(line) { return /^\s*(@[a-zA-Z0-9_-]+\s*)+$/.test(line); }
+    function _effectiveTags(lines, idx) {
+      var tags = [];
+      var raw = lines[idx] || '';
+      (raw.match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t) { tags.push(t.slice(1)); });
+      if (settings && settings.tagScope === 'line') return tags;
+      var myIndent = (raw.match(/^(\s*)/)[1] || '').length;
+      for (var j = idx - 1; j >= 0; j--) {
+        var al = lines[j];
+        if (!al || al.trim() === '') continue;
+        if (_isPureTagLineLocal(al)) continue;
+        var aIndent = (al.match(/^(\s*)/)[1] || '').length;
+        if (aIndent < myIndent) {
+          (al.match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t) { tags.push(t.slice(1)); });
+          myIndent = aIndent;
+        }
+        if (myIndent === 0) break;
+      }
+      return tags;
+    }
+
     return renderedLines.map(function(line, i) {
       // Horizontal rule: line of 3+ hyphens only (raw before HTML escaping was ---+)
       var rawForHr = _rawLines[i] || '';
@@ -9520,11 +9604,19 @@ function urlsToLinks(text, addLineWrappers) {
         var content = line.replace(/^#+\s*/, '');
         var _hPad = settings.headingIndent ? (_sectionDepth[i] * _viw) : 0;
         var _hStyle = _hPad > 0 ? ' style="padding-left:' + _hPad + 'em"' : '';
-        return '<div class="viewer-line" data-line="' + i + '">'
+        var _hTagBorderClass = '';
+        if (settings && settings.tagColorBorders) {
+          var _hEffTags = _effectiveTags(_rawLines, i);
+          if (_hEffTags.length > 0) {
+            var _hColorIdx = _tagColorMap[_hEffTags[0]];
+            if (_hColorIdx) _hTagBorderClass = ' tag-border tag-border-' + ((_hColorIdx - 1) % _TAG_COLORS + 1);
+          }
+        }
+        return '<div class="viewer-line' + _hTagBorderClass + '" data-line="' + i + '">'
           + '<div class="viewer-h' + level + '"' + _hStyle + '>' + (content || '&nbsp;') + '</div>'
           + '</div>';
       }
-      if (!line) return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
+      if (!line || rawLine.trim() === '') return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
       // View indent width: compute indent level from raw leading spaces, apply as padding-left
       var _rawLeading = rawLine.match(/^(\s*)/)[1].length;
       var _indentLevel = _rawLeading > 0 ? Math.floor(_rawLeading / _indSp) : 0;
@@ -9556,7 +9648,16 @@ function urlsToLinks(text, addLineWrappers) {
       // Block rule top: separate setting, rule above a checkbox section when preceded by blank line
       var prevRaw = i > 0 ? _rawLines[i - 1] : undefined;
       var blockRuleTopClass = (settings.showBlockRulesTop && !isHrLine && isCheckboxRaw(rawLine) && (prevRaw === undefined || prevRaw.trim() === '')) ? ' block-rule-top' : '';
-      return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + '</div>';
+      // Tag color border
+      var _tagBorderClass = '';
+      if (settings && settings.tagColorBorders) {
+        var _effTags = _effectiveTags(_rawLines, i);
+        if (_effTags.length > 0) {
+          var _colorIdx = _tagColorMap[_effTags[0]];
+          if (_colorIdx) _tagBorderClass = ' tag-border tag-border-' + ((_colorIdx - 1) % _TAG_COLORS + 1);
+        }
+      }
+      return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + _tagBorderClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + '</div>';
     }).join('');
   }
   return escaped;
@@ -9638,6 +9739,7 @@ function openNote(id, speakDelay) {
   // Always clear tag filter, hide-completed and edit-block mode when opening a note
   _tagFilterState = {};
   _tagFilterActive = false;
+  _tagFilterPaused = false;
   _hideCompleted = false;
   exitEditBlockMode();
   if (_noteThemeSnapshot) restoreFromNoteTheme();
@@ -10568,6 +10670,7 @@ function goHome() {
   // Clear tag filter, hide-completed and edit-block mode
   _tagFilterState = {};
   _tagFilterActive = false;
+  _tagFilterPaused = false;
   _hideCompleted = false;
   exitEditBlockMode();
   if (_noteThemeSnapshot) restoreFromNoteTheme();
@@ -11090,6 +11193,8 @@ function openSettings() {
   var _nemRadio = document.querySelector('#note-editing-mode-seg input[value="' + _nem + '"]');
   if (_nemRadio) _nemRadio.checked = true;
   var sctToggle=document.getElementById('show-toolbar-collapse-tab-toggle'); if(sctToggle)sctToggle.checked=(settings.showToolbarCollapseTab !== false);
+  var tcbToggle=document.getElementById('tag-color-borders-toggle'); if(tcbToggle)tcbToggle.checked=!!settings.tagColorBorders;
+  var _tsR=document.querySelector('#tag-scope-seg input[value="'+(settings.tagScope||'block')+'"]'); if(_tsR)_tsR.checked=true;
   var wnnToggle=document.getElementById('wrap-note-names-toggle'); if(wnnToggle)wnnToggle.checked=!!settings.wrapNoteNames;
   var siqToggle=document.getElementById('speak-in-quiet-toggle'); if(siqToggle)siqToggle.checked=!!settings.speakInQuiet;
   var aswToggle=document.getElementById('always-speak-whole-toggle'); if(aswToggle)aswToggle.checked=!!settings.alwaysSpeakWholeNote;
@@ -12542,13 +12647,18 @@ function init() {
   var _overflowDebounce = null;
   checkTopBarOverflow = function() {
     var moreBtn = document.getElementById('top-more-btn');
-    if (!moreBtn) { showToast('top-more-btn missing', true); return; }
-    // More button is pushed right by margin-left:auto
-    // Overflow = its left edge is beyond viewport (button is off screen)
-    var moreLeft = moreBtn.getBoundingClientRect().left;
-    var vw = window.innerWidth;
-    var overflow = moreLeft > vw - moreBtn.offsetWidth - 2;
-    showToast('moreLeft=' + Math.round(moreLeft) + ' vw=' + vw + ' btnW=' + moreBtn.offsetWidth + ' overflow=' + overflow, true);
+    var headerRight = document.querySelector('.note-header-right');
+    if (!moreBtn || !headerRight) return;
+    // Use offsetWidth arithmetic — reliable on mobile without needing getBoundingClientRect
+    // Available space = headerRight width minus the More button's own width
+    var available = headerRight.clientWidth - moreBtn.offsetWidth;
+    // Used space = sum of offsetWidth of all visible buttons except More button
+    var used = 0;
+    var btns = headerRight.querySelectorAll('button:not(#top-more-btn)');
+    btns.forEach(function(b) {
+      if (window.getComputedStyle(b).display !== 'none') used += b.offsetWidth;
+    });
+    var overflow = used > available;
     _topBarOverflow = overflow;
     var copyBtn  = document.getElementById('copy-btn');
     var cutBtn   = document.getElementById('delete-line-btn');
@@ -15084,16 +15194,17 @@ function init() {
     return /@[a-zA-Z0-9_-]+/.test(notes[currentNoteId].content || '');
   }
 
+  function _isPureTagLine(line) { return /^\s*(@[a-zA-Z0-9_-]+\s*)+$/.test(line); }
   function getEffectiveTags(lines, idx) {
-    // Own tags + inherited from ancestors
     var tags = new Set();
     var raw = lines[idx] || '';
     (raw.match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t) { tags.add(t.slice(1)); });
-    // Walk ancestors
+    if (settings.tagScope === 'line') return tags;
     var myIndent = getLineIndent(raw);
     for (var j = idx - 1; j >= 0; j--) {
       var al = lines[j];
       if (al.trim() === '') continue;
+      if (_isPureTagLine(al)) continue;
       if (getLineIndent(al) < myIndent) {
         (al.match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t) { tags.add(t.slice(1)); });
         myIndent = getLineIndent(al);
@@ -15124,7 +15235,8 @@ function init() {
       div.classList.remove('tag-hidden', 'tag-ancestor');
     });
     var hasFilter = Object.keys(_tagFilterState).length > 0;
-    if (!hasFilter) { _tagFilterActive = false; return; }
+    if (!hasFilter) { _tagFilterActive = false; _tagFilterPaused = false; return; }
+    if (_tagFilterPaused) return;
     _tagFilterActive = true;
     var lines = (notes[currentNoteId].content || '').split('\n');
     // First pass: determine match status per line
@@ -15215,6 +15327,7 @@ function init() {
     updateTagFilterExpression();
     applyTagFilter();
     updateTagFilterIndicator();
+    updatePauseBtn();
   });
 
   // AND/OR toggle
@@ -15229,6 +15342,23 @@ function init() {
     applyTagFilter();
   });
 
+  function updatePauseBtn() {
+    var btn = document.getElementById('tag-filter-pause');
+    if (!btn) return;
+    var hasFilter = Object.keys(_tagFilterState).length > 0;
+    btn.disabled = !hasFilter;
+    btn.textContent = _tagFilterPaused ? 'Resume filter' : 'Pause filter';
+  }
+
+  // Pause/resume filter
+  document.getElementById('tag-filter-pause').addEventListener('click', function() {
+    if (Object.keys(_tagFilterState).length === 0) return;
+    _tagFilterPaused = !_tagFilterPaused;
+    applyTagFilter();
+    updateTagFilterIndicator();
+    updatePauseBtn();
+  });
+
   // Clear filter
   document.getElementById('tag-filter-clear').addEventListener('click', function() {
     _tagFilterState = {};
@@ -15236,6 +15366,7 @@ function init() {
     updateTagFilterExpression();
     applyTagFilter();
     updateTagFilterIndicator();
+    updatePauseBtn();
   });
 
   // Open/close
@@ -15246,6 +15377,7 @@ function init() {
     setTimeout(function() {
       buildTagChips();
       updateTagFilterExpression();
+      updatePauseBtn();
       document.getElementById('tag-filter-bar').classList.add('visible');
     }, isViewMode ? 0 : 80);
   });
@@ -15781,15 +15913,18 @@ function init() {
   };
   // Indicator button reopens filter sheet
   document.getElementById('tag-filter-indicator').addEventListener('click', function() {
-    closeAllBars();
-    buildTagChips(); updateTagFilterExpression();
-    document.getElementById('tag-filter-bar').classList.add('visible');
+    if (Object.keys(_tagFilterState).length === 0) return;
+    _tagFilterPaused = !_tagFilterPaused;
+    applyTagFilter();
+    updateTagFilterIndicator();
+    updatePauseBtn();
   });
   updateTagFilterIndicator = function() {
     var ind = document.getElementById('tag-filter-indicator');
     if (!ind) return;
-    // Only show indicator in view mode — irrelevant (and confusing) in edit mode
-    ind.classList.toggle('active', isViewMode && Object.keys(_tagFilterState).length > 0);
+    var hasFilter = isViewMode && Object.keys(_tagFilterState).length > 0;
+    ind.classList.toggle('active', hasFilter && !_tagFilterPaused);
+    ind.classList.toggle('paused', hasFilter && _tagFilterPaused);
   };
 
   function noteHasCheckboxes() {
@@ -16484,6 +16619,24 @@ function init() {
   }
 
 
+  document.querySelectorAll('#tag-scope-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.tagScope = this.value;
+      applyTagFilter(); updateTagFilterIndicator();
+      var ed=document.getElementById('note-editor'), viewer=document.getElementById('note-viewer');
+      if (isViewMode && ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+      updateSaveBtnState();
+    });
+  });
+  document.getElementById('tag-color-borders-toggle').addEventListener('change', function() {
+    settings.tagColorBorders = this.checked;
+    document.body.classList.toggle('tag-color-borders', this.checked);
+    // Re-render viewer to apply/remove borders
+    var ed = document.getElementById('note-editor');
+    var viewer = document.getElementById('note-viewer');
+    if (isViewMode && ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+    updateSaveBtnState();
+  });
   document.getElementById('show-toolbar-collapse-tab-toggle').addEventListener('change', function() {
     settings.showToolbarCollapseTab = this.checked;
     document.body.classList.toggle('hide-toolbar-collapse-tab', !this.checked);
