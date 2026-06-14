@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1093 -->
+<!-- Remember App - Version 0.1129 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1093
+  Version 0.1129
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1911,6 +1911,29 @@ body.tags-hidden .tag-order-prefix { display: none !important; }
 body.tags-hidden .tag-order-line { display: none !important; }
 
 /* ===== TAG FILTER BAR ===== */
+#tag-picker-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 199;
+  background: rgba(0,0,0,0.35);
+}
+#tag-picker-backdrop.visible { display: block; }
+#tag-picker-bar {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  z-index: 200; background: var(--bg2); border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0; flex-direction: column;
+  padding-bottom: calc(env(safe-area-inset-bottom, 34px) + 8px);
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.18);
+  max-height: 70vh;
+}
+#tag-picker-bar.visible { display: flex; }
+#tag-picker-preview {
+  font-family: var(--font-note); font-size: var(--font-size-editor);
+  line-height: var(--line-height); color: var(--fg);
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; resize: none; outline: none;
+  width: 100%; box-sizing: border-box; padding: 6px 10px;
+  min-height: 3em; max-height: 6em;
+  cursor: text;
+}
 #tag-filter-bar {
   display: none; position: fixed; bottom: 0; left: 0; right: 0;
   z-index: 200; background: var(--bg2); border-top: 1px solid var(--border);
@@ -2392,7 +2415,7 @@ body.has-mouse .font-face-arrow { display: block; }
 .note-header {
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
-  padding: 6px 4px 6px 4px;
+  padding: 6px 4px 14px 4px; /* extra bottom padding for toolbar collapse tab */
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2408,14 +2431,15 @@ body.has-mouse .font-face-arrow { display: block; }
 }
 
 .note-header-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
   gap: 2px;
   width: 100%;
 }
 
 .note-header-left { display: flex; align-items: center; gap: 0px; flex-shrink: 0; }
-.note-header-right { display: flex; align-items: center; gap: 4px; flex: 1; justify-content: flex-start; }
+.note-header-right { display: flex; align-items: center; gap: 4px; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
 
 /* ===== KEYBOARD-OPEN MODE ===== */
 /* Hide top row and title when keyboard is open to save space */
@@ -2671,6 +2695,10 @@ body.toolbar-collapsed #toolbar-collapse-tab svg { transform: rotate(180deg); }
   overflow: visible;
 }
 body.toolbar-collapsed #note-bottom-bar { display: none !important; }
+/* In quiet mode, hide any wrapped overflow lines — only first line needed */
+/* In quiet mode, collapse header to just the back button row height */
+body.reading-mode #note-top-bar { overflow: hidden; }
+body.reading-mode .note-header-right { max-height: calc(var(--btn-icon, 44px) + 8px); overflow: hidden; }
 body.reading-mode #toolbar-collapse-tab { display: none !important; }
 body.view-only-mode #toolbar-collapse-tab { display: none !important; }
 /* Hide top-more-btn in quiet/view-only (FAB used instead) */
@@ -3090,6 +3118,8 @@ body.has-mouse .toolbar-drag-handle.dragging {
   outline: none;
   padding: 0;
   overflow: hidden;
+  tab-size: 4; /* visual tab width — tabs are converted to spaces on paste */
+  -moz-tab-size: 4;
 }
 #note-editor::placeholder { color: var(--fg3); }
 
@@ -3988,9 +4018,9 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   inset: 0;
   background: rgba(0,0,0,0.55);
   z-index: 10010;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: center;
-  padding: 20px 8px 18px;
+  padding: 50px 8px 18px;
 }
 .confirm-overlay.open { display: flex; }
 .confirm-overlay.top-anchored {
@@ -3998,7 +4028,11 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   padding: 0 20px;
 }
 .confirm-overlay.centered {
-  align-items: center;
+  align-items: flex-start;
+  padding-top: 0;
+}
+.confirm-overlay.centered .confirm-box {
+  margin-top: max(60px, env(safe-area-inset-top, 0px) + 60px);
 }
 .confirm-box {
   background: var(--bg-dialog, var(--bg));
@@ -4021,7 +4055,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   flex-shrink: 0;
 }
 .confirm-msg { font-size: 0.95em; color: var(--fg2); margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap; overflow-y: auto; flex: 1; }
-.confirm-btns { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.confirm-btns { display: flex; column-gap: 10px; row-gap: 16px; justify-content: flex-end; flex-wrap: wrap; }
 
 /* Quick-add line-pick mode */
 .qa-line-pick .viewer-line { cursor: pointer; }
@@ -5556,6 +5590,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <span id="more-tag-order-label" style="pointer-events:none;flex:1">Add tag order line</span>
   </button>
 
+  <!-- Insert tag item -->
+  <button id="more-insert-tag-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
+    <span style="pointer-events:none;flex:1">Insert tag</span>
+  </button>
+
   <!-- Jump to heading item (only shown when note has headings) -->
   <button id="more-jump-to-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
@@ -5755,6 +5795,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </span>
     </label>
     <div class="confirm-btns" style="margin-top:6px;align-items:center">
+      <button id="quick-add-tag-btn" aria-label="Insert tag" title="Insert tag" style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
       <button id="quick-add-mic-btn" aria-label="Dictate"
         style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:none;align-items:center;justify-content:center;flex-shrink:0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none">
@@ -6274,6 +6315,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <label class="settings-radio-label"><input type="radio" name="note-editing-mode" value="typing"> Typing mode only</label>
           <label class="settings-radio-label"><input type="radio" name="note-editing-mode" value="rronly"> Read &amp; Revise only</label>
         </div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Convert tabs to spaces on paste</div>
+          <div class="settings-row-desc">When pasting text, replace tab characters with spaces (using the indent size setting). Turn off to preserve tab characters.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Convert tabs to spaces on paste">
+          <input type="checkbox" id="convert-tabs-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
       </div>
       <div class="settings-row">
         <div>
@@ -6850,6 +6901,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <textarea id="edit-block-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Block text…" rows="3"></textarea>
     <p id="edit-block-tip">Editing a single line or paragraph — line breaks are not allowed.</p>
     <div id="edit-block-btns">
+      <button id="edit-block-tag-btn" aria-label="Insert tag" title="Insert tag" style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
       <button id="edit-block-mic-btn" aria-label="Dictate" title="Dictate"
         style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:34px;width:34px;cursor:pointer;touch-action:manipulation;display:none;align-items:center;justify-content:center;flex-shrink:0;margin-right:auto">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none">
@@ -6862,6 +6914,23 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <button id="edit-block-cancel-btn">Cancel</button>
       <button id="edit-block-save-btn">Save</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== TAG PICKER BAR ===== -->
+<div id="tag-picker-backdrop"></div>
+<div id="tag-picker-bar">
+  <div style="width:40px;height:4px;background:var(--fg3);border-radius:3px;margin:8px auto 4px;opacity:0.4;flex-shrink:0"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 16px 4px;flex-shrink:0">
+    <span style="font-weight:600;font-size:var(--font-ui);color:var(--fg)">Insert tag</span>
+    <button id="tag-picker-close" style="background:none;border:none;color:var(--fg2);font-size:1.3em;cursor:pointer;padding:4px 8px;line-height:1;touch-action:manipulation">×</button>
+  </div>
+  <div style="padding:0 16px 8px;flex-shrink:0">
+    <textarea id="tag-picker-preview" readonly rows="2" tabindex="-1"></textarea>
+  </div>
+  <div id="tag-picker-chips" style="padding:4px 16px 8px;display:flex;flex-wrap:wrap;gap:8px;overflow-y:auto;flex:1"></div>
+  <div style="padding:8px 16px 4px;display:flex;justify-content:flex-end;border-top:1px solid var(--border);flex-shrink:0">
+    <button id="tag-picker-done" style="font-family:var(--font-body);font-size:var(--font-ui);font-weight:600;padding:0;line-height:1;height:2em;padding-left:20px;padding-right:20px;border:none;border-radius:999px;background:var(--accent);color:#fff;cursor:pointer;touch-action:manipulation">Done</button>
   </div>
 </div>
 
@@ -7573,7 +7642,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1093';
+const APP_VERSION = '0.1129';
 
 
 
@@ -7627,6 +7696,7 @@ function pinToolbars() {
   // TEMP diagnostic — only logs when keyboard is open to reduce noise
   var ns = document.getElementById('note-screen');
   var kbOpen = ns && ns.classList.contains('keyboard-open');
+  /* pinToolbars diagnostic log — commented out, keep for future scroll debugging
   if (kbOpen) {
     console.log('[pinToolbars] offsetTop=' + offsetTop +
       ' scrollY=' + Math.round(window.scrollY) +
@@ -7637,11 +7707,18 @@ function pinToolbars() {
       ' vv.pageTop=' + (vv ? Math.round(vv.pageTop) : 'n/a') +
       ' innerH=' + window.innerHeight);
   }
+  */
 
   header.style.top  = offsetTop + 'px';
   toolbar.style.top = (offsetTop + _pinnedHeaderH) + 'px';
   var _colTab = document.getElementById('toolbar-collapse-tab');
-  if (_colTab) _colTab.style.top = (offsetTop + _pinnedHeaderH - 18) + 'px';
+  if (_colTab) {
+    // Use getBoundingClientRect().bottom for the true visible bottom edge
+    // This works correctly regardless of wrapping or collapse state
+    var _headerRect = header.getBoundingClientRect();
+    var _colTabH = _colTab.offsetHeight || 18;
+    _colTab.style.top = (_headerRect.bottom - Math.round(_colTabH / 2) - 6) + 'px';
+  }
 
   // Position find bar just below the lower toolbar
   var findBar = document.getElementById('find-bar');
@@ -7654,14 +7731,14 @@ function pinToolbars() {
   }
 
   area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + findBarH + 12) + 'px';
-  // Check overflow here — pinToolbars runs after layout is complete
-  checkTopBarOverflow();
+  // (overflow detection removed — use applySmallScreenOverflow instead)
 }
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
   globalViewOnly: false,
   toolbarCollapsed: false,
+  convertTabsOnPaste: true, // true = tabs→spaces on paste, false = leave as tabs
   tagColorBorders: false,
   tagScope: 'block',
   showToolbarCollapseTab: true,
@@ -8034,15 +8111,9 @@ function applySettings() {
   if (settings.uiSize === 'large')   body.classList.add('ui-large');
   if (settings.uiSize === 'xlarge')  body.classList.add('ui-xlarge');
   if (settings.uiSize === 'small')   body.classList.add('ui-small');
-  // Explicitly size toolbar SVGs in pixels — CSS var() in SVG width attr is unreliable
-  var _iconPx = { small: 22, medium: 28, large: 38, xlarge: 48 }[settings.uiSize || 'medium'] || 28;
-  var _tbScroll = document.getElementById('toolbar-scroll');
-  if (_tbScroll) {
-    _tbScroll.querySelectorAll('.icon-btn svg').forEach(function(svg) {
-      svg.style.width  = _iconPx + 'px';
-      svg.style.height = _iconPx + 'px';
-    });
-  }
+  applySmallScreenOverflow();
+  // Size toolbar SVGs explicitly — CSS var() in SVG width attr unreliable in some browsers
+  applyToolbarIconSizes();
 
   // Font
   document.documentElement.style.setProperty('--font-body', settings.font);
@@ -9777,9 +9848,7 @@ function setViewMode(on, suppressFocus) {
     }
   }
   updateViewOnlyBtns();
-  // Recheck overflow after mode switch — visible buttons change
-  setTimeout(checkTopBarOverflow, 50);
-  setTimeout(checkTopBarOverflow, 200);
+  // (overflow detection removed — button placement now uses applySmallScreenOverflow)
 }
 
 // ===== NOTE SCREEN =====
@@ -9839,8 +9908,10 @@ function openNote(id, speakDelay) {
   }
   var _isViewOnly = isViewOnlyNote(id);
   document.body.classList.toggle('view-only-mode', _isViewOnly);
-  // Re-check overflow after note screen becomes active
-  setTimeout(checkTopBarOverflow, 100);
+  // Apply small-screen overflow policy when note opens
+  applySmallScreenOverflow();
+  // Re-apply icon sizes — toolbar may not have been visible when applySettings ran
+  applyToolbarIconSizes();
   // quiet-more-fab always shown via CSS in note screen
   if (_isViewOnly) startInView = true;
   // Force mode based on noteEditingMode setting
@@ -9896,9 +9967,17 @@ function createNewNote() {
 //   where marker is: "-"  or  "[ ]"  or  "[x]"  or  "[X]"  or  "[]"
 // Returns WS1 + marker + WS2 so the caller can insert "\n" + prefix.
 function getSmartIndentPrefix(lineText) {
+  // Strip formatting wrappers so we can see through bold/italic/highlight/color
+  // to find the checkbox/hyphen marker. Keep leading whitespace intact.
+  var stripped = lineText;
+  stripped = stripped.replace(/==(.*)==$/, '$1');              // highlight
+  stripped = stripped.replace(/^([ \t]*)\*\*(.*?)\*\*$/, '$1$2'); // bold
+  stripped = stripped.replace(/^([ \t]*)\*(.*?)\*$/, '$1$2');   // italic
+  stripped = stripped.replace(/^([ \t]*)~~(.*?)~~$/, '$1$2');  // strikethrough
+  stripped = stripped.replace(/^([ \t]*)\{[a-z0-9]+\}(.*?)\{\/[a-z0-9]+\}$/, '$1$2'); // color
   // Match: optional whitespace, then hyphen or checkbox marker, then whitespace, then content
   // Also detect [ :color] colored checkbox prefix
-  var m = lineText.match(/^([ \t]*)([-]|\[\s*[xX]?\s*\]|\[\s*:[a-z]+\s*\])([ \t]+)\S/);
+  var m = stripped.match(/^([ \t]*)([-]|\[\s*[xX]?\s*\]|\[\s*:[a-z]+\s*\])([ \t]+)\S/);
   if (!m) return null;
   var ws1 = m[1];
   var rawMarker = m[2];
@@ -11272,6 +11351,7 @@ function openSettings() {
   var _nem = settings.noteEditingMode || 'both';
   var _nemRadio = document.querySelector('#note-editing-mode-seg input[value="' + _nem + '"]');
   if (_nemRadio) _nemRadio.checked = true;
+  var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
   var sctToggle=document.getElementById('show-toolbar-collapse-tab-toggle'); if(sctToggle)sctToggle.checked=(settings.showToolbarCollapseTab !== false);
   var tcbToggle=document.getElementById('tag-color-borders-toggle'); if(tcbToggle)tcbToggle.checked=!!settings.tagColorBorders;
   var _tsR=document.querySelector('#tag-scope-seg input[value="'+(settings.tagScope||'block')+'"]'); if(_tsR)_tsR.checked=true;
@@ -11544,6 +11624,264 @@ function showToast(msg, persistent) {
       });
     }
   };
+}
+
+// Apply copy/cut/paste overflow policy for small screens with large icons
+// Called on load, settings change, and resize
+function applySmallScreenOverflow() {
+  var isSmallScreen = window.innerWidth <= 480;
+  var isLargeIcon = settings.uiSize === 'large' || settings.uiSize === 'xlarge';
+  var moveToMenu = isSmallScreen && isLargeIcon;
+  var copyBtn  = document.getElementById('copy-btn');
+  var cutBtn   = document.getElementById('delete-line-btn');
+  var pasteBtn = document.getElementById('paste-btn');
+  var mCopy    = document.getElementById('more-overflow-copy-btn');
+  var mCut     = document.getElementById('more-overflow-cut-btn');
+  var mPaste   = document.getElementById('more-overflow-paste-btn');
+  if (moveToMenu) {
+    if (copyBtn)  copyBtn.style.display  = 'none';
+    if (cutBtn)   cutBtn.style.display   = 'none';
+    if (pasteBtn) pasteBtn.style.display = 'none';
+    if (mCopy)    mCopy.style.display    = 'flex';
+    if (mCut)     mCut.style.display     = 'flex';
+    if (mPaste)   mPaste.style.display   = 'flex';
+  } else {
+    if (copyBtn)  copyBtn.style.display  = '';
+    if (cutBtn)   cutBtn.style.display   = '';
+    if (pasteBtn) pasteBtn.style.display = '';
+    if (mCopy)    mCopy.style.display    = 'none';
+    if (mCut)     mCut.style.display     = 'none';
+    if (mPaste)   mPaste.style.display   = 'none';
+  }
+}
+
+// Explicitly set toolbar SVG sizes in pixels — CSS var() in SVG width attr unreliable
+// Inject a dynamic <style> rule to force icon sizes — more reliable than inline styles on SVGs
+var _iconSizeStyleEl = null;
+function applyToolbarIconSizes() {
+  var _iconPx = { small: 22, medium: 28, large: 38, xlarge: 48 }[settings.uiSize || 'medium'] || 28;
+  // Inject/update a high-specificity style rule to override any CSS
+  if (!_iconSizeStyleEl) {
+    _iconSizeStyleEl = document.createElement('style');
+    _iconSizeStyleEl.id = 'icon-size-override';
+    document.head.appendChild(_iconSizeStyleEl);
+  }
+  // Scale increases with icon size to compensate for built-in SVG padding
+  var _scale = { small: 1.0, medium: 1.0, large: 1.15, xlarge: 1.25 }[settings.uiSize || 'medium'] || 1.0;
+  _iconSizeStyleEl.textContent =
+    '#note-bottom-bar .icon-btn svg, #toolbar-scroll .icon-btn svg {' +
+    '  width: ' + _iconPx + 'px !important;' +
+    '  height: ' + _iconPx + 'px !important;' +
+    '  transform: scale(' + _scale + ');' +
+    '}' +
+    '#note-top-bar .icon-btn svg, #note-top-bar .btn svg {' +
+    '  width: ' + _iconPx + 'px !important;' +
+    '  height: ' + _iconPx + 'px !important;' +
+    '  transform: scale(' + _scale + ');' +
+    '}';
+}
+
+function _getNoteTags(content) {
+  var tags = [], seen = {};
+  (content || '').split('\n').forEach(function(line) {
+    if (/^\[tag order\]/.test(line.trim())) return;
+    (line.match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t) {
+      var n = t.slice(1); if (!seen[n]) { seen[n]=true; tags.push(n); }
+    });
+  });
+  return tags.sort();
+}
+function _getAllNotesTags(excludeId) {
+  var seen = {};
+  Object.values(notes).forEach(function(n) {
+    if (n.id === excludeId) return;
+    _getNoteTags(n.content).forEach(function(t) { seen[t]=true; });
+  });
+  return Object.keys(seen).sort();
+}
+// ---- Tag Picker ----
+// Determine opening context and open the tag picker sheet
+function openTagPicker(callerContext) {
+  // callerContext: 'typing' | 'rrmode' | 'quickadd' | 'editblock'
+  // For dialog modes, pass the textarea as second arg
+  var targetTA = (callerContext === 'quickadd') ? document.getElementById('quick-add-input')
+              : (callerContext === 'editblock') ? document.getElementById('edit-block-input')
+              : document.getElementById('note-editor');
+
+  // Check for unsupported selection states in R&R mode
+  if (callerContext === 'rrmode') {
+    // Browser drag selection — abort
+    var sel = window.getSelection();
+    if (sel && sel.toString().length > 0) {
+      showToast('Select a single block with the Select lines tool first', false);
+      flashSelectBtn();
+      return;
+    }
+    // Multiple blocks selected — abort
+    if (selectedBlocks.size > 1) {
+      showToast('Select a single block with the Select lines tool first', false);
+      flashSelectBtn();
+      return;
+    }
+  }
+
+  closeAllBars();
+  var bar = document.getElementById('tag-picker-bar');
+  var backdrop = document.getElementById('tag-picker-backdrop');
+  var chips = document.getElementById('tag-picker-chips');
+  var preview = document.getElementById('tag-picker-preview');
+  if (!bar || !chips || !preview) return;
+  chips.innerHTML = '';
+
+  // Build initial buffer content and insertion point
+  var _buf = '';
+  var _ins = 0; // insertion point offset in _buf
+  var _singleBlockIdx = -1; // if R&R with 1 block selected
+
+  if (callerContext === 'typing') {
+    _buf = targetTA.value;
+    _ins = targetTA.selectionStart || targetTA.value.length;
+  } else if (callerContext === 'rrmode') {
+    var ed = document.getElementById('note-editor');
+    _buf = ed ? ed.value : '';
+    if (selectedBlocks.size === 1) {
+      // Single block selected — find that line and set insertion to end of it
+      _singleBlockIdx = Array.from(selectedBlocks)[0];
+      var _lines = _buf.split('\n');
+      var _lineEnd = 0;
+      for (var li=0; li<_lines.length; li++) {
+        if (li === _singleBlockIdx) { _ins = _lineEnd + _lines[li].length; break; }
+        _lineEnd += _lines[li].length + 1;
+      }
+    } else {
+      _ins = _buf.length; // end of note
+    }
+  } else {
+    // quickadd or editblock — use the dialog textarea
+    _buf = targetTA.value;
+    _ins = targetTA.selectionStart || targetTA.value.length;
+  }
+
+  // Set preview content — scroll happens after bar is visible (see below)
+  preview.value = _buf;
+  preview.setSelectionRange(_ins, _ins);
+
+  // Collect tags
+  var thisContent = currentNoteId && notes[currentNoteId] ? (notes[currentNoteId].content||'') : '';
+  var noteTags = _getNoteTags(thisContent);
+  var otherTags = _getAllNotesTags(currentNoteId||'').filter(function(t){return noteTags.indexOf(t)===-1;});
+
+  function chipStyle(muted, selected) {
+    if (selected) return 'background:var(--accent);color:#fff;border:1.5px solid var(--accent);'+
+      'border-radius:999px;padding:4px 12px;font-size:0.9em;cursor:pointer;'+
+      'font-family:var(--font-body);touch-action:manipulation;white-space:nowrap;font-weight:600';
+    return 'background:var(--bg3);color:'+(muted?'var(--fg3)':'var(--accent)')+';'+
+      'border:1.5px solid '+(muted?'var(--border)':'var(--accent)')+';'+
+      'border-radius:999px;padding:4px 12px;font-size:0.9em;cursor:pointer;'+
+      'font-family:var(--font-body);touch-action:manipulation;white-space:nowrap';
+  }
+
+  function insertTagInBuf(tag) {
+    // Toggle: if already in buffer at insertion area, remove it; else insert
+    var tagStr = '@'+tag;
+    // Check if already present immediately around _ins or anywhere
+    var existing = _buf.indexOf(tagStr);
+    if (existing !== -1) {
+      // Remove it — also remove adjacent space
+      var before = _buf.substring(0, existing);
+      var after = _buf.substring(existing + tagStr.length);
+      if (after.charAt(0) === ' ') after = after.substring(1);
+      else if (before.charAt(before.length-1) === ' ') before = before.slice(0,-1);
+      if (_ins > existing) _ins = Math.max(existing, _ins - tagStr.length - 1);
+      _buf = before + after;
+      return false; // removed
+    } else {
+      // Insert at _ins
+      var pre = _buf.substring(0, _ins);
+      var post = _buf.substring(_ins);
+      var ins = tagStr;
+      if (pre.length > 0 && !/\s$/.test(pre)) ins = ' '+ins;
+      if (post.length > 0 && !/^\s/.test(post)) ins = ins+' ';
+      _buf = pre + ins + post;
+      _ins += ins.length;
+      return true; // inserted
+    }
+  }
+
+  function scrollPreviewToCursor() {
+    // Scroll to show insertion point: use scrollHeight ratio (works for all positions)
+    var ratio = _buf.length > 0 ? (_ins / _buf.length) : 1;
+    preview.scrollTop = preview.scrollHeight * ratio;
+  }
+
+  function updatePreview() {
+    preview.value = _buf;
+    preview.setSelectionRange(_ins, _ins);
+    scrollPreviewToCursor();
+  }
+
+  function makeChip(tag, muted) {
+    var chip = document.createElement('button');
+    chip.dataset.tag = tag;
+    chip.textContent = '@'+tag;
+    chip.style.cssText = chipStyle(muted, false);
+    chip.addEventListener('click', function() {
+      var added = insertTagInBuf(tag);
+      chip.style.cssText = chipStyle(muted, added);
+      chip.textContent = (added ? '\u2713 ' : '') + '@'+tag;
+      updatePreview();
+    });
+    return chip;
+  }
+
+  function commitAndClose() {
+    bar.classList.remove('visible');
+    if (backdrop) backdrop.classList.remove('visible');
+    if (callerContext === 'typing' || callerContext === 'quickadd' || callerContext === 'editblock') {
+      targetTA.value = _buf;
+      targetTA.selectionStart = targetTA.selectionEnd = _ins;
+      targetTA.focus();
+      if (callerContext === 'typing') { resizeEditor(); scheduleSave(); }
+    } else if (callerContext === 'rrmode') {
+      var ed2 = document.getElementById('note-editor');
+      if (ed2) {
+        ed2.value = _buf;
+        ed2._lastLength = _buf.length;
+        scheduleSave();
+        // Re-render R&R view
+        if (isViewMode) setViewMode(true);
+      }
+    }
+  }
+
+  // Done and close buttons
+  var doneBtn = document.getElementById('tag-picker-done');
+  if (doneBtn) doneBtn.onclick = commitAndClose;
+
+  // Build chips
+  if (noteTags.length===0 && otherTags.length===0) {
+    var empty=document.createElement('span');
+    empty.style.cssText='color:var(--fg3);font-size:0.9em;padding:4px 0';
+    empty.textContent='No tags found in any notes.';
+    chips.appendChild(empty);
+  } else {
+    noteTags.forEach(function(t){chips.appendChild(makeChip(t,false));});
+    if (noteTags.length>0 && otherTags.length>0) {
+      var divEl=document.createElement('div');
+      divEl.style.cssText='width:100%;border-top:1px solid var(--border);margin:2px 0';
+      chips.appendChild(divEl);
+    }
+    otherTags.forEach(function(t){chips.appendChild(makeChip(t,true));});
+  }
+
+  bar.classList.add('visible');
+  if (backdrop) backdrop.classList.add('visible');
+  // Scroll preview to insertion point now that bar has layout
+  requestAnimationFrame(function() {
+    var ratio = _buf.length > 0 ? (_ins / _buf.length) : 1;
+    preview.scrollTop = preview.scrollHeight * ratio;
+    preview.setSelectionRange(_ins, _ins);
+  });
 }
 
 function createImportFolder(label) {
@@ -12756,15 +13094,16 @@ function makeImportFolderName(label) {
     });
     var overflow = used > available;
     _topBarOverflow = overflow;
+    /* DISABLED — copy/cut/paste overflow hiding commented out.
+       The toolbar now wraps to a second line instead.
+       Keep this code — may want to re-enable if wrapping is removed.
     var copyBtn  = document.getElementById('copy-btn');
     var cutBtn   = document.getElementById('delete-line-btn');
     var pasteBtn = document.getElementById('paste-btn');
-    // More menu overflow items
     var mCopy  = document.getElementById('more-overflow-copy-btn');
     var mCut   = document.getElementById('more-overflow-cut-btn');
     var mPaste = document.getElementById('more-overflow-paste-btn');
     if (overflow) {
-      // Hide from top toolbar — show in More menu
       if (copyBtn)  copyBtn.style.display  = 'none';
       if (cutBtn)   cutBtn.style.display   = 'none';
       if (pasteBtn) pasteBtn.style.display = 'none';
@@ -12772,7 +13111,6 @@ function makeImportFolderName(label) {
       if (mCut)   mCut.style.display   = 'flex';
       if (mPaste) mPaste.style.display = 'flex';
     } else {
-      // Restore to top toolbar
       if (copyBtn)  copyBtn.style.display  = '';
       if (cutBtn)   cutBtn.style.display   = '';
       if (pasteBtn) pasteBtn.style.display = '';
@@ -12780,16 +13118,20 @@ function makeImportFolderName(label) {
       if (mCut)   mCut.style.display   = 'none';
       if (mPaste) mPaste.style.display = 'none';
     }
+    */
   }
   var debouncedCheckTopBarOverflow = function() {
     clearTimeout(_overflowDebounce);
     _overflowDebounce = setTimeout(checkTopBarOverflow, 150);
   };
   window.addEventListener('resize', debouncedCheckTopBarOverflow);
-  // Run multiple checks as layout settles — fonts/icons may load late
-  setTimeout(checkTopBarOverflow, 100);
-  setTimeout(checkTopBarOverflow, 500);
-  setTimeout(checkTopBarOverflow, 1500);
+  // Also re-apply small screen overflow policy on resize
+  var _smallScreenResizeDebounce = null;
+  window.addEventListener('resize', function() {
+    clearTimeout(_smallScreenResizeDebounce);
+    _smallScreenResizeDebounce = setTimeout(applySmallScreenOverflow, 150);
+  });
+  // Small screen overflow applied via applySettings on load
   document.getElementById('back-btn').addEventListener('mousedown', function(e) {
     e.preventDefault(); // prevent blur firing before our click handler
   });
@@ -13431,6 +13773,8 @@ function makeImportFolderName(label) {
     var filterTagsEl = document.getElementById('more-tag-filter-btn');
     if (filterTagsEl) filterTagsEl.style.display = (isViewMode && _hasTags) ? '' : 'none';
     // Tag order line button — shown when note has tags, not quiet/view-only
+    var insertTagEl = document.getElementById('more-insert-tag-btn');
+    if (insertTagEl) insertTagEl.style.display = (!_readingMode && !document.body.classList.contains('view-only-mode')) ? 'flex' : 'none';
     var tagOrderEl = document.getElementById('more-tag-order-btn');
     var tagOrderLbl = document.getElementById('more-tag-order-label');
     if (tagOrderEl) {
@@ -14327,9 +14671,29 @@ function makeImportFolderName(label) {
     }
   });
   document.getElementById('note-editor').addEventListener('paste', function(e) {
+    var indentSpaces = settings.indentSpaces !== undefined ? settings.indentSpaces : 2;
+    var tabReplacement = '';
+    for (var ti = 0; ti < indentSpaces; ti++) tabReplacement += ' ';
+
     // Check if clipboard has HTML content with links
     var html = e.clipboardData && e.clipboardData.getData('text/html');
-    if (!html) return; // No HTML — let default paste handle it
+    if (!html) {
+      // Plain text paste — convert tabs to spaces
+      var plainText = e.clipboardData && e.clipboardData.getData('text/plain');
+      if (plainText && plainText.indexOf('\t') !== -1 && settings.convertTabsOnPaste !== false) {
+        e.preventDefault();
+        var converted = plainText.replace(/\t/g, tabReplacement);
+        var ed = document.getElementById('note-editor');
+        var start = ed.selectionStart;
+        var end = ed.selectionEnd;
+        ed.value = ed.value.substring(0, start) + converted + ed.value.substring(end);
+        ed.selectionStart = ed.selectionEnd = start + converted.length;
+        ed._lastLength = ed.value.length;
+        resizeEditor();
+        scheduleSave();
+      }
+      return;
+    }
 
     // Parse the HTML and check if it contains any <a> tags with hrefs
     var tmp = document.createElement('div');
@@ -14362,6 +14726,7 @@ function makeImportFolderName(label) {
     }
 
     var converted = extractText(tmp)
+      .replace(/\t/g, settings.convertTabsOnPaste !== false ? tabReplacement : '\t') // convert tabs to spaces if setting on
       .replace(/\n{3,}/g, '\n\n') // collapse excessive newlines
       .trim();
 
@@ -15219,7 +15584,9 @@ function makeImportFolderName(label) {
     openFontSizeBar();
   });
   closeAllBars = function() {
-    var bars = ['font-size-bar','theme-bar','font-face-bar','jump-to-bar','outline-actions-bar','tag-filter-bar'];
+    var bars = ['font-size-bar','theme-bar','font-face-bar','jump-to-bar','outline-actions-bar','tag-filter-bar','tag-picker-bar'];
+    var bd = document.getElementById('tag-picker-backdrop');
+    if (bd) bd.classList.remove('visible');
     bars.forEach(function(id) {
       var b = document.getElementById(id);
       if (b) b.classList.remove('visible');
@@ -15549,6 +15916,11 @@ function makeImportFolderName(label) {
       updatePauseBtn();
       document.getElementById('tag-filter-bar').classList.add('visible');
     }, isViewMode ? 0 : 80);
+  });
+  document.getElementById('tag-picker-close').addEventListener('click', function() {
+    document.getElementById('tag-picker-bar').classList.remove('visible');
+    var bd = document.getElementById('tag-picker-backdrop');
+    if (bd) bd.classList.remove('visible');
   });
   document.getElementById('tag-filter-close').addEventListener('click', function() {
     document.getElementById('tag-filter-bar').classList.remove('visible');
@@ -16068,6 +16440,16 @@ function makeImportFolderName(label) {
   var _showTagsToggle = document.getElementById('show-tags-toggle');
   if (_showTagsToggle) _showTagsToggle.addEventListener('change', function() { setShowTags(this.checked); });
   document.getElementById('tag-filter-show-tags-toggle').addEventListener('change', function() { setShowTags(this.checked); });
+  document.getElementById('more-insert-tag-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    openTagPicker(isViewMode ? 'rrmode' : 'typing');
+  });
+  document.getElementById('quick-add-tag-btn').addEventListener('click', function() {
+    openTagPicker('quickadd');
+  });
+  document.getElementById('edit-block-tag-btn').addEventListener('click', function() {
+    openTagPicker('editblock');
+  });
   document.getElementById('more-tag-order-btn').addEventListener('click', function() {
     closeMoreMenu();
     if (!currentNoteId || !notes[currentNoteId]) return;
@@ -16139,6 +16521,8 @@ function makeImportFolderName(label) {
     var hasFilter = isViewMode && Object.keys(_tagFilterState).length > 0;
     ind.classList.toggle('active', hasFilter && !_tagFilterPaused);
     ind.classList.toggle('paused', hasFilter && _tagFilterPaused);
+    // Toolbar may need to reflow when indicator appears/disappears
+    setTimeout(pinToolbars, 50);
   };
 
   function noteHasCheckboxes() {
@@ -16849,6 +17233,10 @@ function makeImportFolderName(label) {
     var ed = document.getElementById('note-editor');
     var viewer = document.getElementById('note-viewer');
     if (isViewMode && ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+    updateSaveBtnState();
+  });
+  document.getElementById('convert-tabs-toggle').addEventListener('change', function() {
+    settings.convertTabsOnPaste = this.checked;
     updateSaveBtnState();
   });
   document.getElementById('show-toolbar-collapse-tab-toggle').addEventListener('change', function() {
@@ -17570,8 +17958,11 @@ function makeImportFolderName(label) {
       if (b) b.style.display = inView ? '' : 'none';
     });
     // Cut and paste: show in both edit and view mode
+    // But defer to applySmallScreenOverflow for small-screen+large-icon policy
     if (deleteTextBtn) deleteTextBtn.style.display = '';
     if (pasteBtn) pasteBtn.style.display = '';
+    // Re-apply small screen overflow policy after resetting button visibility
+    applySmallScreenOverflow();
     // Select lines: only useful in view mode — hide in edit mode
     var selectBlocksBtn = document.getElementById('select-blocks-btn');
     if (selectBlocksBtn) selectBlocksBtn.style.display = inView ? '' : 'none';
