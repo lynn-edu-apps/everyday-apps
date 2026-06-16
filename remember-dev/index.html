@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1177 -->
+<!-- Remember App - Version 0.1178 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1177
+  Version 0.1178
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -7737,7 +7737,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1177';
+const APP_VERSION = '0.1178';
 
 
 
@@ -8530,6 +8530,7 @@ function normalizeSearch(s) {
 function stripMarkdownForSearch(text) {
   // Strip formatting markers so searching 'hello' finds '**hello**'
   text = text.replace(/^\[share note\].*$/gim, '');
+  text = text.replace(/\[copy for speech\]/gim, '');
   return text
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
@@ -9869,6 +9870,12 @@ function urlsToLinks(text, addLineWrappers) {
         var _snLine = line.replace(/\[share note\]/gi, _snBtn);
         return '<div class="viewer-line last-modified-line" data-line="' + i + '">' + _snLine + '</div>';
       }
+      // [copy for speech] tag: render Copy button inline — copies using speech stripping (no checkbox symbols)
+      if (/\[copy for speech\]/i.test(rawLine)) {
+        var _csBtn = '<button class="last-modified-clear-btn" data-action="copy-for-speech" style="pointer-events:auto">Copy</button>';
+        var _csLine = line.replace(/\[copy for speech\]/gi, _csBtn);
+        return '<div class="viewer-line last-modified-line" data-line="' + i + '">' + _csLine + '</div>';
+      }
       // [tag order] line: strip prefix, render tags only, hide with tags-hidden
       if (/^\[tag order\]/.test(rawLine.trim())) {
         var _tocContent = line.replace(/^\[tag order\]\s*/, '');
@@ -10474,6 +10481,7 @@ function stripForShare(content) {
     // Skip [tag order] and [share note] lines entirely
     if (/^\[tag order\]/.test(line.trim())) return null;
     if (/^\[share note\]/i.test(line.trim())) return null;
+    if (/\[copy for speech\]/i.test(line)) line = line.replace(/\[copy for speech\]/gi, '').trim(); if (!line) return null;
     // Skip horizontal rules
     if (/^(-\s*){3,}$/.test(line.trim())) return null;
     // Strip heading markers
@@ -11167,6 +11175,7 @@ function stripMarkdownForSpeech(line) {
   // Skip [tag order] lines — not spoken
   if (/^\[tag order\]/.test(line.trim())) return '';
   if (/^\[share note\]/i.test(line.trim())) return '';
+  line = line.replace(/\[copy for speech\]/gi, '').trim();
   // Skip horizontal rules entirely — return empty string
   if (/^(-\s*){3,}$/.test(line.trim())) return '';
   // Strip heading markers # through ###### (Android TTS reads # as 'hash')
@@ -16696,6 +16705,27 @@ function makeImportFolderName(label) {
       e.stopPropagation();
       closeMoreMenu();
       shareNote();
+      return;
+    }
+    var copyForSpeechBtn = e.target.closest('[data-action="copy-for-speech"]');
+    if (copyForSpeechBtn) {
+      e.stopPropagation();
+      if (!currentNoteId || !notes[currentNoteId]) return;
+      // Strip using speech stripping — removes checkboxes entirely (no Unicode symbols)
+      // so Siri won't say "tick" or "ballot box" when reading aloud
+      var _cfsLines = (notes[currentNoteId].content || '').split('\n');
+      var _cfsText = _cfsLines.map(function(l) { return stripMarkdownForSpeech(l); })
+        .filter(function(l) { return l.trim() !== ''; }).join('\n').trim();
+      if (!_cfsText) { showToast('Nothing to copy', false); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(_cfsText).then(function() {
+          showToast('Copied for speech', false);
+        }).catch(function() {
+          showToast('Unable to copy on this browser', true);
+        });
+      } else {
+        showToast('Clipboard not available on this browser', true);
+      }
       return;
     }
     var todoBtn = e.target.closest('[data-action="toggle-todo-filter"]');
