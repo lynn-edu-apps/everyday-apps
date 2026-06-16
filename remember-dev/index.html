@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1156 -->
+<!-- Remember App - Version 0.1174 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1156
+  Version 0.1174
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -6800,10 +6800,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-row">
         <div>
-          <div class="settings-row-label">Skip list markers when speaking</div>
+          <div class="settings-row-label">Skip list markers and formatting when speaking</div>
           <div class="settings-row-desc">When on, checkboxes [ ] [x], leading hyphens, and bullet characters are silently skipped. When off, the voice may say "semicolon" or "comma" for these characters.</div>
         </div>
-        <label class="toggle-switch" aria-label="Skip list markers when speaking">
+        <label class="toggle-switch" aria-label="Skip list markers and formatting when speaking">
           <input type="checkbox" id="speak-checkboxes-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
@@ -6905,6 +6905,34 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <input type="checkbox" id="confetti-on-complete-toggle">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
           </label>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Move completed items to bottom</div>
+            <div class="settings-row-desc">When you check off a checkbox or strike a hyphen item in Read &amp; Revise mode, it moves to the bottom of the note.</div>
+          </div>
+          <label class="toggle-switch" aria-label="Move completed items to bottom">
+            <input type="checkbox" id="move-completed-toggle">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div class="settings-row" id="move-completed-confirm-row">
+          <div style="padding-left:16px">
+            <div class="settings-row-label">Confirm before moving</div>
+            <div class="settings-row-desc">Ask before moving a completed item to the bottom.</div>
+          </div>
+          <label class="toggle-switch" aria-label="Confirm before moving">
+            <input type="checkbox" id="move-completed-confirm-toggle">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Default indent level for new items</div>
+            <div class="settings-row-desc">Number of indent levels to apply when adding new checkbox or hyphen items via Quick Add, if smart indent doesn't apply. 0 = no indent. Uses the "Spaces per indent" setting to compute spaces.</div>
+          </div>
+          <input type="number" id="default-checkbox-indent-input" min="0" max="8" step="1"
+            style="width:70px;font-size:1em;padding:6px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg);text-align:center">
         </div>
         <div class="settings-row">
           <div><div class="settings-row-label">Today note suffix</div>
@@ -7709,7 +7737,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1156';
+const APP_VERSION = '0.1174';
 
 
 
@@ -7841,7 +7869,7 @@ const DEFAULT_SETTINGS = {
   speakBtnIconOnly: true,    // show only the icon, not the word "Speak"
   speakBtnAccentColor: true, // use accent color on Speak button
   speechPause: 400,          // ms pause between spoken lines (0-2000)
-  skipListMarkers: true,     // if true, skip checkboxes, leading hyphens and bullets when speaking
+  skipListMarkers: true,     // if true, skip list markers, @tags, formatting chars and special bracket tags when speaking
   autoSpeak: false,
   defaultViewMode: false,
   plusPosition: 'top',  // 'top', 'bottom', or 'after-rule' — where + button inserts text
@@ -7850,7 +7878,9 @@ const DEFAULT_SETTINGS = {
   plusHyphen: false,    // whether to prepend "- " to each non-blank line
   plusCheckbox: false,   // whether to prepend "[ ] " to each non-blank line
   checkStrikethrough: true,  // whether checking a checkbox also strikes through the line text
-  confettiOnComplete: false, // whether to show confetti when last checkbox is checked
+  confettiOnComplete: false,       // whether to show confetti when last checkbox is checked
+  moveCompletedToBottom: false,    // move checked items to bottom of note
+  moveCompletedConfirm: false,     // confirm before moving
   todaySuffix: '— Today',    // suffix marking a note as a daily checklist
   lastSuffix:  '— Last',     // suffix for the backup note
   timeFormat:  '12h',          // '12h' or '24h' for [last modified] timestamp
@@ -7859,6 +7889,7 @@ const DEFAULT_SETTINGS = {
   showOopsBtn: true,         // whether to show the Oops restore button
   sectionStates: {},         // collapsed/expanded state for each settings section
   indentSpaces: 2,             // spaces per indent/dedent action
+  defaultCheckboxIndent: 0,    // default indent levels for new checkbox/hyphen items
   toolbarHidden: [],           // array of button IDs hidden from bottom toolbar
   toolbarOrder: [],            // ordered array of button IDs (empty = use default order)
   sortBy: 'viewedAt',           // sort key: viewedAt/editedAt/createdAt/name
@@ -7945,6 +7976,10 @@ var isAllSelected = false;   // whether select-all is currently active
 var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
 var updateViewOnlyBtns = function() {}; // replaced in init
 var isCheckboxRaw = function() { return false; }; // replaced in init
+var getDescendants = function() { return []; }; // replaced in init
+var getHeadingDescendants = function() { return []; }; // replaced in init
+var isHeadingRaw = function() { return false; }; // replaced in init
+var getParentDescendants = function() { return []; }; // replaced in init
 var applyOutlineMode = function() {};
 var checkTopBarOverflow = function() {}; // defined inside init() // replaced in init
 var closeAllBars = function() {}; // replaced in init
@@ -9653,7 +9688,11 @@ function urlsToLinks(text, addLineWrappers) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  // Render ~~strikethrough~~
+  // Render ~~strikethrough~~ — two passes so nested ~~ (from partial internal
+  // strikethroughs like ~~~~Pizza~~ — I mean salad~~) renders correctly.
+  // Pass 1 renders inner pairs; pass 2 renders the now-exposed outer pairs.
+  // CRITICAL: do not reduce to one pass — nested ~~ will leave dangling ~~ visible.
+  escaped = escaped.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
   escaped = escaped.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
   // Render **bold** first
   escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
@@ -10224,6 +10263,182 @@ function toggleBlockSelection(lineIndex) {
 
 // Clear all selected blocks and update display.
 // Apply bold, strikethrough, or color to all selected blocks (toggle behavior)
+// ═══════════════════════════════════════════════════════════════════════════
+// CRITICAL: ALL formatting manipulation of raw note lines MUST go through
+// these two functions. Never write inline bold/italic/strikethrough/highlight/
+// color/checkbox regex logic elsewhere. If you need to apply or remove
+// formatting, call toggleLineFormatting() or applyCheckToLine().
+// Duplicating this logic elsewhere WILL cause bugs with nested formatting,
+// partial strikethroughs, indented lines, and colored checkboxes.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// toggleLineFormatting(line, type, color) — apply or toggle one formatting
+// type on a single raw line. Handles any leading whitespace/tabs.
+// type: 'bold'|'italic'|'strikethrough'|'highlight'|'color'|'cbcolor'|
+//       'heading'|'highlight-color'
+// color: optional, used for 'color', 'cbcolor', 'heading', 'highlight-color'
+// Returns the modified line string.
+function toggleLineFormatting(line, type, color) {
+  if (!line.trim()) return line; // skip blank lines
+  if (type === 'bold') {
+    var _bdInd = (line.match(/^(\s*)/) || ['',''])[1];
+    var _bdBody = line.slice(_bdInd.length);
+    if (_bdBody.startsWith('**') && _bdBody.endsWith('**') && _bdBody.length > 4) {
+      return _bdInd + _bdBody.slice(2, -2);
+    } else {
+      return _bdInd + '**' + _bdBody.replace(/\*\*/g, '') + '**';
+    }
+  } else if (type === 'italic') {
+    var _itInd = (line.match(/^(\s*)/) || ['',''])[1];
+    var _itLine = line.slice(_itInd.length);
+    var hasBold = _itLine.startsWith('**') && _itLine.endsWith('**') && _itLine.length > 4;
+    var inner = hasBold ? _itLine.slice(2, -2) : _itLine;
+    var isItalic = inner.length > 2 && inner.charAt(0) === '*' && inner.charAt(1) !== '*' &&
+                   inner.charAt(inner.length - 1) === '*' && inner.charAt(inner.length - 2) !== '*';
+    var newInner;
+    if (isItalic) {
+      newInner = inner.slice(1, -1);
+    } else {
+      newInner = '*' + inner.replace(/\*([^*\n]*)\*/g, '$1') + '*';
+    }
+    return _itInd + (hasBold ? '**' + newInner + '**' : newInner);
+  } else if (type === 'strikethrough') {
+    // Preserve leading whitespace and any checkbox prefix.
+    // IMPORTANT: For partial internal strikethroughs (e.g. ~~Pizza~~ in body),
+    // we wrap the whole body in outer ~~...~~ rather than stripping inner ones.
+    // Toggle off only if the body is ALREADY fully wrapped in ~~...~~.
+    var _stInd = (line.match(/^(\s*)/) || ['',''])[1];
+    var _stLine = line.slice(_stInd.length);
+    // Match any checkbox variant: [ ], [x], [ :color], [x:color]
+    var cbMatch = _stLine.match(/^(\[(?:[ x]|x?:[a-z]+)\]\s*)/i);
+    var cbPrefix = cbMatch ? cbMatch[1] : '';
+    var lineBody = _stLine.slice(cbPrefix.length);
+    var bodyTrimmed = lineBody.trim();
+    if (bodyTrimmed.startsWith('~~') && bodyTrimmed.endsWith('~~') && bodyTrimmed.length > 4) {
+      // Toggle off: remove outermost ~~ only (preserve internal ones)
+      return _stInd + cbPrefix + bodyTrimmed.slice(2, bodyTrimmed.length - 2);
+    } else {
+      // Toggle on: wrap entire body (strip any internal ~~ first to avoid quadrupling)
+      // Do NOT strip internal ~~ — wrap around them to preserve partial strikes.
+      return _stInd + cbPrefix + '~~' + lineBody + '~~';
+    }
+  } else if (type === 'highlight') {
+    var _hlInd = (line.match(/^(\s*)/) || ['',''])[1];
+    var _hlBody = line.slice(_hlInd.length);
+    if (_hlBody.startsWith('==') && _hlBody.endsWith('==') && _hlBody.length > 4) {
+      return _hlInd + _hlBody.slice(2, -2);
+    } else {
+      return _hlInd + '==' + _hlBody.replace(/==/g, '') + '==';
+    }
+  } else if (type === 'color') {
+    var _clInd = (line.match(/^(\s*)/) || ['',''])[1];
+    var _clBody = line.slice(_clInd.length);
+    var _hlMatch = _clBody.match(/^==(.*)==$/);
+    var _clInner = _hlMatch ? _hlMatch[1] : _clBody;
+    var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3';
+    var stripped = _clInner.replace(new RegExp('\\{(?:' + _colorNames + ')\\}([^{]*)\\{\\/?(?:' + _colorNames + ')\\}', 'g'), '$1');
+    var result;
+    if (color === 'none') {
+      result = stripped;
+    } else {
+      var colorRe = new RegExp('^\\{' + color + '\\}(.*)\\{\\/' + color + '\\}$');
+      result = colorRe.test(_clInner) ? stripped : '{' + color + '}' + stripped + '{/' + color + '}';
+    }
+    return _clInd + (_hlMatch ? '==' + result + '==' : result);
+  } else if (type === 'cbcolor') {
+    var _cbColorRe = /\[([ x]):(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom)\]/gi;
+    var _cbPlainRe = /\[([ x])\]/gi;
+    if (color === 'none') {
+      return line.replace(_cbColorRe, '[$1]');
+    } else {
+      var had = false;
+      var res = line.replace(_cbColorRe, function(m, state) { had = true; return '[' + state + ':' + color + ']'; });
+      if (!had) res = res.replace(_cbPlainRe, function(m, state) { return '[' + state + ':' + color + ']'; });
+      return res;
+    }
+  } else if (type === 'heading') {
+    var level = parseInt(color, 10);
+    var noHash = line.replace(/^#{1,6} /, '');
+    var curMatch = line.match(/^(#{1,6}) /);
+    var curLevel = curMatch ? curMatch[1].length : 0;
+    return (level === 0 || curLevel === level) ? noHash : '#'.repeat(level) + ' ' + noHash;
+  } else if (type === 'highlight-color') {
+    var existingHl = line.match(/^==(#[0-9a-fA-F]{3,6}):(.+)==$/);
+    var plainHl    = line.match(/^==([^=].+)==$/);
+    if (color === 'none') {
+      if (existingHl) return existingHl[2];
+      if (plainHl) return plainHl[1];
+    } else {
+      if (existingHl && existingHl[1].toLowerCase() === color.toLowerCase()) return existingHl[2];
+      if (existingHl) return '==' + color + ':' + existingHl[2] + '==';
+      if (plainHl)    return '==' + color + ':' + plainHl[1]    + '==';
+      return '==' + color + ':' + line + '==';
+    }
+  }
+  return line;
+}
+
+// applyCheckToLine(line, checkState, doStrike) — check or uncheck a single
+// raw line (checkbox or hyphen item). Handles any leading whitespace/tabs,
+// any checkbox color variant, and partial internal strikethroughs.
+// checkState: true = check/strike, false = uncheck/unstrike
+// doStrike: whether to add/remove strikethrough (from settings.checkStrikethrough)
+// Returns the modified line string.
+// CRITICAL: This is THE ONLY place that should contain check/uncheck + strikethrough
+// logic for individual lines. Do not duplicate this in click handlers or other
+// functions — call applyCheckToLine() instead.
+function applyCheckToLine(line, checkState, doStrike) {
+  var core = stripFormattingForDetect(line);
+  // ── Checkbox item ──────────────────────────────────────────────────────
+  var isCheckbox = /^\[[ x]\]/i.test(core) || /^\[[ x]:[a-z]+\]/i.test(core);
+  if (isCheckbox) {
+    // Flip the marker
+    var flipped = line
+      .replace(/\[x:([a-z]+)\]/gi, function(m, c) { return checkState ? m : '[ :' + c + ']'; })
+      .replace(/\[ :([a-z]+)\]/gi, function(m, c) { return checkState ? '[x:' + c + ']' : m; })
+      .replace(/\[x\]/gi,            checkState ? '[x]' : '[ ]')
+      .replace(/\[ \]|\[\]/g,       checkState ? '[x]' : '[ ]');
+    if (!doStrike) return flipped;
+    if (checkState) {
+      // Adding strikethrough: use toggleLineFormatting which handles partial internals
+      return toggleLineFormatting(flipped, 'strikethrough');
+    } else {
+      // Removing strikethrough: only remove outermost ~~ wrapper
+      var _stInd = (flipped.match(/^(\s*)/) || ['',''])[1];
+      var _stLine = flipped.slice(_stInd.length);
+      var cbM = _stLine.match(/^(\[(?:[ x]|x?:[a-z]+)\]\s*)/i);
+      var cbPfx = cbM ? cbM[1] : '';
+      var body = _stLine.slice(cbPfx.length);
+      var bodyT = body.trim();
+      if (bodyT.startsWith('~~') && bodyT.endsWith('~~') && bodyT.length > 4) {
+        return _stInd + cbPfx + bodyT.slice(2, bodyT.length - 2);
+      }
+      return flipped;
+    }
+  }
+  // ── Hyphen item ────────────────────────────────────────────────────────
+  var isHyphen = /^- /.test(core);
+  if (isHyphen) {
+    var hyphenIdx = line.indexOf('- ');
+    if (hyphenIdx === -1) return line;
+    var beforeHyphen = line.slice(0, hyphenIdx + 2);
+    var afterHyphen  = line.slice(hyphenIdx + 2);
+    var afterT = afterHyphen.trim();
+    if (checkState) {
+      // Strike: wrap body if not already fully struck
+      if (afterT.startsWith('~~') && afterT.endsWith('~~') && afterT.length > 4) return line;
+      return beforeHyphen + '~~' + afterHyphen + '~~';
+    } else {
+      // Unstrike: remove outermost ~~ only
+      if (afterT.startsWith('~~') && afterT.endsWith('~~') && afterT.length > 4) {
+        return beforeHyphen + afterT.slice(2, afterT.length - 2);
+      }
+      return line;
+    }
+  }
+  return line;
+}
+
 function applyFormattingToBlocks(type, color) {
   if (!currentNoteId || !notes[currentNoteId] || selectedBlocks.size === 0) return;
   pushUndo();
@@ -10233,111 +10448,8 @@ function applyFormattingToBlocks(type, color) {
     var line = lines[lineIndex];
     if (!line.trim()) return; // skip blank lines
 
-    if (type === 'bold') {
-      var _bdInd = (line.match(/^(\s*)/) || ['',''])[1];
-      var _bdBody = line.slice(_bdInd.length);
-      if (_bdBody.startsWith('**') && _bdBody.endsWith('**') && _bdBody.length > 4) {
-        lines[lineIndex] = _bdInd + _bdBody.slice(2, -2); // toggle off
-      } else {
-        lines[lineIndex] = _bdInd + '**' + _bdBody.replace(/\*\*/g, '') + '**';
-      }
-    } else if (type === 'italic') {
-      var _itInd = (line.match(/^(\s*)/) || ['',''])[1];
-      var _itLine = line.slice(_itInd.length);
-      // Handle italic toggling even when bold markers are also present
-      var hasBold = _itLine.startsWith('**') && _itLine.endsWith('**') && _itLine.length > 4;
-      var inner = hasBold ? _itLine.slice(2, -2) : _itLine;
-      var isItalic = inner.length > 2 && inner.charAt(0) === '*' && inner.charAt(1) !== '*' &&
-                     inner.charAt(inner.length - 1) === '*' && inner.charAt(inner.length - 2) !== '*';
-      var newInner;
-      if (isItalic) {
-        newInner = inner.slice(1, -1);
-      } else {
-        var stripped2 = inner.replace(/\*([^*\n]*)\*/g, '$1');
-        newInner = '*' + stripped2 + '*';
-      }
-      lines[lineIndex] = _itInd + (hasBold ? '**' + newInner + '**' : newInner);
-    } else if (type === 'strikethrough') {
-      // Preserve leading whitespace, then strip checkbox prefix
-      var _stInd = (line.match(/^(\s*)/) || ['',''])[1];
-      var _stLine = line.slice(_stInd.length);
-      var cbMatch = _stLine.match(/^(\[[ x]\]\s*)/i);
-      var cbPrefix = cbMatch ? cbMatch[1] : '';
-      var lineBody = cbPrefix ? _stLine.slice(cbPrefix.length) : _stLine;
-      if (lineBody.startsWith('~~') && lineBody.endsWith('~~') && lineBody.length > 4) {
-        lines[lineIndex] = _stInd + cbPrefix + lineBody.slice(2, -2);
-      } else {
-        var strippedBody = lineBody.replace(/~~/g, '');
-        lines[lineIndex] = _stInd + cbPrefix + '~~' + strippedBody + '~~';
-      }
-    } else if (type === 'highlight') {
-      // Preserve leading whitespace — only wrap the non-whitespace body
-      var _hlIndent = (line.match(/^(\s*)/) || ['',''])[1];
-      var _hlBody = line.slice(_hlIndent.length);
-      if (_hlBody.startsWith('==') && _hlBody.endsWith('==') && _hlBody.length > 4) {
-        lines[lineIndex] = _hlIndent + _hlBody.slice(2, -2); // toggle off
-      } else {
-        lines[lineIndex] = _hlIndent + '==' + _hlBody.replace(/==/g, '') + '==';
-      }
-    } else if (type === 'color') {
-      // Detect highlight wrapper — apply color inside it
-      var _clIndent = (line.match(/^(\s*)/) || ['',''])[1];
-      var _clBody = line.slice(_clIndent.length);
-      var _hlMatch = _clBody.match(/^==(.*)==$/);
-      var _clInner = _hlMatch ? _hlMatch[1] : _clBody;
-      var stripped = _clInner.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/g, '$1');
-      var result;
-      if (color === 'none') {
-        result = stripped;
-      } else {
-        var colorRe = new RegExp('^\\{' + color + '\\}(.*)\\{\\/' + color + '\\}$');
-        if (colorRe.test(_clInner)) {
-          result = stripped; // toggle off
-        } else {
-          result = '{' + color + '}' + stripped + '{/' + color + '}';
-        }
-      }
-      lines[lineIndex] = _clIndent + (_hlMatch ? '==' + result + '==' : result);
-    } else if (type === 'cbcolor') {
-      var _cbColorRe = /\[([ x]):(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom)\]/gi;
-      var _cbPlainRe = /\[([ x])\]/gi;
-      if (color === 'none') {
-        lines[lineIndex] = line.replace(_cbColorRe, '[$1]');
-      } else {
-        var had = false;
-        lines[lineIndex] = line.replace(_cbColorRe, function(m, state) { had = true; return '[' + state + ':' + color + ']'; });
-        if (!had) lines[lineIndex] = lines[lineIndex].replace(_cbPlainRe, function(m, state) { return '[' + state + ':' + color + ']'; });
-      }
-    } else if (type === 'heading') {
-      // color param is the heading level (1-6) as a number, or 0 to remove
-      var level = parseInt(color, 10);
-      // Strip any existing heading prefix
-      var noHash = line.replace(/^#{1,6} /, '');
-      var curMatch = line.match(/^(#{1,6}) /);
-      var curLevel = curMatch ? curMatch[1].length : 0;
-      if (level === 0 || curLevel === level) {
-        lines[lineIndex] = noHash; // remove heading (toggle off)
-      } else {
-        lines[lineIndex] = '#'.repeat(level) + ' ' + noHash;
-      }
-    } else if (type === 'highlight-color') {
-      var existingHl = line.match(/^==(#[0-9a-fA-F]{3,6}):(.+)==$/);
-      var plainHl    = line.match(/^==([^=].+)==$/);
-      if (color === 'none') {
-        if (existingHl) lines[lineIndex] = existingHl[2];
-        else if (plainHl) lines[lineIndex] = plainHl[1];
-      } else {
-        if (existingHl && existingHl[1].toLowerCase() === color.toLowerCase()) {
-          lines[lineIndex] = existingHl[2];
-        } else if (existingHl) {
-          lines[lineIndex] = '==' + color + ':' + existingHl[2] + '==';
-        } else if (plainHl) {
-          lines[lineIndex] = '==' + color + ':' + plainHl[1] + '==';
-        } else {
-          lines[lineIndex] = '==' + color + ':' + line + '==';
-        }
-      }
-    }
+    // CRITICAL: use toggleLineFormatting — never inline formatting logic here
+    lines[lineIndex] = toggleLineFormatting(line, type, color);
   });
   notes[currentNoteId].content = lines.join('\n');
   document.getElementById('note-editor').value = notes[currentNoteId].content;
@@ -10348,22 +10460,40 @@ function applyFormattingToBlocks(type, color) {
 }
 
 // Strip formatting tags for sharing — keeps text readable
-// Differs from stripMarkdownForSpeech: keeps [ ] as-is, converts [x] to ✓
+// Differs from stripMarkdownForSpeech: converts [x] → ✓, [ ] → ☐, strips markdown noise.
+// Keep content readable as plain text for sharing.
 function stripForShare(content) {
   return (content || '').split('\n').map(function(line) {
-    // Color markers {red}...{/red} etc.
+    // Skip [tag order] lines entirely
+    if (/^\[tag order\]/.test(line.trim())) return null;
+    // Skip horizontal rules
+    if (/^(-\s*){3,}$/.test(line.trim())) return null;
+    // Strip heading markers
+    line = line.replace(/^#{1,6}\s+/, '');
+    // Color markers {red}...{/red} etc. — unwrap content
     line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/g, '$1');
     // Bold **...**
     line = line.replace(/\*\*([^*]*)\*\*/g, '$1');
     // Italic *...* (after bold)
     line = line.replace(/\*([^*\n]*)\*/g, '$1');
-    // Strikethrough ~~...~~
+    // Strikethrough ~~...~~ — unwrap content
     line = line.replace(/~~([^~]*)~~/g, '$1');
-    // Checked checkbox [x] → ✓
+    // Highlight ==...== — unwrap content
+    line = line.replace(/==([^=]*)==/g, '$1');
+    // Colored checked checkbox [x:color] → ✓
+    line = line.replace(/\[x:[a-z]+\]/gi, '\u2713');
+    // Colored unchecked checkbox [ :color] → ☐
+    line = line.replace(/\[ ?:[a-z]+\]/gi, '\u2610');
+    // Plain checked checkbox [x] → ✓
     line = line.replace(/\[x\]/gi, '\u2713');
-    // Unchecked checkbox [ ] → keep as-is (readable as text)
+    // Plain unchecked checkbox [ ] → ☐
+    line = line.replace(/\[\s*\]/g, '\u2610');
+    // Special bracket tags [last modified], [tag order] etc. — strip tag, keep any trailing content
+    line = line.replace(/\[[a-z][a-z ]*\]\s*/gi, '');
+    // @tagname tokens — strip entirely
+    line = line.replace(/@[a-zA-Z0-9_-]+/g, '');
     return line;
-  }).join('\n').trim();
+  }).filter(function(l) { return l !== null; }).join('\n').trim();
 }
 
 function clearSelectedBlocks() {
@@ -11042,18 +11172,28 @@ function stripMarkdownForSpeech(line) {
   line = line.replace(/~~([^~]*)~~/g, '$1');
   // Skip list markers (checkboxes, leading hyphens, bullets) per setting
   if (settings.skipListMarkers !== false) {
-    // Remove checkbox markers [ ] and [x]
+    // Remove checkbox markers [ ], [x], [ :color], [x:color]
+    line = line.replace(/\[x:[a-z]+\]/gi, '');
+    line = line.replace(/\[ ?:[a-z]+\]/gi, '');
     line = line.replace(/\[x\]/gi, '');
     line = line.replace(/\[\s*\]/g, '');
+    // Remove special bracket tags like [last modified], [tag order] etc.
+    line = line.replace(/\[[a-z][a-z ]*\]/gi, '');
+    // Remove @tagname tokens
+    line = line.replace(/@[a-zA-Z0-9_-]+/g, '');
     // Remove leading hyphens used as list markers (e.g. "- item" or "  - item")
     line = line.replace(/^(\s*)-\s+/, '$1');
     // Remove common bullet characters at start of line
     line = line.replace(/^\s*[\u2022\u2023\u25E6\u00B7\u2043]\s*/, '');
+    // Remove highlight markers ==...==
+    line = line.replace(/==[^=]*==/g, function(m) { return m.replace(/==/g, ''); });
   } else {
     // Speak checkboxes explicitly
+    line = line.replace(/\[x:[a-z]+\]/gi, 'checked');
+    line = line.replace(/\[ ?:[a-z]+\]/gi, 'checkbox');
     line = line.replace(/\[x\]/gi, 'checked');
     line = line.replace(/\[\s*\]/g, 'checkbox');
-    // Leave hyphens and bullets as-is (TTS will handle them)
+    // Leave hyphens, bullets and @tags as-is (TTS will handle them)
   }
   return line.trim();
 }
@@ -11466,6 +11606,9 @@ function openSettings() {
   if (_nemRadio) _nemRadio.checked = true;
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
+  var mcToggle=document.getElementById('move-completed-toggle'); if(mcToggle)mcToggle.checked=!!settings.moveCompletedToBottom;
+  var mccToggle=document.getElementById('move-completed-confirm-toggle'); if(mccToggle)mccToggle.checked=!!settings.moveCompletedConfirm;
+  var mccRow=document.getElementById('move-completed-confirm-row'); if(mccRow)mccRow.style.display=settings.moveCompletedToBottom?'':'none';
   (function() {
     var tsi=document.getElementById('today-suffix-input'); if(tsi) tsi.value=settings.todaySuffix||'— Today';
     var lsi=document.getElementById('last-suffix-input');  if(lsi) lsi.value=settings.lastSuffix||'— Last';
@@ -11491,6 +11634,7 @@ function openSettings() {
   if (tripleTapToggleEl) tripleTapToggleEl.checked = settings.tripleTapToEdit !== false;
   document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
   document.getElementById('indent-spaces-input').value = settings.indentSpaces !== undefined ? settings.indentSpaces : 2;
+  var _dciEl = document.getElementById('default-checkbox-indent-input'); if (_dciEl) _dciEl.value = settings.defaultCheckboxIndent || 0;
 
   // Snapshot current settings so we can detect changes
   settingsSnapshot = JSON.parse(JSON.stringify(settings));
@@ -15648,6 +15792,18 @@ function makeImportFolderName(label) {
     }
     if (_tf12) _tf12.addEventListener('click', function() { _setTimeFormat('12h'); });
     if (_tf24) _tf24.addEventListener('click', function() { _setTimeFormat('24h'); });
+    var _mc = document.getElementById('move-completed-toggle');
+    if (_mc) _mc.addEventListener('change', function() {
+      settings.moveCompletedToBottom = this.checked;
+      var row = document.getElementById('move-completed-confirm-row');
+      if (row) row.style.display = this.checked ? '' : 'none';
+      updateSaveBtnState();
+    });
+    var _mcc = document.getElementById('move-completed-confirm-toggle');
+    if (_mcc) _mcc.addEventListener('change', function() {
+      settings.moveCompletedConfirm = this.checked;
+      updateSaveBtnState();
+    });
   })();
   document.getElementById('delete-guard-chars').addEventListener('input', function() {
     var val = parseInt(this.value);
@@ -16233,7 +16389,7 @@ function makeImportFolderName(label) {
         || /^\[ ?:[a-z]+\]/i.test(core)
         || /^- /.test(core); // hyphen list items are also collapsible parents
   }
-  function getDescendants(lines, parentIdx) {
+  getDescendants = function(lines, parentIdx) {
     var parentIndent = getLineIndent(lines[parentIdx]);
     var descendants = [];
     var i = parentIdx + 1;
@@ -16253,14 +16409,14 @@ function makeImportFolderName(label) {
     return descendants;
   }
   // ── Heading collapse helpers ─────────────────────────────────────────
-  function isHeadingRaw(rawLine) {
+  isHeadingRaw = function(rawLine) {
     return /^#{1,6} /.test(rawLine);
   }
   function getHeadingLevel(rawLine) {
     var m = rawLine.match(/^(#{1,6}) /);
     return m ? m[1].length : 0;
   }
-  function getHeadingDescendants(lines, parentIdx) {
+  getHeadingDescendants = function(lines, parentIdx) {
     var level = getHeadingLevel(lines[parentIdx]);
     if (level === 0) return [];
     var descendants = [];
@@ -16276,10 +16432,10 @@ function makeImportFolderName(label) {
   function isParentLine(rawLine) {
     return isCheckboxRaw(rawLine) || isHeadingRaw(rawLine);
   }
-  function getParentDescendants(lines, idx) {
+  getParentDescendants = function(lines, idx) {
     if (isHeadingRaw(lines[idx])) return getHeadingDescendants(lines, idx);
     return getDescendants(lines, idx);
-  }
+  };
 
   // Re-apply outline chevrons whenever the viewer content is replaced
   // (e.g. after checkbox click, strikethrough toggle, etc.)
@@ -16442,38 +16598,9 @@ function makeImportFolderName(label) {
   // Uses the same logic as the viewer click handler (check mode) to ensure
   // consistent behavior — we reuse the exact same regex patterns.
   function setCheckState(lines, idx, checkState) {
-    var line = lines[idx];
-    // --- Checkbox lines: find the .viewer-checkbox SVG path in the rendered
-    //     viewer and dispatch a click — but we're working on raw content here,
-    //     so replicate the raw toggle logic used by the checkbox SVG click handler.
-    // Plain [ ] / [x]
-    if (/^(\s*)\[[ x]\]/i.test(line)) {
-      lines[idx] = line.replace(/^(\s*)\[[ x]\]/i, function(m, sp) {
-        return sp + (checkState ? '[x]' : '[ ]');
-      });
-      return;
-    }
-    // Colored checkbox [ :color] / [x:color]
-    if (/^(\s*)\[(x?|\s?):[a-z]+\]/i.test(line)) {
-      lines[idx] = line.replace(/^(\s*)\[(x?|\s?)(:)([a-z]+)\]/i, function(m, sp, x, c, col) {
-        return sp + '[' + (checkState ? 'x' : ' ') + c + col + ']';
-      });
-      return;
-    }
-    // Hyphen item — same logic as viewer click handler:
-    // find '- ' position, toggle ~~ on body only
-    var hyphenIdx = line.indexOf('- ');
-    if (hyphenIdx !== -1) {
-      var beforeHyphen = line.slice(0, hyphenIdx + 2);
-      var afterHyphen  = line.slice(hyphenIdx + 2);
-      if (checkState) {
-        if (!/^~~.+~~$/.test(afterHyphen.trim())) {
-          lines[idx] = beforeHyphen + '~~' + afterHyphen.replace(/~~/g, '') + '~~';
-        }
-      } else {
-        lines[idx] = beforeHyphen + afterHyphen.replace(/^(\s*)~~(.+)~~(\s*)$/, '$1$2$3');
-      }
-    }
+    // CRITICAL: use applyCheckToLine — never inline check/strikethrough logic here
+    var doStrike = settings.checkStrikethrough !== false;
+    lines[idx] = applyCheckToLine(lines[idx], checkState, doStrike);
   }
   function checkUncheckChildren(parentIdx, checkState) {
     if (!currentNoteId || !notes[currentNoteId]) return;
@@ -16819,6 +16946,8 @@ function makeImportFolderName(label) {
     var ind = document.getElementById('hide-completed-indicator');
     if (!ind) return;
     ind.classList.toggle('active', isViewMode && _hideCompleted);
+    // Toolbar may need to reflow when indicator appears/disappears — same fix as tag filter indicator
+    setTimeout(pinToolbars, 50);
   }
 
   updateHideCompletedMenuLabel = function() {
@@ -17565,6 +17694,22 @@ function makeImportFolderName(label) {
     settings.indentSpaces = isNaN(val) ? 2 : Math.max(1, Math.min(16, val));
     updateSaveBtnState();
   });
+  (function() {
+    var _dci = document.getElementById('default-checkbox-indent-input');
+    if (_dci) {
+      _dci.addEventListener('input', function() {
+        var val = parseInt(this.value);
+        settings.defaultCheckboxIndent = isNaN(val) ? 0 : Math.max(0, Math.min(8, val));
+        updateSaveBtnState();
+      });
+      _dci.addEventListener('blur', function() {
+        var val = parseInt(this.value);
+        if (isNaN(val) || val < 0) { this.value = 0; settings.defaultCheckboxIndent = 0; }
+        else if (val > 8) { this.value = 8; settings.defaultCheckboxIndent = 8; }
+        else { this.value = val; settings.defaultCheckboxIndent = val; }
+      });
+    }
+  })();
   document.getElementById('indent-spaces-input').addEventListener('blur', function() {
     var val = parseInt(this.value);
     if (isNaN(val) || val < 1) { this.value = 1; settings.indentSpaces = 1; }
@@ -17632,39 +17777,27 @@ function makeImportFolderName(label) {
     var isChecked = cb.dataset.cb === 'checked';
     var doStrike = settings.checkStrikethrough !== false;
 
-    if (isChecked) {
-      // Uncheck: [x] → [ ]  and  [x:color] → [ :color]
-      var unchecked = line
-        .replace(/\[x:([a-z]+)\]/gi, '[ :$1]')  // colored: [x:red] → [ :red]
-        .replace(/\[x\]/i, '[ ]');               // plain: [x] → [ ]
-      if (doStrike && unchecked !== line) {
-        var bodyMatch = unchecked.match(/^(\[[ x][^\]]*\]\s*)(.*?)$/is);
-        var body = bodyMatch ? bodyMatch[2] : '';
-        if (body.startsWith('~~') && body.endsWith('~~')) {
-          unchecked = unchecked.replace(/~~([^~\n]*)~~/g, '$1');
-        }
-      }
-      lines[lineIndex] = unchecked;
-    } else {
-      // Check: [ ] → [x]  and  [ :color] → [x:color]
-      var checked = line
-        .replace(/\[ :([a-z]+)\]/gi, '[x:$1]')  // colored: [ :red] → [x:red]
-        .replace(/\[ \]|\[\]/, '[x]');           // plain: [ ] → [x]
-      if (doStrike) {
-        checked = checked.replace(/^(\[[x ][^\]]*\]\s*)(.+)$/, function(m, prefix, text) {
-          if (text.indexOf('~~') !== -1) return m;
-          return prefix + '~~' + text + '~~';
-        });
-      }
-      lines[lineIndex] = checked;
-    }
+    // CRITICAL: use applyCheckToLine — never inline check/uncheck/strikethrough logic
+    lines[lineIndex] = applyCheckToLine(line, !isChecked, doStrike);
 
+    pushUndo();
     notes[currentNoteId].content = lines.join('\n');
     document.getElementById('note-editor').value = notes[currentNoteId].content;
     scheduleSave();
     document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
     document.getElementById('note-viewer').classList.toggle('crossout-mode', deletingLine);
     updateViewOnlyBtns();
+
+    // ── Move completed to bottom ──────────────────────────────────────────
+    if (!isChecked && settings.moveCompletedToBottom && !isAlreadyAtBottom(lineIndex)) {
+      var _doMove = function() { doMoveCompletedToBottom(lineIndex); };
+      if (settings.moveCompletedConfirm) {
+        showConfirm('Move to bottom?', 'Move this completed item to the bottom of the note?',
+          'Move', _doMove, false, 'Leave here', null, 'centered');
+      } else {
+        _doMove();
+      }
+    }
 
     // ── Confetti: fire when last unchecked checkbox-ish item is checked ──
     if (!isChecked && settings.confettiOnComplete) {
@@ -17954,6 +18087,12 @@ function makeImportFolderName(label) {
         _indentPrefix = (_refLine.match(/^(\s*)/)||['',''])[1];
       }
     })();
+
+    // Default indent: apply when inserting checkbox/hyphen items and smart indent didn't apply
+    if (_insertedIsCheckboxish && _indentPrefix === '' && settings.defaultCheckboxIndent > 0) {
+      var _defIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 2);
+      _indentPrefix = ' '.repeat(_defIndentSpaces);
+    }
 
     var processedLines;
     if (!hasVisibleText) {
@@ -18315,6 +18454,14 @@ function makeImportFolderName(label) {
       var prefix = getSmartIndentPrefix(lineText);
       if (prefix !== null) {
         e.preventDefault();
+        // Apply defaultCheckboxIndent if: no leading whitespace on new prefix yet,
+        // and the line is checkbox/hyphen-ish, and user hasn't typed their own indent.
+        // Never override if the prefix already has leading spaces/tabs.
+        var _pfxLeading = (prefix.match(/^([ \t]*)/) || ['',''])[1];
+        if (_pfxLeading === '' && settings.defaultCheckboxIndent > 0) {
+          var _defSp = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 2);
+          prefix = ' '.repeat(_defSp) + prefix;
+        }
         var before = val.substring(0, pos);
         var after = val.substring(ed.selectionEnd);
         var inserted = '\n' + prefix;
@@ -18676,25 +18823,34 @@ function makeImportFolderName(label) {
       // Hyphen item — find the '- ' in the core and apply strikethrough to the body,
       // rebuilding the line by replacing just that portion in the original.
       pushUndo();
-      // Find position of '- ' in the original line by searching for it
-      var hyphenIdx = line.indexOf('- ');
-      if (hyphenIdx === -1) return;
-      var beforeHyphen = line.slice(0, hyphenIdx + 2); // everything up to and including '- '
-      var afterHyphen  = line.slice(hyphenIdx + 2);    // the body after '- '
-      // Toggle strikethrough on the body portion only
-      var toggled;
-      if (/^~~.+~~$/.test(afterHyphen.trim())) {
-        // Already struck — remove outermost ~~
-        toggled = afterHyphen.replace(/^(\s*)~~(.+)~~(\s*)$/, '$1$2$3');
-      } else {
-        toggled = '~~' + afterHyphen.replace(/~~/g, '') + '~~';
-      }
-      lines[lineIndex] = beforeHyphen + toggled;
+      // CRITICAL: use applyCheckToLine — never inline hyphen strikethrough logic
+      // Determine current check state from core (stripped) line
+      var _hCore = stripFormattingForDetect(line);
+      var _hIsStruck = /^- ~~.+~~/.test(line.slice(line.indexOf('- ')));
+      var _hDoStrike = settings.checkStrikethrough !== false;
+      var _newHyphenLine = applyCheckToLine(line, !_hIsStruck, _hDoStrike);
+      lines[lineIndex] = _newHyphenLine;
       notes[currentNoteId].content = lines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
       document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
       renderBlockSelections();
+
+      // ── Move completed to bottom (hyphen items) ───────────────────────
+      // _justStruck: the new line is now struck (item was just completed)
+      var _hyphenPos = _newHyphenLine.indexOf('- ');
+      var _newBody = _hyphenPos !== -1 ? _newHyphenLine.slice(_hyphenPos + 2) : '';
+      var _justStruck = /^~~.+~~$/.test(_newBody.trim());
+
+      if (_justStruck && settings.moveCompletedToBottom && !isAlreadyAtBottom(lineIndex)) {
+        var _doMoveH = function() { doMoveCompletedToBottom(lineIndex); };
+        if (settings.moveCompletedConfirm) {
+          showConfirm('Move to bottom?', 'Move this completed item to the bottom of the note?',
+            'Move', _doMoveH, false, 'Leave here', null, 'centered');
+        } else {
+          _doMoveH();
+        }
+      }
     }
   });
 
@@ -21671,18 +21827,11 @@ function toggleCheckStateOnSelection() {
         lines = (notes[currentNoteId].content || '').split('\n');
       }
     } else {
-      // Hyphen item: toggle strikethrough on body
+      // Hyphen item: toggle strikethrough — CRITICAL: use applyCheckToLine
       if (!changed) pushUndo();
       changed = true;
-      var hyphenIdx = line.indexOf('- ');
-      if (hyphenIdx === -1) return;
-      var before = line.slice(0, hyphenIdx + 2);
-      var after  = line.slice(hyphenIdx + 2);
-      if (/^~~.+~~$/.test(after.trim())) {
-        lines[lineIndex] = before + after.replace(/^(\s*)~~(.+)~~(\s*)$/, '$1$2$3');
-      } else {
-        lines[lineIndex] = before + '~~' + after.replace(/~~/g, '') + '~~';
-      }
+      var _cxIsStruck = /^- ~~.+~~/.test(line.slice(line.indexOf('- ')));
+      lines[lineIndex] = applyCheckToLine(line, !_cxIsStruck, settings.checkStrikethrough !== false);
       notes[currentNoteId].content = lines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
@@ -21753,6 +21902,111 @@ function stripFormattingForDetect(s) {
   return s;
 }
 
+// ===== MOVE COMPLETED TO BOTTOM =====
+function isAlreadyAtBottom(lineIdx) {
+  if (!currentNoteId || !notes[currentNoteId]) return true;
+  var lines = notes[currentNoteId].content.split('\n');
+  var desc = getParentDescendants(lines, lineIdx);
+  var blockIndices = [lineIdx].concat(desc);
+  blockIndices.sort(function(a,b){return a-b;});
+  // Walk from end — find the last non-blank line overall (including the block)
+  for (var i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim() !== '') {
+      // If the last non-blank line is part of the block, block is already at bottom
+      return blockIndices.indexOf(i) !== -1;
+    }
+  }
+  return true;
+}
+
+function doMoveCompletedToBottom(lineIdx) {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  var lines = notes[currentNoteId].content.split('\n');
+
+  // Collect the item and its outline descendants
+  var desc = getParentDescendants(lines, lineIdx);
+  var blockIndices = [lineIdx].concat(desc);
+  blockIndices.sort(function(a,b){return a-b;});
+  var blockLines = blockIndices.map(function(i){return lines[i];});
+
+  // Find last non-blank line excluding the block itself
+  var tempLines = lines.slice();
+  blockIndices.forEach(function(i){ tempLines[i] = null; });
+  var lastNonBlankIdx = -1;
+  for (var i = tempLines.length - 1; i >= 0; i--) {
+    if (tempLines[i] !== null && tempLines[i].trim() !== '') { lastNonBlankIdx = i; break; }
+  }
+
+  // Skip if block is already at the bottom (isAlreadyAtBottom handles this but double-check)
+  if (isAlreadyAtBottom(lineIdx)) return;
+
+  // Remove block lines from array
+  var newLines = lines.filter(function(_, i) { return blockIndices.indexOf(i) === -1; });
+
+  // Trim runs of 3+ consecutive blank lines down to 2 (cleanup after removal)
+  var cleaned = [];
+  var blankRun = 0;
+  for (var i = 0; i < newLines.length; i++) {
+    if (newLines[i].trim() === '') {
+      blankRun++;
+      if (blankRun <= 2) cleaned.push(newLines[i]);
+    } else {
+      blankRun = 0;
+      cleaned.push(newLines[i]);
+    }
+  }
+  newLines = cleaned;
+
+  // Find last non-blank in cleaned array
+  var lastNB = -1;
+  for (var i = newLines.length - 1; i >= 0; i--) {
+    if (newLines[i].trim() !== '') { lastNB = i; break; }
+  }
+  var lastNBLine = lastNB >= 0 ? newLines[lastNB] : '';
+  var isTagOrder = /^\s*\[tag order\]/i.test(lastNBLine);
+
+  if (isTagOrder) {
+    // Insert before [tag order] with 1 blank line separator
+    var insertAt = lastNB;
+    while (insertAt > 0 && newLines[insertAt-1].trim() === '') insertAt--;
+    // Determine spacing before block
+    var prevNBLine2 = '';
+    for (var i = insertAt - 1; i >= 0; i--) {
+      if (newLines[i].trim() !== '') { prevNBLine2 = newLines[i]; break; }
+    }
+    var prefixBlanks2 = [];
+    if (isCheckboxRaw(stripFormattingForDetect(prevNBLine2))) {
+      if (settings.smartIndentBlankLine) prefixBlanks2 = [''];
+    } else if (prevNBLine2 !== '') {
+      prefixBlanks2 = [''];
+    }
+    var before = newLines.slice(0, insertAt);
+    var tagOrderLines = newLines.slice(insertAt);
+    newLines = before.concat(prefixBlanks2).concat(blockLines).concat(['']).concat(tagOrderLines);
+  } else {
+    // Append at end — determine prefix spacing
+    var prevNBLine = lastNB >= 0 ? newLines[lastNB] : '';
+    var prefixBlanks = [];
+    if (isCheckboxRaw(stripFormattingForDetect(prevNBLine))) {
+      if (settings.smartIndentBlankLine) prefixBlanks = [''];
+    } else if (prevNBLine !== '') {
+      prefixBlanks = [''];
+    }
+    // Trim all trailing blanks then append block + exactly 2 trailing blanks
+    while (newLines.length > 0 && newLines[newLines.length-1].trim() === '') newLines.pop();
+    newLines = newLines.concat(prefixBlanks).concat(blockLines).concat(['', '']);
+  }
+
+  notes[currentNoteId].content = newLines.join('\n');
+  document.getElementById('note-editor').value = notes[currentNoteId].content;
+  scheduleSave();
+  document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+  updateViewOnlyBtns();
+  if (typeof applyOutlineMode === 'function') applyOutlineMode();
+  if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
+  showToast('Moved to bottom', false);
+}
+
 // ===== LAST MODIFIED / TODAY NOTE HELPERS =====
 var _updatingTimestamp = false;
 var _lastModifiedRegex = /^\s*\[last modified\]/i;
@@ -21801,25 +22055,13 @@ function updateLastModifiedInContent(content, noteName) {
 // Takes an array of lines, returns a new array with all checked items unchecked.
 // Used by both unCheckAll() and the Clear button handler.
 function uncheckAllLines(lines) {
+  // CRITICAL: use applyCheckToLine — never inline check/strikethrough logic here
   return lines.map(function(line) {
     var core = stripFormattingForDetect(line);
-    // Checked checkbox: uncheck and remove outermost ~~ from whole line
-    if (/^\[x\]/i.test(core) || /^\[x:[a-z]+\]/i.test(core)) {
-      var unchecked = line
-        .replace(/\[x:([a-z]+)\]/gi, '[ :$1]')
-        .replace(/\[x\]/gi, '[ ]');
-      return unchecked.replace(/~~([^~\n]*)~~/g, '$1');
-    }
-    // Struck hyphen item: only remove outermost ~~ if body is fully wrapped
-    if (/^- /.test(core)) {
-      var hyphenIdx = line.indexOf('- ');
-      if (hyphenIdx !== -1) {
-        var before = line.slice(0, hyphenIdx + 2);
-        var body   = line.slice(hyphenIdx + 2);
-        if (/^~~.+~~$/.test(body.trim())) {
-          return before + body.replace(/^(\s*)~~(.+)~~(\s*)$/, '$1$2$3');
-        }
-      }
+    var isCheckedCb = /^\[x\]/i.test(core) || /^\[x:[a-z]+\]/i.test(core);
+    var isStruckHyphen = /^- /.test(core) && /^- ~~.+~~/.test(line.slice(line.indexOf('- ')));
+    if (isCheckedCb || isStruckHyphen) {
+      return applyCheckToLine(line, false, true);
     }
     return line;
   });
