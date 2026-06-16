@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1178 -->
+<!-- Remember App - Version 0.1195 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1178
+  Version 0.1195
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1886,7 +1886,7 @@ body.outline-mode #note-viewer { padding-left: 30px; }
   user-select: none; -webkit-user-select: none; cursor: default;
 }
 .note-tag.tag-filtered { color: var(--accent); background: transparent; border: 1px solid var(--accent); }
-.last-modified-line { color: var(--fg3); font-size: 0.82em; display: flex; align-items: center; gap: 8px; }
+.last-modified-line { color: var(--fg3); font-size: 0.82em; }
 .last-modified-line .last-modified-text { opacity: 0.7; }
 .last-modified-clear-btn { font-size: 0.82em; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--fg3); cursor: pointer; font-family: var(--font-body); touch-action: manipulation; }
 /* Tag color pills — shown when settings.tagColorPills is on */
@@ -7737,7 +7737,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1178';
+const APP_VERSION = '0.1195';
 
 
 
@@ -8442,20 +8442,34 @@ function showScreen(id) {
 // ===== HOME SCREEN =====
 function notePreview(content) {
   if (!content) return null;
-  // Find first non-blank line
   var lines = content.split('\n');
+  var _specialLineRe = /^\[(?:tag order|last modified|share note|copy for speech)\]/i;
+  var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3';
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
-    if (line.length > 0) {
-      // Strip heading markers so # doesn't appear in preview
-      line = line.replace(/^#{1,6}\s+/, '');
-      // Truncate raw text before rendering to avoid very long previews
-      var truncated = line.length > 120 ? line.slice(0, 120) + '…' : line;
-      // Render through urlsToLinks (no line wrappers) for formatting + checkboxes
-      return urlsToLinks(truncated, false);
-    }
+    if (line.length === 0) continue;
+    // [tag order] MUST be at start — skip whole line.
+    // [share note] at start means the line is just a button — skip it.
+    // [last modified], [copy for speech] are stripped inline below (may have surrounding text).
+    if (/^\[tag order\]/i.test(line) || /^\[share note\]/i.test(line)) continue;
+    // Skip horizontal rules
+    if (/^(-\s*){3,}$/.test(line)) continue;
+    // Strip markdown noise for a clean preview
+    line = line.replace(/^#{1,6}\s+/, '');
+    line = line.replace(/\*\*([^*]*)\*\*/g, '$1');
+    line = line.replace(/\*([^*\n]*)\*/g, '$1');
+    line = line.replace(/~~([^~]*)~~/g, '$1');
+    line = line.replace(/==([^=]*)==/g, '$1');
+    line = line.replace(new RegExp('\\{(?:' + _colorNames + ')\\}([^{]*)\\{\\/?(?:' + _colorNames + ')\\}', 'g'), '$1');
+    line = line.replace(/@[a-zA-Z0-9_-]+/g, '');
+    line = line.replace(/\[last modified\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[share note\]/gi, '');
+    line = line.replace(/\[x:[a-z]+\]/gi, '').replace(/\[ ?:[a-z]+\]/gi, '');
+    line = line.trim();
+    if (line.length === 0) continue;
+    var truncated = line.length > 120 ? line.slice(0, 120) + '…' : line;
+    return urlsToLinks(truncated, false);
   }
-  return null; // all whitespace
+  return null; // all whitespace or only special lines
 }
 
 function naturalCompare(a, b) {
@@ -8529,8 +8543,8 @@ function normalizeSearch(s) {
 
 function stripMarkdownForSearch(text) {
   // Strip formatting markers so searching 'hello' finds '**hello**'
-  text = text.replace(/^\[share note\].*$/gim, '');
-  text = text.replace(/\[copy for speech\]/gim, '');
+  // [tag order] at start only (structural). Other special tags may appear anywhere.
+  text = text.replace(/\[share note\]/gim, '').replace(/\[copy for speech\]/gim, '').replace(/\[last modified\]/gim, '');
   return text
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
@@ -9848,9 +9862,10 @@ function urlsToLinks(text, addLineWrappers) {
           + '</div>';
       }
       if (!line || rawLine.trim() === '') return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
-      // [last modified] line: render as muted timestamp + Clear button (Today notes only)
-      if (_lastModifiedRegex.test(rawLine.trim())) {
-        var _lmText = rawLine.replace(_lastModifiedRegex, '').trim();
+      // [last modified] tag: may appear anywhere in the block (not just at start).
+      // Extract the datetime text immediately after the tag.
+      if (_lastModifiedRegex.test(rawLine)) {
+        var _lmText = rawLine.replace(_lastModifiedRegex, '').trim().replace(/ /g, '&nbsp;');
         var _noteName = currentNoteId && notes[currentNoteId] ? (notes[currentNoteId].name || '') : '';
         var _todaySfx = settings.todaySuffix || '— Today';
         var _showClear = _noteName.indexOf(_todaySfx) !== -1;
@@ -9862,19 +9877,19 @@ function urlsToLinks(text, addLineWrappers) {
           ? '<button class="last-modified-clear-btn" data-action="toggle-todo-filter" style="pointer-events:auto">' + _todoLabel + '</button>'
           : '';
         return '<div class="viewer-line last-modified-line" data-line="' + i + '">' +
-          '<span class="last-modified-text">[last modified] ' + _lmText + '</span>' + _clearBtn + _todoBtn + '</div>';
+          '<span class="last-modified-text">last modified ' + _lmText + '</span>' + _clearBtn + _todoBtn + '</div>';
       }
-      // [share note] tag: render Share button inline, preserving any surrounding text on the line
-      if (/\[share note\]/i.test(rawLine)) {
+      // [share note] and/or [copy for speech] tags: render inline buttons, both may appear on same line
+      if (/\[share note\]/i.test(rawLine) || /\[copy for speech\]/i.test(rawLine)) {
         var _snBtn = '<button class="last-modified-clear-btn" data-action="share-note" style="pointer-events:auto">Share</button>';
-        var _snLine = line.replace(/\[share note\]/gi, _snBtn);
-        return '<div class="viewer-line last-modified-line" data-line="' + i + '">' + _snLine + '</div>';
-      }
-      // [copy for speech] tag: render Copy button inline — copies using speech stripping (no checkbox symbols)
-      if (/\[copy for speech\]/i.test(rawLine)) {
         var _csBtn = '<button class="last-modified-clear-btn" data-action="copy-for-speech" style="pointer-events:auto">Copy</button>';
-        var _csLine = line.replace(/\[copy for speech\]/gi, _csBtn);
-        return '<div class="viewer-line last-modified-line" data-line="' + i + '">' + _csLine + '</div>';
+        // Preserve whitespace so user can space buttons apart in typing mode
+        // Use line (HTML-escaped); convert space runs to &nbsp; to preserve user spacing
+        var _tagLine = line
+          .replace(/\[share note\]/gi, _snBtn)
+          .replace(/\[copy for speech\]/gi, _csBtn)
+          .replace(/  +/g, function(m) { return m.replace(/ /g, '&nbsp;'); });
+        return '<div class="viewer-line last-modified-line" data-line="' + i + '">' + _tagLine + '</div>';
       }
       // [tag order] line: strip prefix, render tags only, hide with tags-hidden
       if (/^\[tag order\]/.test(rawLine.trim())) {
@@ -10395,14 +10410,36 @@ function toggleLineFormatting(line, type, color) {
 // applyCheckToLine(line, checkState, doStrike) — check or uncheck a single
 // raw line (checkbox or hyphen item). Handles any leading whitespace/tabs,
 // any checkbox color variant, and partial internal strikethroughs.
-// checkState: true = check/strike, false = uncheck/unstrike
+// checkState: true = check, false = uncheck, 'toggle' = auto-detect and flip
 // doStrike: whether to add/remove strikethrough (from settings.checkStrikethrough)
 // Returns the modified line string.
 // CRITICAL: This is THE ONLY place that should contain check/uncheck + strikethrough
 // logic for individual lines. Do not duplicate this in click handlers or other
-// functions — call applyCheckToLine() instead.
+// functions — call applyCheckToLine() instead. Use 'toggle' when the caller
+// does not know the current state — never inline struck/checked detection.
 function applyCheckToLine(line, checkState, doStrike) {
+  // CRITICAL: This is the ONLY place check/uncheck + strikethrough logic lives.
+  // Pass checkState as true (check), false (uncheck), or 'toggle' (auto-detect and flip).
+  // Never inline this detection elsewhere — always call applyCheckToLine().
   var core = stripFormattingForDetect(line);
+  // ── Resolve 'toggle' — detect current state from raw line ──────────────
+  if (checkState === 'toggle') {
+    var isCheckbox0 = /^\[[ x]\]/i.test(core) || /^\[[ x]:[a-z]+\]/i.test(core);
+    if (isCheckbox0) {
+      // Currently checked if core starts with [x] or [x:color]
+      checkState = !(/^\[x\]/i.test(core) || /^\[x:[a-z]+\]/i.test(core));
+    } else if (/^- /.test(core)) {
+      // Currently struck if afterHyphen body is wrapped in ~~ (normal or outer)
+      var _togHyphenIdx = line.indexOf('- ');
+      var _togAfterT = _togHyphenIdx !== -1 ? line.slice(_togHyphenIdx + 2).trim() : '';
+      var _togRawT = line.trim();
+      var _togStruck = (_togAfterT.startsWith('~~') && _togAfterT.endsWith('~~') && _togAfterT.length > 4) ||
+                       (_togRawT.startsWith('~~') && _togRawT.endsWith('~~') && _togRawT.length > 4);
+      checkState = !_togStruck; // toggle: if struck → uncheck, if not → check
+    } else {
+      return line; // not a checkbox-ish line
+    }
+  }
   // ── Checkbox item ──────────────────────────────────────────────────────
   var isCheckbox = /^\[[ x]\]/i.test(core) || /^\[[ x]:[a-z]+\]/i.test(core);
   if (isCheckbox) {
@@ -10431,21 +10468,49 @@ function applyCheckToLine(line, checkState, doStrike) {
     }
   }
   // ── Hyphen item ────────────────────────────────────────────────────────
+  // IMPORTANT: Never use line.indexOf('- ') directly — the '- ' marker may be
+  // preceded by formatting wrappers (~~, **, *, ==) and any amount of whitespace.
+  // Always find the hyphen position by locating where core starts in the raw line.
   var isHyphen = /^- /.test(core);
   if (isHyphen) {
-    var hyphenIdx = line.indexOf('- ');
+    // Find the '- ' in raw line that corresponds to the start of core.
+    // Walk forward from the first char of core to find the matching position.
+    var hyphenIdx = -1;
+    for (var _hi = 0; _hi < line.length - 1; _hi++) {
+      if (line.charAt(_hi) === '-' && line.charAt(_hi + 1) === ' ') {
+        if (stripFormattingForDetect(line.slice(_hi)).indexOf('- ') === 0) {
+          hyphenIdx = _hi;
+          break;
+        }
+      }
+    }
     if (hyphenIdx === -1) return line;
     var beforeHyphen = line.slice(0, hyphenIdx + 2);
     var afterHyphen  = line.slice(hyphenIdx + 2);
     var afterT = afterHyphen.trim();
+    // Two ways a hyphen item can be struck:
+    // 1. Normal: beforeHyphen + ~~body~~ (afterHyphen body is wrapped)
+    // 2. Outer:  ~~- body~~ (entire raw line is wrapped, core has no ~~)
+    var rawLineTrimmed = line.trim();
+    var isNormalStruck = afterT.startsWith('~~') && afterT.endsWith('~~') && afterT.length > 4;
+    var isOuterStruck  = rawLineTrimmed.startsWith('~~') && rawLineTrimmed.endsWith('~~') && rawLineTrimmed.length > 4;
+    var isFullyStruck  = isNormalStruck || isOuterStruck;
     if (checkState) {
-      // Strike: wrap body if not already fully struck
-      if (afterT.startsWith('~~') && afterT.endsWith('~~') && afterT.length > 4) return line;
+      // Strike: wrap afterHyphen in ~~ if not already fully struck
+      if (isFullyStruck) return line;
       return beforeHyphen + '~~' + afterHyphen + '~~';
     } else {
-      // Unstrike: remove outermost ~~ only
-      if (afterT.startsWith('~~') && afterT.endsWith('~~') && afterT.length > 4) {
+      // Unstrike: remove the outermost ~~ wrapper
+      if (isNormalStruck) {
+        // Normal case: remove ~~ from afterHyphen
         return beforeHyphen + afterT.slice(2, afterT.length - 2);
+      }
+      if (isOuterStruck) {
+        // Outer case: entire line is wrapped — strip leading and trailing ~~
+        // Preserve original leading whitespace from the raw line
+        var _leadWs = (line.match(/^(\s*)/) || ['',''])[1];
+        var inner = rawLineTrimmed.slice(2, rawLineTrimmed.length - 2).trim();
+        return _leadWs + inner;
       }
       return line;
     }
@@ -10478,10 +10543,11 @@ function applyFormattingToBlocks(type, color) {
 // Keep content readable as plain text for sharing.
 function stripForShare(content) {
   return (content || '').split('\n').map(function(line) {
-    // Skip [tag order] and [share note] lines entirely
+    // [tag order] MUST be at start (structural). Other special tags may appear anywhere.
     if (/^\[tag order\]/.test(line.trim())) return null;
-    if (/^\[share note\]/i.test(line.trim())) return null;
-    if (/\[copy for speech\]/i.test(line)) line = line.replace(/\[copy for speech\]/gi, '').trim(); if (!line) return null;
+    // Strip [share note], [copy for speech], [last modified] tag wherever they appear
+    line = line.replace(/\[share note\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[last modified\]/gi, '').trim();
+    if (!line) return null;
     // Skip horizontal rules
     if (/^(-\s*){3,}$/.test(line.trim())) return null;
     // Strip heading markers
@@ -11172,10 +11238,10 @@ function getSpeechVoice() {
 
 // Strip markdown formatting from a line so TTS doesn't speak raw markers.
 function stripMarkdownForSpeech(line) {
-  // Skip [tag order] lines — not spoken
+  // [tag order] MUST be at start (structural) — skip entire line.
+  // [share note], [copy for speech], [last modified] may appear anywhere — strip them.
   if (/^\[tag order\]/.test(line.trim())) return '';
-  if (/^\[share note\]/i.test(line.trim())) return '';
-  line = line.replace(/\[copy for speech\]/gi, '').trim();
+  line = line.replace(/\[share note\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[last modified\]/gi, '').trim();
   // Skip horizontal rules entirely — return empty string
   if (/^(-\s*){3,}$/.test(line.trim())) return '';
   // Strip heading markers # through ###### (Android TTS reads # as 'hash')
@@ -17714,6 +17780,8 @@ function makeImportFolderName(label) {
     if (typeof _tagFilterActive !== 'undefined' && _tagFilterActive) {
       showToast('Clear the tag filter before adding text', false); return;
     }
+    // Exit tap-to-edit mode before opening Quick Add
+    if (typeof exitEditBlockMode === 'function') exitEditBlockMode();
     openQuickAdd();
   });
   document.getElementById('reset-toolbar-order-btn').addEventListener('click', function() {
@@ -18878,11 +18946,10 @@ function makeImportFolderName(label) {
       // Instead: check if applyCheckToLine(line, false, true) differs from the line —
       // if it does, the line IS currently struck; if not, it is not struck.
       // Simpler: find '- ' in the core (stripped) and check the body there.
-      var _hHyphenIdx = _hCore.indexOf('- ');
-      var _hBody = _hHyphenIdx !== -1 ? _hCore.slice(_hHyphenIdx + 2).trim() : '';
-      var _hIsStruck = _hBody.startsWith('~~') && _hBody.endsWith('~~') && _hBody.length > 4;
+      // CRITICAL: use 'toggle' — applyCheckToLine detects current state internally.
+      // Never inline struck detection here; it will be wrong for edge cases.
       var _hDoStrike = settings.checkStrikethrough !== false;
-      var _newHyphenLine = applyCheckToLine(line, !_hIsStruck, _hDoStrike);
+      var _newHyphenLine = applyCheckToLine(line, 'toggle', _hDoStrike);
       lines[lineIndex] = _newHyphenLine;
       notes[currentNoteId].content = lines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
@@ -21261,6 +21328,8 @@ function _writeMoveContentBack() {
 var _dragSrcLines = null;
 var _dragTouchId = null;
 var _dragLastTarget = null;
+var _dragScrollY = null;       // current touch Y, updated each touchmove
+var _dragScrollRAF = null;     // requestAnimationFrame handle for scroll loop
 
 function _cleanDragState() {
   document.querySelectorAll('.drag-over-above, .drag-over-below, .drag-ghost').forEach(function(el) {
@@ -21268,6 +21337,27 @@ function _cleanDragState() {
   });
   _dragSrcLines = null;
   _dragLastTarget = null;
+  _dragScrollY = null;
+  if (_dragScrollRAF) { cancelAnimationFrame(_dragScrollRAF); _dragScrollRAF = null; }
+}
+
+function _dragScrollStep() {
+  // Continuous rAF scroll loop — runs while _dragScrollY is set
+  if (_dragScrollY === null) { _dragScrollRAF = null; return; }
+  var area = document.getElementById('note-content-area');
+  if (area) {
+    var visibleTop    = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0);
+    var visibleBottom = window.innerHeight;
+    var zone = 180;
+    if (_dragScrollY < visibleTop + zone) {
+      var intensity = 1 - (_dragScrollY - visibleTop) / zone;
+      area.scrollTop -= Math.round(2 + intensity * intensity * 28); // 2-30px/frame
+    } else if (_dragScrollY > visibleBottom - zone) {
+      var intensity2 = 1 - (visibleBottom - _dragScrollY) / zone;
+      area.scrollTop += Math.round(2 + intensity2 * intensity2 * 28);
+    }
+  }
+  _dragScrollRAF = requestAnimationFrame(_dragScrollStep);
 }
 
 function _initMoveDragDrop() {
@@ -21389,6 +21479,19 @@ function _onTouchDragMove(e) {
   }
   if (!touch) return;
   e.preventDefault();
+  // Store touch Y for the rAF scroll loop — starts loop if not already running
+  var visibleTop2    = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0);
+  var visibleBottom2 = window.innerHeight;
+  var zone2 = 180;
+  var inZone = touch.clientY < visibleTop2 + zone2 || touch.clientY > visibleBottom2 - zone2;
+  if (inZone) {
+    _dragScrollY = touch.clientY;
+    if (!_dragScrollRAF) _dragScrollRAF = requestAnimationFrame(_dragScrollStep);
+  } else {
+    // Outside scroll zone — stop the loop
+    _dragScrollY = null;
+    if (_dragScrollRAF) { cancelAnimationFrame(_dragScrollRAF); _dragScrollRAF = null; }
+  }
   var target = document.elementFromPoint(touch.clientX, touch.clientY);
   var line = target ? target.closest('.viewer-line') : null;
   if (!line || _dragSrcLines.indexOf(line) !== -1) return;
@@ -21884,8 +21987,8 @@ function toggleCheckStateOnSelection() {
       // Hyphen item: toggle strikethrough — CRITICAL: use applyCheckToLine
       if (!changed) pushUndo();
       changed = true;
-      var _cxIsStruck = /^- ~~.+~~/.test(line.slice(line.indexOf('- ')));
-      lines[lineIndex] = applyCheckToLine(line, !_cxIsStruck, settings.checkStrikethrough !== false);
+      // CRITICAL: use 'toggle' — applyCheckToLine detects current state internally.
+      lines[lineIndex] = applyCheckToLine(line, 'toggle', settings.checkStrikethrough !== false);
       notes[currentNoteId].content = lines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
@@ -22081,7 +22184,10 @@ function doMoveCompletedToBottom(lineIdx) {
 
 // ===== LAST MODIFIED / TODAY NOTE HELPERS =====
 var _updatingTimestamp = false;
-var _lastModifiedRegex = /^\s*\[last modified\]/i;
+// IMPORTANT: Special tags ([last modified], [share note], [copy for speech]) may appear
+// ANYWHERE in a block — not just at the start. Detection must NOT use ^ anchors.
+// Exception: [tag order] MUST be at the start of the block (it is structural).
+var _lastModifiedRegex = /\[last modified\]/i;
 
 function _formatTimestamp() {
   var now = new Date();
@@ -22112,7 +22218,9 @@ function updateLastModifiedInContent(content, noteName) {
     if (_lastModifiedRegex.test(lines[i])) { existingIdx = i; break; }
   }
   if (existingIdx !== -1) {
-    lines[existingIdx] = ts;
+    // Preserve any text before the [last modified] tag on the same line
+    var _beforeTag = lines[existingIdx].slice(0, lines[existingIdx].search(_lastModifiedRegex));
+    lines[existingIdx] = _beforeTag + ts;
   } else {
     // Only auto-insert if this is a Today note
     var todaySfx = settings.todaySuffix || '— Today';
