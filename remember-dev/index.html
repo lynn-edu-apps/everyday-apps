@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1195 -->
+<!-- Remember App - Version 0.1199 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1195
+  Version 0.1199
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1116,6 +1116,7 @@ body.reading-mode #note-title {
 /* In quiet mode: hide all More menu items except scroll top/bottom, find, exit quiet mode */
 body.reading-mode #toolbar-more-hidden-items,
 body.reading-mode #toolbar-more-divider,
+body.reading-mode #more-calendar-btn,
 body.reading-mode #more-uncheck-all-btn,
 body.reading-mode #more-copy-plain-btn,
 body.reading-mode #more-export-btn,
@@ -1159,6 +1160,7 @@ body.view-only-mode #note-title {
 }
 body.view-only-mode #toolbar-more-hidden-items,
 body.view-only-mode #toolbar-more-divider,
+body.view-only-mode #more-calendar-btn,
 body.view-only-mode #more-uncheck-all-btn,
 body.view-only-mode #more-copy-plain-btn,
 body.view-only-mode #more-export-btn,
@@ -5660,6 +5662,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <span id="more-hide-completed-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
   </button>
 
+  <!-- Add to Calendar toggle (R&R mode, session-only) -->
+  <button id="more-calendar-btn" style="display:flex;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span style="pointer-events:none;flex:1;padding-left:8px">Add to Calendar</span>
+    <span id="more-calendar-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
+  </button>
+
   <!-- Outline actions item (view mode only) -->
   <button id="more-outline-actions-btn" style="display:flex;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
@@ -7737,7 +7746,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1195';
+const APP_VERSION = '0.1199';
 
 
 
@@ -7992,6 +8001,7 @@ var isDictating = false; // true while speech recognition is running
 var _dictReplacingNow = false; // true only during speech engine's own text replacement
 var _tagFilterPaused = false;
 var _hideCompleted = false; // module-level so goHome()/openNote() can clear it
+var _calendarMode = false;   // show calendar buttons on checkbox-ish lines in R&R
 var _editBlockMode = false; // Tap to edit mode
 var themes = {};
 var currentGlobalThemeId = null;
@@ -8462,7 +8472,7 @@ function notePreview(content) {
     line = line.replace(/==([^=]*)==/g, '$1');
     line = line.replace(new RegExp('\\{(?:' + _colorNames + ')\\}([^{]*)\\{\\/?(?:' + _colorNames + ')\\}', 'g'), '$1');
     line = line.replace(/@[a-zA-Z0-9_-]+/g, '');
-    line = line.replace(/\[last modified\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[share note\]/gi, '');
+    line = line.replace(/\[last modified\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[share note\]/gi, '').replace(/\[cal [^\]]*\]/gi, '');
     line = line.replace(/\[x:[a-z]+\]/gi, '').replace(/\[ ?:[a-z]+\]/gi, '');
     line = line.trim();
     if (line.length === 0) continue;
@@ -8544,7 +8554,7 @@ function normalizeSearch(s) {
 function stripMarkdownForSearch(text) {
   // Strip formatting markers so searching 'hello' finds '**hello**'
   // [tag order] at start only (structural). Other special tags may appear anywhere.
-  text = text.replace(/\[share note\]/gim, '').replace(/\[copy for speech\]/gim, '').replace(/\[last modified\]/gim, '');
+  text = text.replace(/\[share note\]/gim, '').replace(/\[copy for speech\]/gim, '').replace(/\[last modified\]/gim, '').replace(/\[cal [^\]]*\]/gim, '');
   return text
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
@@ -9879,6 +9889,17 @@ function urlsToLinks(text, addLineWrappers) {
         return '<div class="viewer-line last-modified-line" data-line="' + i + '">' +
           '<span class="last-modified-text">last modified ' + _lmText + '</span>' + _clearBtn + _todoBtn + '</div>';
       }
+      // [cal datetime] tag: render subtle calendar indicator
+      if (/\[cal [^\]]+\]/i.test(rawLine)) {
+        // Render [cal datetime] as muted timestamp text (no emoji — avoid duplication with button)
+        var _calLine = line.replace(/\[cal ([^\]]+)\]/gi, '<span class="last-modified-text" style="font-size:0.82em">📅&nbsp;$1</span>');
+        if (_calendarMode && isCheckboxRaw(rawLine)) {
+          // Button label is 'Cal' not emoji to avoid two calendar icons on same line
+          var _calBtnInline = '<button class="last-modified-clear-btn" data-action="add-to-calendar" data-line="' + i + '" style="pointer-events:auto">Cal</button>';
+          _calLine = _calLine + ' ' + _calBtnInline;
+        }
+        return '<div class="viewer-line" data-line="' + i + '">' + _calLine + '</div>';
+      }
       // [share note] and/or [copy for speech] tags: render inline buttons, both may appear on same line
       if (/\[share note\]/i.test(rawLine) || /\[copy for speech\]/i.test(rawLine)) {
         var _snBtn = '<button class="last-modified-clear-btn" data-action="share-note" style="pointer-events:auto">Share</button>';
@@ -9937,7 +9958,12 @@ function urlsToLinks(text, addLineWrappers) {
           if (_colorIdx) _tagBorderClass = ' tag-border tag-border-' + ((_colorIdx - 1) % _TAG_COLORS + 1);
         }
       }
-      return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + _tagBorderClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + '</div>';
+      var _calBtnHtml = '';
+      // Only add calendar button if line doesn't already have a [cal] tag (those get their own button above)
+      if (_calendarMode && isCheckboxRaw(rawLine) && !/\[cal [^\]]+\]/i.test(rawLine)) {
+        _calBtnHtml = ' <button class="last-modified-clear-btn" data-action="add-to-calendar" data-line="' + i + '" style="pointer-events:auto">Cal</button>';
+      }
+      return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + _tagBorderClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + _calBtnHtml + '</div>';
     }).join('');
   }
   return escaped;
@@ -10546,7 +10572,7 @@ function stripForShare(content) {
     // [tag order] MUST be at start (structural). Other special tags may appear anywhere.
     if (/^\[tag order\]/.test(line.trim())) return null;
     // Strip [share note], [copy for speech], [last modified] tag wherever they appear
-    line = line.replace(/\[share note\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[last modified\]/gi, '').trim();
+    line = line.replace(/\[share note\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[last modified\]/gi, '').replace(/\[cal [^\]]*\]/gi, '').trim();
     if (!line) return null;
     // Skip horizontal rules
     if (/^(-\s*){3,}$/.test(line.trim())) return null;
@@ -11241,7 +11267,7 @@ function stripMarkdownForSpeech(line) {
   // [tag order] MUST be at start (structural) — skip entire line.
   // [share note], [copy for speech], [last modified] may appear anywhere — strip them.
   if (/^\[tag order\]/.test(line.trim())) return '';
-  line = line.replace(/\[share note\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[last modified\]/gi, '').trim();
+  line = line.replace(/\[share note\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[last modified\]/gi, '').replace(/\[cal [^\]]*\]/gi, '').trim();
   // Skip horizontal rules entirely — return empty string
   if (/^(-\s*){3,}$/.test(line.trim())) return '';
   // Strip heading markers # through ###### (Android TTS reads # as 'hash')
@@ -16766,6 +16792,61 @@ function makeImportFolderName(label) {
   // Handle Clear and To do/All buttons on [last modified] line in R&R mode
   document.getElementById('note-viewer').addEventListener('click', function(e) {
     // Toggle-todo-filter button
+    var calBtn = e.target.closest('[data-action="add-to-calendar"]');
+    if (calBtn) {
+      e.stopPropagation();
+      var _calLineIdx = parseInt(calBtn.dataset.line);
+      if (isNaN(_calLineIdx) || !currentNoteId || !notes[currentNoteId]) return;
+      var _calLines = notes[currentNoteId].content.split('\n');
+      var _calRawLine = _calLines[_calLineIdx] || '';
+      var _calSummary = stripMarkdownForSpeech(_calRawLine).trim() || 'Task';
+      var _calOverlay = document.createElement('div');
+      _calOverlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center';
+      var _calBox = document.createElement('div');
+      _calBox.style.cssText = 'background:var(--bg);border-radius:var(--radius);padding:24px;max-width:340px;width:90%;font-family:var(--font-body);color:var(--fg)';
+      var _now = new Date(); _now.setMinutes(0,0,0); _now.setHours(_now.getHours()+1);
+      var _pad = function(n){return String(n).padStart(2,'0');};
+      var _defVal = _now.getFullYear()+'-'+_pad(_now.getMonth()+1)+'-'+_pad(_now.getDate())+'T'+_pad(_now.getHours())+':00';
+      _calBox.innerHTML = '<div style="font-weight:600;margin-bottom:12px">Add to Calendar</div>'
+        + '<div style="font-size:0.85em;color:var(--fg2);margin-bottom:12px;word-break:break-word">' + _calSummary.slice(0,80) + '</div>'
+        + '<div style="font-size:0.78em;color:var(--fg3);margin-bottom:16px;font-style:italic">Note: Once added, manage this event in your Calendar app. Remember won\'t sync any changes.</div>'
+        + '<input type="datetime-local" id="cal-dt-picker" value="' + _defVal + '" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg);font-size:1em;box-sizing:border-box;margin-bottom:16px">'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end">'
+        + '<button id="cal-cancel-btn" style="padding:8px 18px;border:1px solid var(--border);border-radius:var(--radius-sm);background:none;color:var(--fg);cursor:pointer;font-family:var(--font-body)">Cancel</button>'
+        + '<button id="cal-ok-btn" style="padding:8px 18px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;cursor:pointer;font-family:var(--font-body);font-weight:600">Add to Calendar</button>'
+        + '</div>';
+      _calOverlay.appendChild(_calBox);
+      document.body.appendChild(_calOverlay);
+      document.getElementById('cal-cancel-btn').addEventListener('click', function() { document.body.removeChild(_calOverlay); });
+      document.getElementById('cal-ok-btn').addEventListener('click', function() {
+        var _dtVal = document.getElementById('cal-dt-picker').value;
+        if (!_dtVal) { document.body.removeChild(_calOverlay); return; }
+        var _dt = new Date(_dtVal);
+        var _dtEnd = new Date(_dt.getTime() + 60*60*1000);
+        var _fmt = function(d) { return d.getFullYear()+_pad(d.getMonth()+1)+_pad(d.getDate())+'T'+_pad(d.getHours())+_pad(d.getMinutes())+'00'; };
+        var _uid = Date.now() + '@remember';
+        var _ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Remember//EN',
+          'BEGIN:VEVENT','UID:'+_uid,'DTSTART:'+_fmt(_dt),'DTEND:'+_fmt(_dtEnd),
+          'SUMMARY:'+_calSummary.replace(/,/g,'\\,'),'END:VEVENT','END:VCALENDAR'].join('\r\n');
+        var _blob = new Blob([_ics], {type:'text/calendar'});
+        var _url = URL.createObjectURL(_blob);
+        var _a = document.createElement('a'); _a.href=_url; _a.download='event.ics'; _a.click();
+        setTimeout(function(){URL.revokeObjectURL(_url);},2000);
+        var _h = _dt.getHours(); var _ampm = _h>=12?'pm':'am'; _h = _h%12||12;
+        var _calTag = '[cal '+_dt.getFullYear()+'-'+_pad(_dt.getMonth()+1)+'-'+_pad(_dt.getDate())+' '+_h+':'+_pad(_dt.getMinutes())+_ampm+']';
+        _calLines[_calLineIdx] = _calLines[_calLineIdx].replace(/\s*\[cal [^\]]+\]/gi,'').trimEnd() + ' ' + _calTag;
+        notes[currentNoteId].content = _calLines.join('\n');
+        document.getElementById('note-editor').value = notes[currentNoteId].content;
+        scheduleSave();
+        document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+        if (typeof applyOutlineMode === 'function') applyOutlineMode();
+        if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
+        if (_hideCompleted) applyHideCompleted();
+        document.body.removeChild(_calOverlay);
+        showToast('Added to Calendar', false);
+      });
+      return;
+    }
     var shareNoteBtn = e.target.closest('[data-action="share-note"]');
     if (shareNoteBtn) {
       e.stopPropagation();
@@ -17067,6 +17148,21 @@ function makeImportFolderName(label) {
     if (chk) chk.style.display = _hideCompleted ? '' : 'none';
   }
 
+  document.getElementById('more-calendar-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-calendar-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    _calendarMode = !_calendarMode;
+    var chk = document.getElementById('more-calendar-check');
+    if (chk) chk.style.display = _calendarMode ? '' : 'none';
+    var ed = document.getElementById('note-editor');
+    var viewer = document.getElementById('note-viewer');
+    if (isViewMode && ed && viewer) {
+      viewer.innerHTML = urlsToLinks(ed.value, true);
+      if (typeof applyOutlineMode === 'function') applyOutlineMode();
+      if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
+      if (_hideCompleted) applyHideCompleted();
+    }
+  });
   document.getElementById('more-hide-completed-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('more-hide-completed-btn').addEventListener('click', function() {
     closeMoreMenu();
