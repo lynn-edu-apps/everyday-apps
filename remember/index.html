@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1235 -->
+<!-- Remember App - Version 0.1257 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1235
+  Version 0.1257
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -6766,17 +6766,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-row">
         <div>
-          <div class="settings-row-label">Show Tap to edit button</div>
-          <div class="settings-row-desc">Show the Tap to edit button in the toolbar and More menu (Read &amp; Revise mode only)</div>
-        </div>
-        <label class="toggle-switch" aria-label="Show Tap to edit button">
-          <input type="checkbox" id="show-tap-to-edit-toggle" checked>
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        </label>
-      </div>
-
-      <div class="settings-row">
-        <div>
           <div class="settings-row-label">Speak button: icon only</div>
           <div class="settings-row-desc">Hide the "Speak" label, show only the speaker icon</div>
         </div>
@@ -7812,7 +7801,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1235';
+const APP_VERSION = '0.1257';
 
 
 
@@ -7940,7 +7929,6 @@ const DEFAULT_SETTINGS = {
   voiceURI: '',
   speechRate: 0.9,
   showSpeakBtn: true,        // show the Speak button at all
-  showTapToEditBtn: true,    // show the Tap to edit button in toolbar and More menu
   speakBtnIconOnly: true,    // show only the icon, not the word "Speak"
   speakBtnAccentColor: true, // use accent color on Speak button
   speechPause: 400,          // ms pause between spoken lines (0-2000)
@@ -8372,8 +8360,6 @@ function applySettings() {
   var _iconOnlyTog  = document.getElementById('speak-icon-only-toggle');
   var _accentTog    = document.getElementById('speak-accent-color-toggle');
   if (_showSpeakTog) _showSpeakTog.checked = settings.showSpeakBtn !== false;
-  var _showTapToEditTog = document.getElementById('show-tap-to-edit-toggle');
-  if (_showTapToEditTog) _showTapToEditTog.checked = settings.showTapToEditBtn !== false;
   var _showThemeIndTog = document.getElementById('show-theme-indicator-toggle');
   if (_showThemeIndTog) _showThemeIndTog.checked = settings.showThemeIndicator !== false;
   renderThemesList();
@@ -13735,7 +13721,36 @@ function makeImportFolderName(label) {
 
   // ===== MORE MENU =====
   // Map of hideable button IDs to their display labels and icons for Settings
+  // Pairs of toolbar buttons that should appear as ONE combined row in the
+  // "Lower Toolbar Buttons" settings list — they always move and hide
+  // together so the user can't separate or hide just one half of a pair.
+  // This is purely a settings-dialog presentation concept: the toolbar HTML,
+  // HIDEABLE_BUTTONS, DEFAULT_TOOLBAR_ORDER, and the More menu are untouched
+  // and still treat the two buttons as independent ids.
+  var SETTINGS_ROW_PAIRS = [
+    ['undo-btn', 'redo-btn'],
+    ['indent-btn', 'dedent-btn'],
+  ];
+  // Look up a pair by either member id; returns null if btnId isn't paired.
+  function getSettingsRowPair(btnId) {
+    for (var i = 0; i < SETTINGS_ROW_PAIRS.length; i++) {
+      if (SETTINGS_ROW_PAIRS[i].indexOf(btnId) !== -1) return SETTINGS_ROW_PAIRS[i];
+    }
+    return null;
+  }
+
+  // Toolbar buttons that ALSO have their own permanent, fixed-position
+  // entry in the More menu (a "static" item) — e.g. more-print-btn,
+  // more-find-btn. When one of these is hidden from the toolbar via the
+  // "Lower Toolbar Buttons" settings, it must NOT also get a dynamically-
+  // generated row in rebuildMoreMenuItems(), since that would duplicate
+  // the static entry that's already always there. Add a new id here
+  // whenever a toolbar button gains a corresponding static More menu
+  // item (e.g. a future "Share note" toolbar button).
+  var DUAL_MODE_BUTTON_IDS = ['print-btn', 'find-btn', 'font-size-btn', 'delete-note-btn', 'dictate-btn', 'tap-to-edit-btn', 'dismiss-keyboard-btn'];
+
   var HIDEABLE_BUTTONS = [
+    { id: 'tap-to-edit-btn',        label: 'Tap to edit' },
     { id: 'undo-btn',               label: 'Undo' },
     { id: 'redo-btn',               label: 'Redo' },
     { id: 'move-mode-btn',           label: 'Move line' },
@@ -13755,22 +13770,66 @@ function makeImportFolderName(label) {
     { id: 'font-size-btn',           label: 'Text size' },
     { id: 'print-btn',               label: 'Print' },
     { id: 'delete-note-btn',        label: 'Delete note' },
-    { id: 'reading-mode-btn',       label: 'Quiet mode' },
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'font-size-btn', 'print-btn', 'delete-note-btn', 'reading-mode-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'font-size-btn', 'print-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
+  // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
+  // both ADJACENT and in canonical order — not just relative order. A
+  // saved settings object from before pairs existed (or one where the
+  // user manually reordered the toolbar) can have other buttons sitting
+  // between, say, undo-btn and redo-btn; simply swapping their relative
+  // order isn't enough to close that gap, which is why "Indent, Bold,
+  // Undo, Unindent, Italic, Redo" could still appear even after a
+  // relative-order-only fix. Shared by getEffectiveOrder() (read-time,
+  // every call) and the one-time settings migration (write-time, so the
+  // fix also persists to storage instead of being re-applied every read).
+  function normalizePairAdjacency(arr) {
+    SETTINGS_ROW_PAIRS.forEach(function(pair) {
+      var i0 = arr.indexOf(pair[0]);
+      var i1 = arr.indexOf(pair[1]);
+      if (i0 === -1 || i1 === -1) return;
+      if (i1 === i0 + 1) return; // already adjacent and in order — nothing to do
+      // Remove both by id (never by positional range, which could delete
+      // unrelated buttons caught between them) and reinsert as an
+      // adjacent unit at the lower of the two original positions.
+      var insertAt = Math.min(i0, i1);
+      arr = arr.filter(function(id) { return id !== pair[0] && id !== pair[1]; });
+      if (insertAt > arr.length) insertAt = arr.length;
+      arr.splice(insertAt, 0, pair[0], pair[1]);
+    });
+    return arr;
+  }
+
+  // Insert any id present in DEFAULT_TOOLBAR_ORDER but missing from arr,
+  // positioning it right after its DEFAULT_TOOLBAR_ORDER predecessor's
+  // CURRENT position in arr (or at the very start, if it has no
+  // predecessor — e.g. a new id added at index 0 like tap-to-edit-btn).
+  // This replaces a cruder "just push to the end" approach, which put
+  // newly-added ids at the bottom of the user's saved order regardless
+  // of where they actually belong by default — exactly how a brand new
+  // first-position item like Tap to Edit ended up at the bottom of a
+  // stale settings object instead of at the top.
+  function insertMissingIdsAtDefaultPosition(arr) {
+    DEFAULT_TOOLBAR_ORDER.forEach(function(id) {
+      if (arr.indexOf(id) !== -1) return; // already present, nothing to do
+      var defaultIdx = DEFAULT_TOOLBAR_ORDER.indexOf(id);
+      var insertAfter = defaultIdx > 0 ? DEFAULT_TOOLBAR_ORDER[defaultIdx - 1] : null;
+      var insertPos = insertAfter ? arr.indexOf(insertAfter) + 1 : 0;
+      if (insertPos < 0) insertPos = arr.length; // predecessor not found — fall back to end
+      arr.splice(insertPos, 0, id);
+    });
+    return arr;
+  }
+
   function getEffectiveOrder() {
     var stored = (settings.toolbarOrder && settings.toolbarOrder.length)
       ? settings.toolbarOrder.slice()
       : DEFAULT_TOOLBAR_ORDER.slice();
-    // Add any buttons not yet in stored order (e.g. newly added buttons)
-    DEFAULT_TOOLBAR_ORDER.forEach(function(id) {
-      if (stored.indexOf(id) === -1) stored.push(id);
-    });
-    return stored;
+    stored = insertMissingIdsAtDefaultPosition(stored);
+    return normalizePairAdjacency(stored);
   }
 
   // Reorder the actual toolbar DOM buttons to match settings.toolbarOrder
@@ -13873,6 +13932,39 @@ function makeImportFolderName(label) {
     setTimeout(function() { highlightMovedRow(btnId); }, 0);
   }
 
+  // Move a pair of ids (see SETTINGS_ROW_PAIRS) one step up/down together,
+  // ALWAYS leaving them adjacent afterward — regardless of whether they
+  // were adjacent before. The previous version assumed the two ids were
+  // already next to each other and spliced out the index RANGE between
+  // them, which silently deleted/relocated any other buttons that
+  // happened to sit between undo and redo if they weren't adjacent —
+  // exactly the "items got scattered" bug. This version removes each id
+  // individually by id (never by a positional range) and always
+  // reinserts both together, so the pair is guaranteed adjacent on exit
+  // no matter what state the order array was in on entry.
+  function moveToolbarButtonPair(ids, direction) {
+    var order = getEffectiveOrder();
+    // Anchor position: treat the pair as currently "at" its lower index,
+    // for the purpose of computing where it should land after the move.
+    var idx0 = order.indexOf(ids[0]);
+    var idx1 = order.indexOf(ids[1]);
+    if (idx0 === -1 || idx1 === -1) return;
+    var lo = Math.min(idx0, idx1);
+    // Remove both ids individually wherever they actually are
+    order = order.filter(function(id) { return id !== ids[0] && id !== ids[1]; });
+    // Clamp target insertion index into the now-shorter array
+    var newLo = lo + direction;
+    if (newLo < 0) newLo = 0;
+    if (newLo > order.length) newLo = order.length;
+    order.splice(newLo, 0, ids[0], ids[1]); // reinsert as an adjacent unit, canonical order preserved
+    settings.toolbarOrder = order;
+    applyToolbarOrder();
+    buildToolbarVisibilityRows();
+    updateSaveBtnState();
+    if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
+    setTimeout(function() { highlightMovedRow(ids[0]); }, 0);
+  }
+
   // Apply hidden state: hide toolbar buttons and rebuild More menu items
   function applyToolbarVisibility() {
     var hidden = settings.toolbarHidden || [];
@@ -13890,21 +13982,56 @@ function makeImportFolderName(label) {
     if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
   }
 
-  // After normal show/hide logic, force hidden buttons to display:none
+  // Force hidden buttons to display:none, and explicitly RESTORE un-hidden
+  // buttons' display (rather than leaving restoration to whatever other
+  // mode logic happens to also touch that button). Several toolbar buttons
+  // (undo, redo, done-typing, strikethrough group, find, text size, print,
+  // delete note) have no other code that ever sets their inline display —
+  // so once hidden, they stayed stuck at display:none even after being
+  // un-hidden, until a full reload reset all inline styles. Buttons here
+  // all carry the .icon-btn class, whose CSS rule is display:flex, so
+  // clearing the inline style to '' correctly restores flex layout (not
+  // the browser's inline-block default for bare <button> elements).
+  // Buttons whose real visibility is decided ELSEWHERE based on mode
+  // (R&R vs typing, EMTIP keyboard state, etc.) — updateViewOnlyBtns()
+  // for most of these, updateDictateVisibility() for dictate-btn. The
+  // toolbarHidden on/off switch should still be able to force these to
+  // 'none', but must NEVER force them to '' (visible): that decision
+  // belongs entirely to their own mode-based logic. Forcing them visible
+  // here caused Bold/Italic/Move line/Tap to Edit/etc. to incorrectly
+  // appear in EMNI/EMTIP mode, because this function can run before
+  // those mode functions have been called for the current note/mode.
+  // Note: crossout-group is NOT listed here even though it's mode-gated —
+  // its dedicated handling further below (display:flex/'none') is correct
+  // as-is, since the GROUP WRAPPER div itself is meant to always be a
+  // flex shell when not toolbar-hidden; updateViewOnlyBtns() separately
+  // hides/shows the actual crossout-mode-btn CHILD inside it based on mode.
+  var MODE_GATED_BUTTON_IDS = ['tap-to-edit-btn', 'move-mode-btn', 'bold-mode-btn',
+    'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn',
+    'toggle-checkbox-btn', 'check-mode-btn', 'dictate-btn'];
+
   function applyToolbarHiddenOverrides() {
     var hidden = settings.toolbarHidden || [];
     HIDEABLE_BUTTONS.forEach(function(b) {
-      if (hidden.indexOf(b.id) !== -1) {
-        var el = document.getElementById(b.id);
-        if (el) el.style.display = 'none';
+      var el = document.getElementById(b.id);
+      if (!el) return;
+      if (MODE_GATED_BUTTON_IDS.indexOf(b.id) !== -1) {
+        // Only ever force-hide; never force-show. Showing is decided by
+        // this button's own mode logic, called separately and later.
+        if (hidden.indexOf(b.id) !== -1) el.style.display = 'none';
+        return;
       }
+      el.style.display = (hidden.indexOf(b.id) !== -1) ? 'none' : '';
     });
-    // crossout-group: hide/show the entire group div together
+    // crossout-group: hide/show the entire group div together.
+    // Must be 'flex', not '' — crossout-group is a <div> with no CSS class
+    // rule for display, so clearing its inline style falls back to the UA
+    // default of block, stacking the strikethrough + clear-all buttons
+    // vertically instead of side-by-side (the same class of bug as the
+    // button inline-block issue, but for a div instead of a button).
     var crossoutGroup = document.getElementById('crossout-group');
     if (crossoutGroup) {
-      if (hidden.indexOf('crossout-group') !== -1) {
-        crossoutGroup.style.display = 'none';
-      }
+      crossoutGroup.style.display = (hidden.indexOf('crossout-group') !== -1) ? 'none' : 'flex';
       // actual show/hide of children handled by updateViewOnlyBtns
     }
   }
@@ -13973,9 +14100,10 @@ function makeImportFolderName(label) {
       // Find button info
       var info = HIDEABLE_BUTTONS.filter(function(b) { return b.id === btnId; })[0];
       if (!info) return;
-      // reading-mode-btn has no toolbar DOM element — it's always in the permanent section
-      if (btnId === 'reading-mode-btn') return;
-
+      // Dual-mode buttons (print, find, text size, delete note, dictate)
+      // already have their own permanent static row elsewhere in this
+      // menu — skip building a duplicate dynamic row for them here.
+      if (DUAL_MODE_BUTTON_IDS.indexOf(btnId) !== -1) return;
       // Determine if this item should currently be visible in the menu
       // based on the same rules as the toolbar button
       // crossout-group is a div, not a button — get its first child button for icon/visibility
@@ -14002,8 +14130,10 @@ function makeImportFolderName(label) {
       if (isKbOnly && !kbOpen)          shouldShow = false;
       // indent/dedent always show in More menu (with muted hint if no blocks)
       if (btnId === 'indent-btn' || btnId === 'dedent-btn') shouldShow = true;
-      // dictate-btn has its own display logic — only show if it would be visible
-      if (btnId === 'dictate-btn' && srcBtn.style.display === 'none') shouldShow = false;
+      // (dictate-btn's own display-based check used to live here, but
+      // dictate-btn is now in DUAL_MODE_BUTTON_IDS and returns early above
+      // — it never reaches this point, since more-dictate-btn's static
+      // entry already handles its SR-availability gating separately.)
 
       if (!shouldShow) return;
 
@@ -14132,12 +14262,20 @@ function makeImportFolderName(label) {
       var b = HIDEABLE_BUTTONS.filter(function(x) { return x.id === btnId; })[0];
       if (!b) return; // skip buttons not in HIDEABLE_BUTTONS (e.g. quick-add)
 
-      var isHidden  = hidden.indexOf(b.id) !== -1;
+      // Combined-pair handling (see SETTINGS_ROW_PAIRS): the second member
+      // of a pair gets no row of its own; the first member's row represents
+      // both ids together (combined label, shared toggle/move actions).
+      var pair = getSettingsRowPair(b.id);
+      if (pair && pair[1] === b.id) return; // skip second half of a pair
+      var rowIds   = pair ? pair : [b.id];
+      var rowLabel = pair ? (HIDEABLE_BUTTONS.filter(function(x){return x.id===pair[0];})[0].label +
+                              ' / ' + HIDEABLE_BUTTONS.filter(function(x){return x.id===pair[1];})[0].label)
+                           : b.label;
+
+      var isHidden  = hidden.indexOf(rowIds[0]) !== -1; // pair members always share hidden state
       var isFirst   = idx === 0;
       var isLast    = idx === order.length - 1;
       var isLocked  = false;
-      // reading-mode-btn lives only in the More menu — skip reorder arrows, show as locked
-      if (b.id === 'reading-mode-btn') isLocked = true;
 
       var row = document.createElement('div');
       row.className = 'settings-row';
@@ -14147,59 +14285,71 @@ function makeImportFolderName(label) {
       var upSpan = document.createElement('span');
       upSpan.className = 'toolbar-reorder-arrow' + (isFirst || isLocked ? ' disabled' : '');
       if (isLocked) upSpan.style.visibility = 'hidden';
-      upSpan.setAttribute('aria-label', 'Move ' + b.label + ' up');
+      upSpan.setAttribute('aria-label', 'Move ' + rowLabel + ' up');
       upSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none" width="var(--icon-size)" height="var(--icon-size)"><polyline points="18 15 12 9 6 15"/></svg>';
 
       // ▼ arrow span
       var downSpan = document.createElement('span');
       downSpan.className = 'toolbar-reorder-arrow' + (isLast || isLocked ? ' disabled' : '');
       if (isLocked) downSpan.style.visibility = 'hidden';
-      downSpan.setAttribute('aria-label', 'Move ' + b.label + ' down');
+      downSpan.setAttribute('aria-label', 'Move ' + rowLabel + ' down');
       downSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none" width="var(--icon-size)" height="var(--icon-size)"><polyline points="6 9 12 15 18 9"/></svg>';
 
       // touchHandled flag per arrow to prevent double-firing on iOS
       var touchHandledUp = false, touchHandledDown = false;
+      var doMove = function(direction) {
+        if (pair) moveToolbarButtonPair(rowIds, direction);
+        else moveToolbarButton(rowIds[0], direction);
+      };
 
       upSpan.addEventListener('touchstart', function() { touchHandledUp = true; }, { passive: true });
       upSpan.addEventListener('touchend', function(e) {
         e.preventDefault();
-        if (!isFirst) moveToolbarButton(b.id, -1);
+        if (!isFirst) doMove(-1);
       }, { passive: false });
       upSpan.addEventListener('click', function() {
         if (touchHandledUp) { touchHandledUp = false; return; }
-        if (!isFirst) moveToolbarButton(b.id, -1);
+        if (!isFirst) doMove(-1);
       });
 
       downSpan.addEventListener('touchstart', function() { touchHandledDown = true; }, { passive: true });
       downSpan.addEventListener('touchend', function(e) {
         e.preventDefault();
-        if (!isLast) moveToolbarButton(b.id, 1);
+        if (!isLast) doMove(1);
       }, { passive: false });
       downSpan.addEventListener('click', function() {
         if (touchHandledDown) { touchHandledDown = false; return; }
-        if (!isLast) moveToolbarButton(b.id, 1);
+        if (!isLast) doMove(1);
       });
 
       // Label
       var labelDiv = document.createElement('div');
       labelDiv.style.flex = '1';
-      labelDiv.innerHTML = '<div class="settings-row-label">' + b.label + '</div>';
+      labelDiv.innerHTML = '<div class="settings-row-label">' + rowLabel + '</div>';
 
       // Visibility toggle
       var toggleLabel = document.createElement('label');
       toggleLabel.className = 'toggle-switch';
-      toggleLabel.setAttribute('aria-label', 'Show ' + b.label);
+      toggleLabel.setAttribute('aria-label', 'Show ' + rowLabel);
       toggleLabel.innerHTML =
         '<input type="checkbox"' + (!isHidden ? ' checked' : '') + '>' +
         '<span class="toggle-track"><span class="toggle-thumb"></span></span>';
       toggleLabel.querySelector('input').addEventListener('change', function() {
         var hiddenArr = (settings.toolbarHidden || []).slice();
         if (this.checked) {
-          hiddenArr = hiddenArr.filter(function(id) { return id !== b.id; });
+          hiddenArr = hiddenArr.filter(function(id) { return rowIds.indexOf(id) === -1; });
         } else {
-          if (hiddenArr.indexOf(b.id) === -1) hiddenArr.push(b.id);
+          rowIds.forEach(function(id) {
+            if (hiddenArr.indexOf(id) === -1) hiddenArr.push(id);
+          });
         }
         settings.toolbarHidden = hiddenArr;
+        // Tap to edit: exit the active edit-block mode if its button is
+        // being hidden while in use (preserves behavior from the old
+        // standalone showTapToEditBtn toggle this row replaced).
+        if (rowIds.indexOf('tap-to-edit-btn') !== -1 && !this.checked && _editBlockMode) {
+          exitEditBlockMode();
+        }
         applyToolbarVisibility();
         updateViewOnlyBtns();
         updateSaveBtnState();
@@ -14311,8 +14461,13 @@ function makeImportFolderName(label) {
     { id: 'more-insert-tag-btn',      show: function(s) { return !s.quietMode && !s.viewOnly; } },
     { id: 'more-tag-order-btn',       show: function(s) { return !s.quietMode && !s.viewOnly && s.hasTags; } },
     // ── R&R mode + extra per-item setting gate (override applies the gate) ──
-    { id: 'more-tap-to-edit-btn',     show: function(s) { return s.rrMode; },
-      override: function(el, s) { if (settings.showTapToEditBtn === false) el.style.display = 'none'; } },
+    // more-tap-to-edit-btn: R&R mode only. Unlike a single-mode toggle,
+    // this is a genuine dual-mode item (see DUAL_MODE_BUTTON_IDS) — hiding
+    // tap-to-edit-btn from the toolbar via "Lower Toolbar Buttons" must
+    // NOT also hide this static More menu entry, since the static entry
+    // is exactly what keeps the action reachable when the toolbar button
+    // is hidden (the same pattern as Print, Find, Text size, Delete note).
+    { id: 'more-tap-to-edit-btn',     show: function(s) { return s.rrMode; } },
     { id: 'more-ruler-btn',           show: function(s) { return s.rrMode; },
       override: function(el, s) { if (!settings.rulerEnabled) el.style.display = 'none'; } },
   ];
@@ -14333,6 +14488,16 @@ function makeImportFolderName(label) {
     var _inEMTIP = noteScreen && noteScreen.classList.contains('keyboard-open');
     var emtipSection = document.getElementById('more-emtip-section');
     if (emtipSection) emtipSection.style.display = (!isViewMode && _inEMTIP) ? '' : 'none';
+    // Done typing: its own inline display starts as 'none' in the static
+    // HTML and nothing else ever clears it — the EMTIP section wrapper's
+    // display only controls whether the SECTION renders, not its
+    // children's own display, so this child was always stuck hidden
+    // regardless of the section being shown. Clear it explicitly here,
+    // 'flex' for the same inline-block-fallback reason as more-dictate-btn.
+    var moreDoneTypingBtn = document.getElementById('more-done-typing-btn');
+    if (moreDoneTypingBtn) {
+      moreDoneTypingBtn.style.display = (!isViewMode && _inEMTIP) ? 'flex' : 'none';
+    }
     // Dictate: extra gate on SpeechRecognition availability — handled separately, not in table
     var moreDictateBtn = document.getElementById('more-dictate-btn');
     if (moreDictateBtn) {
@@ -14499,10 +14664,20 @@ function makeImportFolderName(label) {
   // Migration: remove retired buttons from saved order, add new ones
   // Retired = moved out of toolbar to More menu or removed entirely
   var _retiredBtns = ['export-note-btn', 'color-swatch-cycle', 'scroll-top-btn', 'scroll-bottom-btn'];
-  var _requiredBtns = ['italic-mode-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'paste-btn', 'find-btn', 'move-mode-btn', 'toggle-checkbox-btn'];
   var _savedOrder = settings.toolbarOrder || [];
   // Remove any retired buttons from saved order
   _savedOrder = _savedOrder.filter(function(id) { return _retiredBtns.indexOf(id) === -1; });
+  // Insert any id that's in DEFAULT_TOOLBAR_ORDER but missing from the
+  // user's saved order (e.g. a newly-added button like tap-to-edit-btn)
+  // at its correct default-relative position — not just appended to the
+  // end, which previously put a brand-new first-position item at the
+  // bottom of a stale settings object instead of at the top.
+  _savedOrder = insertMissingIdsAtDefaultPosition(_savedOrder);
+  // Fix any SETTINGS_ROW_PAIRS member left non-adjacent or out of order by
+  // an old settings object (e.g. from before pairs existed, or a manual
+  // reorder done previously) — and persist the fix below, rather than
+  // only correcting it transiently every time getEffectiveOrder() runs.
+  _savedOrder = normalizePairAdjacency(_savedOrder);
   settings.toolbarOrder = _savedOrder;
   // Also strip retired buttons from toolbarHidden
   if (settings.toolbarHidden) {
@@ -14512,21 +14687,6 @@ function makeImportFolderName(label) {
   }
   // Persist cleaned settings immediately so stale data doesn't survive a reload
   try { localStorage.setItem('remember_settings', JSON.stringify(settings)); } catch(e) {}
-  var _needsReset = _requiredBtns.some(function(id) { return _savedOrder.indexOf(id) === -1; });
-  if (_savedOrder.length > 0 && _needsReset) {
-    // Merge: keep user's order but insert missing buttons at their default positions
-    _requiredBtns.forEach(function(id) {
-      if (_savedOrder.indexOf(id) === -1) {
-        var defaultIdx = DEFAULT_TOOLBAR_ORDER.indexOf(id);
-        // Find best insertion point: after the previous button in default order
-        var insertAfter = defaultIdx > 0 ? DEFAULT_TOOLBAR_ORDER[defaultIdx - 1] : null;
-        var insertPos = insertAfter ? _savedOrder.indexOf(insertAfter) + 1 : 0;
-        if (insertPos < 0) insertPos = _savedOrder.length;
-        _savedOrder.splice(insertPos, 0, id);
-      }
-    });
-    settings.toolbarOrder = _savedOrder;
-  }
 
   // Apply on init
   applyToolbarOrder();
@@ -14959,7 +15119,12 @@ function makeImportFolderName(label) {
 
   updateDictateVisibility = function() {
     var inEMTIP = noteScreen.classList.contains('keyboard-open');
-    if (SpeechRecognition && navigator.onLine && inEMTIP) {
+    // Also respect the "Lower Toolbar Buttons" on/off switch — this
+    // function runs on every keyboard open/close and was previously the
+    // one place that could re-show dictate-btn without checking it,
+    // silently overriding the user's setting each time the keyboard opened.
+    var hiddenByUser = (settings.toolbarHidden || []).indexOf('dictate-btn') !== -1;
+    if (SpeechRecognition && navigator.onLine && inEMTIP && !hiddenByUser) {
       dictateBtn.style.display = '';
     } else {
       dictateBtn.style.display = 'none';
@@ -16067,12 +16232,6 @@ function makeImportFolderName(label) {
     var v = parseInt(this.value);
     settings.speechPause = v;
     document.getElementById('speech-pause-val').textContent = (v / 1000).toFixed(1) + 's';
-    updateSaveBtnState();
-  });
-  document.getElementById('show-tap-to-edit-toggle').addEventListener('change', function() {
-    settings.showTapToEditBtn = this.checked;
-    if (!this.checked && _editBlockMode) exitEditBlockMode();
-    updateViewOnlyBtns();
     updateSaveBtnState();
   });
   document.getElementById('show-speak-btn-toggle').addEventListener('change', function() {
@@ -18946,9 +19105,11 @@ function makeImportFolderName(label) {
     // Select lines: only useful in view mode — hide in edit mode
     var selectBlocksBtn = document.getElementById('select-blocks-btn');
     if (selectBlocksBtn) selectBlocksBtn.style.display = inView ? '' : 'none';
-    // Tap to edit: view mode only, and only if setting enabled
+    // Tap to edit: view mode only, and only if not hidden via "Lower
+    // Toolbar Buttons" settings (replaces the old standalone
+    // showTapToEditBtn setting, which duplicated this same control).
     // (more-tap-to-edit-btn in the More menu is handled by MORE_MENU_ITEMS / openMoreMenu)
-    var _showTTE = settings.showTapToEditBtn !== false;
+    var _showTTE = (settings.toolbarHidden || []).indexOf('tap-to-edit-btn') === -1;
     var tapToEditBtn = document.getElementById('tap-to-edit-btn');
     if (tapToEditBtn) tapToEditBtn.style.display = (inView && _showTTE) ? '' : 'none';
     // Exit tap-to-edit mode when leaving view mode
