@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1317 -->
+<!-- Remember App - Version 0.1325 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1317
+  Version 0.1325
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -4449,7 +4449,7 @@ mark.help-highlight {
 #debug-toast {
   font-family: var(--font-body);
   position: fixed;
-  top: 322px;
+  top: 140px;
   left: 12px;
   right: 12px;
   background: #3a3a3a;
@@ -6619,10 +6619,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div>
       <div id="triple-tap-edit-row" class="settings-row">
         <div>
-          <div class="settings-row-label">Triple-tap to edit</div>
-          <div class="settings-row-desc">In Read &amp; Revise mode, triple-tap any line to switch to Typing mode with the cursor placed at the end of that line.</div>
+          <div class="settings-row-label">Double-tap to edit</div>
+          <div class="settings-row-desc">In Read &amp; Revise mode, double-tap any line to switch to Typing mode with the cursor placed where you tapped.</div>
         </div>
-        <label class="toggle-switch" aria-label="Triple-tap to edit">
+        <label class="toggle-switch" aria-label="Double-tap to edit">
           <input type="checkbox" id="triple-tap-edit-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
@@ -7996,7 +7996,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1317';
+const APP_VERSION = '0.1325';
 
 
 
@@ -8104,7 +8104,7 @@ const DEFAULT_SETTINGS = {
   theme: 'auto',
   uiSize: 'medium',
   font: "'Atkinson Hyperlegible', sans-serif",      // UI font
-  tripleTapToEdit: true,                             // triple-tap in view mode enters edit mode
+  tripleTapToEdit: true,                             // double-tap in view mode enters edit mode (setting key name predates the double-tap change; left as-is to avoid an unnecessary migration)
   customColors: {},                                  // custom color picker values per row
   noteFont: "'Atkinson Hyperlegible', sans-serif",  // Note content font
   fontWeight: '400',
@@ -10479,6 +10479,81 @@ function urlsToLinks(text, addLineWrappers) {
   return escaped;
 }
 
+// Maps a tap/click point (clientX/clientY) within a rendered .viewer-line
+// element back to the corresponding character offset in that line's RAW
+// source text — used by double-tap-to-edit so the cursor lands where the
+// user actually tapped, not just at the start or end of the line.
+//
+// Approach: walk the rendered line's text nodes in document order. Each
+// text node's content is, for ordinary formatting (bold/italic/color/
+// strikethrough/links/tags), an exact contiguous substring of the raw
+// line — formatting wraps text rather than transforming its characters.
+// So each text node can be located in the raw line by searching forward
+// from wherever the previous text node left off, building up a running
+// correspondence between rendered position and raw position as we go.
+// Checkbox markers ([ ]/[x]) become an SVG with no text-node equivalent;
+// a tap landing on/inside that element maps to the raw position right
+// after the checkbox's raw marker text (before the line's checkbox
+// detection already strips leading whitespace consistently elsewhere).
+function rawOffsetForTapPoint(lineDiv, rawLine, clientX, clientY) {
+  var caretRange = null;
+  if (document.caretRangeFromPoint) {
+    caretRange = document.caretRangeFromPoint(clientX, clientY);
+  } else if (document.caretPositionFromPoint) {
+    var pos = document.caretPositionFromPoint(clientX, clientY);
+    if (pos) caretRange = { startContainer: pos.offsetNode, startOffset: pos.offset };
+  }
+  if (!caretRange || !lineDiv.contains(caretRange.startContainer)) {
+    // Couldn't resolve a caret position inside this line (e.g. tapped on
+    // padding, or browser doesn't support either API) — fall back to the
+    // line's end, which is at least always a valid, safe position.
+    return rawLine.length;
+  }
+
+  var targetNode = caretRange.startContainer;
+  var targetOffset = caretRange.startOffset;
+
+  // If the resolved node is an element (e.g. tapped exactly on the
+  // checkbox SVG itself rather than inside a text node), map to right
+  // after wherever that element's own raw marker would be — found by
+  // searching for the first remaining checkbox-like marker in rawLine.
+  if (targetNode.nodeType !== Node.TEXT_NODE) {
+    var svgHit = (targetNode.nodeType === 1) ? targetNode.closest('svg.viewer-checkbox') : null;
+    if (svgHit) {
+      var markerMatch = rawLine.match(/^(\s*)(\[\s*[xX]?\s*\]|\[\s*:[a-z]+\s*\])(\s*)/);
+      if (markerMatch) return markerMatch[0].length;
+    }
+    return rawLine.length;
+  }
+
+  // Walk all text nodes in the line, tracking raw-line search position,
+  // until we reach targetNode — then add targetOffset within it.
+  var walker = document.createTreeWalker(lineDiv, NodeFilter.SHOW_TEXT, null);
+  var rawSearchPos = 0;
+  var node;
+  while ((node = walker.nextNode())) {
+    var nodeText = node.textContent;
+    if (node === targetNode) {
+      // Find this text node's content starting from rawSearchPos.
+      var foundAt = rawLine.indexOf(nodeText.slice(0, Math.max(1, targetOffset)), rawSearchPos);
+      if (foundAt === -1) foundAt = rawLine.indexOf(nodeText, rawSearchPos);
+      if (foundAt === -1) return rawLine.length; // couldn't locate — safe fallback
+      return Math.min(rawLine.length, foundAt + targetOffset);
+    }
+    // Not the target node yet — advance rawSearchPos past this node's
+    // own text so the NEXT node's search starts after it, preserving
+    // left-to-right order even if the same substring repeats elsewhere
+    // on the line (e.g. two checkboxes both followed by " - " is rare,
+    // but a repeated word is common).
+    var nodeFoundAt = rawLine.indexOf(nodeText, rawSearchPos);
+    if (nodeFoundAt !== -1) rawSearchPos = nodeFoundAt + nodeText.length;
+  }
+  // Target node was never reached via the walker (shouldn't normally
+  // happen since caretRangeFromPoint resolved inside lineDiv) — safe
+  // fallback to end of line.
+  return rawLine.length;
+}
+
 function setViewMode(on, suppressFocus) {
   // Block switching to Read & Revise mode in typing-only mode
   if (on && settings.noteEditingMode === 'typing') return;
@@ -11260,6 +11335,19 @@ function getCursorY(ed) {
   // briefly creating a mirror div, reading the position, then immediately
   // removing it so it never lingers in the DOM and can't affect layout,
   // events, or assistive technology.
+  //
+  // IMPORTANT: the mirror is positioned off-screen (top:-9999px) so it's
+  // never visible — but that means its on-screen rect lives in a totally
+  // different coordinate space than note-content-area's own on-screen
+  // rect. Subtracting one absolute screen position from the other (as
+  // this function used to do) does NOT cancel out the -9999px offset;
+  // it rides along as a large, wrong bias in the result. The fix:
+  // measure the cursor marker's position RELATIVE TO THE MIRROR ITSELF
+  // (mirror.getBoundingClientRect() vs span.getBoundingClientRect(),
+  // both read in the SAME off-screen coordinate space, so the -9999px
+  // cancels out correctly) — that distance is "how far down within the
+  // text is the cursor," which is what's actually needed; absolute
+  // screen position never was.
   var area = document.getElementById('note-content-area');
   if (!area) return 0;
 
@@ -11298,9 +11386,25 @@ function getCursorY(ed) {
   mirror.appendChild(span);
 
   document.body.appendChild(mirror);
-  var spanRect = span.getBoundingClientRect();
+  var spanRect   = span.getBoundingClientRect();
+  var mirrorRect = mirror.getBoundingClientRect();
+  // Offset of the cursor marker from the TOP OF THE TEXT CONTENT inside
+  // the mirror — both rects share the mirror's own off-screen coordinate
+  // space, so this is a clean, correct distance with no stray bias from
+  // the -9999px placement.
+  var offsetWithinText = spanRect.top - mirrorRect.top;
+  // ed's position relative to area's scrollable CONTENT top (not the
+  // viewport): both rects are read in the SAME real on-screen coordinate
+  // space here (neither is the off-screen mirror), so subtracting them
+  // is valid, and adding the area's current scrollTop converts "distance
+  // below area's visible top" into "distance below area's content top" —
+  // independent of offsetParent chains, which #note-editor and
+  // #note-content-area don't reliably share (neither has explicit
+  // `position`, so offsetTop is not guaranteed relative to area at all).
+  var edRect  = ed.getBoundingClientRect();
   var areaRect = area.getBoundingClientRect();
-  var result   = spanRect.top - areaRect.top + area.scrollTop;
+  var edTopWithinContent = (edRect.top - areaRect.top) + area.scrollTop;
+  var result = offsetWithinText + edTopWithinContent;
   document.body.removeChild(mirror);  // remove immediately — never leave in DOM
 
   return result;
@@ -12656,9 +12760,9 @@ function populateVoices() {
 
 // ===== EVENT WIRING =====
 var debugToastTimer = null;
-function showToast(msg, persistent) {
+function showToast(msg, persistent, noCopyOnTap) {
   var t = document.getElementById('debug-toast');
-  t.textContent = persistent ? msg + '\n(tap to copy & dismiss)' : msg;
+  t.textContent = (persistent && !noCopyOnTap) ? msg + '\n(tap to copy & dismiss)' : msg;
   t.classList.add('show');
   t.classList.toggle('error-toast', !!persistent);
   clearTimeout(debugToastTimer);
@@ -12667,6 +12771,14 @@ function showToast(msg, persistent) {
   }
   t.onclick = function() {
     t.classList.remove('show');
+    // Some toasts are purely instructional (e.g. "tap a line to paste")
+    // and sit right above the exact kind of tap target — a note line —
+    // that's easy to dismiss the toast on by accident. Copying the
+    // toast's own text into the clipboard in that case is actively
+    // harmful: it silently overwrites whatever the user meant to keep
+    // for the paste they were about to do. noCopyOnTap opts a toast out
+    // of the copy-on-tap behavior entirely; it just dismisses.
+    if (noCopyOnTap) return;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(msg).catch(function() {
         // Clipboard blocked (e.g. sandboxed iframe) — toast already dismissed, nothing to do
@@ -20435,11 +20547,11 @@ function makeImportFolderName(label) {
     }
   });
 
-  // ── Triple-tap to edit ───────────────────────────────────────────────────
+  // ── Double-tap to edit ───────────────────────────────────────────────────
   (function() {
     var _tapTimes  = [];   // timestamps of recent taps
     var _tapLine   = -1;   // line index of last tap
-    var TRIPLE_TAP_MS = 600; // max ms between taps
+    var DOUBLE_TAP_MS = 600; // max ms between taps
 
     document.getElementById('note-viewer').addEventListener('click', function(e) {
       if (!isViewMode || !settings.tripleTapToEdit) return;
@@ -20454,37 +20566,83 @@ function makeImportFolderName(label) {
       var now = Date.now();
 
       // Reset if too slow or different line
-      if (_tapLine !== lineIndex || (_tapTimes.length && now - _tapTimes[_tapTimes.length - 1] > TRIPLE_TAP_MS)) {
+      if (_tapLine !== lineIndex || (_tapTimes.length && now - _tapTimes[_tapTimes.length - 1] > DOUBLE_TAP_MS)) {
         _tapTimes = [];
       }
       _tapLine = lineIndex;
       _tapTimes.push(now);
 
-      // Keep only last 3
-      if (_tapTimes.length > 3) _tapTimes.shift();
+      // Keep only last 2
+      if (_tapTimes.length > 2) _tapTimes.shift();
 
-      // Three taps all within TRIPLE_TAP_MS of each other
-      if (_tapTimes.length === 3 && (_tapTimes[2] - _tapTimes[0]) <= TRIPLE_TAP_MS) {
+      // Two taps within DOUBLE_TAP_MS of each other
+      if (_tapTimes.length === 2 && (_tapTimes[1] - _tapTimes[0]) <= DOUBLE_TAP_MS) {
         _tapTimes = []; // reset
         if (!currentNoteId || !notes[currentNoteId]) return;
         var lines = (notes[currentNoteId].content || '').split('\n');
+        var rawLine = lines[lineIndex] || '';
+        // Map the actual tap point to a character offset within this
+        // line's raw text — see rawOffsetForTapPoint() for the approach.
+        // Captured BEFORE switching modes, since the rendered .viewer-line
+        // (and its layout) only exists while still in R&R mode.
+        var tapOffsetInLine = rawOffsetForTapPoint(lineDiv, rawLine, e.clientX, e.clientY);
+        var charPos = 0;
+        for (var i = 0; i < lineIndex && i < lines.length; i++) {
+          charPos += lines[i].length + 1; // +1 for newline
+        }
+        charPos += tapOffsetInLine;
+
         // Switch to edit mode
         setViewMode(false);
         var ed = document.getElementById('note-editor');
         if (!ed) return;
         ed.focus({ preventScroll: true });
-        // Place cursor at end of the tapped line
-        var charPos = 0;
-        for (var i = 0; i < lineIndex && i < lines.length; i++) {
-          charPos += lines[i].length + 1; // +1 for newline
-        }
-        charPos += (lines[lineIndex] || '').length;
         ed.setSelectionRange(charPos, charPos);
-        // Scroll editor to show the cursor
-        setTimeout(function() {
-          var lineH = parseInt(getComputedStyle(ed).lineHeight) || 24;
-          ed.scrollTop = Math.max(0, lineIndex * lineH - ed.clientHeight / 2);
-        }, 50);
+        // Scroll so the tapped line lands at the TOP of the viewport
+        // (not just "somewhere visible") — the virtual keyboard covers
+        // roughly the bottom half of the screen, so a line merely
+        // "visible" by the old line-height-math approach often still
+        // ended up hidden underneath it. Uses the same mirror-div cursor
+        // measurement as resizeEditor()/scrollCursorIntoView() — not the
+        // line-index * line-height approximation that drifts on any
+        // note with wrapped lines.
+        //
+        // getCursorY() itself had a real bug (fixed alongside this
+        // feature): it compared the off-screen mirror's absolute screen
+        // position directly against note-content-area's absolute screen
+        // position, but the mirror is deliberately placed at
+        // top:-9999px specifically so it's invisible — that -9999px
+        // offset never canceled out, so the function returned wildly
+        // wrong (large negative) values, which collapsed through
+        // Math.max(0, ...) into "always scroll to the very top"
+        // regardless of which line was actually tapped. Confirmed via a
+        // debug toast: cursorY was returning roughly -9000 to -10000 for
+        // lines well into a note.
+        //
+        // pinToolbars() is called on each pass too: the normal EMTIP
+        // entry path re-pins toolbars via a pointerdown/click handler on
+        // note-content-area, but ed.focus() above is a PROGRAMMATIC
+        // focus call that doesn't dispatch a synthetic pointerdown/
+        // click — so without calling it explicitly here, padding-top can
+        // be stale from R&R mode's toolbar configuration, throwing the
+        // scroll math off by a constant amount.
+        function _scrollTappedLineToTop() {
+          var area = document.getElementById('note-content-area');
+          if (!area) return;
+          pinToolbars();
+          var cursorY = getCursorY(ed); // already relative-to-area, accounts for current scrollTop
+          var lineH = parseFloat(getComputedStyle(ed).lineHeight) || 24;
+          area.scrollTop = Math.max(0, cursorY - lineH * 0.5);
+          // Temporarily disabled while diagnosing a suspected constant
+          // toolbar-height offset error — re-enable by uncommenting if
+          // we need real numbers again.
+          // if (settings.debugLoggingEnabled) {
+          //   showToast('DEBUG line=' + lineIndex + ' charPos=' + charPos + ' cursorY=' + cursorY.toFixed(0) +
+          //     ' scrollTop=' + area.scrollTop.toFixed(0) + ' selStart=' + ed.selectionStart, true);
+          // }
+        }
+        setTimeout(_scrollTappedLineToTop, 50);
+        setTimeout(_scrollTappedLineToTop, 350);
       }
     });
   })();
@@ -21207,7 +21365,7 @@ function createInitialNotes() {
     '- Selecting lines and using toolbar buttons to bold, color, indent, or rearrange',
     '- Listening to your note with the Speak button',
     '',
-    'Tip: triple-tap any line in Read & Revise mode to jump straight to that line in Typing mode.',
+    'Tip: double-tap any line in Read & Revise mode to jump straight to that spot in Typing mode.',
     '',
     '- - -',
     '',
@@ -23537,7 +23695,7 @@ function enterCheckMode() {
   var viewer = document.getElementById('note-viewer');
   if (btn) btn.classList.add('active');
   if (viewer) viewer.classList.add('check-mode');
-  showToast('Tap a checkbox or hyphen line to toggle it', false);
+  showToast('Tap a checkbox or hyphen line to toggle it', false, true);
 }
 
 function exitCheckMode() {
@@ -23562,7 +23720,7 @@ function enterAddBlankLineMode() {
   var viewer = document.getElementById('note-viewer');
   if (btn) btn.classList.add('active');
   if (viewer) viewer.classList.add('add-blank-line-mode');
-  showToast('Tap a line to add a blank line above it', false);
+  showToast('Tap a line to add a blank line above it', false, true);
 }
 
 function exitAddBlankLineMode() {
@@ -23852,12 +24010,22 @@ var pasteMode     = false;
 var _pasteLineIdx = -1;   // line index the user tapped in paste mode
 
 function enterPasteMode() {
+  // Deactivate select mode first if somehow active — pasting is a
+  // tap-a-line action, not a selection action. Done here (inside
+  // enterPasteMode itself, not at each call site) so every entry point
+  // — the toolbar Paste button, and the More menu's overflow Paste item
+  // when the top toolbar is too narrow — gets this consistently.
+  if (selectMode) {
+    selectMode = false;
+    clearSelectedBlocks();
+    if (typeof updateSelectModeBtn === 'function') updateSelectModeBtn();
+  }
   pasteMode = true;
   var btn    = document.getElementById('paste-btn');
   var viewer = document.getElementById('note-viewer');
   if (btn)    btn.classList.add('active');
   if (viewer) viewer.classList.add('paste-mode');
-  showToast('Tap a line to choose where to paste', false);
+  showToast('Tap a line to choose where to paste', false, true);
 }
 
 function exitPasteMode() {
@@ -23910,9 +24078,76 @@ function doPaste(before) {
     pushUndo();
     var lines    = (notes[currentNoteId].content || '').split('\n');
     var insertAt = before ? lineIndex : lineIndex + 1;
-    // Split pasted text into lines and insert
+    // Split pasted text into lines
     var pastedLines = text.split('\n');
-    lines.splice.apply(lines, [insertAt, 0].concat(pastedLines));
+
+    // ── Smart-indent-aware paste ──────────────────────────────────────────
+    // If the line immediately BEFORE the insertion point is a checklist
+    // item (checkbox or hyphen), treat the pasted block the same way
+    // continuing to type/press-Enter on that list would: every pasted
+    // line that doesn't already have its own marker gets the anchor's
+    // marker/indentation prepended (a "plain" paste becomes new list
+    // items), and lines that already have their own marker are left
+    // alone (pasting already-structured content keeps its own markers
+    // and indentation, per-line). When settings.smartIndentBlankLine is
+    // on, blank-line separators are added between every resulting item —
+    // both inside the pasted block AND at the seams with the existing
+    // anchor line and whatever line originally followed — so the result
+    // is indistinguishable from manually typing/pressing Enter through
+    // the same content with that setting on.
+    var anchorLine = insertAt > 0 ? lines[insertAt - 1] : null;
+    var anchorPrefix = anchorLine !== null ? getSmartIndentPrefix(anchorLine) : null;
+    var insertedLines; // what actually gets spliced into `lines`
+
+    if (anchorPrefix === null) {
+      // Not a checklist context — unchanged behavior.
+      insertedLines = pastedLines;
+    } else {
+      var wantBlank = !!settings.smartIndentBlankLine;
+      var followingLine = insertAt < lines.length ? lines[insertAt] : null;
+      var followingIsListItem = followingLine !== null && getSmartIndentPrefix(followingLine) !== null;
+
+      var processed = pastedLines.map(function(pl) {
+        // Blank lines the user pasted on purpose (e.g. already had their
+        // own spacing) are left as literal blank lines, not treated as
+        // "plain text" to prefix.
+        if (pl.trim() === '') return pl;
+        return (getSmartIndentPrefix(pl) !== null) ? pl : (anchorPrefix + pl);
+      });
+
+      if (wantBlank) {
+        // Insert one blank line between every pair of consecutive
+        // checklist-item lines in `processed` — i.e. after every line
+        // that isn't already blank and isn't the last one, skipping if
+        // the next line is already blank (avoid doubling up if the
+        // user's own pasted content already had blank separators).
+        var withSeparators = [];
+        processed.forEach(function(pl, idx) {
+          withSeparators.push(pl);
+          var isLast = idx === processed.length - 1;
+          var nextIsBlank = !isLast && processed[idx + 1].trim() === '';
+          if (pl.trim() !== '' && !isLast && !nextIsBlank) withSeparators.push('');
+        });
+        insertedLines = withSeparators;
+        // Seam before the pasted block: anchor line is always a list
+        // item here (that's how anchorPrefix got set), so always add a
+        // separator unless the pasted block's own first line is blank.
+        if (insertedLines.length && insertedLines[0].trim() !== '') {
+          insertedLines = [''].concat(insertedLines);
+        }
+        // Seam after the pasted block: only if what follows is ALSO a
+        // list item (continuing the same kind of list) — otherwise this
+        // would insert a spurious blank line before unrelated content.
+        if (followingIsListItem && insertedLines.length &&
+            insertedLines[insertedLines.length - 1].trim() !== '') {
+          insertedLines = insertedLines.concat(['']);
+        }
+      } else {
+        insertedLines = processed;
+      }
+    }
+
+    lines.splice.apply(lines, [insertAt, 0].concat(insertedLines));
     notes[currentNoteId].content = lines.join('\n');
     notes[currentNoteId].editedAt = Date.now();
     document.getElementById('note-editor').value = notes[currentNoteId].content;
@@ -23925,7 +24160,7 @@ function doPaste(before) {
     var viewer = document.getElementById('note-viewer');
     if (viewer) {
       var pastedDivs = [];
-      for (var pi = insertAt; pi < insertAt + pastedLines.length; pi++) {
+      for (var pi = insertAt; pi < insertAt + insertedLines.length; pi++) {
         var div = viewer.querySelector('.viewer-line[data-line="' + pi + '"]');
         if (div) { div.classList.add('paste-highlight'); pastedDivs.push(div); }
       }
