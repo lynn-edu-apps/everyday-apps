@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1313 -->
+<!-- Remember App - Version 0.1317 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1313
+  Version 0.1317
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1768,6 +1768,7 @@ body.edit-block-mode #note-viewer .viewer-line:not(.blank-viewer-line) { cursor:
 #ruler-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
 #outline-mode-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
 #show-tags-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
+#hide-completed-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
 /* Edit block dialog */
 #edit-block-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:3000; align-items:center; justify-content:center; }
 #edit-block-overlay.open { display:flex; }
@@ -5079,6 +5080,41 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </svg>
       </button>
 
+      <!-- Uncheck all (stage 3d) — R&R mode + note has checked items;
+           plain action. Also has a static More menu entry (dual-mode). -->
+      <button class="icon-btn view-only-btn" id="uncheck-all-btn" tabindex="-1" aria-label="Uncheck all" title="Uncheck all" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="12" x2="16" y2="12"/>
+        </svg>
+      </button>
+      <!-- Hide completed items (stage 3d) — R&R mode + note has checked
+           items; real toggle, active-state synced in
+           updateHideCompletedMenuLabel() alongside the More menu checkmark.
+           Also has a static More menu entry (dual-mode). -->
+      <button class="icon-btn view-only-btn" id="hide-completed-btn" tabindex="-1" aria-label="Hide completed items" title="Hide completed items" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" opacity="0.35"/><line x1="4" y1="4" x2="20" y2="20"/>
+        </svg>
+      </button>
+      <!-- Scroll to top (stage 3d) — always visible (matches the existing
+           static more-scroll-top-btn, which is shown even in quiet mode).
+           Note: scrolls #note-content-area, which has no effect on the
+           native textarea's own scroll in typing mode — a pre-existing
+           behavior of the static entry, not something newly introduced
+           here; not fixed as part of this change. -->
+      <button class="icon-btn" id="scroll-top-btn" tabindex="-1" aria-label="Scroll to top" title="Scroll to top">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <line x1="12" y1="19" x2="12" y2="6"/><polyline points="6 11 12 5 18 11"/>
+        </svg>
+      </button>
+      <!-- Scroll to bottom (stage 3d) — always visible, same reasoning as
+           Scroll to top. -->
+      <button class="icon-btn" id="scroll-bottom-btn" tabindex="-1" aria-label="Scroll to bottom" title="Scroll to bottom">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <line x1="12" y1="5" x2="12" y2="18"/><polyline points="6 13 12 19 18 13"/>
+        </svg>
+      </button>
+
       <!-- Jump to heading (stage 3c) — R&R mode only, plain action button -->
       <button class="icon-btn view-only-btn" id="jump-to-btn" tabindex="-1" aria-label="Jump to heading" title="Jump to heading" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><polyline points="16 15 19 18 22 15"/><line x1="19" y1="11" x2="19" y2="18"/></svg>
@@ -7960,7 +7996,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1313';
+const APP_VERSION = '0.1317';
 
 
 
@@ -11750,7 +11786,12 @@ function getSpeechVoice() {
 // ===== SPEECH HELPERS =====
 
 // Strip markdown formatting from a line so TTS doesn't speak raw markers.
-function stripMarkdownForSpeech(line) {
+// Strips markdown/app-specific formatting down to plain, readable text —
+// shared by both speech contexts (stripMarkdownForSpeech) and non-speech
+// contexts that just need a clean line of text (e.g. the "Add to
+// Calendar" event title summary). Does NOT touch URLs; that's a
+// speech-specific concern layered on top by stripMarkdownForSpeech().
+function stripMarkdownToPlainText(line) {
   // [tag order] MUST be at start (structural) — skip entire line.
   // [share note], [copy for speech], [last modified] may appear anywhere — strip them.
   if (/^\[tag order\]/.test(line.trim())) return '';
@@ -11795,6 +11836,43 @@ function stripMarkdownForSpeech(line) {
   return line.trim();
 }
 
+// Speech-specific wrapper around stripMarkdownToPlainText(): additionally
+// replaces URLs with the word "URL" rather than reading them out
+// character-by-character — both on-device speech synthesis (the Speak
+// button) and external TTS apps (ElevenReader, TTS Reader Pro, etc. via
+// Copy/Share for speech) either choke on raw URLs or read every
+// character aloud, which is disruptive either way. Spelling out "h t t
+// p s colon slash slash" is not realistic and not what anyone wants to
+// hear — "URL" is what a screen reader's alt-text behavior already
+// approximates for most users. Only call sites that are actually about
+// speech should use this function; non-speech callers (e.g. the
+// calendar event title) should call stripMarkdownToPlainText() directly
+// instead of reaching for a "speech" function and disabling its speech
+// behavior via a flag.
+function stripMarkdownForSpeech(line) {
+  line = stripMarkdownToPlainText(line);
+  line = line.replace(/\bhttps?:\/\/[^\s]+/gi, 'URL').replace(/\bwww\.[^\s]+/gi, 'URL');
+  return line.trim();
+}
+
+// Shared helper: builds the full speech-stripped note text used by both
+// copyNoteForSpeech() and shareNoteForSpeech(). URL stripping now happens
+// inside stripMarkdownForSpeech() itself (so the Speak button gets it
+// too, not just these two actions) — this wrapper just joins the
+// per-line results and tidies up any double-spacing left behind.
+function buildSpeechStrippedNoteText(noteContent) {
+  var lines = (noteContent || '').split('\n');
+  var text = lines.map(function(l) { return stripMarkdownForSpeech(l); })
+    .filter(function(l) { return l.trim() !== ''; }).join('\n').trim();
+  // Collapse any double-spacing left behind by a replaced URL, and drop
+  // any line that's now blank — lines that were JUST a URL now read
+  // "URL" instead of vanishing, which is correct: the line had meaning,
+  // just not a speakable one for the raw link itself.
+  text = text.split('\n').map(function(l) { return l.replace(/\s{2,}/g, ' ').trim(); })
+    .filter(function(l) { return l !== ''; }).join('\n');
+  return text;
+}
+
 // Shared whole-note "Copy for speech" action — strips checkboxes entirely
 // (no Unicode symbols) so screen readers/TTS won't say "tick" or "ballot
 // box" when reading aloud. Used by the inline [copy for speech] tag
@@ -11802,9 +11880,7 @@ function stripMarkdownForSpeech(line) {
 // implementation, never duplicated.
 function copyNoteForSpeech() {
   if (!currentNoteId || !notes[currentNoteId]) return;
-  var lines = (notes[currentNoteId].content || '').split('\n');
-  var text = lines.map(function(l) { return stripMarkdownForSpeech(l); })
-    .filter(function(l) { return l.trim() !== ''; }).join('\n').trim();
+  var text = buildSpeechStrippedNoteText(notes[currentNoteId].content);
   if (!text) { showToast('Nothing to copy', false); return; }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function() {
@@ -11826,9 +11902,7 @@ function shareNoteForSpeech() {
   if (!currentNoteId || !notes[currentNoteId]) return;
   var note = notes[currentNoteId];
   var title = note.name || 'Note';
-  var lines = (note.content || '').split('\n');
-  var text = lines.map(function(l) { return stripMarkdownForSpeech(l); })
-    .filter(function(l) { return l.trim() !== ''; }).join('\n').trim();
+  var text = buildSpeechStrippedNoteText(note.content);
   if (!text) { showToast('Nothing to share', false); return; }
   if (navigator.share) {
     navigator.share({ title: title, text: text }).catch(function(err) {
@@ -14276,7 +14350,7 @@ function makeImportFolderName(label) {
   // the static entry that's already always there. Add a new id here
   // whenever a toolbar button gains a corresponding static More menu
   // item (e.g. a future "Share note" toolbar button).
-  var DUAL_MODE_BUTTON_IDS = ['print-btn', 'find-btn', 'font-size-btn', 'delete-note-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'select-all-btn', 'ruler-btn', 'theme-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'settings-btn-toolbar', 'copy-for-speech-btn', 'share-note-btn', 'share-for-speech-btn'];
+  var DUAL_MODE_BUTTON_IDS = ['print-btn', 'find-btn', 'font-size-btn', 'delete-note-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'select-all-btn', 'ruler-btn', 'theme-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'settings-btn-toolbar', 'copy-for-speech-btn', 'share-note-btn', 'share-for-speech-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
 
   // "Tap items" — buttons that arm a mode but require a SECOND tap on a
   // note line to actually do anything (Tap to Edit, Check State, and a
@@ -14316,6 +14390,10 @@ function makeImportFolderName(label) {
     { id: 'font-size-btn',           label: 'Text size' },
     { id: 'settings-btn-toolbar',     label: 'Settings' },
     { id: 'print-btn',               label: 'Print' },
+    { id: 'uncheck-all-btn',         label: 'Uncheck all' },
+    { id: 'hide-completed-btn',      label: 'Hide completed items' },
+    { id: 'scroll-top-btn',          label: 'Scroll to top' },
+    { id: 'scroll-bottom-btn',       label: 'Scroll to bottom' },
     { id: 'jump-to-btn',             label: 'Jump to heading' },
     { id: 'outline-mode-btn',        label: 'Outline mode' },
     { id: 'show-tags-btn',           label: 'Show @tags' },
@@ -14326,7 +14404,7 @@ function makeImportFolderName(label) {
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -14562,7 +14640,8 @@ function makeImportFolderName(label) {
   var MODE_GATED_BUTTON_IDS = ['tap-to-edit-btn', 'move-mode-btn', 'bold-mode-btn',
     'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn',
     'toggle-checkbox-btn', 'check-mode-btn', 'dictate-btn', 'add-blank-line-btn',
-    'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn'];
+    'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn',
+    'uncheck-all-btn', 'hide-completed-btn'];
 
   function applyToolbarHiddenOverrides() {
     var hidden = settings.toolbarHidden || [];
@@ -15175,6 +15254,10 @@ function makeImportFolderName(label) {
     closeMoreMenu();
     unCheckAll();
   });
+  document.getElementById('uncheck-all-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('uncheck-all-btn').addEventListener('click', function() {
+    unCheckAll();
+  });
 
   document.getElementById('more-share-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('more-reading-mode-btn').addEventListener('click', function() {
@@ -15225,7 +15308,7 @@ function makeImportFolderName(label) {
   // be checked BEFORE insertMissingIdsAtDefaultPosition runs below, since
   // that function adds missing ids to the order — after which "was this
   // id missing" would no longer mean "has the user never seen this yet".
-  var _newHiddenByDefault = ['ruler-btn', 'theme-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn'];
+  var _newHiddenByDefault = ['ruler-btn', 'theme-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
   var _hiddenArr = settings.toolbarHidden || [];
   _newHiddenByDefault.forEach(function(id) {
     if (_savedOrder.indexOf(id) === -1 && _hiddenArr.indexOf(id) === -1) {
@@ -15387,6 +15470,10 @@ function makeImportFolderName(label) {
     closeMoreMenu();
     document.getElementById('note-content-area').scrollTo({ top: 0, behavior: 'smooth' });
   });
+  document.getElementById('scroll-top-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('scroll-top-btn').addEventListener('click', function() {
+    document.getElementById('note-content-area').scrollTo({ top: 0, behavior: 'smooth' });
+  });
   document.getElementById('more-scroll-bottom-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   // Wire overflow More menu items to same actions as toolbar buttons
   document.getElementById('more-overflow-copy-btn').addEventListener('click', function() {
@@ -15405,6 +15492,11 @@ function makeImportFolderName(label) {
     closeMoreMenu();
     var area = document.getElementById('note-content-area');
     area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+  });
+  document.getElementById('scroll-bottom-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('scroll-bottom-btn').addEventListener('click', function() {
+    var area2 = document.getElementById('note-content-area');
+    area2.scrollTo({ top: area2.scrollHeight, behavior: 'smooth' });
   });
 
   // Prevent bottom bar buttons from stealing focus (which closes keyboard)
@@ -17937,7 +18029,7 @@ function makeImportFolderName(label) {
       if (isNaN(_calLineIdx) || !currentNoteId || !notes[currentNoteId]) return;
       var _calLines = notes[currentNoteId].content.split('\n');
       var _calRawLine = _calLines[_calLineIdx] || '';
-      var _calSummary = stripMarkdownForSpeech(_calRawLine).trim() || 'Task';
+      var _calSummary = stripMarkdownToPlainText(_calRawLine).trim() || 'Task';
       var _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
       var _calOverlay = document.createElement('div');
       _calOverlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center';
@@ -18297,6 +18389,8 @@ function makeImportFolderName(label) {
   updateHideCompletedMenuLabel = function() {
     var chk = document.getElementById('more-hide-completed-check');
     if (chk) chk.style.display = _hideCompleted ? '' : 'none';
+    var hideCompletedToolbarBtn = document.getElementById('hide-completed-btn');
+    if (hideCompletedToolbarBtn) hideCompletedToolbarBtn.classList.toggle('active', !!_hideCompleted);
   }
 
   document.getElementById('more-calendar-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
@@ -18324,6 +18418,19 @@ function makeImportFolderName(label) {
     if (_hideCompleted) {
       var count = document.querySelectorAll('#note-viewer .viewer-line.completed-hidden').length;
       showToast('Hiding ' + count + ' completed item' + (count === 1 ? '' : 's'), false);
+    } else {
+      showToast('Showing all items', false);
+    }
+  });
+  document.getElementById('hide-completed-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('hide-completed-btn').addEventListener('click', function() {
+    _hideCompleted = !_hideCompleted;
+    applyHideCompleted();
+    updateHideCompletedIndicator();
+    updateHideCompletedMenuLabel();
+    if (_hideCompleted) {
+      var count2 = document.querySelectorAll('#note-viewer .viewer-line.completed-hidden').length;
+      showToast('Hiding ' + count2 + ' completed item' + (count2 === 1 ? '' : 's'), false);
     } else {
       showToast('Showing all items', false);
     }
@@ -19900,6 +20007,14 @@ function makeImportFolderName(label) {
     if (insertTagBtnEl) insertTagBtnEl.style.display = (!_readingMode && !document.body.classList.contains('view-only-mode') && _hasTagsNow && _hiddenList.indexOf('insert-tag-btn') === -1) ? '' : 'none';
     var tagFilterBtnEl = document.getElementById('tag-filter-btn');
     if (tagFilterBtnEl) tagFilterBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('tag-filter-btn') === -1) ? '' : 'none';
+    // Uncheck all / Hide completed items (stage 3d toolbar buttons): R&R
+    // mode AND note has checked items AND not hidden via Settings — same
+    // combined condition as their existing static More menu entries.
+    var _hasCheckedNow = typeof noteHasCheckedItems === 'function' && noteHasCheckedItems();
+    var uncheckAllBtnEl = document.getElementById('uncheck-all-btn');
+    if (uncheckAllBtnEl) uncheckAllBtnEl.style.display = (inView && _hasCheckedNow && _hiddenList.indexOf('uncheck-all-btn') === -1) ? '' : 'none';
+    var hideCompletedBtnEl = document.getElementById('hide-completed-btn');
+    if (hideCompletedBtnEl) hideCompletedBtnEl.style.display = (inView && _hasCheckedNow && _hiddenList.indexOf('hide-completed-btn') === -1) ? '' : 'none';
     // Cut and paste: show in both edit and view mode
     // But defer to applySmallScreenOverflow for small-screen+large-icon policy
     if (deleteTextBtn) deleteTextBtn.style.display = '';
