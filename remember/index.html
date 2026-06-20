@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1257 -->
+<!-- Remember App - Version 0.1297 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1257
+  Version 0.1297
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1119,15 +1119,15 @@ body.reading-mode #note-title {
 }
 /* In quiet mode: hide all More menu items except scroll top/bottom, find, exit quiet mode */
 body.reading-mode #toolbar-more-hidden-items,
-body.reading-mode #toolbar-more-divider,
+body.reading-mode #toolbar-more-dynamic-rule-top,
+body.reading-mode #toolbar-more-dynamic-rule-bottom,
 body.reading-mode #more-calendar-btn,
 body.reading-mode #more-uncheck-all-btn,
 body.reading-mode #more-copy-plain-btn,
 body.reading-mode #more-export-btn,
 body.reading-mode #more-share-btn,
 body.reading-mode #more-outline-btn,
-body.reading-mode #more-outline-actions-btn,
-body.reading-mode #more-tap-to-edit-btn {
+body.reading-mode #more-outline-actions-btn {
   display: none !important;
 }
 /* Hide completed is allowed in quiet/reading mode (view only, useful) */
@@ -1163,7 +1163,8 @@ body.view-only-mode #note-title {
   text-overflow: clip; max-width: 100%; cursor: default;
 }
 body.view-only-mode #toolbar-more-hidden-items,
-body.view-only-mode #toolbar-more-divider,
+body.view-only-mode #toolbar-more-dynamic-rule-top,
+body.view-only-mode #toolbar-more-dynamic-rule-bottom,
 body.view-only-mode #more-calendar-btn,
 body.view-only-mode #more-uncheck-all-btn,
 body.view-only-mode #more-copy-plain-btn,
@@ -1171,7 +1172,6 @@ body.view-only-mode #more-export-btn,
 body.view-only-mode #more-share-btn,
 body.view-only-mode #more-outline-btn,
 body.view-only-mode #more-outline-actions-btn,
-body.view-only-mode #more-tap-to-edit-btn,
 body.view-only-mode #more-delete-note-btn,
 body.view-only-mode #more-note-theme-btn { display: none !important; }
 /* view-only-pill removed — indicator is now in top toolbar */
@@ -1766,6 +1766,9 @@ body.edit-block-mode #note-viewer .viewer-line:not(.blank-viewer-line) { cursor:
   body.edit-block-mode #note-viewer .viewer-line:not(.blank-viewer-line):hover { background: rgba(91,124,110,0.08); border-radius: 4px; }
 }
 #tap-to-edit-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
+#ruler-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
+#outline-mode-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
+#show-tags-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
 /* Edit block dialog */
 #edit-block-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:3000; align-items:center; justify-content:center; }
 #edit-block-overlay.open { display:flex; }
@@ -1895,18 +1898,54 @@ body.outline-mode #note-viewer { padding-left: 30px; }
 .last-modified-line { color: var(--fg3); font-size: 0.82em; }
 /* ===== LIST CONTINUATION INDENT =====
    Aligns wrapped lines of checkbox/hyphen items with text after marker.
-   Values set per-line via inline style in urlsToLinks when listContinuationIndent is on. */
-body.list-continuation-indent .viewer-line.list-cont-checkbox {
-  padding-left: 1.8em;
-  text-indent: -1.8em;
-}
-body.list-continuation-indent .viewer-line.list-cont-checkbox-color {
-  padding-left: 2.4em;
-  text-indent: -2.4em;
-}
+   Previously used a fixed-em text-indent/padding-left hanging-indent
+   hack, which only ever approximated the marker's actual width — wrapped
+   lines aligned with the MARKER, not the text after it, and could
+   mis-measure badly when inline content (e.g. a tag pill) sat right
+   after the marker. Markers are now split into a real .line-marker flex
+   child by urlsToLinks(), so .line-content (flex:1) wraps at its own
+   left edge, which is already correctly positioned after the marker —
+   correct by construction, not by guessing an em value per marker type. */
+body.list-continuation-indent .viewer-line.list-cont-checkbox,
+body.list-continuation-indent .viewer-line.list-cont-checkbox-color,
 body.list-continuation-indent .viewer-line.list-cont-hyphen {
-  padding-left: 1.3em;
-  text-indent: -1.3em;
+  display: flex;
+  align-items: flex-start;
+}
+body.list-continuation-indent .viewer-line.list-cont-checkbox > .line-marker,
+body.list-continuation-indent .viewer-line.list-cont-checkbox-color > .line-marker,
+body.list-continuation-indent .viewer-line.list-cont-hyphen > .line-marker {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+body.list-continuation-indent .viewer-line.list-cont-checkbox > .line-content,
+body.list-continuation-indent .viewer-line.list-cont-checkbox-color > .line-content,
+body.list-continuation-indent .viewer-line.list-cont-hyphen > .line-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== PARAGRAPH FIRST-LINE INDENT (plain text, paragraphContinuationIndent OFF) =====
+   Not gated by body.list-continuation-indent — this class only ever
+   appears when paragraphContinuationIndent is off, rendering a plain
+   paragraph's ad-hoc leading spaces/tabs as a first-line-only indent
+   rather than full continuation alignment. Flex is still used so the
+   indent's actual measured width (not a guessed em value) determines
+   where .line-content starts; wrapped lines simply wrap normally within
+   .line-content, which has no special left-edge offset of its own. */
+.viewer-line.para-cont-plain {
+  display: flex;
+  align-items: flex-start;
+}
+.viewer-line.para-cont-plain > .line-marker {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.viewer-line.para-cont-plain > .line-content {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ===== TAG AUTOCOMPLETE POPUP ===== */
@@ -4676,13 +4715,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           </svg>
           <span id="stop-btn-label">Stop</span>
         </button>
-        <!-- select-all-btn moved to More menu — kept hidden here for event handler wiring -->
-        <button class="icon-btn" id="select-all-btn" aria-label="Select all text" title="Select all / deselect" style="display:none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="3"/>
-            <text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" stroke="none" fill="currentColor">A</text>
-          </svg>
-        </button>
         <button class="icon-btn" id="copy-btn" aria-label="Copy note text" title="Copy note text to clipboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
@@ -4958,10 +4990,24 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/>
         </svg>
       </button>
+      <!-- Reading ruler toggle (stage 3c) — real toggle, active-state synced
+           in applyRuler(), also gated by settings.rulerEnabled there -->
+      <button class="icon-btn" id="ruler-btn" tabindex="-1" aria-label="Reading ruler" title="Reading ruler">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="pointer-events:none"><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="8" x2="22" y2="8" stroke-opacity="0.3"/><line x1="2" y1="16" x2="22" y2="16" stroke-opacity="0.3"/></svg>
+      </button>
       <!-- Find in note button -->
       <button class="icon-btn" id="find-btn" tabindex="-1" aria-label="Find in note" title="Find in note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </button>
+      <!-- Select all — moved here from the top toolbar (stage 3b); also
+           has a static More menu entry (more-select-all-btn, no checkmark
+           since selection state is too transient to display reliably) -->
+      <button class="icon-btn" id="select-all-btn" tabindex="-1" aria-label="Select all text" title="Select all / deselect">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <rect x="3" y="3" width="18" height="18" rx="3"/>
+          <text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" stroke="none" fill="currentColor">A</text>
         </svg>
       </button>
       <!-- Print + Export — less-used, at far right requiring scroll -->
@@ -4980,6 +5026,34 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </svg>
       </button>
 
+      <!-- Jump to heading (stage 3c) — R&R mode only, plain action button -->
+      <button class="icon-btn view-only-btn" id="jump-to-btn" tabindex="-1" aria-label="Jump to heading" title="Jump to heading" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><polyline points="16 15 19 18 22 15"/><line x1="19" y1="11" x2="19" y2="18"/></svg>
+      </button>
+      <!-- Outline mode (stage 3c) — R&R mode only, real toggle; active-state
+           synced in updateOutlineMenuLabel() alongside the More menu checkmark -->
+      <button class="icon-btn view-only-btn" id="outline-mode-btn" tabindex="-1" aria-label="Outline mode" title="Outline mode" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="4 6 6 8 4 10"/><line x1="10" y1="8" x2="20" y2="8"/><polyline points="4 14 6 16 4 18"/><line x1="10" y1="16" x2="20" y2="16"/></svg>
+      </button>
+      <!-- Show @tags (stage 3c) — R&R mode + note has tags; real toggle,
+           synced in setShowTags() -->
+      <button class="icon-btn" id="show-tags-btn" tabindex="-1" aria-label="Show @tags" title="Show @tags" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M9 4l-6 6v8a2 2 0 002 2h8a2 2 0 002-2v-6l-6-8z"/><circle cx="9" cy="11" r="1" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <!-- Insert tag (stage 3c) — R&R or typing mode + note has tags; plain action -->
+      <button class="icon-btn" id="insert-tag-btn" tabindex="-1" aria-label="Insert tag" title="Insert tag" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M9 4l-6 6v8a2 2 0 002 2h8a2 2 0 002-2v-6l-6-8z"/><line x1="9" y1="9" x2="9" y2="9"/><line x1="12" y1="3" x2="12" y2="9"/><line x1="9" y1="6" x2="15" y2="6"/></svg>
+      </button>
+      <!-- Filter by tag (stage 3c) — R&R mode + note has tags; plain action -->
+      <button class="icon-btn" id="tag-filter-btn" tabindex="-1" aria-label="Filter by tag" title="Filter by tag" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+      </button>
+
+      <!-- Light/Dark theme (stage 3c) — opens the same theme-bar sheet as
+           the More menu's Light/Dark item; plain action button, not a toggle -->
+      <button class="icon-btn" id="theme-btn" tabindex="-1" aria-label="Light / Dark theme" title="Light / Dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
       <!-- Delete note — far right, requires scroll to reach -->
       <button class="icon-btn" id="delete-note-btn" tabindex="-1" aria-label="Delete note" title="Delete note">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -5522,12 +5596,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </button>
     <div style="height:1px;background:var(--border);margin:2px 0"></div>
   </div>
-  <!-- Hidden toolbar buttons will be inserted here dynamically -->
-  <div id="toolbar-more-hidden-items"></div>
-  <!-- Divider — shown only when hidden items are present -->
-  <div id="toolbar-more-divider" style="display:none;height:1px;background:var(--border);margin:2px 0"></div>
-  <!-- Scroll to top item -->
-  <button id="more-scroll-top-btn" style="
+    <button id="more-scroll-top-btn" style="
     display:flex;align-items:center;gap:12px;
     width:100%;padding:13px 18px;
     background:none;border:none;
@@ -5542,7 +5611,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span class="more-label" style="pointer-events:none;flex:1">Scroll to top</span>
   </button>
-  <!-- Scroll to bottom item -->
   <button id="more-scroll-bottom-btn" style="
     display:flex;align-items:center;gap:12px;
     width:100%;padding:13px 18px;
@@ -5558,15 +5626,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span class="more-label" style="pointer-events:none;flex:1">Scroll to bottom</span>
   </button>
-  <!-- Cut/Copy/Paste overflow items — shown when top toolbar is too narrow -->
   <button id="more-overflow-copy-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Copy</span>
-  </button>
-  <!-- Copy as plain text — moved here, below overflow items -->
-  <button id="more-copy-plain-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><text x="15.5" y="20" font-size="10" font-weight="900" fill="currentColor" stroke="currentColor" stroke-width="0.6" paint-order="stroke fill" font-family="serif" text-anchor="middle" style="pointer-events:none">T</text></svg>
-    <span class="more-label" style="pointer-events:none;flex:1">Copy as plain text</span>
   </button>
   <button id="more-overflow-cut-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><circle cx="6" cy="20" r="2"/><circle cx="18" cy="20" r="2"/><line x1="2" y1="4" x2="22" y2="4"/><line x1="6" y1="18" x2="18" y2="6"/><line x1="18" y1="18" x2="6" y2="6"/></svg>
@@ -5576,31 +5638,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Paste</span>
   </button>
-    <!-- Reading mode item -->
-  <button id="more-reading-mode-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <path d="M2 6h9a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H2z"/>
-      <path d="M22 6h-9a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h9z"/>
-      <line x1="5" y1="10" x2="9" y2="10"/><line x1="5" y1="13" x2="9" y2="13"/><line x1="5" y1="16" x2="8" y2="16"/>
-      <line x1="15" y1="10" x2="19" y2="10"/><line x1="15" y1="13" x2="19" y2="13"/><line x1="15" y1="16" x2="18" y2="16"/>
-    </svg>
-    <span class="more-label" id="more-reading-mode-label" style="pointer-events:none;flex:1">Quiet mode</span>
-  </button>
-  <!-- Tap to edit mode item — view mode only, hidden in quiet mode -->
-  <button id="more-tap-to-edit-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 700 700" width="var(--icon-size)" height="var(--icon-size)" fill="currentColor" stroke="currentColor" stroke-width="30" paint-order="stroke fill" style="flex-shrink:0;pointer-events:none">
-          <!-- Tap icon: hand + radiating lines (noun-1094252) -->
-            <path d="m513.79 373.45-109.65-35.832c-3.2812-1.0703-5.5078-4.1367-5.5078-7.5938v-119.11c-0.007813-32.828-26.605-59.43-59.438-59.43-32.828 0.007812-59.422 26.605-59.43 59.43v240.62c-0.027343 2.5625-0.92578 4.2891-2.4141 5.7461-1.4922 1.4297-3.6406 2.2891-5.6562 2.2734-1.625-0.019532-3.1484-0.44922-4.7969-1.6953l-61.902-47.641c-9.5352-7.3438-20.93-10.977-32.227-10.969-13.578-0.007812-27.152 5.2422-37.387 15.484-10.262 10.254-15.492 23.836-15.477 37.379-0.007812 12.164 4.2148 24.438 12.684 34.344l105.11 122.92c30.168 35.301 74.285 55.621 120.72 55.621h53.57c76.008 0 141.35-53.836 155.91-128.43l10.402-53.289c1.2031-6.1797 1.793-12.363 1.793-18.473 0-40.895-26.168-78.219-66.305-91.359zm44.562 105.94-10.402 53.289c-12.691 65.051-69.684 112-135.96 112h-53.57c-40.496 0-78.969-17.723-105.29-48.504l-105.11-122.92c-5.2344-6.1328-7.7969-13.609-7.8047-21.133 0.007813-8.3867 3.1836-16.668 9.5273-23.008 6.3281-6.3203 14.617-9.5273 23.016-9.5352 6.9805 0.007812 13.93 2.2109 19.832 6.7539l61.902 47.641c5.1641 3.9961 11.32 5.9297 17.191 5.9062 7.3789-0.015625 14.352-2.8633 19.621-7.832 5.2773-4.9414 8.8008-12.305 8.7695-20.512l-0.003906-240.62c0.007812-10.836 4.3594-20.547 11.453-27.656 7.1133-7.0898 16.82-11.453 27.656-11.453 10.836 0.007813 20.547 4.3594 27.656 11.453 7.0898 7.1133 11.453 16.82 11.461 27.656v119.11c0 12.25 7.875 23.105 19.516 26.914l109.65 35.84c31.66 10.332 52.289 39.828 52.297 72.035-0.007813 4.8125-0.46484 9.6914-1.4219 14.582z"/>
-            <path d="m453.96 203.78c0 5.6133 4.5508 10.164 10.164 10.164h30.918c5.6133 0 10.164-4.5508 10.164-10.164 0-5.6133-4.5508-10.164-10.164-10.164h-30.918c-5.6133 0-10.164 4.5508-10.164 10.164z"/>
-            <path d="m336.43 85.699c5.6133 0 10.164-4.5508 10.164-10.164v-30.379c0-5.6055-4.5508-10.156-10.164-10.156s-10.164 4.5508-10.164 10.164v30.379c0 5.6094 4.5508 10.156 10.164 10.156z"/>
-            <path d="m434.25 120.32 21.504-21.777c3.9414-3.9883 3.9062-10.43-0.089843-14.371-3.9883-3.9414-10.43-3.9062-14.371 0.089843l-21.504 21.777c-3.9414 3.9883-3.9062 10.43 0.089843 14.371 3.9961 3.9414 10.43 3.9062 14.371-0.089844z"/>
-            <path d="m238.82 120.32c3.9414 3.9883 10.375 4.0312 14.371 0.089844 3.9883-3.9414 4.0312-10.375 0.089844-14.371l-21.504-21.777c-3.9414-3.9883-10.375-4.0312-14.371-0.089843-3.9883 3.9414-4.0312 10.375-0.089844 14.371z"/>
-            <path d="m178.03 212.7h30.918c5.6133 0 10.164-4.5508 10.164-10.164s-4.5508-10.164-10.164-10.164h-30.918c-5.6133 0-10.164 4.5508-10.164 10.164 0.007812 5.6133 4.5586 10.164 10.164 10.164z"/>
-    </svg>
-    <span class="more-label" id="more-tap-to-edit-label" style="pointer-events:none;flex:1;">Tap to edit mode</span>
-    <span id="more-tap-to-edit-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
-  </button>
-  <!-- Find in note item -->
   <button id="more-find-btn" style="
     display:flex;align-items:center;gap:12px;
     width:100%;padding:13px 18px;
@@ -5616,188 +5653,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span class="more-label" style="pointer-events:none;flex:1">Find in note</span>
   </button>
-
-  <!-- Theme switcher (single item → opens theme bar) -->
-  <button id="more-theme-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 010 20V2z" fill="currentColor"/></svg>
-    <span class="more-label" id="more-theme-label" style="pointer-events:none;flex:1">Light / Dark</span>
-  </button>
-  <!-- Note theme --><!-- Note theme -->
-  <button id="more-note-theme-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg><span class="more-label" id="more-note-theme-label" style="pointer-events:none;flex:1">Note theme</span></button>
-
-  <!-- Font size item -->
-  <button id="more-font-size-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <text x="0" y="21" font-size="22" font-weight="700" font-family="serif">A</text>
-      <text x="16" y="21" font-size="11" font-weight="400" font-family="serif">a</text>
-    </svg>
-    <span class="more-label" style="pointer-events:none;flex:1">Text size</span>
-  </button>
-
-  <!-- Show @tags toggle — visible in quiet mode -->
-  <button id="more-show-tags-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/>
-      <line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/>
-    </svg>
-    <span class="more-label" id="more-show-tags-label" style="pointer-events:none;flex:1">Show @tags</span>
-    <span id="more-show-tags-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
-  </button>
-
-  <!-- Filter by tag item (view mode only) -->
-  <button id="more-tag-filter-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/>
-      <line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/>
-    </svg>
-    <span class="more-label" id="more-tag-filter-label" style="pointer-events:none;flex:1">Filter by tag</span>
-  </button>
-
-  <!-- Add tag order line item -->
-  <button id="more-tag-order-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
-    <span class="more-label" id="more-tag-order-label" style="pointer-events:none;flex:1">Add tag order line</span>
-  </button>
-
-  <!-- Insert tag item -->
-  <button id="more-insert-tag-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
-    <span class="more-label" style="pointer-events:none;flex:1">Insert tag</span>
-  </button>
-
-  <!-- Jump to heading item (only shown when note has headings) -->
-  <button id="more-jump-to-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <line x1="3" y1="6" x2="21" y2="6"/>
-      <line x1="3" y1="12" x2="15" y2="12"/>
-      <line x1="3" y1="18" x2="18" y2="18"/>
-      <polyline points="18 15 21 18 18 21"/>
-    </svg>
-    <span class="more-label" style="pointer-events:none;flex:1;">Jump to heading…</span>
-  </button>
-
-  <!-- Print note — always in More menu, visible in quiet mode too -->
-  <button id="more-print-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <polyline points="6 9 6 2 18 2 18 9" style="pointer-events:none"/>
-      <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" style="pointer-events:none"/>
-      <rect x="6" y="14" width="12" height="8" style="pointer-events:none"/>
-    </svg>
-    <span class="more-label" style="pointer-events:none;flex:1">Print note</span>
-  </button>
-
-  <!-- Uncheck all item -->
-  <button id="more-uncheck-all-btn" style="
-    display:none;align-items:center;gap:20px;
-    width:100%;padding:13px 18px;
-    background:none;border:none;
-    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
-    text-align:left;cursor:pointer;
-    touch-action:manipulation;
-    user-select:none;-webkit-user-select:none;
-    box-sizing:border-box;
-  ">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <rect x="3" y="3" width="18" height="18" rx="3"/>
-      <line x1="8" y1="12" x2="16" y2="12"/>
-    </svg>
-    <span class="more-label" id="more-uncheck-label" style="pointer-events:none;flex:1;">Uncheck all</span>
-  </button>
-  <!-- Hide completed item (view mode only) -->
-  <button id="more-hide-completed-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
-      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
-      <line x1="1" y1="1" x2="23" y2="23"/>
-    </svg>
-    <span class="more-label" id="more-hide-completed-label" style="pointer-events:none;flex:1;">Hide completed items</span>
-    <span id="more-hide-completed-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
-  </button>
-
-  <!-- Add to Calendar toggle (R&R mode, session-only) -->
-  <button id="more-calendar-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-    <span class="more-label" style="pointer-events:none;flex:1;">Add to Calendar</span>
-    <span id="more-calendar-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
-  </button>
-
-  <!-- Outline actions item (view mode only) -->
-  <button id="more-outline-actions-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <polyline points="6 3 3 6 6 9" style="pointer-events:none"/>
-      <polyline points="6 15 3 18 6 21" style="pointer-events:none"/>
-      <line x1="3" y1="6" x2="21" y2="6" style="pointer-events:none"/>
-      <line x1="3" y1="18" x2="21" y2="18" style="pointer-events:none"/>
-    </svg>
-    <span class="more-label" style="pointer-events:none;flex:1;">Outline actions…</span>
-  </button>
-
-  <!-- Collapsible outline toggle item -->
-  <button id="more-outline-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <line x1="9" y1="6" x2="20" y2="6"/>
-      <line x1="9" y1="12" x2="20" y2="12"/>
-      <line x1="9" y1="18" x2="20" y2="18"/>
-      <polyline points="4 6 5.5 7.5 4 9"/>
-      <polyline points="4 12 5.5 13.5 4 15"/>
-    </svg>
-    <span class="more-label" id="more-outline-label" style="pointer-events:none;flex:1;">Outline mode</span>
-    <span id="more-outline-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
-  </button>
-
-  <!-- Font face item -->
-  <button id="more-font-face-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <text x="1" y="19" font-size="18" font-weight="700" font-family="serif">F</text>
-      <text x="13" y="22" font-size="11" font-weight="400" font-family="sans-serif">f</text>
-    </svg>
-    <span class="more-label" style="pointer-events:none;flex:1">Font face</span>
-  </button>
-
-  <!-- Reading ruler toggle -->
-  <button id="more-ruler-btn" style="
-    display:none;align-items:center;gap:20px;
-    width:100%;padding:13px 18px;
-    background:none;border:none;
-    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
-    text-align:left;cursor:pointer;
-    touch-action:manipulation;
-    user-select:none;-webkit-user-select:none;
-    box-sizing:border-box;
-  ">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="8" x2="22" y2="8" stroke-opacity="0.3"/><line x1="2" y1="16" x2="22" y2="16" stroke-opacity="0.3"/></svg>
-    <span class="more-label" id="more-ruler-label" style="pointer-events:none;flex:1;">Reading ruler</span>
-    <span id="more-ruler-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
-  </button>
-
-  <!-- Export note item -->
-  <!-- Delete note — also in More menu for easy access -->
-  <button id="more-delete-note-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <polyline points="3 6 5 6 21 6" style="pointer-events:none"/>
-      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" style="pointer-events:none"/>
-      <path d="M10 11v6M14 11v6" style="pointer-events:none"/>
-      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" style="pointer-events:none"/>
-    </svg>
-    <span class="more-label" style="pointer-events:none;flex:1">Delete note</span>
-  </button>
-
-  <button id="more-export-btn" style="
-    display:flex;align-items:center;gap:12px;
-    width:100%;padding:13px 18px;
-    background:none;border:none;
-    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
-    text-align:left;cursor:pointer;
-    touch-action:manipulation;
-    user-select:none;-webkit-user-select:none;
-    box-sizing:border-box;
-  ">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-    </svg>
-    <span class="more-label" style="pointer-events:none;flex:1">Export note</span>
-  </button>
-  <!-- Share note item -->
   <button id="more-share-btn" style="
     display:flex;align-items:center;gap:12px;
     width:100%;padding:13px 18px;
@@ -5814,6 +5669,180 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
     </svg>
     <span class="more-label" style="pointer-events:none;flex:1">Share note</span>
+  </button>
+  <button id="more-select-all-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="8 12 11 15 16 9"/></svg>
+    <span class="more-label" id="more-select-all-label" style="pointer-events:none;flex:1">Select all</span>
+  </button>
+  <button id="more-reading-mode-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M2 6h9a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H2z"/>
+      <path d="M22 6h-9a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h9z"/>
+      <line x1="5" y1="10" x2="9" y2="10"/><line x1="5" y1="13" x2="9" y2="13"/><line x1="5" y1="16" x2="8" y2="16"/>
+      <line x1="15" y1="10" x2="19" y2="10"/><line x1="15" y1="13" x2="19" y2="13"/><line x1="15" y1="16" x2="18" y2="16"/>
+    </svg>
+    <span class="more-label" id="more-reading-mode-label" style="pointer-events:none;flex:1">Quiet mode</span>
+  </button>
+  <button id="more-print-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <polyline points="6 9 6 2 18 2 18 9" style="pointer-events:none"/>
+      <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" style="pointer-events:none"/>
+      <rect x="6" y="14" width="12" height="8" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Print note</span>
+  </button>
+  <button id="more-font-size-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <text x="0" y="21" font-size="22" font-weight="700" font-family="serif">A</text>
+      <text x="16" y="21" font-size="11" font-weight="400" font-family="serif">a</text>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Text size</span>
+  </button>
+  <button id="more-theme-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 010 20V2z" fill="currentColor"/></svg>
+    <span class="more-label" id="more-theme-label" style="pointer-events:none;flex:1">Light / Dark</span>
+  </button>
+  <button id="more-copy-for-speech-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><rect x="15" y="14" width="7" height="7" rx="1" fill="currentColor" stroke="none" opacity="0.4"/></svg>
+    <span class="more-label" id="more-copy-for-speech-label" style="pointer-events:none;flex:1">Copy for speech</span>
+  </button>
+  <button id="more-copy-plain-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><text x="15.5" y="20" font-size="10" font-weight="900" fill="currentColor" stroke="currentColor" stroke-width="0.6" paint-order="stroke fill" font-family="serif" text-anchor="middle" style="pointer-events:none">T</text></svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Copy as plain text</span>
+  </button>
+  <button id="more-jump-to-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="15" y2="12"/>
+      <line x1="3" y1="18" x2="18" y2="18"/>
+      <polyline points="18 15 21 18 18 21"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1;">Jump to heading…</span>
+  </button>
+  <button id="more-outline-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <line x1="9" y1="6" x2="20" y2="6"/>
+      <line x1="9" y1="12" x2="20" y2="12"/>
+      <line x1="9" y1="18" x2="20" y2="18"/>
+      <polyline points="4 6 5.5 7.5 4 9"/>
+      <polyline points="4 12 5.5 13.5 4 15"/>
+    </svg>
+    <span class="more-label" id="more-outline-label" style="pointer-events:none;flex:1;">Outline mode</span>
+    <span id="more-outline-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
+  </button>
+  <button id="more-outline-actions-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <polyline points="6 3 3 6 6 9" style="pointer-events:none"/>
+      <polyline points="6 15 3 18 6 21" style="pointer-events:none"/>
+      <line x1="3" y1="6" x2="21" y2="6" style="pointer-events:none"/>
+      <line x1="3" y1="18" x2="21" y2="18" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1;">Outline actions…</span>
+  </button>
+  <button id="more-uncheck-all-btn" style="
+    display:none;align-items:center;gap:20px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <rect x="3" y="3" width="18" height="18" rx="3"/>
+      <line x1="8" y1="12" x2="16" y2="12"/>
+    </svg>
+    <span class="more-label" id="more-uncheck-label" style="pointer-events:none;flex:1;">Uncheck all</span>
+  </button>
+  <button id="more-hide-completed-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+      <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+    <span class="more-label" id="more-hide-completed-label" style="pointer-events:none;flex:1;">Hide completed items</span>
+    <span id="more-hide-completed-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
+  </button>
+  <button id="more-show-tags-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/>
+      <line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" id="more-show-tags-label" style="pointer-events:none;flex:1">Show @tags</span>
+    <span id="more-show-tags-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
+  </button>
+  <button id="more-insert-tag-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Insert tag</span>
+  </button>
+  <button id="more-tag-filter-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/>
+      <line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" id="more-tag-filter-label" style="pointer-events:none;flex:1">Filter by tag</span>
+  </button>
+  <button id="more-calendar-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="more-label" style="pointer-events:none;flex:1;">Add to Calendar</span>
+    <span id="more-calendar-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
+  </button>
+  <!-- Dynamic section: hidden toolbar buttons relocated here. The two
+       rules around it only render when this section actually has content
+       (toggled by rebuildMoreMenuItems via #toolbar-more-dynamic-rule-top/bottom). -->
+  <div id="toolbar-more-dynamic-rule-top" style="display:none;height:1px;background:var(--border);margin:2px 0"></div>
+  <div id="toolbar-more-hidden-items"></div>
+  <div id="toolbar-more-dynamic-rule-bottom" style="display:none;height:1px;background:var(--border);margin:2px 0"></div>
+  <button id="more-tag-order-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
+    <span class="more-label" id="more-tag-order-label" style="pointer-events:none;flex:1">Add tag order line</span>
+  </button>
+  <button id="more-ruler-btn" style="
+    display:none;align-items:center;gap:20px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="8" x2="22" y2="8" stroke-opacity="0.3"/><line x1="2" y1="16" x2="22" y2="16" stroke-opacity="0.3"/></svg>
+    <span class="more-label" id="more-ruler-label" style="pointer-events:none;flex:1;">Reading ruler</span>
+    <span id="more-ruler-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
+  </button>
+  <button id="more-font-face-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <text x="1" y="19" font-size="18" font-weight="700" font-family="serif">F</text>
+      <text x="13" y="22" font-size="11" font-weight="400" font-family="sans-serif">f</text>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Font face</span>
+  </button>
+  <button id="more-note-theme-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg><span class="more-label" id="more-note-theme-label" style="pointer-events:none;flex:1">Note theme</span></button>
+  <button id="more-delete-note-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <polyline points="3 6 5 6 21 6" style="pointer-events:none"/>
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" style="pointer-events:none"/>
+      <path d="M10 11v6M14 11v6" style="pointer-events:none"/>
+      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Delete note</span>
+  </button>
+  <button id="more-export-btn" style="
+    display:flex;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Export note</span>
   </button>
   <div id="more-menu-fade">more ▼</div>
 </div>
@@ -6616,6 +6645,28 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           </label>
         </div>
 
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">List continuation indent</div>
+            <div class="settings-row-desc">In Read &amp; Revise mode, wrapped lines of a checkbox or hyphen item align with the text after the marker, not the left edge. Makes long list items easier to read.</div>
+          </div>
+          <label class="toggle-switch" aria-label="List continuation indent">
+            <input type="checkbox" id="list-continuation-indent-toggle">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Paragraph continuation indent</div>
+            <div class="settings-row-desc">Same idea, but for plain paragraphs (not checkbox or hyphen items). When on, extra spaces or tabs typed at the start of a line make wrapped lines align with that text too. When off (default), the spaces just indent the first line, like a regular paragraph indent.</div>
+          </div>
+          <label class="toggle-switch" aria-label="Paragraph continuation indent">
+            <input type="checkbox" id="paragraph-continuation-indent-toggle">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+
         <div class="settings-row range-row">
           <div class="settings-row-label">Maximum characters per line</div>
           <input type="range" class="settings-range" id="chars-per-line-range" min="0" max="120" step="5" value="0">
@@ -7006,16 +7057,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </label>
         </div>
 
-        <div class="settings-row">
-          <div>
-            <div class="settings-row-label">List continuation indent</div>
-            <div class="settings-row-desc">In Read &amp; Revise mode, wrapped lines of a checkbox or hyphen item align with the text after the marker, not the left edge. Makes long list items easier to read.</div>
-          </div>
-          <label class="toggle-switch" aria-label="List continuation indent">
-            <input type="checkbox" id="list-continuation-indent-toggle">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </label>
-        </div>
       </div><!-- end settings-section-body -->
     </div><!-- end settings-section checklists -->
 
@@ -7028,6 +7069,57 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div>
       <div class="settings-row" style="margin-top:12px"><div><div class="settings-row-label">Show theme indicator in note</div><div class="settings-row-desc">Show a small pill near the note title when a per-note theme is active.</div></div><label class="toggle-switch" aria-label="Show theme indicator"><input type="checkbox" id="show-theme-indicator-toggle" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>
     </div></div>
+    <div class="settings-section" id="settings-section-debugging">
+      <div class="settings-section-header">
+        <div class="settings-label">Debugging</div>
+        <span class="section-collapse-hint">(tap to expand) </span>
+        <svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="settings-section-body">
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Log actions for debugging</div>
+            <div class="settings-row-desc">Records every toolbar button, More menu item, settings change, note open/exit, and confirmation dialog choice to a hidden note, so problems that are hard to reproduce can be traced afterward.</div>
+          </div>
+          <label class="toggle-switch" aria-label="Log actions for debugging">
+            <input type="checkbox" id="debug-logging-toggle">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div class="settings-row-desc" style="padding:4px 0 6px">
+          Keeps the most recent 1000 entries. Excluded from the main note list, search, and "Export all notes" — open it below to read or export it individually.
+        </div>
+        <div style="padding:4px 0;display:flex;gap:10px;flex-wrap:wrap">
+          <button id="view-debug-log-row" style="
+            background:none;
+            border:1px solid var(--border);
+            border-radius:var(--radius-sm);
+            color:var(--fg2);
+            font-family:var(--font-body);
+            font-size:0.85em;
+            padding:6px 14px;
+            cursor:pointer;
+            touch-action:manipulation;
+            user-select:none;
+            -webkit-user-select:none;
+          ">View debug log</button>
+          <button id="clear-debug-log-row" style="
+            background:none;
+            border:1px solid var(--border);
+            border-radius:var(--radius-sm);
+            color:var(--fg2);
+            font-family:var(--font-body);
+            font-size:0.85em;
+            padding:6px 14px;
+            cursor:pointer;
+            touch-action:manipulation;
+            user-select:none;
+            -webkit-user-select:none;
+          ">Clear debug log</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Floating Save/Cancel FAB — sticky at bottom-right as settings scrolls -->
     <div id="settings-fab">
       <button id="settings-fab-cancel" title="Cancel" aria-label="Cancel settings">✕</button>
@@ -7801,7 +7893,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1257';
+const APP_VERSION = '0.1297';
 
 
 
@@ -7943,6 +8035,7 @@ const DEFAULT_SETTINGS = {
   checkStrikethrough: true,  // whether checking a checkbox also strikes through the line text
   confettiOnComplete: false,       // whether to show confetti when last checkbox is checked
   listContinuationIndent: true,    // align wrapped lines with text after list marker (R&R mode)
+  paragraphContinuationIndent: false, // same alignment behavior, but for PLAIN (non-checkbox/hyphen) paragraphs with ad-hoc leading spaces; off by default — extra spaces act as a simple first-line paragraph indent instead
   moveCompletedToBottom: false,    // move checked items to bottom of note
   moveCompletedConfirm: false,     // confirm before moving
   todaySuffix: '— Today',    // suffix marking a note as a daily checklist
@@ -7989,7 +8082,8 @@ const DEFAULT_SETTINGS = {
   outlineCollapseOnOpen: false,  // collapse all outline sections when note opens
   quietMode: false,              // open note in quiet mode (set by theme only)
   showMultiLevelBullets: false,  // cycle bullet style by indent level (•, ◦, ▪)
-  showThemeIndicator: true
+  showThemeIndicator: true,
+  debugLoggingEnabled: false     // log toolbar/menu actions + note open/exit to a hidden debug-log note
 };
 
 const THEMEABLE_SETTINGS=[
@@ -8005,6 +8099,7 @@ const THEMEABLE_SETTINGS=[
 ['outlineMode','Collapsible outline mode',0],
 ['outlineCollapseOnOpen','Collapse all on open (outline)',0],
 ['showBulletsForHyphens','Bullets for hyphens',0],['showMultiLevelBullets','Multi-level bullets',0],
+['listContinuationIndent','List continuation indent',0],['paragraphContinuationIndent','Paragraph continuation indent',0],
 ['checkboxColor','Default checkbox color',0],['highlightColor','Highlight color',0],
 ['theme','Light/Dark/Auto mode',1],['lightBgColor','Light background',1],
 ['lightFgColor','Light text color',1],['darkBgColor','Dark background',1],
@@ -8252,6 +8347,118 @@ function makeId() {
   return 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 }
 
+// ===== DEBUG ACTION LOGGING =====
+// Module-level (not inside init()) so it can be called from anywhere,
+// including openNote()/goHome() which are also module-level.
+var DEBUG_LOG_MAX_LINES = 1000;
+var _debugLogNoteId = null; // cached once found/created, so we don't search every call
+var _lastConfirmTitle = '';  // set by showConfirm(), read when OK/Cancel resolves it
+
+function findOrCreateDebugLogNote() {
+  if (_debugLogNoteId && notes[_debugLogNoteId]) return _debugLogNoteId;
+  var existing = Object.keys(notes).filter(function(id) { return notes[id] && notes[id].isDebugLog; })[0];
+  if (existing) { _debugLogNoteId = existing; return existing; }
+  var id = makeId();
+  notes[id] = {
+    id: id,
+    name: 'Debug Log',
+    content: '',
+    autoNamed: false,
+    isDebugLog: true,   // excluded from home list, search, and "export all"
+    createdAt: Date.now(),
+    editedAt: Date.now(),
+    viewedAt: Date.now(),
+    folderId: null
+  };
+  _debugLogNoteId = id;
+  return id;
+}
+
+function logDebugAction(message) {
+  if (!settings.debugLoggingEnabled) return;
+  var id = findOrCreateDebugLogNote();
+  var note = notes[id];
+  var d = new Date();
+  var ts = d.toLocaleTimeString(undefined, { hour12: false }) + '.' +
+    String(d.getMilliseconds()).padStart(3, '0');
+  var line = '- [' + ts + '] ' + message;
+  var lines = (note.content || '').split('\n').filter(function(l) { return l.trim() !== ''; });
+  lines.push(line);
+  if (lines.length > DEBUG_LOG_MAX_LINES) {
+    lines = lines.slice(lines.length - DEBUG_LOG_MAX_LINES);
+  }
+  note.content = lines.join('\n');
+  note.editedAt = Date.now();
+  saveNotes();
+}
+
+function clearDebugLog() {
+  var id = findOrCreateDebugLogNote();
+  notes[id].content = '';
+  notes[id].editedAt = Date.now();
+  saveNotes();
+}
+
+// Diagnostic for the intermittent tag-pill-rendering bug: measures real
+// computed/rendered values (not assumptions) for the first tag pill found
+// on a checkbox line vs. the first tag pill on a non-checkbox line, plus
+// the computed --font-size-editor value at the time of measurement.
+// Only active when debug logging is on; called from the note-viewer
+// MutationObserver so it runs after every real re-render, not just ones
+// we know to instrument by hand.
+function logTagPillDiagnostics() {
+  if (!settings.debugLoggingEnabled) return;
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return;
+  var rootFontSize = getComputedStyle(document.documentElement).getPropertyValue('--font-size-editor').trim();
+  var lines = viewer.querySelectorAll('.viewer-line');
+  var cbPill = null, plainPill = null;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var hasCb = !!line.querySelector('.viewer-checkbox');
+    var pill = line.querySelector('.note-tag');
+    if (!pill) continue;
+    if (hasCb && !cbPill) cbPill = pill;
+    if (!hasCb && !plainPill) plainPill = pill;
+    if (cbPill && plainPill) break;
+  }
+  function describePill(pill, label) {
+    if (!pill) return label + '=none';
+    var cs = getComputedStyle(pill);
+    var rect = pill.getBoundingClientRect();
+    return label + '(font-size=' + cs.fontSize + ' box=' + rect.width.toFixed(1) + 'x' + rect.height.toFixed(1) +
+      ' text="' + pill.textContent + '")';
+  }
+  logDebugAction('Tag pill diagnostics: --font-size-editor=' + rootFontSize + ' ' +
+    describePill(cbPill, 'checkboxLinePill') + ' ' + describePill(plainPill, 'plainLinePill'));
+  logLineMarkerDiagnostics();
+}
+
+// Manually-triggerable diagnostic for the hanging-indent bug — measures
+// the actual computed display/width of .line-marker and .line-content
+// on the first checkbox line found, plus the .viewer-line itself, so we
+// can directly compare "broken" vs "fixed" states by reading real values
+// instead of guessing at the mechanism. Can be called any time (not only
+// from the MutationObserver) — e.g. right before and right after
+// opening/canceling Settings — to see exactly what changes.
+function logLineMarkerDiagnostics() {
+  if (!settings.debugLoggingEnabled) return;
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return;
+  var marker = viewer.querySelector('.line-marker');
+  var content = viewer.querySelector('.line-content');
+  var line = marker ? marker.closest('.viewer-line') : null;
+  function describe(el, label) {
+    if (!el) return label + '=none';
+    var cs = getComputedStyle(el);
+    var rect = el.getBoundingClientRect();
+    return label + '(display=' + cs.display + ' width=' + rect.width.toFixed(1) +
+      ' classes="' + el.className + '")';
+  }
+  logDebugAction('Line marker diagnostics: ' + describe(line, 'line') + ' ' +
+    describe(marker, 'marker') + ' ' + describe(content, 'content'));
+}
+
 // ===== APPLY SETTINGS =====
 function lightenHex(hex, amount) {
   // Parse hex color and add 'amount' to each RGB channel (clamped to 255)
@@ -8422,6 +8629,7 @@ function applySettings() {
   // Line height
   document.documentElement.style.setProperty('--line-height', settings.lineHeight || 1.5);
   document.body.classList.toggle('outline-mode', !!settings.outlineMode);
+  document.body.classList.toggle('list-continuation-indent', settings.listContinuationIndent !== false);
   // Sync note-title outline padding when settings change
   var _nt = document.getElementById('note-title');
   if (_nt) _nt.style.paddingLeft = (isViewMode && settings.outlineMode) ? '30px' : '';
@@ -8676,6 +8884,7 @@ function searchContextPreview(content, term) {
 }
 
 function openHomeSearch() {
+  logDebugAction('Opened home search');
   var bar = document.getElementById('home-search-bar');
   var input = document.getElementById('home-search-input');
   if (!bar) return;
@@ -8686,6 +8895,7 @@ function openHomeSearch() {
 }
 
 function closeHomeSearch() {
+  logDebugAction('Closed home search');
   var bar = document.getElementById('home-search-bar');
   if (bar) bar.style.display = 'none';
   var input = document.getElementById('home-search-input');
@@ -8713,12 +8923,19 @@ function showFolderNameDialog(existingName, callback) {
   if (!overlay || !input) return;
   if (title)   title.textContent   = existingName ? 'Rename Folder' : 'New Folder';
   if (saveBtn) saveBtn.textContent = existingName ? 'Rename' : 'Create';
+  logDebugAction(existingName ? 'Opened Rename Folder' : 'Opened New Folder');
   input.value = existingName || '';
   overlay.style.display = 'flex';
   setTimeout(function() { input.focus(); input.select(); }, 50);
   function finish(save) {
+    var name = input.value.trim();
+    if (save && name) {
+      logDebugAction((existingName ? 'Saved Rename Folder: "' : 'Saved New Folder: "') + name + '"');
+    } else if (!save) {
+      logDebugAction(existingName ? 'Cancelled Rename Folder' : 'Cancelled New Folder');
+    }
     overlay.style.display = 'none';
-    if (save) { var name = input.value.trim(); if (name) callback(name); }
+    if (save && name) callback(name);
   }
   // Wire buttons — replace each time to avoid stacking listeners
   var newSave   = saveBtn   ? saveBtn.cloneNode(true)   : null;
@@ -8935,6 +9152,7 @@ var _folderPickerCurrentId = null; // currently browsing this folder in picker
 var _folderPickerStartId   = null; // original parent of item being moved
 
 function openFolderPicker(callback, excludeId, title, startId) {
+  logDebugAction('Opened folder picker: "' + (title || '(untitled)') + '"');
   _folderPickerCallback  = callback;
   _folderPickerExcludeId = excludeId || null;
   _folderPickerStartId   = (startId !== undefined) ? startId : null;
@@ -8945,6 +9163,7 @@ function openFolderPicker(callback, excludeId, title, startId) {
 }
 
 function closeFolderPicker() {
+  logDebugAction('Closed folder picker');
   var overlay = document.getElementById('folder-picker-overlay');
   if (overlay) overlay.classList.remove('open');
   _folderPickerCallback = null;
@@ -9030,6 +9249,7 @@ function renderFolderPicker() {
 
 // ===== SELECT NOTES MODE =====
 function enterSelectNotesMode() {
+  logDebugAction('Entered Select notes mode');
   _selectNotesMode = true;
   _selectedNoteIds.clear();
   document.body.classList.add('select-notes-mode');
@@ -9040,6 +9260,7 @@ function enterSelectNotesMode() {
 }
 
 function exitSelectNotesMode() {
+  logDebugAction('Exited Select notes mode');
   _selectNotesMode = false;
   _selectedNoteIds.clear();
   document.body.classList.remove('select-notes-mode');
@@ -9164,7 +9385,7 @@ function noteItemHTML(id, n, folderPath) {
 }
 
 function sortedNoteIds() {
-  var ids = Object.keys(notes);
+  var ids = Object.keys(notes).filter(function(id) { return !notes[id].isDebugLog; });
   var sortBy  = settings.sortBy  || 'viewedAt';
   var desc    = settings.sortDesc !== false; // default true (newest/A-Z first)
   var isName  = sortBy === 'name';
@@ -9201,6 +9422,7 @@ function renderNotesList() {
     list.parentElement.insertBefore(bc, list);
     var bcBack = document.getElementById('folder-breadcrumb-back');
     if (bcBack) bcBack.addEventListener('click', function() {
+      logDebugAction('Left folder: "' + folders[currentFolderId].name + '"');
       currentFolderId = folders[currentFolderId] ? folders[currentFolderId].parentId : null;
       renderNotesList();
     });
@@ -9211,6 +9433,7 @@ function renderNotesList() {
 
   // Notes in current level only (filter by folderId)
   var ids = Object.keys(notes).filter(function(id) {
+    if (notes[id].isDebugLog) return false; // hidden from home list, search, etc.
     return (notes[id].folderId || null) === (currentFolderId || null);
   });
 
@@ -9358,6 +9581,7 @@ function wireNoteListEvents(list) {
         toggleSelectItem(folderId);
         return;
       }
+      logDebugAction('Opened folder: "' + (folders[folderId] ? folders[folderId].name : folderId) + '"');
       currentFolderId = folderId;
       renderNotesList();
     });
@@ -9616,6 +9840,7 @@ function clearReadingMode() {
 
 // ===== SORT SHEET =====
 function openSortSheet() {
+  logDebugAction('Opened sort sheet');
   var overlay = document.getElementById('sort-overlay');
   var sheet   = document.getElementById('sort-sheet');
   if (!overlay || !sheet) return;
@@ -9624,6 +9849,7 @@ function openSortSheet() {
   sheet.classList.add('open');
 }
 function closeSortSheet() {
+  logDebugAction('Closed sort sheet');
   var overlay = document.getElementById('sort-overlay');
   var sheet   = document.getElementById('sort-sheet');
   if (overlay) overlay.classList.remove('open');
@@ -9997,10 +10223,31 @@ function urlsToLinks(text, addLineWrappers) {
       var _indentLevel = _rawLeading > 0 ? Math.floor(_rawLeading / _indSp) : 0;
       // Section indent from heading hierarchy (additive with user spaces)
       var _secDepth = settings.headingIndent ? (_sectionDepth[i] || 0) : 0;
-      var _totalIndent = _indentLevel + _secDepth;
+      // Is this a checkbox/hyphen ("list-ish") line? Use the standard,
+      // shared detection call — isCheckboxRaw() only strips leading
+      // whitespace internally, so formatting wrappers (e.g.
+      // "**[ ] bold checkbox**") must be stripped first via
+      // stripFormattingForDetect(), same as the other call sites that
+      // need fully-correct detection. Do not re-implement the pattern inline.
+      var _isListIshLine = isCheckboxRaw(stripFormattingForDetect(rawLine));
+      // List-ish lines keep their existing behavior unchanged: their raw
+      // leading spaces become block-level padding (_indentLevel, snapped
+      // to indent-level granularity — appropriate here since Indent/Dedent
+      // always move by whole levels). PLAIN paragraphs NEVER use
+      // level-snapped block padding for the user's own typed leading
+      // whitespace — only _secDepth (heading indent) becomes block
+      // padding for them. The user's literal leading spaces/tabs on a
+      // plain paragraph are handled separately below via marker-splitting
+      // (paragraphContinuationIndent on) or text-indent (off), using
+      // their EXACT typed width, never rounded into indent levels — there
+      // is no Indent/Dedent-style "step" concept for ad-hoc typed spaces.
+      var _totalIndent = (_isListIshLine ? _indentLevel : 0) + _secDepth;
       var _indentStyle = _totalIndent > 0 ? ' style="padding-left:' + (_totalIndent * _viw) + 'em"' : '';
       // Strip leading spaces from rendered line when applying visual indent
-      if (_indentLevel > 0) line = line.replace(/^\s+/, '');
+      // as block padding (list-ish lines only — plain paragraphs keep
+      // their raw leading whitespace in `line` for the marker-splitting /
+      // text-indent handling further below).
+      if (_isListIshLine && _indentLevel > 0) line = line.replace(/^\s+/, '');
       // Bullets for hyphens: replace leading '- ' with bullet in rendered line
       if (settings.showBulletsForHyphens && /^(\s*)- /.test(rawLine)) {
         var _bulletChar = '•'; // default: filled circle
@@ -10049,7 +10296,81 @@ function urlsToLinks(text, addLineWrappers) {
           _lciClass = ' list-cont-hyphen';
         }
       }
-      return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + _tagBorderClass + _lciClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + _calBtnHtml + '</div>';
+      // When list continuation indent is active, split the marker (checkbox
+      // SVG or hyphen bullet) from the rest of the line's content into two
+      // real flex children (.line-marker / .line-content) instead of the
+      // old text-indent/padding-left hanging-indent hack. That hack only
+      // ever approximated the marker's width with a fixed em value, so
+      // wrapped lines aligned with the MARKER, not the text after it — and
+      // could mis-measure entirely when a tag pill or other inline content
+      // sat right after the marker, which is the cause of a separate
+      // reported bug (pill rendering squeezed/misplaced on checkbox lines).
+      // Flex children measure their own real widths, so this is correct
+      // by construction rather than by approximation.
+      var _paraContClass = '';
+      if (_lciClass) {
+        // Match either: a checkbox SVG, a bullet character (only present
+        // when showBulletsForHyphens converted it above), OR a literal
+        // "- " hyphen marker (the default when that setting is off — the
+        // hyphen itself was never replaced with anything, so it's still
+        // plain text at the start of the line and must be matched as such).
+        // The whitespace run AFTER the marker is captured separately — any
+        // number of spaces or tabs the user actually typed, not assumed to
+        // be exactly one. Tabs don't have a fixed rendered width in HTML,
+        // so each tab is expanded to settings.indentSpaces spaces (the same
+        // convention used elsewhere for indent-level calculations) before
+        // counting, so the gap matches the app's own definition of how
+        // wide a tab is, not the browser's arbitrary tab-stop rendering.
+        var _markerMatch = line.match(/^(\s*(?:<svg class="viewer-checkbox"[^>]*>.*?<\/svg>|[•▪◦]|-))([ \t]*)/);
+        if (_markerMatch) {
+          var _markerHtml = _markerMatch[1];
+          var _tabWidth = settings.indentSpaces || 2;
+          var _gapRaw = _markerMatch[2].replace(/\t/g, ' '.repeat(_tabWidth));
+          var _gapSpaces = _gapRaw.length || 1; // at least one space if none captured (e.g. marker glued to text)
+          var _restHtml = line.slice(_markerMatch[0].length);
+          line = '<span class="line-marker">' + _markerHtml + '<span style="white-space:pre">' + ' '.repeat(_gapSpaces) + '</span></span>' +
+                 '<span class="line-content">' + _restHtml + '</span>';
+        }
+      } else if (!_isListIshLine && _rawLeading > 0) {
+        // Plain paragraph with ad-hoc leading spaces/tabs that the user
+        // typed directly (never level-rounded — see note above). Two
+        // modes, both using the EXACT expanded width (tabs expanded via
+        // settings.indentSpaces, never Math.floor'd into levels):
+        //
+        //   paragraphContinuationIndent ON: same flex marker-split as
+        //   checkbox/hyphen lines, so wrapped lines align with where the
+        //   first line's text actually starts (full continuation align).
+        //
+        //   OFF (default): plain CSS text-indent — a native, first-line-
+        //   only property. Wrapped lines are completely unaffected by
+        //   definition (that's what text-indent does), landing at the
+        //   block's true left edge (heading indent only, no flex needed).
+        var _tabWidthPara = settings.indentSpaces || 2;
+        var _leadMatch = line.match(/^([ \t]+)/);
+        if (_leadMatch) {
+          var _leadExpanded = _leadMatch[1].replace(/\t/g, ' '.repeat(_tabWidthPara));
+          var _restHtmlPara = line.slice(_leadMatch[0].length);
+          if (settings.paragraphContinuationIndent === true) {
+            line = '<span class="line-marker"><span style="white-space:pre">' + _leadExpanded + '</span></span>' +
+                   '<span class="line-content">' + _restHtmlPara + '</span>';
+            _paraContClass = ' para-cont-plain';
+          } else {
+            // First-line-only indent using REAL literal space characters
+            // (white-space:pre), not a CSS length unit like ch or em —
+            // 1ch is the width of the "0" character, which is typically
+            // WIDER than an actual space character in proportional fonts,
+            // so it visibly over-indented compared to typing mode. Plain
+            // inline content (no flex, no text-indent property) only
+            // appears once at its position in the text flow: it pushes
+            // the first line's text right by its own real rendered
+            // width, and a WRAPPED line naturally returns to the block's
+            // left edge on its own, since this span isn't repeated per
+            // visual line the way a flex marker or CSS text-indent is.
+            line = '<span style="white-space:pre">' + _leadExpanded + '</span>' + _restHtmlPara;
+          }
+        }
+      }
+      return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + _tagBorderClass + _lciClass + _paraContClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + _calBtnHtml + '</div>';
     }).join('');
   }
   return escaped;
@@ -10126,6 +10447,9 @@ function setViewMode(on, suppressFocus) {
 
 // ===== NOTE SCREEN =====
 function openNote(id, speakDelay) {
+  if (notes[id] && !notes[id].isDebugLog) {
+    logDebugAction('Opened note: "' + (notes[id].name || '(untitled)') + '"');
+  }
   // Always clear tag filter, hide-completed and edit-block mode when opening a note
   _tagFilterState = {};
   _tagFilterActive = false;
@@ -11113,6 +11437,7 @@ function exportAllNotesOPML() {
 
 function exportFolder(folderId) {
   if (!folders[folderId]) return;
+  logDebugAction('Exported folder: "' + folders[folderId].name + '"');
   // Collect this folder and all descendants recursively
   var folderIds = [];
   function collectFolders(id) {
@@ -11145,7 +11470,13 @@ function exportFolder(folderId) {
 }
 
 function exportAllNotes() {
-  var count = Object.keys(notes).length;
+  // Exclude the debug log note — it's exported individually from the
+  // Debugging settings section instead, not bundled with normal notes.
+  var exportableNotes = {};
+  Object.keys(notes).forEach(function(id) {
+    if (!notes[id].isDebugLog) exportableNotes[id] = notes[id];
+  });
+  var count = Object.keys(exportableNotes).length;
   if (count === 0) {
     showConfirm('No Notes', 'There are no notes to export.', 'OK', function() {}, false, null, null);
     return;
@@ -11154,7 +11485,7 @@ function exportAllNotes() {
   var dateStr = d.getFullYear() + '-' +
     String(d.getMonth()+1).padStart(2,'0') + '-' +
     String(d.getDate()).padStart(2,'0');
-  downloadJSON({ version: APP_VERSION, exportDate: d.toISOString(), notes: notes }, 'remember-notes-' + dateStr + '.json');
+  downloadJSON({ version: APP_VERSION, exportDate: d.toISOString(), notes: exportableNotes }, 'remember-notes-' + dateStr + '.json');
 }
 
 function exportCurrentNote() {
@@ -11256,6 +11587,9 @@ function renderViewOnlyNotesList() {
   });
 }
 function goHome() {
+  if (currentNoteId && notes[currentNoteId] && !notes[currentNoteId].isDebugLog) {
+    logDebugAction('Exited note: "' + (notes[currentNoteId].name || '(untitled)') + '"');
+  }
   // Exit any pending modes before leaving
   if (typeof pasteMode !== 'undefined' && pasteMode) exitPasteMode();
   if (typeof _collapsedLines !== 'undefined') _collapsedLines.clear();
@@ -11626,6 +11960,7 @@ function deleteCurrentNote() {
 
 // ===== CONFIRM DIALOG =====
 function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cancelCb, anchorBelowTitle) {
+  _lastConfirmTitle = title; // for debug-log resolution logging (Confirmed/Cancelled)
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-msg').innerText = msg;
   document.getElementById('confirm-ok-btn').textContent = okLabel || 'OK';
@@ -11695,6 +12030,41 @@ function settingsDirty() {
   return JSON.stringify(settings) !== JSON.stringify(settingsSnapshot);
 }
 
+// Format a single settings value for a debug-log line — short and
+// readable, not the full JSON representation (which can be huge for
+// things like sectionStates or customColors).
+function _fmtSettingValueForLog(v) {
+  if (v === null || v === undefined) return 'off';
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (Array.isArray(v)) {
+    if (v.length === 0) return '[]';
+    var s2 = '[' + v.join(', ') + ']';
+    return s2.length > 40 ? s2.slice(0, 38) + '…]' : s2;
+  }
+  if (typeof v === 'object') return '(updated)'; // other objects: too long to show inline
+  var s = String(v);
+  return s.length > 24 ? s.slice(0, 22) + '…' : s;
+}
+
+// Build a "key: before -> after" list for every settings key that
+// differs between settingsSnapshot (state when Settings opened) and the
+// current settings object — used to log exactly which settings changed
+// on Save, rather than a generic "saved changes" message.
+function _describeSettingsChanges() {
+  if (!settingsSnapshot) return '';
+  var changed = [];
+  var allKeys = Object.keys(settings).concat(Object.keys(settingsSnapshot))
+    .filter(function(k, idx, arr) { return arr.indexOf(k) === idx; }); // dedupe
+  allKeys.forEach(function(key) {
+    var before = settingsSnapshot[key];
+    var after = settings[key];
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      changed.push(key + ': ' + _fmtSettingValueForLog(before) + ' -> ' + _fmtSettingValueForLog(after));
+    }
+  });
+  return changed.join(', ');
+}
+
 function updateSaveBtnState() {
   var dirty = settingsDirty();
   // Only target the settings dialog Save buttons — NOT rename-save-btn
@@ -11705,6 +12075,7 @@ function updateSaveBtnState() {
 }
 
 function openSettings() {
+  logDebugAction('Opened Settings');
   // _syncAdvTypographyUI called at end of openSettings body
   // Apply sticky collapsed/expanded state to sections
   var sectionStates = settings.sectionStates || {};
@@ -11802,8 +12173,26 @@ function openSettings() {
   if (_nemRadio) _nemRadio.checked = true;
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
+  var debugLogToggle=document.getElementById('debug-logging-toggle'); if(debugLogToggle)debugLogToggle.checked=!!settings.debugLoggingEnabled;
+  (function() {
+    // Dim "Clear debug log" when there's nothing to clear
+    var clearBtn = document.getElementById('clear-debug-log-row');
+    if (!clearBtn) return;
+    var logId = Object.keys(notes).filter(function(id) { return notes[id] && notes[id].isDebugLog; })[0];
+    var hasContent = logId && notes[logId].content && notes[logId].content.trim() !== '';
+    clearBtn.style.opacity = hasContent ? '1' : '0.4';
+    clearBtn.disabled = !hasContent;
+    clearBtn.style.cursor = hasContent ? 'pointer' : 'default';
+  })();
   var lciToggle=document.getElementById('list-continuation-indent-toggle'); if(lciToggle)lciToggle.checked=(settings.listContinuationIndent !== false);
-  document.body.classList.toggle('list-continuation-indent', settings.listContinuationIndent !== false);
+  var pciToggle=document.getElementById('paragraph-continuation-indent-toggle'); if(pciToggle)pciToggle.checked=(settings.paragraphContinuationIndent === true);
+  // (list-continuation-indent body class is set in applySettings(), which
+  // runs at app startup — it must NOT only be set here in openSettings(),
+  // or every note rendered before Settings was ever opened once gets the
+  // wrong layout. This was the actual root cause of the hanging-indent
+  // bug: the class was missing on first load, so .viewer-line never
+  // became a flex container at all, regardless of how correct the
+  // .line-marker/.line-content split itself was.)
   var mcToggle=document.getElementById('move-completed-toggle'); if(mcToggle)mcToggle.checked=!!settings.moveCompletedToBottom;
   var mccToggle=document.getElementById('move-completed-confirm-toggle'); if(mccToggle)mccToggle.checked=!!settings.moveCompletedConfirm;
   var mccRow=document.getElementById('move-completed-confirm-row'); if(mccRow)mccRow.style.display=settings.moveCompletedToBottom?'':'none';
@@ -11998,11 +12387,13 @@ function applySettingsSearch(query) {
 function closeSettings() {
   clearSettingsSearch();
   if (!settingsDirty()) {
+    logDebugAction('Closed Settings (no changes)');
     document.getElementById('settings-overlay').classList.remove('open');
     document.getElementById('settings-sheet').classList.remove('open');
     settingsSnapshot = null;
     return;
   }
+  logDebugAction('Closed Settings (saved): ' + _describeSettingsChanges());
   document.getElementById('settings-overlay').classList.remove('open');
   document.getElementById('settings-sheet').classList.remove('open');
   settingsSnapshot = null;
@@ -12011,6 +12402,7 @@ function closeSettings() {
 }
 
 function cancelSettings() {
+  logDebugAction(settingsDirty() ? 'Cancelled Settings (discarded changes)' : 'Cancelled Settings (no changes)');
   settingsSnapshot = null;
   try {
     const s = localStorage.getItem('remember_settings');
@@ -12196,6 +12588,7 @@ function openTagPicker(callerContext) {
   var chips = document.getElementById('tag-picker-chips');
   var preview = document.getElementById('tag-picker-preview');
   if (!bar || !chips || !preview) return;
+  logDebugAction('Opened tag picker (' + callerContext + ')');
   chips.innerHTML = '';
 
   // Build initial buffer content and insertion point
@@ -12501,7 +12894,7 @@ function init() {
     };
   }
 
-  folderCtxAction(function(id) { currentFolderId = id; renderNotesList(); })(document.getElementById('ctx-folder-open-btn'));
+  folderCtxAction(function(id) { logDebugAction('Opened folder (context menu): "' + (folders[id] ? folders[id].name : id) + '"'); currentFolderId = id; renderNotesList(); })(document.getElementById('ctx-folder-open-btn'));
   folderCtxAction(function(id) {
     showFolderNameDialog(folders[id] ? folders[id].name : '', function(newName) {
       renameFolder(id, newName);
@@ -12799,6 +13192,7 @@ function init() {
   });
 
   document.getElementById('help-btn').addEventListener('click', function() {
+    logDebugAction('Opened Help');
     document.getElementById('help-version').textContent = 'v' + APP_VERSION;
     document.getElementById('help-overlay').classList.add('open');
     document.getElementById('help-sheet').classList.add('open');
@@ -12913,11 +13307,13 @@ function init() {
   document.querySelectorAll('.help-sub-header').forEach(wireCollapsibleHeader);
 
   document.getElementById('help-close-btn').addEventListener('click', function() {
+    logDebugAction('Closed Help');
     clearHelpSearch();
     document.getElementById('help-overlay').classList.remove('open');
     document.getElementById('help-sheet').classList.remove('open');
   });
   document.getElementById('help-overlay').addEventListener('click', function() {
+    logDebugAction('Closed Help (tapped overlay)');
     clearHelpSearch();
     document.getElementById('help-overlay').classList.remove('open');
     document.getElementById('help-sheet').classList.remove('open');
@@ -12947,6 +13343,7 @@ function init() {
     if (menu && menu.style.display === 'block') { closeHomeMoreMenu(); } else { openHomeMoreMenu(); }
   });
   document.getElementById('home-more-importexport-btn').addEventListener('click', function() {
+    logDebugAction('Opened Import/Export');
     closeHomeMoreMenu();
     document.getElementById('importexport-overlay').classList.add('open');
     document.getElementById('importexport-sheet').classList.add('open');
@@ -13054,10 +13451,12 @@ function makeImportFolderName(label) {
 
   // Create an import folder with the given label prefix and return its id
   document.getElementById('importexport-close-btn').addEventListener('click', function() {
+    logDebugAction('Closed Import/Export');
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
   });
   document.getElementById('importexport-overlay').addEventListener('click', function() {
+    logDebugAction('Closed Import/Export (tapped overlay)');
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
   });
@@ -13239,6 +13638,7 @@ function makeImportFolderName(label) {
   document.getElementById('import-textmd-file').addEventListener('change', function(e) {
     var files = Array.from(e.target.files || []);
     if (!files.length) return;
+    logDebugAction('Closed Import/Export (chose Import Text/Markdown)');
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
     var now = Date.now();
@@ -13314,11 +13714,13 @@ function makeImportFolderName(label) {
   });
 
   document.getElementById('export-all-btn').addEventListener('click', function() {
+    logDebugAction('Closed Import/Export (chose Export All Notes)');
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
     exportAllNotes();
   });
   document.getElementById('export-opml-btn').addEventListener('click', function() {
+    logDebugAction('Closed Import/Export (chose Export OPML)');
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
     exportAllNotesOPML();
@@ -13328,6 +13730,7 @@ function makeImportFolderName(label) {
     document.getElementById('import-file-input').click();
   });
   document.getElementById('import-file-input').addEventListener('change', function() {
+    logDebugAction('Closed Import/Export (chose Import JSON)');
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
     if (this.files && this.files[0]) importNotes(this.files[0]);
@@ -13335,10 +13738,12 @@ function makeImportFolderName(label) {
   document.getElementById('more-export-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('more-export-btn').addEventListener('click', function() {
     closeMoreMenu();
+    logDebugAction('Opened Export format picker');
     document.getElementById('export-format-overlay').classList.add('open');
     document.getElementById('export-format-sheet').classList.add('open');
   });
   function _closeExportFmt() {
+    logDebugAction('Closed Export format picker');
     document.getElementById('export-format-overlay').classList.remove('open');
     document.getElementById('export-format-sheet').classList.remove('open');
   }
@@ -13436,6 +13841,7 @@ function makeImportFolderName(label) {
   }
 
   function openTour() {
+    logDebugAction('Opened Tour');
     var card = document.getElementById('tour-card');
     // Remove any previously locked height
     card.style.height = '';
@@ -13459,6 +13865,7 @@ function makeImportFolderName(label) {
   }
 
   function closeTour() {
+    logDebugAction('Closed Tour (slide ' + (_tourIdx + 1) + ' of ' + _tourSlides.length + ')');
     document.getElementById('tour-overlay').classList.remove('open');
     localStorage.setItem('remember_tour_seen', '1');
   }
@@ -13618,6 +14025,7 @@ function makeImportFolderName(label) {
     btn.classList.toggle('dimmed', !dirty);
   }
   function openRenameDialog() {
+    logDebugAction('Opened Rename note');
     var currentName = document.getElementById('note-title').textContent.trim();
     var input = document.getElementById('rename-input');
     input.value = currentName;
@@ -13647,11 +14055,13 @@ function makeImportFolderName(label) {
     e.stopPropagation();
   });
   document.getElementById('rename-cancel-btn').addEventListener('click', function() {
+    logDebugAction('Cancelled Rename note');
     document.getElementById('rename-overlay').classList.remove('open');
     document.getElementById('rename-sheet').classList.remove('open');
   });
   document.getElementById('rename-overlay').addEventListener('click', function(e) {
     if (e.target !== this) return; // ignore clicks on the sheet itself
+    logDebugAction('Cancelled Rename note (tapped overlay)');
     document.getElementById('rename-overlay').classList.remove('open');
     document.getElementById('rename-sheet').classList.remove('open');
   });
@@ -13699,6 +14109,7 @@ function makeImportFolderName(label) {
   });
 
   function applyRename(newName) {
+    logDebugAction('Saved Rename note: "' + newName + '"');
     document.getElementById('note-title').textContent = newName;
     if (currentNoteId && notes[currentNoteId]) {
       notes[currentNoteId].name = newName;
@@ -13747,7 +14158,7 @@ function makeImportFolderName(label) {
   // the static entry that's already always there. Add a new id here
   // whenever a toolbar button gains a corresponding static More menu
   // item (e.g. a future "Share note" toolbar button).
-  var DUAL_MODE_BUTTON_IDS = ['print-btn', 'find-btn', 'font-size-btn', 'delete-note-btn', 'dictate-btn', 'tap-to-edit-btn', 'dismiss-keyboard-btn'];
+  var DUAL_MODE_BUTTON_IDS = ['print-btn', 'find-btn', 'font-size-btn', 'delete-note-btn', 'dictate-btn', 'tap-to-edit-btn', 'dismiss-keyboard-btn', 'select-all-btn', 'ruler-btn', 'theme-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn'];
 
   var HIDEABLE_BUTTONS = [
     { id: 'tap-to-edit-btn',        label: 'Tap to edit' },
@@ -13766,14 +14177,22 @@ function makeImportFolderName(label) {
     { id: 'crossout-group',          label: 'Strikethrough' },  // group: strikethrough + clear
     { id: 'toggle-checkbox-btn',      label: 'Toggle checkbox' },
     { id: 'check-mode-btn',          label: 'Check state' },
+    { id: 'ruler-btn',                label: 'Reading ruler' },
     { id: 'find-btn',                label: 'Find in note' },
+    { id: 'select-all-btn',          label: 'Select all' },
     { id: 'font-size-btn',           label: 'Text size' },
     { id: 'print-btn',               label: 'Print' },
+    { id: 'jump-to-btn',             label: 'Jump to heading' },
+    { id: 'outline-mode-btn',        label: 'Outline mode' },
+    { id: 'show-tags-btn',           label: 'Show @tags' },
+    { id: 'insert-tag-btn',          label: 'Insert tag' },
+    { id: 'tag-filter-btn',          label: 'Filter by tag' },
+    { id: 'theme-btn',                label: 'Light / Dark' },
     { id: 'delete-note-btn',        label: 'Delete note' },
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'find-btn', 'font-size-btn', 'print-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'select-all-btn', 'font-size-btn', 'print-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -14008,7 +14427,8 @@ function makeImportFolderName(label) {
   // hides/shows the actual crossout-mode-btn CHILD inside it based on mode.
   var MODE_GATED_BUTTON_IDS = ['tap-to-edit-btn', 'move-mode-btn', 'bold-mode-btn',
     'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn',
-    'toggle-checkbox-btn', 'check-mode-btn', 'dictate-btn'];
+    'toggle-checkbox-btn', 'check-mode-btn', 'dictate-btn',
+    'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn'];
 
   function applyToolbarHiddenOverrides() {
     var hidden = settings.toolbarHidden || [];
@@ -14038,8 +14458,9 @@ function makeImportFolderName(label) {
 
   // Rebuild the hidden-items section of the More menu
   function rebuildMoreMenuItems() {
-    var container = document.getElementById('toolbar-more-hidden-items');
-    var divider   = document.getElementById('toolbar-more-divider');
+    var container  = document.getElementById('toolbar-more-hidden-items');
+    var ruleTop     = document.getElementById('toolbar-more-dynamic-rule-top');
+    var ruleBottom  = document.getElementById('toolbar-more-dynamic-rule-bottom');
     if (!container) return;
     container.innerHTML = '';
     var hidden = settings.toolbarHidden || [];
@@ -14051,50 +14472,10 @@ function makeImportFolderName(label) {
     // Add any hidden items not in order (safety)
     hidden.forEach(function(id) { if (_sortedHidden.indexOf(id) === -1) _sortedHidden.push(id); });
 
-    // Select all — permanent top item in More menu
-    (function() {
-      var saItem = document.createElement('button');
-      var saBtn = document.getElementById('select-all-btn');
-      var isActive = saBtn && saBtn.style.color !== '';
-      saItem.style.cssText = 'display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:' + (isActive ? 'var(--accent)' : 'var(--fg)') + ';font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box';
-      var saIcon = document.createElement('span');
-      saIcon.style.cssText = 'pointer-events:none;flex-shrink:0;display:flex;align-items:center';
-      var saSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      saSvg.setAttribute('viewBox', '0 0 24 24');
-      saSvg.setAttribute('fill', 'none');
-      saSvg.setAttribute('stroke', 'currentColor');
-      saSvg.setAttribute('stroke-width', '2');
-      saSvg.setAttribute('stroke-linecap', 'round');
-      saSvg.setAttribute('stroke-linejoin', 'round');
-      saSvg.style.cssText = 'width:var(--icon-size);height:var(--icon-size);pointer-events:none;flex-shrink:0';
-      var saRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      saRect.setAttribute('x', '3'); saRect.setAttribute('y', '3');
-      saRect.setAttribute('width', '18'); saRect.setAttribute('height', '18');
-      saRect.setAttribute('rx', '3');
-      var saTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      saTxt.setAttribute('x', '12'); saTxt.setAttribute('y', '16');
-      saTxt.setAttribute('text-anchor', 'middle');
-      saTxt.setAttribute('font-size', '11');
-      saTxt.setAttribute('font-weight', '700');
-      saTxt.setAttribute('font-family', 'sans-serif');
-      saTxt.setAttribute('stroke', 'none');
-      saTxt.setAttribute('fill', 'currentColor');
-      saTxt.textContent = 'A';
-      saSvg.appendChild(saRect); saSvg.appendChild(saTxt);
-      saIcon.appendChild(saSvg);
-      var saLabel = document.createElement('span');
-      saLabel.className = 'more-label'; // include in normalizeMoreMenuLabels() alignment pass
-      saLabel.style.cssText = 'pointer-events:none;flex:1';
-      saLabel.textContent = 'Select all';
-      saItem.appendChild(saIcon);
-      saItem.appendChild(saLabel);
-      saItem.addEventListener('mousedown', function(e) { e.preventDefault(); });
-      saItem.addEventListener('click', function() {
-        closeMoreMenu();
-        document.getElementById('select-all-btn').click();
-      });
-      container.appendChild(saItem);
-    })();
+    // Select all used to be built dynamically here every time the menu
+    // opened; it's now a real static HTML entry (more-select-all-btn,
+    // wired up separately) per the stage-3 More menu reorganization, so
+    // building one here would duplicate it.
 
     _sortedHidden.forEach(function(btnId) {
       // Find button info
@@ -14241,12 +14622,13 @@ function makeImportFolderName(label) {
       }
     });
 
-    // Show/hide divider — separates the dynamic "Select all" + any
-    // currently-hidden toolbar buttons (rebuilt above into #toolbar-more-
-    // hidden-items) from the menu's fixed/static items below. Only shown
-    // when that dynamic section actually has something in it.
+    // Show/hide the two rules around the dynamic section — currently-
+    // hidden toolbar buttons rebuilt above into #toolbar-more-hidden-items.
+    // Both rules only render when that section actually has content, so
+    // there's never a lone rule with nothing dynamic between them.
     var hasItems = container.children.length > 0;
-    if (divider) divider.style.display = hasItems ? 'block' : 'none';
+    if (ruleTop) ruleTop.style.display = hasItems ? 'block' : 'none';
+    if (ruleBottom) ruleBottom.style.display = hasItems ? 'block' : 'none';
   }
 
   // Build the toolbar visibility + order Settings rows
@@ -14461,13 +14843,10 @@ function makeImportFolderName(label) {
     { id: 'more-insert-tag-btn',      show: function(s) { return !s.quietMode && !s.viewOnly; } },
     { id: 'more-tag-order-btn',       show: function(s) { return !s.quietMode && !s.viewOnly && s.hasTags; } },
     // ── R&R mode + extra per-item setting gate (override applies the gate) ──
-    // more-tap-to-edit-btn: R&R mode only. Unlike a single-mode toggle,
-    // this is a genuine dual-mode item (see DUAL_MODE_BUTTON_IDS) — hiding
-    // tap-to-edit-btn from the toolbar via "Lower Toolbar Buttons" must
-    // NOT also hide this static More menu entry, since the static entry
-    // is exactly what keeps the action reachable when the toolbar button
-    // is hidden (the same pattern as Print, Find, Text size, Delete note).
-    { id: 'more-tap-to-edit-btn',     show: function(s) { return s.rrMode; } },
+    // Tap to Edit no longer has a static More menu entry (more-tap-to-edit-btn
+    // was removed) — per the stage-3 redesign it is dynamic-only now, since
+    // it behaves like Check State / the future Add Blank Line and doesn't
+    // translate well to a tappable menu row.
     { id: 'more-ruler-btn',           show: function(s) { return s.rrMode; },
       override: function(el, s) { if (!settings.rulerEnabled) el.style.display = 'none'; } },
   ];
@@ -14667,6 +15046,20 @@ function makeImportFolderName(label) {
   var _savedOrder = settings.toolbarOrder || [];
   // Remove any retired buttons from saved order
   _savedOrder = _savedOrder.filter(function(id) { return _retiredBtns.indexOf(id) === -1; });
+  // New toolbar buttons that should start HIDDEN by default (per the
+  // stage-3 dynamic-list redesign), rather than appearing in the toolbar
+  // immediately for users who already have a saved settings object. Must
+  // be checked BEFORE insertMissingIdsAtDefaultPosition runs below, since
+  // that function adds missing ids to the order — after which "was this
+  // id missing" would no longer mean "has the user never seen this yet".
+  var _newHiddenByDefault = ['ruler-btn', 'theme-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn'];
+  var _hiddenArr = settings.toolbarHidden || [];
+  _newHiddenByDefault.forEach(function(id) {
+    if (_savedOrder.indexOf(id) === -1 && _hiddenArr.indexOf(id) === -1) {
+      _hiddenArr.push(id);
+    }
+  });
+  settings.toolbarHidden = _hiddenArr;
   // Insert any id that's in DEFAULT_TOOLBAR_ORDER but missing from the
   // user's saved order (e.g. a newly-added button like tap-to-edit-btn)
   // at its correct default-relative position — not just appended to the
@@ -14692,6 +15085,75 @@ function makeImportFolderName(label) {
   applyToolbarOrder();
   applyToolbarVisibility();
   document.getElementById('oops-btn').addEventListener('click', restoreNote);
+
+  // ── Debug action logging: delegated listeners ──────────────────────────
+  // Rather than instrument every individual button handler, attach one
+  // listener per container and read the tapped button's own label. This
+  // covers every current AND future toolbar/More-menu button automatically.
+  function _describeButton(btn) {
+    if (btn.getAttribute('aria-label')) return btn.getAttribute('aria-label');
+    var labelEl = btn.querySelector('.more-label');
+    if (labelEl && labelEl.textContent) return labelEl.textContent.trim();
+    if (btn.title) return btn.title;
+    return btn.id || '(unlabeled button)';
+  }
+  // Best-effort detection of a toggle button's ON/OFF state. Reads the
+  // "active" class and any child "...-check" span's visibility — the two
+  // toggle conventions used across the app. To correctly report "now off"
+  // (not just silently say nothing), we snapshot state in the CAPTURE
+  // phase (before the button's own click handler runs) and compare it to
+  // the state read in the BUBBLE phase (after it has run, since this
+  // listener is on an ancestor container and bubble fires after the
+  // button's own listener). A plain action button with no toggle signal
+  // in either snapshot returns '' so non-toggle taps aren't mislabeled.
+  function _readToggleSignal(btn) {
+    var checkSpan = btn.querySelector('[id$="-check"]');
+    if (checkSpan) return checkSpan.style.display !== 'none';
+    if (btn.classList.contains('active')) return true;
+    return null; // no recognizable toggle signal at all
+  }
+  function _describeToggleChange(before, after) {
+    if (after === null && before === null) return '';
+    if (after === true) return ' (now on)';
+    if (after === false) return ' (now off)';
+    if (before === true && after === null) return ' (now off)'; // active class removed
+    return '';
+  }
+  function _wireToggleAwareDelegation(containerEl, prefix) {
+    if (!containerEl) return;
+    var _beforeState = null;
+    var _beforeBtn = null;
+    containerEl.addEventListener('click', function(e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      _beforeBtn = btn;
+      _beforeState = _readToggleSignal(btn);
+    }, true); // capture phase — runs before the button's own listener
+    containerEl.addEventListener('click', function(e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var afterState = _readToggleSignal(btn);
+      var suffix = (btn === _beforeBtn) ? _describeToggleChange(_beforeState, afterState) : '';
+      logDebugAction(prefix + _describeButton(btn) + suffix);
+    }); // bubble phase (default) — runs after the button's own listener
+  }
+  _wireToggleAwareDelegation(document.getElementById('toolbar-scroll'), 'Toolbar: ');
+  _wireToggleAwareDelegation(document.getElementById('toolbar-more-menu'), 'More menu: ');
+  var _settingsSheetEl = document.getElementById('settings-sheet');
+  if (_settingsSheetEl) {
+    _settingsSheetEl.addEventListener('change', function(e) {
+      var input = e.target;
+      if (!input || (input.tagName !== 'INPUT' && input.tagName !== 'SELECT')) return;
+      // Find a human-readable label: the nearest .settings-row-label, or
+      // the input's own aria-label, or its id as a last resort.
+      var row = input.closest('.settings-row');
+      var labelEl = row ? row.querySelector('.settings-row-label') : null;
+      var desc = (labelEl && labelEl.textContent.trim()) ||
+        input.getAttribute('aria-label') || input.id || '(unlabeled setting)';
+      var val = (input.type === 'checkbox') ? (input.checked ? 'on' : 'off') : input.value;
+      logDebugAction('Setting changed: ' + desc + ' -> ' + val);
+    });
+  }
   // Select-all / deselect toggle
   // isAllSelected declared at module level
 
@@ -14961,10 +15423,31 @@ function makeImportFolderName(label) {
     var db = document.getElementById('dictate-btn');
     if (db) db.click();
   });
+  // Select all — static More menu entry (forwards to the real toolbar
+  // button's existing click handler, same pattern as more-dictate-btn above)
+  document.getElementById('more-select-all-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-select-all-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    var sab = document.getElementById('select-all-btn');
+    if (sab) sab.click();
+  });
+  // Copy for speech — PLACEHOLDER static entry. Real "Copy for speech"
+  // functionality already exists (see data-action="copy-for-speech" in
+  // the [copy for speech] inline-button handler), but this static menu
+  // row and its future dynamic toolbar counterpart are not wired to it
+  // yet — this is intentionally a visible placeholder per the stage-3
+  // More menu redesign, so its position can be seen before the real
+  // feature is built here.
+  document.getElementById('more-copy-for-speech-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-copy-for-speech-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    showToast('Copy for speech — coming soon', false);
+  });
 
   var noteScreen = document.getElementById('note-screen');
   var noteEditor = document.getElementById('note-editor');
   var kbBlurTimer = null;
+  var _typingSessionStartLen = null; // content length when EMTIP began, for debug-log delta
 
   // EMTIP detection: distinguish a tap from a scroll gesture using pointer distance.
   // Only enter EMTIP if the user tapped (not scrolled) in the content area,
@@ -14988,6 +15471,8 @@ function makeImportFolderName(label) {
 
     var ed = document.getElementById('note-editor');
 
+    _typingSessionStartLen = (ed.value || '').length;
+    logDebugAction('Entered typing mode');
     noteScreen.classList.add('keyboard-open');
     // Auto-expand toolbar when keyboard opens
     if (document.body.classList.contains('toolbar-collapsed')) {
@@ -15051,6 +15536,12 @@ function makeImportFolderName(label) {
   noteEditor.addEventListener('blur', function() {
     kbBlurTimer = setTimeout(function() {
       if (document.activeElement !== noteEditor) {
+        if (_typingSessionStartLen !== null) {
+          var _endLen = (noteEditor.value || '').length;
+          var _delta = _endLen - _typingSessionStartLen;
+          logDebugAction('Exited typing mode (' + (_delta >= 0 ? '+' : '') + _delta + ' characters)');
+          _typingSessionStartLen = null;
+        }
         noteScreen.classList.remove('keyboard-open');
         // Restore collapsed state when keyboard closes
         if (settings.toolbarCollapsed) {
@@ -16268,6 +16759,23 @@ function makeImportFolderName(label) {
       settings.confettiOnComplete = this.checked;
       updateSaveBtnState();
     });
+    var _dlt = document.getElementById('debug-logging-toggle');
+    if (_dlt) _dlt.addEventListener('change', function() {
+      settings.debugLoggingEnabled = this.checked;
+      updateSaveBtnState();
+    });
+    var _viewLogRow = document.getElementById('view-debug-log-row');
+    if (_viewLogRow) _viewLogRow.addEventListener('click', function() {
+      var id = findOrCreateDebugLogNote();
+      closeSettings();
+      openNote(id);
+    });
+    var _clearLogRow = document.getElementById('clear-debug-log-row');
+    if (_clearLogRow) _clearLogRow.addEventListener('click', function() {
+      showConfirm('Clear Debug Log', 'Erase all recorded log entries? This cannot be undone.', 'Clear',
+        function() { clearDebugLog(); showToast('Debug log cleared', false); },
+        false, 'Cancel', null);
+    });
     var _tsi = document.getElementById('today-suffix-input');
     if (_tsi) _tsi.addEventListener('input', function() { settings.todaySuffix = this.value; updateSaveBtnState(); });
     var _lsi = document.getElementById('last-suffix-input');
@@ -16286,10 +16794,18 @@ function makeImportFolderName(label) {
     if (_lci) _lci.addEventListener('change', function() {
       settings.listContinuationIndent = this.checked;
       document.body.classList.toggle('list-continuation-indent', this.checked);
-      // Re-render viewer to apply/remove indent
-      var ed = document.getElementById('note-editor');
-      var viewer = document.getElementById('note-viewer');
-      if (isViewMode && ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+      // Re-render viewer to apply/remove indent — same isViewMode-gating
+      // bug as tagScope/tagColorBorders/tagColorPills (see
+      // _refreshViewerForCurrentNote), fixed the same way here.
+      _refreshViewerForCurrentNote();
+      updateSaveBtnState();
+    });
+    var _pci = document.getElementById('paragraph-continuation-indent-toggle');
+    if (_pci) _pci.addEventListener('change', function() {
+      settings.paragraphContinuationIndent = this.checked;
+      // No body class needed — the rendering logic in urlsToLinks()
+      // checks settings.paragraphContinuationIndent directly.
+      _refreshViewerForCurrentNote();
       updateSaveBtnState();
     });
     var _mc = document.getElementById('move-completed-toggle');
@@ -16373,6 +16889,7 @@ function makeImportFolderName(label) {
     if (vl) vl.textContent = this.value;
   });
   function openFontSizeBar() {
+    logDebugAction('Opened font-size-bar');
     closeAllBars();
     updateFontSizeBar();
     document.getElementById('font-size-bar').classList.add('visible');
@@ -16389,11 +16906,13 @@ function makeImportFolderName(label) {
     if (bd) bd.classList.remove('visible');
     bars.forEach(function(id) {
       var b = document.getElementById(id);
+      if (b && b.classList.contains('visible')) logDebugAction('Closed ' + id);
       if (b) b.classList.remove('visible');
     });
   };
 
   document.getElementById('font-size-bar-close').addEventListener('click', function() {
+    logDebugAction('Closed font-size-bar');
     document.getElementById('font-size-bar').classList.remove('visible');
     saveSettings();
   });
@@ -16465,11 +16984,26 @@ function makeImportFolderName(label) {
     closeAllBars();
     if (!isViewMode) setViewMode(true);
     setTimeout(function() {
+      logDebugAction('Opened jump-to-bar');
       buildJumpToList();
       document.getElementById('jump-to-bar').classList.add('visible');
     }, isViewMode ? 0 : 80);
   });
+  var _jumpToToolbarBtn = document.getElementById('jump-to-btn');
+  if (_jumpToToolbarBtn) {
+    _jumpToToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _jumpToToolbarBtn.addEventListener('click', function() {
+      closeAllBars();
+      if (!isViewMode) setViewMode(true);
+      setTimeout(function() {
+        logDebugAction('Opened jump-to-bar');
+        buildJumpToList();
+        document.getElementById('jump-to-bar').classList.add('visible');
+      }, isViewMode ? 0 : 80);
+    });
+  }
   document.getElementById('jump-to-bar-close').addEventListener('click', function() {
+    logDebugAction('Closed jump-to-bar');
     document.getElementById('jump-to-bar').classList.remove('visible');
   });
 
@@ -16744,18 +17278,36 @@ function makeImportFolderName(label) {
     closeAllBars();
     if (!isViewMode) setViewMode(true);
     setTimeout(function() {
+      logDebugAction('Opened tag-filter-bar');
       buildTagChips();
       updateTagFilterExpression();
       updatePauseBtn();
       document.getElementById('tag-filter-bar').classList.add('visible');
     }, isViewMode ? 0 : 80);
   });
+  var _tagFilterToolbarBtn = document.getElementById('tag-filter-btn');
+  if (_tagFilterToolbarBtn) {
+    _tagFilterToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _tagFilterToolbarBtn.addEventListener('click', function() {
+      closeAllBars();
+      if (!isViewMode) setViewMode(true);
+      setTimeout(function() {
+        logDebugAction('Opened tag-filter-bar');
+        buildTagChips();
+        updateTagFilterExpression();
+        updatePauseBtn();
+        document.getElementById('tag-filter-bar').classList.add('visible');
+      }, isViewMode ? 0 : 80);
+    });
+  }
   document.getElementById('tag-picker-close').addEventListener('click', function() {
+    logDebugAction('Closed tag-picker-bar');
     document.getElementById('tag-picker-bar').classList.remove('visible');
     var bd = document.getElementById('tag-picker-backdrop');
     if (bd) bd.classList.remove('visible');
   });
   document.getElementById('tag-filter-close').addEventListener('click', function() {
+    logDebugAction('Closed tag-filter-bar');
     document.getElementById('tag-filter-bar').classList.remove('visible');
   });
 
@@ -16833,11 +17385,13 @@ function makeImportFolderName(label) {
 
   document.getElementById('more-font-face-btn').addEventListener('click', function() {
     closeAllBars();
+    logDebugAction('Opened font-face-bar');
     updateFontFaceBar();
     document.getElementById('font-face-bar').classList.add('visible');
     closeMoreMenu();
   });
   document.getElementById('font-face-bar-close').addEventListener('click', function() {
+    logDebugAction('Closed font-face-bar');
     document.getElementById('font-face-bar').classList.remove('visible');
     saveSettings();
   });
@@ -16873,6 +17427,15 @@ function makeImportFolderName(label) {
     applyRuler();
     closeMoreMenu();
   });
+  var _rulerToolbarBtn = document.getElementById('ruler-btn');
+  if (_rulerToolbarBtn) {
+    _rulerToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _rulerToolbarBtn.addEventListener('click', function() {
+      settings.rulerVisible = !settings.rulerVisible;
+      saveSettings();
+      applyRuler();
+    });
+  }
   initRulerDrag();
 
   // ── Collapsible Outline ──────────────────────────────────────────────
@@ -16949,11 +17512,21 @@ function makeImportFolderName(label) {
       // Defer one tick so innerHTML is fully settled
       setTimeout(function() {
         _applyPending = false;
+        // (Earlier speculative fixes here — a forced offsetHeight read,
+        // then an explicit pinToolbars() call — are removed. Neither was
+        // the actual cause: the real bug was that document.body never
+        // got the 'list-continuation-indent' class added until Settings
+        // was opened at least once, since that class was only being set
+        // inside openSettings() instead of applySettings(). Fixed at the
+        // source — see applySettings() — so nothing extra is needed here.)
         if (settings.outlineMode) applyOutlineMode();
         // Re-apply tag filter after any viewer re-render (e.g. checkbox click)
         if (typeof _tagFilterActive !== 'undefined' && _tagFilterActive) applyTagFilter();
         // Re-apply hide-completed after any viewer re-render
         if (_hideCompleted) applyHideCompleted();
+        // Diagnostic measurement for the intermittent tag-pill bug (no-op
+        // unless debug logging is on)
+        if (typeof logTagPillDiagnostics === 'function') logTagPillDiagnostics();
       }, 0);
     }).observe(viewer, { childList: true, subtree: false });
   })();
@@ -17209,10 +17782,14 @@ function makeImportFolderName(label) {
         + '</div>';
       _calOverlay.appendChild(_calBox);
       document.body.appendChild(_calOverlay);
-      document.getElementById('cal-cancel-btn').addEventListener('click', function() { document.body.removeChild(_calOverlay); });
+      logDebugAction('Opened Add to Calendar');
+      document.getElementById('cal-cancel-btn').addEventListener('click', function() {
+        logDebugAction('Cancelled Add to Calendar');
+        document.body.removeChild(_calOverlay);
+      });
       document.getElementById('cal-ok-btn').addEventListener('click', function() {
         var _dtVal = document.getElementById('cal-dt-picker').value;
-        if (!_dtVal) { document.body.removeChild(_calOverlay); return; }
+        if (!_dtVal) { logDebugAction('Cancelled Add to Calendar (no date selected)'); document.body.removeChild(_calOverlay); return; }
         var _dt = new Date(_dtVal);
         var _dtEnd = new Date(_dt.getTime() + 60*60*1000);
         var _fmt = function(d) { return d.getFullYear()+_pad(d.getMonth()+1)+_pad(d.getDate())+'T'+_pad(d.getHours())+_pad(d.getMinutes())+'00'; };
@@ -17234,6 +17811,7 @@ function makeImportFolderName(label) {
         if (typeof applyOutlineMode === 'function') applyOutlineMode();
         if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
         if (_hideCompleted) applyHideCompleted();
+        logDebugAction('Saved Add to Calendar');
         document.body.removeChild(_calOverlay);
         showToast('Added to Calendar', false);
       });
@@ -17332,11 +17910,13 @@ function makeImportFolderName(label) {
     closeMoreMenu(); closeAllBars();
     if (!isViewMode) setViewMode(true);
     setTimeout(function() {
+      logDebugAction('Opened outline-actions-bar');
       buildOutlineActionsList();
       document.getElementById('outline-actions-bar').classList.add('visible');
     }, isViewMode ? 0 : 80);
   });
   document.getElementById('outline-actions-bar-close').addEventListener('click', function() {
+    logDebugAction('Closed outline-actions-bar');
     document.getElementById('outline-actions-bar').classList.remove('visible');
   });
   // Drag handle — resize bar by dragging up/down
@@ -17387,16 +17967,35 @@ function makeImportFolderName(label) {
     if (ft) ft.checked = val;
     var lbl = document.getElementById('more-show-tags-label');
     if (lbl) lbl.textContent = 'Show @tags';
+    // Sync the More menu checkmark here too (previously only synced when
+    // openMoreMenu() ran, so it could show a stale state if changed
+    // elsewhere first) and the new toolbar button's active state.
+    var moreChk = document.getElementById('more-show-tags-check');
+    if (moreChk) moreChk.style.display = val ? '' : 'none';
+    var showTagsToolbarBtn = document.getElementById('show-tags-btn');
+    if (showTagsToolbarBtn) showTagsToolbarBtn.classList.toggle('active', !!val);
     saveSettings();
     updateSaveBtnState();
   }
   var _showTagsToggle = document.getElementById('show-tags-toggle');
   if (_showTagsToggle) _showTagsToggle.addEventListener('change', function() { setShowTags(this.checked); });
   document.getElementById('tag-filter-show-tags-toggle').addEventListener('change', function() { setShowTags(this.checked); });
+  var _showTagsToolbarBtn = document.getElementById('show-tags-btn');
+  if (_showTagsToolbarBtn) {
+    _showTagsToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _showTagsToolbarBtn.addEventListener('click', function() { setShowTags(!settings.showTagsInViewer); });
+  }
   document.getElementById('more-insert-tag-btn').addEventListener('click', function() {
     closeMoreMenu();
     openTagPicker(isViewMode ? 'rrmode' : 'typing');
   });
+  var _insertTagToolbarBtn = document.getElementById('insert-tag-btn');
+  if (_insertTagToolbarBtn) {
+    _insertTagToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _insertTagToolbarBtn.addEventListener('click', function() {
+      openTagPicker(isViewMode ? 'rrmode' : 'typing');
+    });
+  }
   document.getElementById('quick-add-tag-btn').addEventListener('click', function() {
     openTagPicker('quickadd');
   });
@@ -17663,6 +18262,7 @@ function makeImportFolderName(label) {
     var ov=document.getElementById('save-theme-overlay');
     var ni=document.getElementById('save-theme-name-input');
     if(!ov||!ni)return;
+    logDebugAction(editingId ? 'Opened Edit Theme' : 'Opened Save as Theme');
     var editTheme=editingId&&themes[editingId]?themes[editingId]:null;
     ni.value=editTheme?editTheme.name:'';
     var titleEl=ov.querySelector('h3');
@@ -17693,8 +18293,8 @@ function makeImportFolderName(label) {
     if(_stList)_stList.addEventListener('change',function(){updateSaveThemeJson(ov);});
     setTimeout(function(){ni.focus();},50);
   }
-  function openNoteThemePicker(){var ov=document.getElementById('note-theme-overlay');var list=document.getElementById('note-theme-list');if(!ov||!list)return;var ntid=currentNoteId&&notes[currentNoteId]?notes[currentNoteId].themeId:null;var ids=Object.keys(themes);var h='<div class="note-theme-item'+((!ntid)?' active':'')+'" data-theme-id=""><span class="note-theme-item-name">None (use global settings)</span><span class="note-theme-item-check">✓</span></div>';ids.forEach(function(id){h+='<div class="note-theme-item'+(ntid===id?' active':'')+'" data-theme-id="'+id+'"><span class="note-theme-item-name">'+escHtml(themes[id].name)+'</span><span class="note-theme-item-check">✓</span></div>';});if(!ids.length)h+='<div style="padding:16px 18px;font-size:.9em;color:var(--fg3);font-style:italic">No themes yet. Create one in Settings → Themes.</div>';list.innerHTML=h;list.querySelectorAll('.note-theme-item').forEach(function(item){item.addEventListener('click',function(){var tid=this.dataset.themeId;if(currentNoteId&&notes[currentNoteId]){if(tid)notes[currentNoteId].themeId=tid;else delete notes[currentNoteId].themeId;saveNotes();if(_noteThemeSnapshot)restoreFromNoteTheme();if(tid)applyNoteTheme(tid);else{updateThemeIndicator();updateNoteThemeMoreLabel();}}ov.classList.remove('open');});});ov.classList.add('open');}
-  document.getElementById('save-theme-cancel-btn').addEventListener('click',function(){document.getElementById('save-theme-overlay').classList.remove('open');});
+  function openNoteThemePicker(){var ov=document.getElementById('note-theme-overlay');var list=document.getElementById('note-theme-list');if(!ov||!list)return;var ntid=currentNoteId&&notes[currentNoteId]?notes[currentNoteId].themeId:null;var ids=Object.keys(themes);var h='<div class="note-theme-item'+((!ntid)?' active':'')+'" data-theme-id=""><span class="note-theme-item-name">None (use global settings)</span><span class="note-theme-item-check">✓</span></div>';ids.forEach(function(id){h+='<div class="note-theme-item'+(ntid===id?' active':'')+'" data-theme-id="'+id+'"><span class="note-theme-item-name">'+escHtml(themes[id].name)+'</span><span class="note-theme-item-check">✓</span></div>';});if(!ids.length)h+='<div style="padding:16px 18px;font-size:.9em;color:var(--fg3);font-style:italic">No themes yet. Create one in Settings → Themes.</div>';list.innerHTML=h;list.querySelectorAll('.note-theme-item').forEach(function(item){item.addEventListener('click',function(){var tid=this.dataset.themeId;logDebugAction('Closed Note Theme picker (chose "'+(tid?themes[tid].name:'None')+'")');if(currentNoteId&&notes[currentNoteId]){if(tid)notes[currentNoteId].themeId=tid;else delete notes[currentNoteId].themeId;saveNotes();if(_noteThemeSnapshot)restoreFromNoteTheme();if(tid)applyNoteTheme(tid);else{updateThemeIndicator();updateNoteThemeMoreLabel();}}ov.classList.remove('open');});});logDebugAction('Opened Note Theme picker');ov.classList.add('open');}
+  document.getElementById('save-theme-cancel-btn').addEventListener('click',function(){logDebugAction('Cancelled Save/Edit Theme');document.getElementById('save-theme-overlay').classList.remove('open');});
   document.getElementById('save-theme-save-btn').addEventListener('click',function(){
     var ov=document.getElementById('save-theme-overlay');
     var ni=document.getElementById('save-theme-name-input');
@@ -17712,11 +18312,13 @@ function makeImportFolderName(label) {
     if(editingId&&themes[editingId]){
       themes[editingId].name=name;
       themes[editingId].values=vals;
+      logDebugAction('Saved Edit Theme: "'+name+'"');
       saveThemes();ov.classList.remove('open');renderThemesList();
       showToast('Theme "'+name+'" updated',false);
     }else{
       var id=genThemeId();
       themes[id]={id:id,name:name,createdAt:Date.now(),values:vals};
+      logDebugAction('Saved new Theme: "'+name+'"');
       saveThemes();ov.classList.remove('open');renderThemesList();
       showToast('Theme "'+name+'" saved',false);
     }
@@ -17739,8 +18341,9 @@ function makeImportFolderName(label) {
   });
   document.getElementById('show-theme-indicator-toggle').addEventListener('change',function(){settings.showThemeIndicator=this.checked;updateThemeIndicator();applySettings();updateSaveBtnState();});
   document.getElementById('more-note-theme-btn').addEventListener('click',function(){closeMoreMenu();openNoteThemePicker();});
-  document.getElementById('note-theme-cancel-btn').addEventListener('click',function(){document.getElementById('note-theme-overlay').classList.remove('open');});
+  document.getElementById('note-theme-cancel-btn').addEventListener('click',function(){logDebugAction('Cancelled Note Theme picker');document.getElementById('note-theme-overlay').classList.remove('open');});
   document.getElementById('note-theme-manage-btn').addEventListener('click',function(){
+    logDebugAction('Closed Note Theme picker (chose Manage Themes)');
     document.getElementById('note-theme-overlay').classList.remove('open');
     openSettings();
     setTimeout(function(){ jumpToSettingsSection(8); }, 100);
@@ -17763,8 +18366,6 @@ function makeImportFolderName(label) {
     document.body.classList.add('edit-block-mode');
     var btn = document.getElementById('tap-to-edit-btn');
     if (btn) btn.classList.add('active');
-    var chk = document.getElementById('more-tap-to-edit-check');
-    if (chk) chk.style.display = '';
   }
 
   exitEditBlockMode = function() {
@@ -17772,14 +18373,13 @@ function makeImportFolderName(label) {
     document.body.classList.remove('edit-block-mode');
     var btn = document.getElementById('tap-to-edit-btn');
     if (btn) btn.classList.remove('active');
-    var chk = document.getElementById('more-tap-to-edit-check');
-    if (chk) chk.style.display = 'none';
   }
 
   function openEditBlockDialog(lineIdx) {
     if (!currentNoteId || !notes[currentNoteId]) return;
     var lines = (notes[currentNoteId].content || '').split('\n');
     if (lineIdx < 0 || lineIdx >= lines.length) return;
+    logDebugAction('Opened Edit Paragraph');
     _editBlockLineIdx = lineIdx;
     _editBlockOriginal = lines[lineIdx];
     var inp = document.getElementById('edit-block-input');
@@ -17792,6 +18392,7 @@ function makeImportFolderName(label) {
   }
 
   function closeEditBlockDialog() {
+    logDebugAction('Closed Edit Paragraph');
     document.getElementById('edit-block-overlay').classList.remove('open');
     _editBlockLineIdx = -1;
     _editBlockOriginal = '';
@@ -17821,7 +18422,6 @@ function makeImportFolderName(label) {
   });
   // More menu: stop speaking on any item; exit tap-to-edit except for safe exceptions
   var _editBlockModeMoreExceptions = [
-    'more-tap-to-edit-btn',   // toggles the mode itself
     'more-scroll-top-btn',    // useful while editing
     'more-scroll-bottom-btn', // useful while editing
     'more-find-btn',          // find a line before editing it
@@ -17840,13 +18440,9 @@ function makeImportFolderName(label) {
   document.getElementById('tap-to-edit-btn').addEventListener('click', function() {
     if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode();
   });
-
-  // More menu item
-  document.getElementById('more-tap-to-edit-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-  document.getElementById('more-tap-to-edit-btn').addEventListener('click', function() {
-    closeMoreMenu();
-    if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode();
-  });
+  // (Tap to Edit no longer has a static More menu item — it's dynamic-only now.
+  // If hidden from the toolbar it will only be reachable via the dynamic
+  // section of the More menu, built by rebuildMoreMenuItems().)
 
   // Viewer line tap in edit-block mode
   document.getElementById('note-viewer').addEventListener('click', function(e) {
@@ -18057,8 +18653,13 @@ function makeImportFolderName(label) {
   function updateOutlineMenuLabel() {
     var chk = document.getElementById('more-outline-check');
     if (chk) chk.style.display = settings.outlineMode ? '' : 'none';
+    // Toolbar outline-mode-btn (stage 3c): sync active state here too,
+    // so both the More menu checkmark and the toolbar button stay in sync
+    // from this single shared function.
+    var outlineToolbarBtn = document.getElementById('outline-mode-btn');
+    if (outlineToolbarBtn) outlineToolbarBtn.classList.toggle('active', !!settings.outlineMode);
   }
-  document.getElementById('more-outline-btn').addEventListener('click', function() {
+  function _toggleOutlineMode() {
     settings.outlineMode = !settings.outlineMode;
     if (!settings.outlineMode) _collapsedLines.clear();
     var tog = document.getElementById('outline-mode-toggle');
@@ -18066,8 +18667,16 @@ function makeImportFolderName(label) {
     applySettings();
     saveSettings();
     updateOutlineMenuLabel();
+  }
+  document.getElementById('more-outline-btn').addEventListener('click', function() {
+    _toggleOutlineMode();
     closeMoreMenu();
   });
+  var _outlineToolbarBtn = document.getElementById('outline-mode-btn');
+  if (_outlineToolbarBtn) {
+    _outlineToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _outlineToolbarBtn.addEventListener('click', _toggleOutlineMode);
+  }
   // Sync label when More menu opens
   var _origOpenMore = openMoreMenu;
   openMoreMenu = function() {
@@ -18188,21 +18797,35 @@ function makeImportFolderName(label) {
   }
 
 
+  // Re-render the note viewer right now if a note is currently open —
+  // regardless of typing vs R&R mode. The viewer's HTML only DISPLAYS in
+  // R&R mode, but it should never be allowed to go stale: if we only
+  // refresh while isViewMode is true (the previous behavior), toggling
+  // one of these settings while in typing mode — or from a screen where
+  // isViewMode doesn't reflect the open note at all — leaves the
+  // viewer's already-rendered markup (tag pill classes, colors, etc.)
+  // out of sync with the new setting. Switching to R&R mode later would
+  // then show stale/incorrectly-styled tags until the note was reopened,
+  // which matched a reported bug where tag-pill rendering looked broken
+  // and stayed broken until a full app restart.
+  function _refreshViewerForCurrentNote() {
+    if (!currentNoteId || !notes[currentNoteId]) return;
+    var ed = document.getElementById('note-editor');
+    var viewer = document.getElementById('note-viewer');
+    if (ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+  }
   document.querySelectorAll('#tag-scope-seg input[type="radio"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
       settings.tagScope = this.value;
       applyTagFilter(); updateTagFilterIndicator();
-      var ed=document.getElementById('note-editor'), viewer=document.getElementById('note-viewer');
-      if (isViewMode && ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+      _refreshViewerForCurrentNote();
       updateSaveBtnState();
     });
   });
   document.getElementById('tag-color-borders-toggle').addEventListener('change', function() {
     settings.tagColorBorders = this.checked;
     document.body.classList.toggle('tag-color-borders', this.checked);
-    var ed = document.getElementById('note-editor');
-    var viewer = document.getElementById('note-viewer');
-    if (isViewMode && ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+    _refreshViewerForCurrentNote();
     updateSaveBtnState();
   });
   (function() {
@@ -18210,9 +18833,7 @@ function makeImportFolderName(label) {
     if (_tcp) _tcp.addEventListener('change', function() {
       settings.tagColorPills = this.checked;
       document.body.classList.toggle('tag-color-pills', this.checked);
-      var ed = document.getElementById('note-editor');
-      var viewer = document.getElementById('note-viewer');
-      if (isViewMode && ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+      _refreshViewerForCurrentNote();
       updateSaveBtnState();
     });
   })();
@@ -18541,6 +19162,7 @@ function makeImportFolderName(label) {
   }
 
   function openQuickAdd(mode, targetLine, targetText) {
+    logDebugAction('Opened Add Text to Note');
     var overlay = document.getElementById('quick-add-overlay');
     var input = document.getElementById('quick-add-input');
     var checkbox = document.getElementById('quick-add-blank-line');
@@ -18565,6 +19187,7 @@ function makeImportFolderName(label) {
   }
 
   function closeQuickAdd() {
+    logDebugAction('Closed Add Text to Note');
     var overlay = document.getElementById('quick-add-overlay');
     overlay.classList.remove('open');
     overlay.classList.remove('centered');
@@ -19096,6 +19719,26 @@ function makeImportFolderName(label) {
     [crossoutBtn, boldBtn, italicBtn, highlightBtn, colorBtn, checkModeBtn, toggleCbBtn, headingBtn].forEach(function(b) {
       if (b) b.style.display = inView ? '' : 'none';
     });
+    // Jump to heading / Outline mode (stage 3c toolbar buttons): R&R mode
+    // only, AND respect the "Lower Toolbar Buttons" hidden setting —
+    // unlike the buttons in the array above, these are also individually
+    // hideable via Settings, so inView alone isn't sufficient here.
+    var _hiddenList = settings.toolbarHidden || [];
+    var jumpToBtnEl = document.getElementById('jump-to-btn');
+    if (jumpToBtnEl) jumpToBtnEl.style.display = (inView && _hiddenList.indexOf('jump-to-btn') === -1) ? '' : 'none';
+    var outlineModeBtnEl = document.getElementById('outline-mode-btn');
+    if (outlineModeBtnEl) outlineModeBtnEl.style.display = (inView && _hiddenList.indexOf('outline-mode-btn') === -1) ? '' : 'none';
+    // Show @tags / Insert tag / Filter by tag (stage 3c toolbar buttons):
+    // R&R mode (Insert tag also allowed in typing mode, matching its More
+    // menu counterpart's !quietMode && !viewOnly rule) AND note has tags
+    // AND not hidden via Settings.
+    var _hasTagsNow = typeof noteHasTags === 'function' && noteHasTags();
+    var showTagsBtnEl = document.getElementById('show-tags-btn');
+    if (showTagsBtnEl) showTagsBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('show-tags-btn') === -1) ? '' : 'none';
+    var insertTagBtnEl = document.getElementById('insert-tag-btn');
+    if (insertTagBtnEl) insertTagBtnEl.style.display = (!_readingMode && !document.body.classList.contains('view-only-mode') && _hasTagsNow && _hiddenList.indexOf('insert-tag-btn') === -1) ? '' : 'none';
+    var tagFilterBtnEl = document.getElementById('tag-filter-btn');
+    if (tagFilterBtnEl) tagFilterBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('tag-filter-btn') === -1) ? '' : 'none';
     // Cut and paste: show in both edit and view mode
     // But defer to applySmallScreenOverflow for small-screen+large-icon policy
     if (deleteTextBtn) deleteTextBtn.style.display = '';
@@ -19108,7 +19751,7 @@ function makeImportFolderName(label) {
     // Tap to edit: view mode only, and only if not hidden via "Lower
     // Toolbar Buttons" settings (replaces the old standalone
     // showTapToEditBtn setting, which duplicated this same control).
-    // (more-tap-to-edit-btn in the More menu is handled by MORE_MENU_ITEMS / openMoreMenu)
+    // Dynamic-only now — no static More menu entry exists for this item.
     var _showTTE = (settings.toolbarHidden || []).indexOf('tap-to-edit-btn') === -1;
     var tapToEditBtn = document.getElementById('tap-to-edit-btn');
     if (tapToEditBtn) tapToEditBtn.style.display = (inView && _showTTE) ? '' : 'none';
@@ -19287,11 +19930,23 @@ function makeImportFolderName(label) {
 
   document.getElementById('more-theme-btn').addEventListener('click', function() {
     closeAllBars();
+    logDebugAction('Opened theme-bar');
     updateThemeBar();
     document.getElementById('theme-bar').classList.add('visible');
     closeMoreMenu();
   });
+  var _themeToolbarBtn = document.getElementById('theme-btn');
+  if (_themeToolbarBtn) {
+    _themeToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _themeToolbarBtn.addEventListener('click', function() {
+      closeAllBars();
+      logDebugAction('Opened theme-bar');
+      updateThemeBar();
+      document.getElementById('theme-bar').classList.add('visible');
+    });
+  }
   document.getElementById('theme-bar-close').addEventListener('click', function() {
+    logDebugAction('Closed theme-bar');
     document.getElementById('theme-bar').classList.remove('visible');
   });
   ['light','auto','dark'].forEach(function(themeVal) {
@@ -19864,10 +20519,12 @@ function makeImportFolderName(label) {
 
   // Confirm dialog
   document.getElementById('confirm-cancel-btn').addEventListener('click', function() {
+    logDebugAction('Dialog "' + _lastConfirmTitle + '": Cancelled');
     if (cancelCallback) cancelCallback();
     closeConfirm();
   });
   document.getElementById('confirm-ok-btn').addEventListener('click', function() {
+    logDebugAction('Dialog "' + _lastConfirmTitle + '": Confirmed');
     if (confirmCallback) confirmCallback();
     closeConfirm();
   });
@@ -20722,6 +21379,57 @@ function createInitialNotes() {
     autoNamed: false, createdAt: now + 6, editedAt: now + 10, viewedAt: now + 10
   };
 
+  // Diagnostic note: isolates whether the checkbox-tag pill rendering bug
+  // (reported as solid/repeatable, not a transient flash) is specific to
+  // the Tag Filter Sampler note's content, or reproducible elsewhere.
+  // Sections deliberately vary indentation, tag count, and tag length to
+  // narrow down which structural feature (if any) triggers it.
+  var tagCbDiagId = 'note-tag-cb-diagnostic';
+  var tagCbDiagContent = [
+    '## Tag + Checkbox Diagnostic',
+    '',
+    'Created to help track down an intermittent tag-rendering bug on',
+    'checkbox-ish lines, and to verify wrapped-line alignment after the',
+    'marker. Lines below are deliberately long so they wrap at normal',
+    'screen widths — check that the SECOND (wrapped) line of each item',
+    'lines up with the first word after the marker, not with the marker',
+    'itself, and that the gap after the marker matches what was typed.',
+    '',
+    '### Section A — checkbox, one space after marker, long enough to wrap',
+    '[ ] Pick up the prescription refill from the pharmacy on Main Street before it closes this evening @health',
+    '[ ] Return the stack of library books that have been sitting by the front door for two weeks now @errands',
+    '',
+    '### Section B — checkbox, TWO spaces after marker',
+    '[ ]  Grocery run including milk, eggs, bread, and whatever else looks good at the farmers market today @errands @food',
+    '',
+    '### Section C — checkbox, FOUR spaces after marker',
+    '[ ]    Call the dentist office to reschedule the appointment that got bumped from last Tuesday afternoon @health @appointment',
+    '',
+    '### Section D — indented sub-items under a parent checkbox, long enough to wrap',
+    '[ ] Grocery run including milk, eggs, bread, and whatever else looks good at the farmers market today @errands @food',
+    '    [ ] Get the good coffee beans from the place on the corner, not the grocery store brand this time @food @morning',
+    '    [ ] Dog food, the big bag, plus a couple of new chew toys since the old ones are falling apart @pet',
+    '',
+    '### Section E — hyphen item, ONE space, long enough to wrap',
+    '- Hyphen item describing something that takes a fairly long sentence to explain properly to future me @errands',
+    '',
+    '### Section F — hyphen item, THREE spaces after the hyphen',
+    '-   Hyphen item with extra spacing after the marker, also long enough that it should wrap to a second line @errands @food',
+    '',
+    '### Section G — checked items with tags, long enough to wrap',
+    '[x] Already finished cleaning out the garage and donating the old furniture nobody wanted anymore @errands',
+    '[x] Also finished setting up the new router and getting all the devices reconnected to it @health @errands',
+    '',
+    '### Section H — plain text with tags, for comparison (should NOT have a hanging indent)',
+    'Plain line with a tag that is long enough to wrap around to a second line just like the others above @errands',
+    'Plain line with two tags, also long enough to wrap, for comparing against the checkbox and hyphen lines @errands @food',
+    '',
+  ].join('\n');
+  notes[tagCbDiagId] = {
+    id: tagCbDiagId, name: 'Tag + Checkbox Diagnostic (debug)', content: tagCbDiagContent,
+    autoNamed: false, createdAt: now + 7, editedAt: now + 10, viewedAt: now + 10
+  };
+
   // Create the "Remember — Sample Notes" folder and move samplers into it
   var sampleFolderId = 'folder-sample-notes';
   folders[sampleFolderId] = {
@@ -20731,7 +21439,7 @@ function createInitialNotes() {
     createdAt: now + 1
   };
   // Assign folder to all sampler / field guide notes
-  var sampleNoteIds = [samplerId, colorSamplerId, headingSamplerId, outlineSamplerId, tagSamplerId];
+  var sampleNoteIds = [samplerId, colorSamplerId, headingSamplerId, outlineSamplerId, tagSamplerId, tagCbDiagId];
   sampleNoteIds.forEach(function(id) {
     if (notes[id]) notes[id].folderId = sampleFolderId;
   });
@@ -21530,6 +22238,7 @@ var _findQuery      = '';
 var _findActive     = false;
 
 function openFind() {
+  logDebugAction('Opened Find in note');
   if (!isViewMode) {
     setViewMode(true);
   }
@@ -21548,6 +22257,7 @@ function openFind() {
 }
 
 function closeFind() {
+  logDebugAction('Closed Find in note');
   _findActive = false;
   _findQuery = '';
   _findMatches = [];
@@ -22061,6 +22771,10 @@ function applyRuler() {
     var moreRulerChk = document.getElementById('more-ruler-check');
     if (moreRulerChk) moreRulerChk.style.display = settings.rulerVisible ? '' : 'none';
   }
+  // Toolbar ruler-btn (stage 3c): sync its active state the same way —
+  // checked by the debug-log delegation's generic .active-class detection.
+  var rulerToolbarBtn = document.getElementById('ruler-btn');
+  if (rulerToolbarBtn) rulerToolbarBtn.classList.toggle('active', !!settings.rulerVisible);
   if (prev) {
     prev.style.background = rgba;
     prev.style.height = thickness + 'px';
@@ -22810,6 +23524,7 @@ function exitPasteMode() {
 }
 
 function openPastePopover(lineIndex, lineDiv) {
+  logDebugAction('Opened paste popover (line ' + lineIndex + ')');
   _pasteLineIdx = lineIndex;
   var popover = document.getElementById('paste-popover');
   if (!popover) return;
@@ -22827,7 +23542,10 @@ function openPastePopover(lineIndex, lineDiv) {
 
 function closePastePopover() {
   var popover = document.getElementById('paste-popover');
-  if (popover) popover.style.display = 'none';
+  if (popover) {
+    if (popover.style.display !== 'none') logDebugAction('Closed paste popover');
+    popover.style.display = 'none';
+  }
   _pasteLineIdx = -1;
 }
 
