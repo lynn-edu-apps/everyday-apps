@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1345 -->
+<!-- Remember App - Version 0.1350 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1345
+  Version 0.1350
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1769,6 +1769,7 @@ body.edit-block-mode #note-viewer .viewer-line:not(.blank-viewer-line) { cursor:
 #outline-mode-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
 #show-tags-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
 #hide-completed-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
+#tag-presence-btn.active { color: var(--accent); box-shadow: 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
 /* Edit block dialog */
 #edit-block-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:3000; align-items:center; justify-content:center; }
 #edit-block-overlay.open { display:flex; }
@@ -2020,6 +2021,7 @@ body.tag-color-pills .note-tag.tag-color-10 { background: var(--color-violet);  
 #tag-filter-indicator.paused { display: inline-flex; background: var(--bg3); color: var(--fg2); box-shadow: 0 0 0 2px var(--border); }
 #hide-completed-indicator.active { display: inline-flex; }
 .viewer-line.completed-hidden { display: none !important; }
+.viewer-line.has-tags-hidden { display: none !important; }
 body.tags-hidden .note-tag { display: none !important; }
 .tag-order-prefix { font-size:0.78em; color:var(--fg3); margin-right:4px; }
 body.tags-hidden .tag-order-prefix { display: none !important; }
@@ -5123,9 +5125,23 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </svg>
       </button>
 
-      <!-- Jump to heading (stage 3c) — R&R mode only, plain action button -->
-      <button class="icon-btn view-only-btn" id="jump-to-btn" tabindex="-1" aria-label="Jump to heading" title="Jump to heading" style="display:none">
+      <!-- Jump to next section (new) — R&R mode only, plain action;
+           advances through headings in order, looping back to the
+           first after the last. Reuses scrollHeadingLineToTop() and the
+           same heading-querying convention as Jump to Heading. Uses the
+           down-arrow icon (previously also used, confusingly, by Jump
+           to Heading's toolbar button) since "next" is a directional,
+           sequential action. -->
+      <button class="icon-btn view-only-btn" id="jump-next-section-btn" tabindex="-1" aria-label="Jump to next section" title="Jump to next section" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><polyline points="16 15 19 18 22 15"/><line x1="19" y1="11" x2="19" y2="18"/></svg>
+      </button>
+      <!-- Jump to heading (stage 3c) — R&R mode only, plain action button.
+           Now matches its own More-menu icon (3 lines + right chevron,
+           representing "pick from a list") instead of duplicating Jump
+           to Next Section's down-arrow, which made the two toolbar
+           buttons look identical. -->
+      <button class="icon-btn view-only-btn" id="jump-to-btn" tabindex="-1" aria-label="Jump to heading" title="Jump to heading" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/><polyline points="18 15 21 18 18 21"/></svg>
       </button>
       <!-- Outline mode (stage 3c) — R&R mode only, real toggle; active-state
            synced in updateOutlineMenuLabel() alongside the More menu checkmark -->
@@ -5140,6 +5156,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <!-- Insert tag (stage 3c) — R&R or typing mode + note has tags; plain action -->
       <button class="icon-btn" id="insert-tag-btn" tabindex="-1" aria-label="Insert tag" title="Insert tag" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M9 4l-6 6v8a2 2 0 002 2h8a2 2 0 002-2v-6l-6-8z"/><line x1="9" y1="9" x2="9" y2="9"/><line x1="12" y1="3" x2="12" y2="9"/><line x1="9" y1="6" x2="15" y2="6"/></svg>
+      </button>
+      <!-- Has tags (new) — R&R mode + note has tags; three-state cycle:
+           all -> tagged only -> untagged only -> all. Active-state
+           synced in updateTagPresenceMenuLabel() alongside the More
+           menu label/checkmark, same pattern as Hide Completed Items. -->
+      <button class="icon-btn" id="tag-presence-btn" tabindex="-1" aria-label="Has tags" title="Has tags" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M20.59 13.41 13.42 20.58a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"/></svg>
       </button>
       <!-- Filter by tag (stage 3c) — R&R mode + note has tags; plain action -->
       <button class="icon-btn" id="tag-filter-btn" tabindex="-1" aria-label="Filter by tag" title="Filter by tag" style="display:none">
@@ -5820,6 +5843,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><text x="15.5" y="20" font-size="10" font-weight="900" fill="currentColor" stroke="currentColor" stroke-width="0.6" paint-order="stroke fill" font-family="serif" text-anchor="middle" style="pointer-events:none">T</text></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Copy as plain text</span>
   </button>
+  <button id="more-jump-next-section-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="15" y2="12"/>
+      <polyline points="18 16 21 19 18 22"/>
+      <line x1="21" y1="13" x2="21" y2="19"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1;">Jump to next section</span>
+  </button>
   <button id="more-jump-to-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
       <line x1="3" y1="6" x2="21" y2="6"/>
@@ -5885,6 +5917,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   <button id="more-insert-tag-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Insert tag</span>
+  </button>
+  <button id="more-tag-presence-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41 13.42 20.58a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"/></svg>
+    <span class="more-label" id="more-tag-presence-label" style="pointer-events:none;flex:1">Has tags: All</span>
   </button>
   <button id="more-tag-filter-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
@@ -8004,7 +8040,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1345';
+const APP_VERSION = '0.1350';
 
 
 
@@ -8262,6 +8298,21 @@ var isDictating = false; // true while speech recognition is running
 var _dictReplacingNow = false; // true only during speech engine's own text replacement
 var _tagFilterPaused = false;
 var _hideCompleted = false; // module-level so goHome()/openNote() can clear it
+// "Has tags" toolbar filter — cycles 'all' -> 'tagged' -> 'untagged' -> 'all'.
+// Independent of the existing per-tag Filter-by-tag feature (its own
+// dedicated CSS class, has-tags-hidden, doesn't touch tag-hidden/
+// completed-hidden) — both can coexist, same as Hide Completed Items does.
+var _tagPresenceFilter = 'all';
+// Jump to Next Section: remembers which heading index was last jumped
+// to, so repeated taps advance through headings in order (looping back
+// to the first after the last) regardless of any manual scrolling in
+// between. Must be true top-level (like _tagPresenceFilter above), not
+// declared inside init(), so goHome()/openNote() can reset it.
+var _lastJumpedHeadingIdx = -1;
+// Tracks the scroll position jumpToNextSection() itself left things at
+// — must be true top-level too, so goHome()/openNote() can reset it
+// alongside _lastJumpedHeadingIdx.
+var _lastJumpScrollTop = -1;
 var _calendarMode = false;   // show calendar buttons on checkbox-ish lines in R&R
 var _editBlockMode = false; // Tap to edit mode
 var themes = {};
@@ -8275,6 +8326,7 @@ var updateNoteThemeMoreLabel = function() {}; // replaced in init
 var enterEditBlockMode = function() {}; // replaced in init
 var exitEditBlockMode = function() {}; // replaced in init
 var applyHideCompleted = function() {}; // replaced in init
+var applyTagPresenceFilter = function() {}; // replaced in init
 var updateHideCompletedIndicator = function() {}; // replaced in init
 var updateHideCompletedMenuLabel = function() {}; // replaced in init
 var updateSelectModeBtn = function() {}; // replaced in init
@@ -10883,6 +10935,9 @@ function openNote(id, speakDelay) {
   _tagFilterActive = false;
   _tagFilterPaused = false;
   _hideCompleted = false;
+  _tagPresenceFilter = 'all';
+  _lastJumpedHeadingIdx = -1;
+  _lastJumpScrollTop = -1;
   exitEditBlockMode();
   if (_noteThemeSnapshot) restoreFromNoteTheme();
   // Reset quietMode — must never be stale from a previous note's theme
@@ -12058,6 +12113,9 @@ function goHome() {
   _tagFilterActive = false;
   _tagFilterPaused = false;
   _hideCompleted = false;
+  _tagPresenceFilter = 'all';
+  _lastJumpedHeadingIdx = -1;
+  _lastJumpScrollTop = -1;
   exitEditBlockMode();
   if (_noteThemeSnapshot) restoreFromNoteTheme();
   if (typeof applyTagFilter === 'function') applyTagFilter();
@@ -14713,7 +14771,7 @@ function makeImportFolderName(label) {
   // the static entry that's already always there. Add a new id here
   // whenever a toolbar button gains a corresponding static More menu
   // item (e.g. a future "Share note" toolbar button).
-  var DUAL_MODE_BUTTON_IDS = ['print-btn', 'find-btn', 'font-size-btn', 'delete-note-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'select-all-btn', 'ruler-btn', 'theme-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'settings-btn-toolbar', 'copy-for-speech-btn', 'share-note-btn', 'share-for-speech-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
+  var DUAL_MODE_BUTTON_IDS = ['print-btn', 'find-btn', 'font-size-btn', 'delete-note-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'select-all-btn', 'ruler-btn', 'theme-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'settings-btn-toolbar', 'copy-for-speech-btn', 'share-note-btn', 'share-for-speech-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'tag-presence-btn', 'jump-next-section-btn'];
 
   // "Tap items" — buttons that arm a mode but require a SECOND tap on a
   // note line to actually do anything (Tap to Edit, Check State, and a
@@ -14757,17 +14815,19 @@ function makeImportFolderName(label) {
     { id: 'hide-completed-btn',      label: 'Hide completed items' },
     { id: 'scroll-top-btn',          label: 'Scroll to top' },
     { id: 'scroll-bottom-btn',       label: 'Scroll to bottom' },
+    { id: 'jump-next-section-btn',   label: 'Jump to next section' },
     { id: 'jump-to-btn',             label: 'Jump to heading' },
     { id: 'outline-mode-btn',        label: 'Outline mode' },
     { id: 'show-tags-btn',           label: 'Show @tags' },
     { id: 'insert-tag-btn',          label: 'Insert tag' },
+    { id: 'tag-presence-btn',        label: 'Has tags' },
     { id: 'tag-filter-btn',          label: 'Filter by tag' },
     { id: 'theme-btn',                label: 'Light / Dark' },
     { id: 'delete-note-btn',        label: 'Delete note' },
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -15004,7 +15064,7 @@ function makeImportFolderName(label) {
     'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn',
     'toggle-checkbox-btn', 'check-mode-btn', 'dictate-btn', 'add-blank-line-btn',
     'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn',
-    'uncheck-all-btn', 'hide-completed-btn'];
+    'uncheck-all-btn', 'hide-completed-btn', 'tag-presence-btn', 'jump-next-section-btn'];
 
   function applyToolbarHiddenOverrides() {
     var hidden = settings.toolbarHidden || [];
@@ -15547,6 +15607,7 @@ function makeImportFolderName(label) {
     }
     updateHideCompletedIndicator();
     updateHideCompletedMenuLabel();
+    updateTagPresenceMenuLabel();
     // Show/hide bottom fade based on whether menu is scrollable
     setTimeout(function() {
       var fade = document.getElementById('more-menu-fade');
@@ -17619,6 +17680,105 @@ function makeImportFolderName(label) {
     });
   }
   // Jump to heading bar
+  // Shared by Jump to Heading (the picker list) and Jump to Next Section
+  // — scrolls note-content-area so lineDiv's line sits at the top of the
+  // viewport, below the fixed toolbar. This is the EXISTING, working
+  // implementation Jump to Heading already used; do not write a second
+  // version of this — call this one.
+  function scrollHeadingLineToTop(lineDiv) {
+    if (!lineDiv) return;
+    var area = document.getElementById('note-content-area');
+    if (area) {
+      var topOffset = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + 8;
+      var lineTop = lineDiv.offsetTop;
+      area.scrollTo({ top: lineTop - topOffset, behavior: 'smooth' });
+    } else {
+      lineDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  // Jump to Next Section: finds the next heading (any level) after the
+  // CURRENT scroll position and scrolls it to the top of the viewport,
+  // reusing the exact same scrollHeadingLineToTop() the heading-picker
+  // list already uses — not a second implementation. Loops back to the
+  // first heading after the last one (per request — unlike Find in
+  // note, which does not loop, at least not yet — see the TODO item to
+  // add a setting for that separately). If the target heading is close
+  // enough to the end of the note that scrolling can't actually bring
+  // it flush to the top (there's not enough content after it to scroll
+  // past), a brief highlight is used instead of an incomplete scroll —
+  // the position is still recorded so the NEXT tap advances to the
+  // heading after it (or loops), rather than re-highlighting the same
+  // one repeatedly.
+  // Tracks the scroll position jumpToNextSection() itself left things at,
+  // so the NEXT call can tell whether the user scrolled manually (back,
+  // Scroll to top/bottom, etc.) in between presses. _lastJumpedHeadingIdx
+  // is only trusted as "where to advance from" when the current scroll
+  // position still matches this — otherwise the next heading is
+  // re-determined fresh from wherever the user actually is now, same as
+  // if no jump had happened yet this session. (Declared at true
+  // top-level, alongside _lastJumpedHeadingIdx — see there.)
+  function jumpToNextSection() {
+    var viewer = document.getElementById('note-viewer');
+    var area = document.getElementById('note-content-area');
+    if (!viewer || !area) return;
+    var headings = Array.prototype.slice.call(
+      viewer.querySelectorAll('.viewer-h1,.viewer-h2,.viewer-h3,.viewer-h4,.viewer-h5,.viewer-h6')
+    );
+    if (headings.length === 0) { showToast('No headings found in this note', false); return; }
+
+    var topOffset = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + 8;
+    // A few pixels of tolerance — smooth-scroll/sub-pixel rounding can
+    // leave scrollTop slightly off from the exact value we recorded,
+    // which should NOT be treated as "the user scrolled manually."
+    var scrollUnchangedSincelastJump = _lastJumpScrollTop >= 0 &&
+      Math.abs(area.scrollTop - _lastJumpScrollTop) <= 2;
+    var currentScrollLine = -1; // index into headings[] of the next one to target
+    if (scrollUnchangedSincelastJump && _lastJumpedHeadingIdx >= 0 && _lastJumpedHeadingIdx < headings.length - 1) {
+      // Nothing has scrolled since the last jump — advance from there.
+      currentScrollLine = _lastJumpedHeadingIdx + 1;
+    } else if (scrollUnchangedSincelastJump && _lastJumpedHeadingIdx === headings.length - 1) {
+      currentScrollLine = 0; // loop back to the first heading
+    } else {
+      // Either no prior jump this session, or the user scrolled
+      // manually since the last one — find the first heading below the
+      // CURRENT scroll position, same "next after where you actually
+      // are" idea as the line-index anchors built for the mode-switch
+      // scroll fix.
+      for (var i = 0; i < headings.length; i++) {
+        var lineDiv = headings[i].parentElement;
+        if (lineDiv && lineDiv.offsetTop > area.scrollTop + topOffset + 4) {
+          currentScrollLine = i;
+          break;
+        }
+      }
+      if (currentScrollLine === -1) currentScrollLine = 0; // already past the last one — loop
+    }
+
+    var targetHeadingEl = headings[currentScrollLine];
+    var targetLineDiv = targetHeadingEl.parentElement;
+    _lastJumpedHeadingIdx = currentScrollLine;
+
+    var maxScroll = Math.max(0, area.scrollHeight - area.clientHeight);
+    var desiredScroll = targetLineDiv.offsetTop - topOffset;
+    if (desiredScroll > maxScroll) {
+      // Not enough content after this heading to scroll it flush to the
+      // top — scroll as far as possible, then briefly highlight it so
+      // it's still clear which section was jumped to.
+      area.scrollTo({ top: maxScroll, behavior: 'smooth' });
+      _lastJumpScrollTop = maxScroll;
+      targetLineDiv.classList.add('paste-highlight'); // reuse the existing brief-highlight visual, same as paste
+      setTimeout(function() {
+        targetLineDiv.classList.remove('paste-highlight');
+        targetLineDiv.classList.add('paste-highlight-fade');
+        setTimeout(function() { targetLineDiv.classList.remove('paste-highlight-fade'); }, 1200);
+      }, 1500);
+    } else {
+      scrollHeadingLineToTop(targetLineDiv);
+      _lastJumpScrollTop = Math.max(0, desiredScroll);
+    }
+  }
+
   function buildJumpToList() {
     var list = document.getElementById('jump-to-list');
     if (!list) return;
@@ -17638,17 +17798,7 @@ function makeImportFolderName(label) {
       btn.textContent = el.textContent || '(untitled)';
       btn.addEventListener('click', function() {
         closeAllBars();
-        if (lineDiv) {
-          // Scroll the note content area directly, offsetting for the fixed top toolbar
-          var area = document.getElementById('note-content-area');
-          if (area) {
-            var topOffset = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + 8;
-            var lineTop = lineDiv.offsetTop;
-            area.scrollTo({ top: lineTop - topOffset, behavior: 'smooth' });
-          } else {
-            lineDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }
+        scrollHeadingLineToTop(lineDiv);
       });
       list.appendChild(btn);
     });
@@ -17662,6 +17812,22 @@ function makeImportFolderName(label) {
       hasHeadings = /^#{1,6} /m.test(notes[currentNoteId].content || '');
     }
     btn.style.display = hasHeadings ? 'flex' : 'none';
+  }
+  document.getElementById('more-jump-next-section-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-jump-next-section-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    closeAllBars();
+    if (!isViewMode) setViewMode(true);
+    setTimeout(jumpToNextSection, isViewMode ? 0 : 80);
+  });
+  var _jumpNextSectionToolbarBtn = document.getElementById('jump-next-section-btn');
+  if (_jumpNextSectionToolbarBtn) {
+    _jumpNextSectionToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _jumpNextSectionToolbarBtn.addEventListener('click', function() {
+      closeAllBars();
+      if (!isViewMode) setViewMode(true);
+      setTimeout(jumpToNextSection, isViewMode ? 0 : 80);
+    });
   }
   document.getElementById('more-jump-to-btn').addEventListener('click', function() {
     closeMoreMenu();
@@ -17790,37 +17956,54 @@ function makeImportFolderName(label) {
     // Fourth pass: hide all blank lines, then insert exactly one blank-line
     // separator between each group of visible (matched/ancestor) lines.
     // Raw note content is never touched — this only affects the HTML view.
-    (function() {
-      // Step 1: hide every blank line
-      viewer.querySelectorAll('.viewer-line.blank-viewer-line').forEach(function(div) {
-        div.classList.add('tag-hidden');
-      });
-      // Step 2: scan divs in order; between transitions from visible→visible
-      // across a hidden gap, show the first hidden blank line in that gap
-      // as a single separator at normal blank-line height.
-      var allDivs = Array.prototype.slice.call(viewer.querySelectorAll('.viewer-line'));
-      var lastVisibleIdx = -1;
-      var gapFirstBlank = null; // first blank line div seen after last visible line
-      for (var i = 0; i < allDivs.length; i++) {
-        var div = allDivs[i];
-        var isHidden = div.classList.contains('tag-hidden');
-        var isBlank  = div.classList.contains('blank-viewer-line');
-        if (!isHidden) {
-          // This is a visible line (matched or ancestor)
-          if (lastVisibleIdx !== -1 && gapFirstBlank !== null) {
-            // There was a gap with at least one blank — show one separator
-            gapFirstBlank.classList.remove('tag-hidden');
-          }
-          lastVisibleIdx = i;
-          gapFirstBlank = null;
-        } else if (isBlank && lastVisibleIdx !== -1 && gapFirstBlank === null) {
-          // First hidden blank after a visible line — candidate separator
-          gapFirstBlank = div;
-        }
-      }
-      // No separator after the last visible block (trailing blanks stay hidden)
-    })();
+    collapseBlankLineGaps('tag-hidden');
   };
+
+  // Shared by any "hide some lines, but don't leave big gaps of blank
+  // space where they used to be" feature — currently Filter by tag and
+  // Has tags. Given that some lines are ALREADY marked hidden via
+  // hiddenClass (the caller's own filtering pass already ran), this:
+  // hides every blank line too, then re-shows exactly one blank line as
+  // a single separator in each gap between visible (non-hidden) lines —
+  // so a run of several blank lines collapses to one, instead of either
+  // showing all of them (visually noisy) or none (visible lines look
+  // jammed together with no breathing room at all). Operates purely on
+  // CSS classes already present in the DOM; never touches raw note
+  // content. Do not duplicate this logic in a new function — call this
+  // one, passing whichever class the new feature uses to mark hidden
+  // lines.
+  function collapseBlankLineGaps(hiddenClass) {
+    var viewer = document.getElementById('note-viewer');
+    if (!viewer) return;
+    // Step 1: hide every blank line
+    viewer.querySelectorAll('.viewer-line.blank-viewer-line').forEach(function(div) {
+      div.classList.add(hiddenClass);
+    });
+    // Step 2: scan divs in order; between transitions from visible→visible
+    // across a hidden gap, show the first hidden blank line in that gap
+    // as a single separator at normal blank-line height.
+    var allDivs = Array.prototype.slice.call(viewer.querySelectorAll('.viewer-line'));
+    var lastVisibleIdx = -1;
+    var gapFirstBlank = null; // first blank line div seen after last visible line
+    for (var i = 0; i < allDivs.length; i++) {
+      var div = allDivs[i];
+      var isHidden = div.classList.contains(hiddenClass);
+      var isBlank  = div.classList.contains('blank-viewer-line');
+      if (!isHidden) {
+        // This is a visible line (matched or ancestor)
+        if (lastVisibleIdx !== -1 && gapFirstBlank !== null) {
+          // There was a gap with at least one blank — show one separator
+          gapFirstBlank.classList.remove(hiddenClass);
+        }
+        lastVisibleIdx = i;
+        gapFirstBlank = null;
+      } else if (isBlank && lastVisibleIdx !== -1 && gapFirstBlank === null) {
+        // First hidden blank after a visible line — candidate separator
+        gapFirstBlank = div;
+      }
+    }
+    // No separator after the last visible block (trailing blanks stay hidden)
+  }
 
   function buildTagChips() {
     if (!currentNoteId || !notes[currentNoteId]) return;
@@ -17954,6 +18137,32 @@ function makeImportFolderName(label) {
     applyTagFilter();
     updateTagFilterIndicator();
     updatePauseBtn();
+  });
+
+  // ── Has tags (three-state: all -> tagged -> untagged -> all) ──────────────
+  function cycleTagPresenceFilter() {
+    _tagPresenceFilter = (_tagPresenceFilter === 'all') ? 'tagged'
+                        : (_tagPresenceFilter === 'tagged') ? 'untagged' : 'all';
+    applyTagPresenceFilter();
+    updateTagPresenceMenuLabel();
+  }
+  function updateTagPresenceMenuLabel() {
+    var labelText = _tagPresenceFilter === 'tagged' ? 'Has tags: Tagged'
+                  : _tagPresenceFilter === 'untagged' ? 'Has tags: Untagged'
+                  : 'Has tags: All';
+    var moreLbl = document.getElementById('more-tag-presence-label');
+    if (moreLbl) moreLbl.textContent = labelText;
+    var toolbarBtn = document.getElementById('tag-presence-btn');
+    if (toolbarBtn) toolbarBtn.classList.toggle('active', _tagPresenceFilter !== 'all');
+  }
+  document.getElementById('more-tag-presence-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-tag-presence-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    cycleTagPresenceFilter();
+  });
+  document.getElementById('tag-presence-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('tag-presence-btn').addEventListener('click', function() {
+    cycleTagPresenceFilter();
   });
 
   // Open/close
@@ -18793,6 +19002,36 @@ function makeImportFolderName(label) {
       var idx = parseInt(div.dataset.line);
       if (!isNaN(idx) && hideSet.has(idx)) div.classList.add('completed-hidden');
     });
+  }
+
+  // "Has tags" filter — shows only lines WITH a tag (own or inherited,
+  // per getEffectiveTags()/settings.tagScope, matching the existing
+  // Filter-by-tag feature's exact notion of "has a tag"), only lines
+  // WITHOUT one, or all lines. Same per-line-class approach as
+  // applyHideCompleted(), and fully independent of it and of the
+  // per-tag Filter-by-tag feature.
+  applyTagPresenceFilter = function() {
+    var viewer = document.getElementById('note-viewer');
+    if (!viewer || !currentNoteId || !notes[currentNoteId]) return;
+    viewer.querySelectorAll('.viewer-line').forEach(function(div) {
+      div.classList.remove('has-tags-hidden');
+    });
+    if (_tagPresenceFilter === 'all') return;
+    var lines = (notes[currentNoteId].content || '').split('\n');
+    viewer.querySelectorAll('.viewer-line').forEach(function(div) {
+      var idx = parseInt(div.dataset.line);
+      if (isNaN(idx)) return;
+      var hasTags = getEffectiveTags(lines, idx).size > 0;
+      var shouldHide = (_tagPresenceFilter === 'tagged') ? !hasTags : hasTags;
+      if (shouldHide) div.classList.add('has-tags-hidden');
+    });
+    // Reuse the exact same blank-line-gap-collapsing logic Filter by tag
+    // already uses (collapseBlankLineGaps, defined alongside
+    // applyTagFilter) — not a separate copy. Collapses runs of several
+    // now-hidden blank lines down to a single visible separator, instead
+    // of leaving big gaps of blank space where filtered-out lines used
+    // to be.
+    collapseBlankLineGaps('has-tags-hidden');
   }
 
   updateHideCompletedIndicator = function() {
@@ -20413,6 +20652,8 @@ function makeImportFolderName(label) {
     var _hiddenList = settings.toolbarHidden || [];
     var jumpToBtnEl = document.getElementById('jump-to-btn');
     if (jumpToBtnEl) jumpToBtnEl.style.display = (inView && _hiddenList.indexOf('jump-to-btn') === -1) ? '' : 'none';
+    var jumpNextSectionBtnEl = document.getElementById('jump-next-section-btn');
+    if (jumpNextSectionBtnEl) jumpNextSectionBtnEl.style.display = (inView && _hiddenList.indexOf('jump-next-section-btn') === -1) ? '' : 'none';
     var outlineModeBtnEl = document.getElementById('outline-mode-btn');
     if (outlineModeBtnEl) outlineModeBtnEl.style.display = (inView && _hiddenList.indexOf('outline-mode-btn') === -1) ? '' : 'none';
     // Show @tags / Insert tag / Filter by tag (stage 3c toolbar buttons):
@@ -20426,6 +20667,8 @@ function makeImportFolderName(label) {
     if (insertTagBtnEl) insertTagBtnEl.style.display = (!_readingMode && !document.body.classList.contains('view-only-mode') && _hasTagsNow && _hiddenList.indexOf('insert-tag-btn') === -1) ? '' : 'none';
     var tagFilterBtnEl = document.getElementById('tag-filter-btn');
     if (tagFilterBtnEl) tagFilterBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('tag-filter-btn') === -1) ? '' : 'none';
+    var tagPresenceBtnEl = document.getElementById('tag-presence-btn');
+    if (tagPresenceBtnEl) tagPresenceBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('tag-presence-btn') === -1) ? '' : 'none';
     // Uncheck all / Hide completed items (stage 3d toolbar buttons): R&R
     // mode AND note has checked items AND not hidden via Settings — same
     // combined condition as their existing static More menu entries.
