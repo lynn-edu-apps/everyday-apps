@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1326 -->
+<!-- Remember App - Version 0.1338 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1326
+  Version 0.1338
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1957,7 +1957,14 @@ body.list-continuation-indent .viewer-line.list-cont-hyphen > .line-content {
   right: 8px;
   max-height: 220px;
   overflow-y: auto;
-  z-index: 500;
+  /* Must render above dialog overlays (Quick Add, Edit Paragraph — both
+     use .confirm-overlay at z-index:10010, or higher) since @tag
+     autocomplete needs to work while typing inside those dialogs too,
+     not just in the main note editor. Previously z-index:500, which put
+     it BEHIND those overlays — the popup was actually opening and
+     positioning correctly, just invisible underneath the dialog's own
+     semi-transparent background. */
+  z-index: 10500;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -7282,7 +7289,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   <div style="padding:0 16px 8px;flex-shrink:0">
     <textarea id="tag-picker-preview" readonly rows="2" tabindex="-1"></textarea>
   </div>
-  <div id="tag-picker-chips" style="padding:4px 16px 8px;display:flex;flex-wrap:wrap;gap:8px;overflow-y:auto;flex:1"></div>
+  <div id="tag-picker-chips" style="padding:4px 16px 8px;display:flex;flex-wrap:wrap;gap:8px;overflow-y:auto;flex:1;max-height:20em"></div>
   <div style="padding:8px 16px 4px;display:flex;justify-content:flex-end;border-top:1px solid var(--border);flex-shrink:0">
     <button id="tag-picker-done" style="font-family:var(--font-body);font-size:var(--font-ui);font-weight:600;padding:0;line-height:1;height:2em;padding-left:20px;padding-right:20px;border:none;border-radius:999px;background:var(--accent);color:#fff;cursor:pointer;touch-action:manipulation">Done</button>
   </div>
@@ -7996,7 +8003,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1326';
+const APP_VERSION = '0.1338';
 
 
 
@@ -10554,7 +10561,180 @@ function rawOffsetForTapPoint(lineDiv, rawLine, clientX, clientY) {
   return rawLine.length;
 }
 
-function setViewMode(on, suppressFocus) {
+// Finds the raw line index of the .viewer-line currently closest to the
+// top of note-content-area's visible viewport (just below the fixed
+// toolbar) — used when switching FROM R&R mode TO typing mode, so the
+// editor can be scrolled to put that same line back near the top
+// instead of leaving scrollTop at a numeric value that means something
+// completely different once the content underneath it is re-laid-out
+// as plain text instead of rendered HTML.
+function getTopVisibleLineIndex() {
+  var viewer = document.getElementById('note-viewer');
+  var area = document.getElementById('note-content-area');
+  if (!viewer || !area) return { index: 0, offset: 0 };
+  var areaRect = area.getBoundingClientRect();
+  var paddingTop = parseFloat(getComputedStyle(area).paddingTop) || 0;
+  var visibleTop = areaRect.top + paddingTop; // just below the fixed toolbar
+  var lineDivs = viewer.querySelectorAll('.viewer-line');
+  var best = 0, bestOffset = 0;
+  for (var i = 0; i < lineDivs.length; i++) {
+    var r = lineDivs[i].getBoundingClientRect();
+    if (r.bottom >= visibleTop) {
+      var idx = parseInt(lineDivs[i].dataset.line, 10);
+      best = isNaN(idx) ? 0 : idx;
+      // How far this line's own top edge currently sits from the visible
+      // top — positive means there's something else (e.g. the note
+      // title, for line 0) still visible above it and the line should
+      // NOT be forced flush against the toolbar; negative means the
+      // line is partially scrolled past already. Preserving this exact
+      // offset across the mode switch (instead of always forcing the
+      // line flush with the toolbar) is what keeps line 0 — and any
+      // other line with real content above it — from getting an
+      // unwanted "helpful" scroll it never needed.
+      bestOffset = r.top - visibleTop;
+      break;
+    }
+  }
+  return { index: best, offset: bestOffset };
+}
+
+// Returns the raw line index containing the editor's current cursor —
+// used when switching FROM typing mode TO R&R mode, so the viewer can
+// be scrolled to put that same line back near the top.
+// Returns the raw line index containing the editor's current cursor.
+// NOT currently used by setViewMode()'s mode-switch scroll preservation
+// (see getTopVisibleEditorLineIndex below) — a plain scroll/drag on the
+// textarea never moves the cursor, so anchoring on cursor position
+// caused mode-switching to sometimes jump to a stale, previously-edited
+// line instead of wherever the user had actually scrolled to. Kept as a
+// small utility in case some other, genuinely cursor-relative use comes
+// up later.
+function getCursorLineIndex(ed) {
+  var textBefore = ed.value.substring(0, ed.selectionStart);
+  return (textBefore.match(/\n/g) || []).length;
+}
+
+// Returns the raw line index that's currently at the TOP of the
+// editor's visible scroll position — NOT the cursor's line. A plain
+// finger-scroll/drag on the textarea never moves selectionStart, so
+// anchoring on the cursor (getCursorLineIndex) assumes the user is
+// looking at wherever they last edited, which is wrong the moment
+// they've scrolled somewhere else without touching the cursor — that
+// mismatch is what made mode-switching sometimes jump to a stale,
+// unrelated section of the note. Uses the same mirror-div measurement
+// as getCursorY(), binary-searching over line indices (by temporarily
+// moving the selection to each candidate line's start, measuring, then
+// restoring the real selection) to find the line whose position is at
+// or just past the current scrollTop + toolbar padding.
+function getTopVisibleEditorLineIndex(ed) {
+  var area = document.getElementById('note-content-area');
+  if (!ed || !area) return { index: 0, offset: 0 };
+  var lines = ed.value.split('\n');
+  if (lines.length <= 1) return { index: 0, offset: 0 };
+  var paddingTop = parseFloat(getComputedStyle(area).paddingTop) || 0;
+  var targetY = area.scrollTop + paddingTop;
+  var savedStart = ed.selectionStart, savedEnd = ed.selectionEnd;
+
+  function yAtLine(lineIdx) {
+    var charPos = 0;
+    for (var i = 0; i < lineIdx && i < lines.length; i++) charPos += lines[i].length + 1;
+    ed.setSelectionRange(charPos, charPos);
+    return getCursorY(ed);
+  }
+
+  var lo = 0, hi = lines.length - 1, result = 0;
+  while (lo <= hi) {
+    var mid = (lo + hi) >> 1;
+    var y = yAtLine(mid);
+    if (y <= targetY) { result = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  // Same reasoning as getTopVisibleLineIndex(): preserve the line's
+  // CURRENT offset from the visible top (which may be positive if
+  // something — the note title, for line 0 — is still visible above it)
+  // rather than always forcing it flush against the toolbar.
+  var resultY = yAtLine(result);
+  var offset = resultY - targetY; // positive = gap above the line (e.g. note title for line 0); matches getTopVisibleLineIndex()'s sign convention
+  ed.setSelectionRange(savedStart, savedEnd); // restore real cursor/selection
+  return { index: result, offset: offset };
+}
+
+// Scrolls note-content-area so the .viewer-line at rawLineIndex sits
+// just below the fixed toolbar (mirrors the "top of viewport" framing
+// used by double-tap-to-edit and getTopVisibleLineIndex above).
+//
+// Computes an ABSOLUTE target scrollTop rather than a relative delta
+// from the current scrollTop. A relative-delta approach carries forward
+// whatever error already exists in the current scroll position — if a
+// previous toggle left things slightly off, the next toggle's delta
+// compounds that same error instead of correcting it, which is exactly
+// the one-directional drift reported when toggling modes repeatedly.
+// An absolute target recomputes fresh from the line's real on-screen
+// position each time, so any prior drift is corrected rather than
+// carried forward.
+function scrollViewerLineToTop(rawLineIndex, preserveOffset) {
+  var viewer = document.getElementById('note-viewer');
+  var area = document.getElementById('note-content-area');
+  if (!viewer || !area) return;
+  var div = viewer.querySelector('.viewer-line[data-line="' + rawLineIndex + '"]');
+  if (!div) return;
+  var divRect = div.getBoundingClientRect();
+  var areaRect = area.getBoundingClientRect();
+  var paddingTop = parseFloat(getComputedStyle(area).paddingTop) || 0;
+  // divRect.top is the line's CURRENT on-screen position, which already
+  // reflects the CURRENT scrollTop. Converting to "distance from content
+  // origin" (by adding back the current scrollTop, undoing its effect on
+  // the live rect) gives an absolute, scroll-independent position — the
+  // same quantity getCursorY() returns for the editor — so both
+  // functions can target it identically: contentOrigin - paddingTop -
+  // preserveOffset (the real gap, e.g. the note title for line 0, that
+  // was already visible above this line and should stay visible rather
+  // than being scrolled away to force the line flush with the toolbar).
+  var offset = preserveOffset || 0;
+  var lineYFromContentOrigin = (divRect.top - areaRect.top) + area.scrollTop;
+  var target = Math.max(0, lineYFromContentOrigin - paddingTop - offset);
+  if (settings.debugLoggingEnabled) {
+    logDebugAction('viewer->top: rawLine=' + rawLineIndex + ' divRect.top=' + divRect.top.toFixed(0) +
+      ' areaRect.top=' + areaRect.top.toFixed(0) + ' paddingTop=' + paddingTop.toFixed(0) +
+      ' offset=' + offset.toFixed(0) +
+      ' lineYFromOrigin=' + lineYFromContentOrigin.toFixed(0) + ' target=' + target.toFixed(0) +
+      ' area.scrollTop(before)=' + area.scrollTop.toFixed(0));
+  }
+  area.scrollTop = target;
+}
+
+// Scrolls note-content-area so the editor's line at rawLineIndex sits
+// just below the fixed toolbar — the typing-mode counterpart of
+// scrollViewerLineToTop(), using the same mirror-div cursor measurement
+// as getCursorY() (selecting the START of that line, not the current
+// cursor position, since we're targeting an arbitrary line here).
+function scrollEditorLineToTop(ed, rawLineIndex, preserveOffset) {
+  var area = document.getElementById('note-content-area');
+  if (!ed || !area) return;
+  var lines = ed.value.split('\n');
+  var charPos = 0;
+  for (var i = 0; i < rawLineIndex && i < lines.length; i++) {
+    charPos += lines[i].length + 1;
+  }
+  var savedStart = ed.selectionStart, savedEnd = ed.selectionEnd;
+  ed.setSelectionRange(charPos, charPos);
+  var lineY = getCursorY(ed); // distance from area's content origin
+  ed.setSelectionRange(savedStart, savedEnd); // restore real cursor/selection
+  var paddingTop = parseFloat(getComputedStyle(area).paddingTop) || 0;
+  var offset = preserveOffset || 0;
+  var target = Math.max(0, lineY - paddingTop - offset);
+  if (settings.debugLoggingEnabled) {
+    var edRect2 = ed.getBoundingClientRect();
+    var areaRect2 = area.getBoundingClientRect();
+    logDebugAction('editor->top: rawLine=' + rawLineIndex + ' lineY=' + lineY.toFixed(0) +
+      ' paddingTop=' + paddingTop.toFixed(0) + ' offset=' + offset.toFixed(0) + ' target=' + target.toFixed(0) +
+      ' edRect.top=' + edRect2.top.toFixed(0) + ' areaRect.top=' + areaRect2.top.toFixed(0) +
+      ' area.scrollTop(before)=' + area.scrollTop.toFixed(0));
+  }
+  area.scrollTop = target;
+}
+
+function setViewMode(on, suppressFocus, isFreshOpen) {
   // Block switching to Read & Revise mode in typing-only mode
   if (on && settings.noteEditingMode === 'typing') return;
   // Block switching to Typing mode in R&R-only mode (view-only overrides)
@@ -10570,6 +10750,34 @@ function setViewMode(on, suppressFocus) {
   var btn = document.getElementById('view-mode-btn');
   var oopsBar = document.querySelector('.oops-bar');
 
+  // Capture WHERE the user is looking, in terms of a raw line index,
+  // BEFORE swapping content — the editor (plain text, monospace-ish
+  // wrapping) and the viewer (rendered HTML, different fonts/wrapping)
+  // lay the same text out at different heights, so a numeric scrollTop
+  // carried over unchanged points to a different visual position in
+  // each — and the mismatch grows the further into the note you are,
+  // since wrapped-line height differences accumulate. Anchoring on a
+  // LINE INDEX and re-deriving the right scroll position in the NEW
+  // layout (via scrollEditorLineToTop/scrollViewerLineToTop) fixes this
+  // the same way double-tap-to-edit's cursor-position scroll was fixed.
+  //
+  // Skipped entirely on a fresh note OPEN (isFreshOpen=true): there is
+  // no PRIOR mode to preserve continuity from — the viewer/editor may
+  // still hold stale DOM/value from whatever note was open before, so
+  // measuring "where the user is looking" here would read meaningless
+  // leftover state and force an unwanted scroll on open, instead of
+  // just letting the new note render naturally from its own top.
+  //
+  // Captures BOTH the line index AND its current pixel offset from the
+  // visible top — not just the index. Forcing the target line flush
+  // against the toolbar (offset=0) is wrong whenever something else
+  // (most commonly the note title, for line 0) is also visible above
+  // it: that real, current gap needs to be PRESERVED across the mode
+  // switch, not collapsed away as an unwanted "helpful" scroll.
+  var _anchor = isFreshOpen ? { index: -1, offset: 0 } : (on ? getTopVisibleEditorLineIndex(editor) : getTopVisibleLineIndex());
+  var _anchorLineIndex = _anchor.index;
+  var _anchorOffset = _anchor.offset;
+
   if (on) {
     if (saveTimeout) { clearTimeout(saveTimeout); saveCurrentNote(); }
     viewer.innerHTML = urlsToLinks(editor.value, true);
@@ -10582,10 +10790,33 @@ function setViewMode(on, suppressFocus) {
     btn.setAttribute('title', 'Read & Revise mode — tap to switch to Typing mode');
     btn.style.background = '';
     btn.style.color = '';
+    pinToolbars();
+    if (_anchorLineIndex >= 0) {
+      scrollViewerLineToTop(_anchorLineIndex, _anchorOffset);
+      // Safety-margin re-application, same reasoning as double-tap-to-
+      // edit's scroll fix: a freshly-injected innerHTML plus a toolbar
+      // re-pin should generally settle synchronously, but re-applying
+      // once more after a brief delay protects against any residual
+      // layout/animation timing without needing to guess a single
+      // "safe" delay.
+      setTimeout(function() { scrollViewerLineToTop(_anchorLineIndex, _anchorOffset); }, 50);
+    }
   } else {
     if (currentNoteId && notes[currentNoteId]) {
       editor.value = notes[currentNoteId].content || '';
       editor._lastLength = editor.value.length;
+      // Setting .value resets the cursor — browsers commonly default it
+      // to the END of the new text. If focus() (and the cursor-follows
+      // behavior that goes with it) happens while the cursor implicitly
+      // sits at the end of a long note, the browser can scroll the
+      // textarea's own text rendering to show that end-of-text cursor
+      // position, BEFORE our own scrollEditorLineToTop() correction
+      // gets a chance to run — exactly the unwanted scroll-to-a-
+      // different-section-of-the-note symptom reported. Explicitly
+      // parking the cursor at 0 here means there's never a moment where
+      // an implicit end-of-text cursor exists for the browser to react
+      // to.
+      editor.setSelectionRange(0, 0);
     }
     editor.style.display = 'block';
     viewer.style.display = 'none';
@@ -10599,7 +10830,25 @@ function setViewMode(on, suppressFocus) {
       ignoreFocus = false;
       editor.focus({ preventScroll: true });
     }
+    pinToolbars();
     resizeEditor();
+    if (_anchorLineIndex >= 0) {
+      scrollEditorLineToTop(editor, _anchorLineIndex, _anchorOffset);
+      // resizeEditor() above schedules its OWN requestAnimationFrame
+      // callback to re-apply ITS scroll target, specifically to fight the
+      // browser's native "auto-scroll to cursor on focus" behavior. Our
+      // synchronous call just above runs BEFORE that callback fires — so
+      // on the very first toggle, resizeEditor()'s deferred correction can
+      // run a moment later and silently overwrite our correct position
+      // back to its own (cursor-based, not scroll-position-based) target.
+      // Queuing our own correction via requestAnimationFrame too means it
+      // runs after resizeEditor()'s, in the same frame-ordering, so ours
+      // has the final word instead of being clobbered one frame later.
+      requestAnimationFrame(function() {
+        scrollEditorLineToTop(editor, _anchorLineIndex, _anchorOffset);
+      });
+      setTimeout(function() { scrollEditorLineToTop(editor, _anchorLineIndex, _anchorOffset); }, 50);
+    }
   }
   // Sync note-title left padding with outline mode (viewer gets 30px in CSS; title needs JS)
   var _noteTitle = document.getElementById('note-title');
@@ -10692,7 +10941,7 @@ function openNote(id, speakDelay) {
   // Force mode based on noteEditingMode setting
   if (settings.noteEditingMode === 'typing') startInView = false;
   if (settings.noteEditingMode === 'rronly') startInView = true;
-  setViewMode(startInView, true); // true = suppress focus to avoid triggering keyboard-open on open
+  setViewMode(startInView, true, true); // suppress focus + fresh open (skip anchor-preservation scroll logic)
   applyRuler(); // show ruler if enabled
   if (notes[id]&&notes[id].themeId&&themes[notes[id].themeId])applyNoteTheme(notes[id].themeId);
   else{updateThemeIndicator();updateNoteThemeMoreLabel();}
@@ -11799,6 +12048,7 @@ function goHome() {
   }
   // Exit any pending modes before leaving
   if (typeof pasteMode !== 'undefined' && pasteMode) exitPasteMode();
+  if (typeof _tagAC !== 'undefined') _tagAC.hide();
   if (typeof _collapsedLines !== 'undefined') _collapsedLines.clear();
   // Close all bottom sheets
   closeAllBars(); // close any open bottom sheets
@@ -18772,6 +19022,7 @@ function makeImportFolderName(label) {
 
   function closeEditBlockDialog() {
     logDebugAction('Closed Edit Paragraph');
+    if (typeof _tagAC !== 'undefined') _tagAC.hide();
     document.getElementById('edit-block-overlay').classList.remove('open');
     _editBlockLineIdx = -1;
     _editBlockOriginal = '';
@@ -19567,6 +19818,7 @@ function makeImportFolderName(label) {
 
   function closeQuickAdd() {
     logDebugAction('Closed Add Text to Note');
+    if (typeof _tagAC !== 'undefined') _tagAC.hide();
     var overlay = document.getElementById('quick-add-overlay');
     overlay.classList.remove('open');
     overlay.classList.remove('centered');
@@ -24735,10 +24987,35 @@ var _tagAC = (function() {
       });
       pop.appendChild(item);
     });
-    // Position: just below fixed top bar
-    var topOffset = (_pinnedHeaderH || 60) + 4;
-    pop.style.top = topOffset + 'px';
+    // Make visible BEFORE measuring scrollHeight — a display:none
+    // element has no layout, so scrollHeight would read 0 regardless of
+    // content if measured first.
     pop.classList.add('visible');
+    // Position: anchor to the actual textarea that triggered this, not a
+    // single fixed offset tuned for the main note editor. The main
+    // editor sits right below the fixed top toolbar, so the old
+    // "just below the toolbar" offset worked there — but Quick Add and
+    // Edit Paragraph are smaller dialogs centered lower on the screen,
+    // where that same fixed offset placed the popup well above the
+    // dialog's own textarea, cutting off the top suggestions.
+    var topOffset;
+    if (_activeTA && _activeTA.id === 'note-editor') {
+      topOffset = (_pinnedHeaderH || 60) + 4;
+    } else if (_activeTA) {
+      var taRect = _activeTA.getBoundingClientRect();
+      // Just below the textarea itself; if there isn't room below
+      // (textarea near the bottom of the screen), show it above instead.
+      var estimatedPopupH = Math.min(220, pop.scrollHeight || 220);
+      var spaceBelow = window.innerHeight - taRect.bottom;
+      if (spaceBelow >= estimatedPopupH + 8 || taRect.bottom + 8 + estimatedPopupH <= window.innerHeight) {
+        topOffset = taRect.bottom + 4;
+      } else {
+        topOffset = Math.max(8, taRect.top - estimatedPopupH - 4);
+      }
+    } else {
+      topOffset = (_pinnedHeaderH || 60) + 4;
+    }
+    pop.style.top = topOffset + 'px';
   }
 
   function update(ta) {
@@ -24772,10 +25049,17 @@ var _tagAC = (function() {
     ta.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') { hide(); }
     });
-    ta.addEventListener('blur', function() {
-      // Small delay so click on item fires before blur hides popup
-      setTimeout(hide, 200);
-    });
+    // Deliberately NOT hiding on blur: dismissing the virtual keyboard
+    // (via the OS's own dismiss control, a "Done typing" button, or
+    // tapping outside the textarea) blurs the textarea as a side
+    // effect, which used to close this popup along with it — even
+    // though closing the keyboard is often exactly what someone wants
+    // to do to get clear sight of (and room to tap) suggestions further
+    // down the list. The popup is still explicitly closed by: tapping a
+    // suggestion (_insertTag's own hide() call), Escape, and whatever
+    // closes the dialog/note it was opened from (see the dialog close
+    // functions, which call _tagAC.hide() directly) — so it never lingers
+    // after the surrounding context goes away.
   }
 
   return { attach: attach, hide: hide };
