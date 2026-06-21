@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1350 -->
+<!-- Remember App - Version 0.1360 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1350
+  Version 0.1360
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -91,6 +91,7 @@
 
   --bg: #f5f0e8;
   --bg2: #ede8de;
+  --bg2-rgb: 237, 232, 222;
   --bg3: #e0dbd0;
   --fg: #2a2520;
   --fg2: #6b6258;
@@ -116,6 +117,7 @@
 body.dark {
   --bg: #1e1c1a;
   --bg2: #28251f;
+  --bg2-rgb: 40, 37, 31;
   --bg3: #332f28;
   --fg: #f0ebe0;
   --fg2: #b8b0a0;
@@ -1102,12 +1104,13 @@ body.reading-mode #more-btn {
   opacity: 1 !important;
   pointer-events: auto !important;
 }
-/* Show speak/stop buttons in quiet mode when setting is on */
-body.reading-mode.speak-in-quiet #speak-btn,
-body.reading-mode.speak-in-quiet #stop-btn {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
+/* Original "show speak/stop in quiet mode" rule removed — it set
+   opacity:1 !important on these buttons while their parent
+   (.note-header-right) stays at opacity:0 in quiet mode by design (see
+   above); a child can never be more visible than a zero-opacity
+   parent, so this never actually worked. Replaced by dedicated
+   quiet-speak-btn/quiet-stop-btn elements living in .note-header-left
+   instead, which isn't faded. */
 /* Keep the note title readable, wrap it, use full width (no rename btn) */
 body.reading-mode #note-title {
   opacity: 1;
@@ -1572,6 +1575,16 @@ body.reading-mode #note-fab,
 body.reading-mode #quiet-more-fab { display: flex !important; }
 @media (hover: hover) {
   #quiet-more-fab:hover { background: var(--bg3); }
+}
+/* Quiet mode specifically (not view-only mode, which keeps the normal
+   opaque FAB): translucent, matching the back button / back+speak pill
+   above and the same Apple Notes / Claude-app pill-control look. */
+body.reading-mode #quiet-more-fab {
+  background: rgba(var(--bg2-rgb, 237,232,222), 0.72);
+  border-color: transparent;
+}
+@media (hover: hover) {
+  body.reading-mode #quiet-more-fab:hover { background: rgba(var(--bg2-rgb, 237,232,222), 0.88); }
 }
 /* In quiet mode: hide lower toolbar, show FAB */
 body.reading-mode #note-bottom-bar { display: none !important; }
@@ -2816,11 +2829,94 @@ body.toolbar-collapsed #note-bottom-bar { display: none !important; }
 /* In quiet mode, hide any wrapped overflow lines — only first line needed */
 /* In quiet mode, collapse header to just the back button row height */
 body.reading-mode #note-top-bar { overflow: hidden; }
+/* Quiet mode: translucent, fading top toolbar — similar to the effect
+   Apple Notes uses at the top of the screen on iOS. More opaque near
+   the very top (so the toolbar itself stays legible), fading toward
+   fully transparent at its own bottom edge, so note text scrolling up
+   underneath gradually fades rather than hitting a hard, visible edge.
+   Experimental first pass — box-shadow and border-bottom removed here
+   too, since a visible shadow/line edge would defeat the "fading out"
+   effect this is going for. Uses --bg2-rgb (added alongside light/dark
+   --bg2) since CSS gradients need real rgba() stops, not a single
+   opaque var() color. */
+body.reading-mode .note-header {
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--bg2-rgb, 237,232,222), 0.92) 0%,
+    rgba(var(--bg2-rgb, 237,232,222), 0.75) 60%,
+    rgba(var(--bg2-rgb, 237,232,222), 0) 100%
+  );
+  border-bottom: none;
+  box-shadow: none;
+}
 body.reading-mode .note-header-right { max-height: calc(var(--btn-icon, 44px) + 8px); overflow: hidden; }
 body.reading-mode #toolbar-collapse-tab { display: none !important; }
 body.view-only-mode #toolbar-collapse-tab { display: none !important; }
 /* Hide top-more-btn in quiet/view-only (FAB used instead) */
 body.reading-mode #top-more-btn { display: none !important; }
+
+/* Quiet mode: back button becomes a translucent round FAB, matching
+   the iOS-system-control look (Apple Notes' own back control, and the
+   Claude app's own top-left/top-right pill controls) — a standalone
+   circular pill when it's the only button shown there. Superseded by
+   the shared-pill styling below when speak-in-quiet is also on (two
+   buttons sharing one pill instead of two separate circles). */
+body.reading-mode #back-btn {
+  background: rgba(var(--bg2-rgb, 237,232,222), 0.72);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  min-width: 40px;
+  min-height: 40px;
+}
+@media (hover: hover) {
+  body.reading-mode #back-btn:hover { background: rgba(var(--bg2-rgb, 237,232,222), 0.88); }
+}
+
+/* quiet-speak-btn/quiet-stop-btn: hidden by default; _speakShowButtons()
+   (JS) is responsible for only ever showing them when quiet mode +
+   speak-in-quiet are both active — see the mode check there. This rule
+   is just the structural default, not a mode gate (that lives in JS to
+   avoid a fragile CSS attribute-selector hack). */
+#quiet-speak-btn, #quiet-stop-btn {
+  display: none;
+}
+
+/* Quiet mode + Show Speak button in quiet mode: back and speak/stop
+   share ONE pill instead of being two separate circles — matching the
+   Claude app's own top-right "+ / •••" pill and Apple Notes' grouped
+   controls. No divider line between them. Both elements now live in
+   the SAME container (.note-header-left, which already has gap:0px),
+   so there's no cross-container gap to fight — simpler and more
+   robust than the earlier attempt that tried to visually merge
+   #back-btn (in .note-header-left) with #speak-btn/#stop-btn (in
+   .note-header-right, which is blanket-faded to opacity:0 in quiet
+   mode by design for several OTHER buttons too — reusing those risked
+   that fade rule, so this uses dedicated quiet-speak-btn/quiet-stop-btn
+   elements instead). */
+body.reading-mode.speak-in-quiet #back-btn {
+  border-radius: 999px 0 0 999px;
+  box-shadow: none; /* shadow now drawn by the pill wrapper rule below instead, so it isn't doubled at the seam */
+}
+body.reading-mode.speak-in-quiet #quiet-speak-btn,
+body.reading-mode.speak-in-quiet #quiet-stop-btn {
+  background: rgba(var(--bg2-rgb, 237,232,222), 0.72);
+  color: var(--fg2); /* neutral gray, never the accent/danger color — quiet mode stays calm regardless of the normal speak-button styling */
+  border-radius: 0 999px 999px 0;
+  min-width: 40px;
+  min-height: 40px;
+}
+@media (hover: hover) {
+  body.reading-mode.speak-in-quiet #quiet-speak-btn:hover,
+  body.reading-mode.speak-in-quiet #quiet-stop-btn:hover {
+    background: rgba(var(--bg2-rgb, 237,232,222), 0.88);
+  }
+}
+/* Single shared shadow for the whole back+speak pill, drawn on the row
+   itself rather than on each button separately (which would double up
+   visibly at the seam between them). */
+body.reading-mode.speak-in-quiet .note-header-left {
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.12));
+}
 body.view-only-mode #top-more-btn { display: none !important; }
 body.hide-toolbar-collapse-tab #toolbar-collapse-tab { display: none !important; }
 
@@ -4722,6 +4818,27 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
+        <!-- Dedicated quiet-mode speak/stop button — a separate element
+             from #speak-btn/#stop-btn rather than trying to reuse those
+             (which live inside .note-header-right, blanket-faded to
+             opacity:0 in quiet mode by design — reusing them risked
+             having to touch that fade rule, which could affect several
+             OTHER toolbar buttons sharing it). Lives in .note-header-left
+             instead, right next to back-btn, in the SAME flex container
+             (gap:0 already) — naturally forms one seamless pill with no
+             cross-container gap to fight. Shown only via JS, mirroring
+             #speak-btn/#stop-btn's swap, and calls the exact same
+             speakNote()/stopSpeaking() functions — not a reimplementation. -->
+        <button class="icon-btn" id="quiet-speak-btn" aria-label="Speak note" title="Speak note" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="quiet-stop-btn" aria-label="Stop speaking" title="Stop speaking" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
       </div>
       <div class="note-header-right">
         <button class="btn" id="speak-btn" aria-label="Speak note">
@@ -6138,7 +6255,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <div class="settings-row-desc">Affects buttons and icons everywhere</div>
         </div>
         <div class="seg-control" id="ui-size-seg" style="flex-wrap:wrap;max-width:220px">
-          <button class="seg-btn" data-val="small">Normal</button>
+          <button class="seg-btn" data-val="small">Small</button>
           <button class="seg-btn active" data-val="medium">Medium</button>
           <button class="seg-btn" data-val="large">Large</button>
           <button class="seg-btn" data-val="xlarge">Extra Large</button>
@@ -8040,7 +8157,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1350';
+const APP_VERSION = '0.1360';
 
 
 
@@ -9987,6 +10104,7 @@ function toggleReadingMode() {
   // Show/hide quiet mode FAB and re-pin toolbars
   // quiet-more-fab always shown via CSS in note screen; no JS needed here
   pinToolbars();
+  if (typeof _speakShowButtons === 'function') _speakShowButtons(isSpeaking);
   // Update More menu label
   var lbl = document.getElementById('more-reading-mode-label');
   if (lbl) lbl.textContent = _readingMode ? 'Exit quiet mode' : 'Quiet mode';
@@ -9997,6 +10115,7 @@ function clearReadingMode() {
   document.body.classList.remove('reading-mode');
   // quiet-more-fab always shown via CSS in note screen
   pinToolbars();
+  if (typeof _speakShowButtons === 'function') _speakShowButtons(isSpeaking);
   var lbl = document.getElementById('more-reading-mode-label');
   if (lbl) lbl.textContent = 'Quiet mode';
 }
@@ -12341,6 +12460,24 @@ var _speakPauseTimer = null; // setTimeout handle between lines
 function _speakShowButtons(speaking) {
   var speakBtn = document.getElementById('speak-btn');
   var stopBtn  = document.getElementById('stop-btn');
+  // Dedicated quiet-mode buttons (separate elements, see HTML comment
+  // near quiet-speak-btn) — simple display toggle, no width-locking
+  // needed since these are icon-only with no visible text label. Only
+  // ever shown when quiet mode AND the speak-in-quiet setting are both
+  // currently active; otherwise always hidden regardless of `speaking`.
+  var qSpeakBtn = document.getElementById('quiet-speak-btn');
+  var qStopBtn  = document.getElementById('quiet-stop-btn');
+  var _inQuietWithSpeak = document.body.classList.contains('reading-mode') && !!settings.speakInQuiet
+    && settings.showSpeakBtn !== false; // respect the global "hide speak button entirely" setting too
+  if (qSpeakBtn && qStopBtn) {
+    if (_inQuietWithSpeak) {
+      qSpeakBtn.style.display = speaking ? 'none' : '';
+      qStopBtn.style.display  = speaking ? '' : 'none';
+    } else {
+      qSpeakBtn.style.display = 'none';
+      qStopBtn.style.display  = 'none';
+    }
+  }
   if (speaking) {
     // Measure Speak width before hiding it, then lock both to that value
     var w = speakBtn.offsetWidth;
@@ -13138,16 +13275,48 @@ function applyToolbarIconSizes() {
   }
   // Scale increases with icon size to compensate for built-in SVG padding
   var _scale = { small: 1.0, medium: 1.0, large: 1.15, xlarge: 1.25 }[settings.uiSize || 'medium'] || 1.0;
+  // DIAGNOSTIC (pinch-zoom investigation): transform: scale() removed.
+  // CSS transform is a compositing-layer property, applied by the
+  // browser AFTER layout, in the same general mechanism used to
+  // implement pinch-zoom itself — stacking our own transform:scale() on
+  // top of pixel width/height (both !important) on these specific
+  // buttons, on the one screen (note editor) where this rule applies at
+  // all, is a real structural difference from the home screen's plain
+  // width/height-only sizing (which doesn't exhibit the bug). Testing
+  // whether removing this resolves the reported huge-icon-on-pinch-zoom
+  // behavior. If this WAS the cause and removing it fixes things, the
+  // visual size-compensation this provided for Large/XL icon settings
+  // will need a different, non-transform approach (e.g. baking the
+  // compensation directly into _iconPx instead of layering a transform
+  // on top).
+  // Root cause found via debug-log diagnostics: .icon-btn's static
+  // min-width:36px (in the main stylesheet) was clamping these flex
+  // buttons' rendered WIDTH at exactly 36px whenever the intended icon
+  // size was actually larger (38px/48px for Large/XLarge) — confirmed
+  // by reading getComputedStyle().width directly (always 36px,
+  // regardless of uiSize) even though a width:Npx !important rule was
+  // the ONLY matching rule for the SVG. HEIGHT was unaffected since
+  // min-height interacts differently with this flex layout. The fix:
+  // give these buttons a min-width/min-height that tracks the CURRENT
+  // icon size (never smaller than it), instead of leaving a static
+  // 36px floor that becomes a ceiling once the real icon size exceeds
+  // it. A blanket min-width:0 was tried first and broke flex-shrink
+  // for most OTHER toolbar buttons (they collapsed to zero width and
+  // disappeared) — keeping a real, size-tracking minimum here avoids
+  // that regression while still letting width grow past 36px.
+  var _iconBtnMin = Math.max(36, _iconPx) + 10; // +10 for the button's own padding (5px each side)
   _iconSizeStyleEl.textContent =
     '#note-bottom-bar .icon-btn svg, #toolbar-scroll .icon-btn svg {' +
     '  width: ' + _iconPx + 'px !important;' +
     '  height: ' + _iconPx + 'px !important;' +
-    '  transform: scale(' + _scale + ');' +
     '}' +
     '#note-top-bar .icon-btn svg, #note-top-bar .btn svg {' +
     '  width: ' + _iconPx + 'px !important;' +
     '  height: ' + _iconPx + 'px !important;' +
-    '  transform: scale(' + _scale + ');' +
+    '}' +
+    '#note-bottom-bar .icon-btn, #toolbar-scroll .icon-btn {' +
+    '  min-width: ' + _iconBtnMin + 'px !important;' +
+    '  min-height: ' + _iconBtnMin + 'px !important;' +
     '}';
 }
 
@@ -14740,6 +14909,13 @@ function makeImportFolderName(label) {
   });
   document.getElementById('stop-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('stop-btn').addEventListener('click', stopSpeaking);
+  document.getElementById('quiet-speak-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('quiet-speak-btn').addEventListener('click', function() {
+    if (_editBlockMode) exitEditBlockMode();
+    speakNote();
+  });
+  document.getElementById('quiet-stop-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('quiet-stop-btn').addEventListener('click', stopSpeaking);
   document.getElementById('delete-note-btn').addEventListener('click', deleteCurrentNote);
   document.getElementById('more-delete-note-btn').addEventListener('click', function() { closeMoreMenu(); deleteCurrentNote(); });
 
@@ -17474,6 +17650,7 @@ function makeImportFolderName(label) {
     settings.showSpeakBtn = this.checked;
     applySettings();
     updateSpeakBtnState();
+    if (typeof _speakShowButtons === 'function') _speakShowButtons(isSpeaking);
     updateSaveBtnState();
   });
   document.getElementById('speak-icon-only-toggle').addEventListener('change', function() {
@@ -19778,6 +19955,7 @@ function makeImportFolderName(label) {
   document.getElementById('speak-in-quiet-toggle').addEventListener('change', function() {
     settings.speakInQuiet = this.checked;
     document.body.classList.toggle('speak-in-quiet', this.checked);
+    if (typeof _speakShowButtons === 'function') _speakShowButtons(isSpeaking);
     updateSaveBtnState();
   });
   document.getElementById('always-speak-whole-toggle').addEventListener('change', function() {
@@ -21003,6 +21181,51 @@ function makeImportFolderName(label) {
     if (btn && addBlankLineMode && btn.id !== 'add-blank-line-btn') exitAddBlankLineMode();
     // Exit paste mode on any click in lower toolbar except paste-btn itself
     if (pasteMode && (!btn || btn.id !== 'paste-btn')) exitPasteMode();
+    // DIAGNOSTIC: measure real rendered icon size at the moment of a
+    // genuine tap on the lower toolbar (guaranteed visible/laid-out,
+    // unlike measuring from inside Settings) — investigating the
+    // reported Large->XLarge lower-toolbar icon growth regression.
+    if (settings.debugLoggingEnabled && btn) {
+      var _svg = btn.querySelector('svg');
+      if (_svg) {
+        var _r = _svg.getBoundingClientRect();
+        var _cs = getComputedStyle(_svg);
+        var _br = btn.getBoundingClientRect();
+        logDebugAction('iconSize(tap) btn=' + btn.id + ' uiSize=' + (settings.uiSize || 'medium') +
+          ' svg.rect=' + _r.width.toFixed(1) + 'x' + _r.height.toFixed(1) +
+          ' svg.computedWidth=' + _cs.width + ' svg.computedHeight=' + _cs.height +
+          ' btn.rect=' + _br.width.toFixed(1) + 'x' + _br.height.toFixed(1));
+        // Deeper diagnostic: list every stylesheet rule that matches
+        // this SVG and sets a width — to find what's overriding width
+        // specifically while height is unaffected (reported: width
+        // stuck at 36px regardless of uiSize, height correctly varies).
+        try {
+          var _matchingWidthRules = [];
+          for (var _si = 0; _si < document.styleSheets.length; _si++) {
+            var _sheet = document.styleSheets[_si];
+            var _rules;
+            try { _rules = _sheet.cssRules || _sheet.rules; } catch (_e) { continue; }
+            if (!_rules) continue;
+            for (var _ri = 0; _ri < _rules.length; _ri++) {
+              var _rule = _rules[_ri];
+              if (!_rule.selectorText || !_rule.style) continue;
+              var _w = _rule.style.getPropertyValue('width');
+              if (!_w) continue;
+              try {
+                if (_svg.matches(_rule.selectorText)) {
+                  _matchingWidthRules.push(_rule.selectorText + ' {width:' + _w +
+                    (_rule.style.getPropertyPriority('width') ? ' !important' : '') + '}');
+                }
+              } catch (_e2) { /* invalid selector for matches(), skip */ }
+            }
+          }
+          logDebugAction('iconSize(tap) width-rules for ' + btn.id + ': ' +
+            (_matchingWidthRules.length ? _matchingWidthRules.join(' | ') : 'NONE FOUND'));
+        } catch (_eOuter) {
+          logDebugAction('iconSize(tap) width-rule scan failed: ' + _eOuter.message);
+        }
+      }
+    }
   }, true); // capture phase so it fires before individual handlers
   var _moreBtn = document.getElementById('more-btn');
   if (_moreBtn) _moreBtn.addEventListener('click', function() {
