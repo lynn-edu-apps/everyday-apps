@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1360 -->
+<!-- Remember App - Version 0.1372 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1360
+  Version 0.1372
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -91,7 +91,7 @@
 
   --bg: #f5f0e8;
   --bg2: #ede8de;
-  --bg2-rgb: 237, 232, 222;
+  --bg2-rgb: 244, 241, 235; /* --bg2 lightened 38%, proportionally toward white (matches lightenHex()'s technique) — quiet-mode buttons read as slightly elevated above the background */
   --bg3: #e0dbd0;
   --fg: #2a2520;
   --fg2: #6b6258;
@@ -117,7 +117,7 @@
 body.dark {
   --bg: #1e1c1a;
   --bg2: #28251f;
-  --bg2-rgb: 40, 37, 31;
+  --bg2-rgb: 74, 72, 67; /* --bg2 lightened 16% — kept LOWER than light mode's 38%, since the same percentage produces very different perceived contrast depending on the starting brightness: a higher percentage from a near-black color is a dramatic jump to medium gray, while the same percentage from an already-light color barely moves it. Tuned by feel, not by matching the percentage. */
   --bg3: #332f28;
   --fg: #f0ebe0;
   --fg2: #b8b0a0;
@@ -1580,11 +1580,11 @@ body.reading-mode #quiet-more-fab { display: flex !important; }
    opaque FAB): translucent, matching the back button / back+speak pill
    above and the same Apple Notes / Claude-app pill-control look. */
 body.reading-mode #quiet-more-fab {
-  background: rgba(var(--bg2-rgb, 237,232,222), 0.72);
+  background: rgba(var(--bg2-rgb, 237,232,222), 0.90);
   border-color: transparent;
 }
 @media (hover: hover) {
-  body.reading-mode #quiet-more-fab:hover { background: rgba(var(--bg2-rgb, 237,232,222), 0.88); }
+  body.reading-mode #quiet-more-fab:hover { background: rgba(var(--bg2-rgb, 237,232,222), 0.95); }
 }
 /* In quiet mode: hide lower toolbar, show FAB */
 body.reading-mode #note-bottom-bar { display: none !important; }
@@ -2839,13 +2839,17 @@ body.reading-mode #note-top-bar { overflow: hidden; }
    effect this is going for. Uses --bg2-rgb (added alongside light/dark
    --bg2) since CSS gradients need real rgba() stops, not a single
    opaque var() color. */
+/* Quiet mode: the toolbar background itself is fully transparent — no
+   gradient. A chosen gradient color risks clashing with whatever
+   background color the person has set (light/dark/custom theme), and
+   on iOS the OS-controlled status bar sits above this anyway, so a
+   gradient meant to blend with it doesn't actually reach that area.
+   The individual buttons (back/speak/stop/more FAB) carry their own
+   translucent background instead — see below — using the SAME
+   variable the user's current background actually resolves to, not a
+   separately chosen color. */
 body.reading-mode .note-header {
-  background: linear-gradient(
-    to bottom,
-    rgba(var(--bg2-rgb, 237,232,222), 0.92) 0%,
-    rgba(var(--bg2-rgb, 237,232,222), 0.75) 60%,
-    rgba(var(--bg2-rgb, 237,232,222), 0) 100%
-  );
+  background: transparent;
   border-bottom: none;
   box-shadow: none;
 }
@@ -2862,14 +2866,14 @@ body.reading-mode #top-more-btn { display: none !important; }
    the shared-pill styling below when speak-in-quiet is also on (two
    buttons sharing one pill instead of two separate circles). */
 body.reading-mode #back-btn {
-  background: rgba(var(--bg2-rgb, 237,232,222), 0.72);
+  background: rgba(var(--bg2-rgb, 237,232,222), 0.90);
   border-radius: 50%;
   box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   min-width: 40px;
   min-height: 40px;
 }
 @media (hover: hover) {
-  body.reading-mode #back-btn:hover { background: rgba(var(--bg2-rgb, 237,232,222), 0.88); }
+  body.reading-mode #back-btn:hover { background: rgba(var(--bg2-rgb, 237,232,222), 0.95); }
 }
 
 /* quiet-speak-btn/quiet-stop-btn: hidden by default; _speakShowButtons()
@@ -2899,7 +2903,7 @@ body.reading-mode.speak-in-quiet #back-btn {
 }
 body.reading-mode.speak-in-quiet #quiet-speak-btn,
 body.reading-mode.speak-in-quiet #quiet-stop-btn {
-  background: rgba(var(--bg2-rgb, 237,232,222), 0.72);
+  background: rgba(var(--bg2-rgb, 237,232,222), 0.90);
   color: var(--fg2); /* neutral gray, never the accent/danger color — quiet mode stays calm regardless of the normal speak-button styling */
   border-radius: 0 999px 999px 0;
   min-width: 40px;
@@ -2908,7 +2912,7 @@ body.reading-mode.speak-in-quiet #quiet-stop-btn {
 @media (hover: hover) {
   body.reading-mode.speak-in-quiet #quiet-speak-btn:hover,
   body.reading-mode.speak-in-quiet #quiet-stop-btn:hover {
-    background: rgba(var(--bg2-rgb, 237,232,222), 0.88);
+    background: rgba(var(--bg2-rgb, 237,232,222), 0.95);
   }
 }
 /* Single shared shadow for the whole back+speak pill, drawn on the row
@@ -8157,7 +8161,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1360';
+const APP_VERSION = '0.1372';
 
 
 
@@ -8740,13 +8744,32 @@ function logLineMarkerDiagnostics() {
 }
 
 // ===== APPLY SETTINGS =====
-function lightenHex(hex, amount) {
-  // Parse hex color and add 'amount' to each RGB channel (clamped to 255)
+function lightenHex(hex, percent) {
+  // Blends toward white by `percent` (0-100), rather than adding a flat
+  // amount to each channel. A flat add lightens dark colors much more
+  // (proportionally) than light ones and can shift hue for non-gray
+  // colors, since it pushes every channel toward white at the same
+  // absolute rate regardless of how far each one already is from it.
+  // Blending proportionally — newChannel = old + (255-old)*percent —
+  // preserves the color's relative tone and is the standard,
+  // colorimetrically-correct way to lighten a color; CSS's own
+  // color-mix() does the same thing, used here as a plain calculation
+  // instead since this app needs to support browsers/WebKit versions
+  // without color-mix() support.
+  //
+  // NOTE: existing call sites originally passed flat amounts (18, 32,
+  // out of 255) before this function changed meaning to a percentage
+  // (0-100) — they were updated at the same time this changed, so no
+  // caller should still be passing an old flat-amount value.
   hex = hex.replace('#', '');
   if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-  var r = Math.min(255, parseInt(hex.substring(0,2), 16) + amount);
-  var g = Math.min(255, parseInt(hex.substring(2,4), 16) + amount);
-  var b = Math.min(255, parseInt(hex.substring(4,6), 16) + amount);
+  var frac = Math.max(0, Math.min(100, percent)) / 100;
+  var r = parseInt(hex.substring(0,2), 16);
+  var g = parseInt(hex.substring(2,4), 16);
+  var b = parseInt(hex.substring(4,6), 16);
+  r = Math.round(r + (255 - r) * frac);
+  g = Math.round(g + (255 - g) * frac);
+  b = Math.round(b + (255 - b) * frac);
   return '#' + [r,g,b].map(function(v) { return v.toString(16).padStart(2,'0'); }).join('');
 }
 
@@ -8948,22 +8971,46 @@ function applySettings() {
   // Also clear any stale properties on documentElement from older versions.
   document.documentElement.style.removeProperty('--bg');
   document.documentElement.style.removeProperty('--bg2');
+  document.documentElement.style.removeProperty('--bg2-rgb');
   document.documentElement.style.removeProperty('--fg');
   body.style.removeProperty('--bg');
   body.style.removeProperty('--bg2');
+  body.style.removeProperty('--bg2-rgb');
   body.style.removeProperty('--fg');
   var activeBg = useDark ? settings.darkBgColor : settings.lightBgColor;
   var activeFg = useDark ? settings.darkFgColor : settings.lightFgColor;
   if (activeBg) {
     body.style.setProperty('--bg', activeBg);
     body.style.setProperty('--bg2', activeBg);
+    // Quiet-mode buttons (back/speak/stop/More FAB) use --bg2-rgb to
+    // build a translucent rgba() background that always matches
+    // whatever the person's CURRENT background actually is — light,
+    // dark, or any custom color — never a separately hardcoded color
+    // that could clash with their choice. Computed fresh here, any
+    // time a custom background is applied, using the same hex parsing
+    // hexToRgba() already uses elsewhere (ruler color), just exposed
+    // as a reusable comma-separated triplet rather than a full rgba()
+    // string, since callers need different alpha values.
+    var _bgHexMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(activeBg);
+    if (_bgHexMatch) {
+      // Lightened the same way lightenHex() lightens --bg-card/--bg-dialog
+      // elsewhere — same percentages — so quiet-mode buttons read as
+      // slightly elevated above whatever custom background color the
+      // person has chosen, not flush with it.
+      var _lightenedHex = lightenHex(activeBg, useDark ? 16 : 38);
+      var _ltMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(_lightenedHex);
+      if (_ltMatch) {
+        body.style.setProperty('--bg2-rgb',
+          parseInt(_ltMatch[1],16) + ',' + parseInt(_ltMatch[2],16) + ',' + parseInt(_ltMatch[3],16));
+      }
+    }
     if (!useDark) {
-      body.style.setProperty('--bg-card', lightenHex(activeBg, 18));
+      body.style.setProperty('--bg-card', lightenHex(activeBg, 8));
       body.style.removeProperty('--bg-dialog');
     } else {
       body.style.removeProperty('--bg-card');
       // In dark mode, dialogs/modals/toasts get a noticeably lighter background
-      body.style.setProperty('--bg-dialog', lightenHex(activeBg, 32));
+      body.style.setProperty('--bg-dialog', lightenHex(activeBg, 15));
     }
   }
   if (activeFg) {
@@ -11088,6 +11135,12 @@ function openNote(id, speakDelay) {
   // Re-pin toolbars now that note-screen is visible and has layout dimensions.
   // On Android the second toolbar may be hidden until this runs post-display.
   setTimeout(pinToolbars, 0);
+  // Sync quiet-mode speak/stop button visibility too — quiet mode may
+  // already be on from a previous session (persisted setting), in
+  // which case toggleReadingMode() (the only other place this gets
+  // called) never runs at all on a plain note open, leaving these
+  // buttons stuck at their HTML default (display:none).
+  if (typeof _speakShowButtons === 'function') _speakShowButtons(false);
   document.getElementById('note-screen').dataset.askedPaste = '0';
   document.getElementById('note-screen').dataset.freshlyOpened = '1';
   // Apply oops button visibility setting
@@ -12471,8 +12524,13 @@ function _speakShowButtons(speaking) {
     && settings.showSpeakBtn !== false; // respect the global "hide speak button entirely" setting too
   if (qSpeakBtn && qStopBtn) {
     if (_inQuietWithSpeak) {
-      qSpeakBtn.style.display = speaking ? 'none' : '';
-      qStopBtn.style.display  = speaking ? '' : 'none';
+      // Explicit 'flex' rather than '' — the element has an inline
+      // style="display:none" baked into its HTML; clearing that with ''
+      // should fall through to .icon-btn's display:flex, but per the
+      // project's own documented lesson on this exact pitfall, never
+      // rely on that — always set the explicit value needed.
+      qSpeakBtn.style.display = speaking ? 'none' : 'flex';
+      qStopBtn.style.display  = speaking ? 'flex' : 'none';
     } else {
       qSpeakBtn.style.display = 'none';
       qStopBtn.style.display  = 'none';
