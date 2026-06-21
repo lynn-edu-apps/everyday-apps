@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1338 -->
+<!-- Remember App - Version 0.1343 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1338
+  Version 0.1343
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -8003,7 +8003,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1338';
+const APP_VERSION = '0.1343';
 
 
 
@@ -16207,6 +16207,21 @@ function makeImportFolderName(label) {
     //   <Whitespace1> <hyphen or checkbox-marker> <Whitespace2> <non-whitespace...>
     // then insert a newline followed by the same prefix (WS1 + marker + WS2).
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // If a typing-mode Find session is active, Enter pressed here
+      // means the user pressed it a SECOND (or later) time after
+      // setCurrentMatch() already moved focus from the search box to
+      // this editor to highlight a match via selection. Without this
+      // check, that selected match falls through to the browser's
+      // default textarea behavior for Enter — insert a newline AT the
+      // selection, replacing it — silently destroying the match the
+      // person was just looking at. Navigate to the next match instead,
+      // matching what Enter does in the search box itself, and consume
+      // the keystroke so no newline is ever inserted this way.
+      if (_findActive && !isViewMode && _findMatches.length > 0) {
+        e.preventDefault();
+        e.shiftKey ? findPrev() : findNext();
+        return;
+      }
       var ed = this;
       var val = ed.value;
       var pos = ed.selectionStart;
@@ -16542,6 +16557,26 @@ function makeImportFolderName(label) {
         }
       }
       // If autoNamed is false (manually named), leave the title alone
+    }
+    // If Find's typing-mode session is open and the user just edited the
+    // note (most likely: typed a replacement over the currently-selected
+    // match), every OTHER match's stored {start, end} position may now
+    // be stale — anything after the edit point has shifted by however
+    // much the edit added or removed. Re-running the search immediately
+    // (against the note's LIVE content, not the possibly-not-yet-saved
+    // notes[...].content — scheduleSave() below debounces the actual
+    // persisted write, so it may not have happened yet) gives a fully
+    // correct, fresh match list and count right away — there were very
+    // likely still other real matches elsewhere in the note, and saying
+    // "no results" when there are plenty left is misleading. This is
+    // safe to do on every edit here (unlike the search BOX's input
+    // listener) because re-running Find doesn't touch the editor's
+    // selection or focus at all when there's no query change driving a
+    // jump — see the isViewMode-independent early-return paths in
+    // runFind() for the no-match-found case.
+    if (_findActive && !isViewMode && _findQuery.trim()) {
+      if (currentNoteId && notes[currentNoteId]) notes[currentNoteId].content = this.value;
+      runFind(true); // skipJump — just refresh the count, don't move the cursor mid-edit
     }
     scheduleSave();
   });
@@ -20609,9 +20644,35 @@ function makeImportFolderName(label) {
   document.getElementById('find-prev-btn').addEventListener('click', function() { findPrev(); });
   document.getElementById('find-next-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('find-next-btn').addEventListener('click', function() { findNext(); });
-  document.getElementById('find-input').addEventListener('input', function() { runFind(); });
+  document.getElementById('find-input').addEventListener('input', function() {
+    // Search-as-you-type only in R&R mode. In typing mode, the match
+    // highlight uses the SAME textarea the person is typing the search
+    // query into (there's no separate rendered view to highlight in) —
+    // selecting a match there on every keystroke meant each subsequent
+    // letter typed immediately overwrote the selected match text in the
+    // note. Typing mode instead waits for Enter (see the keydown
+    // handler below) to run the search as one deliberate action.
+    if (isViewMode) runFind();
+  });
   document.getElementById('find-input').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.shiftKey ? findPrev() : findNext(); }
+    if (e.key === 'Enter') {
+      // Must preventDefault here: runFind()/setCurrentMatch() move focus
+      // to the note editor (to set its selection to the match) within
+      // this same handler. Without stopping the browser's default Enter
+      // behavior first, the keystroke could still be applied to whatever
+      // element ends up focused by the time the event finishes — i.e. a
+      // newline getting typed into the editor, overwriting the very
+      // match selection just created.
+      e.preventDefault();
+      if (!isViewMode && _findQuery !== (document.getElementById('find-input').value || '')) {
+        // Typing mode, query changed since the last search (or no
+        // search has run yet for the current text) — run it now rather
+        // than navigating, since there's nothing valid to navigate to.
+        runFind();
+      } else {
+        e.shiftKey ? findPrev() : findNext();
+      }
+    }
     if (e.key === 'Escape') { closeFind(); }
   });
   // Keyboard shortcut: Cmd/Ctrl+F
@@ -22986,9 +23047,9 @@ var _findActive     = false;
 
 function openFind() {
   logDebugAction('Opened Find in note');
-  if (!isViewMode) {
-    setViewMode(true);
-  }
+  // No longer forces R&R mode — Find now has a simple typing-mode path
+  // too (see runFind()/setCurrentMatch()), for people using
+  // noteEditingMode:'typing' with R&R mode disabled entirely.
   _findActive = true;
   var bar = document.getElementById('find-bar');
   if (bar) bar.classList.add('open');
@@ -23015,8 +23076,10 @@ function closeFind() {
   if (input) input.value = '';
   var findBtn = document.getElementById('find-btn');
   if (findBtn) findBtn.classList.remove('active');
-  // Re-render viewer without highlights
-  if (currentNoteId && notes[currentNoteId]) {
+  // Re-render viewer without highlights — only relevant in R&R mode;
+  // typing mode has no rendered <mark> elements to clean up, just a
+  // text selection that already goes away on its own.
+  if (isViewMode && currentNoteId && notes[currentNoteId]) {
     document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
     renderBlockSelections();
   }
@@ -23024,7 +23087,7 @@ function closeFind() {
   updateFindUI();
 }
 
-function runFind() {
+function runFind(skipJump) {
   var input = document.getElementById('find-input');
   _findQuery = input ? input.value : '';
   _findMatches = [];
@@ -23034,14 +23097,17 @@ function runFind() {
   var content = notes[currentNoteId].content || '';
 
   if (!_findQuery.trim()) {
-    // No query — re-render plain viewer
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
-    renderBlockSelections();
+    if (isViewMode) {
+      // No query — re-render plain viewer
+      document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
+      renderBlockSelections();
+    }
     updateFindUI();
     return;
   }
 
-  // Find all matches in content (case-insensitive)
+  // Find all matches in content (case-insensitive) — shared between both
+  // modes; this part never depended on rendering at all.
   var lower = content.toLowerCase();
   var q     = _findQuery.toLowerCase();
   var pos   = 0;
@@ -23052,8 +23118,29 @@ function runFind() {
   }
 
   if (matchPositions.length === 0) {
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
-    renderBlockSelections();
+    if (isViewMode) {
+      document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
+      renderBlockSelections();
+    }
+    updateFindUI();
+    return;
+  }
+
+  if (!isViewMode) {
+    // Typing mode: no rendered DOM to inject <mark> elements into — a
+    // textarea can only show plain characters. Deliberately simple, per
+    // request: _findMatches holds the same {start, end} positions
+    // directly, and setCurrentMatch() highlights the current one using
+    // the textarea's own native text SELECTION instead of a styled
+    // element. Only one match can be "highlighted" at a time this way
+    // (a textarea has exactly one selection), so Next/Previous are the
+    // only navigation — there's no way to tap a match directly in plain
+    // text the way there is in R&R mode's rendered <mark> elements.
+    _findMatches = matchPositions;
+    if (_findMatches.length > 0 && !skipJump) {
+      _findCurrent = 0;
+      setCurrentMatch(0);
+    }
     updateFindUI();
     return;
   }
@@ -23108,9 +23195,38 @@ function runFind() {
 
 function setCurrentMatch(idx) {
   if (idx < 0 || idx >= _findMatches.length) return;
-  // Remove current class from all
-  _findMatches.forEach(function(el) { el.classList.remove('find-match-current'); });
   _findCurrent = idx;
+
+  if (!isViewMode) {
+    // Typing mode: highlight the current match via the textarea's own
+    // native text selection (the browser draws its normal selection
+    // color) instead of a styled DOM element — see runFind() for why.
+    var ed = document.getElementById('note-editor');
+    var match = _findMatches[idx]; // {start, end}
+    if (!ed || !match) { updateFindUI(); return; }
+    ed.focus({ preventScroll: true });
+    ed.setSelectionRange(match.start, match.end);
+    // Scroll so the match appears ~2 lines below the find bar — same
+    // framing as the R&R-mode scroll below, using the same accurate
+    // mirror-div cursor measurement (getCursorY()) the rest of the
+    // mode-switch/double-tap scroll fixes already rely on, rather than
+    // a line-height approximation.
+    var area2    = document.getElementById('note-content-area');
+    var findBar2 = document.getElementById('find-bar');
+    if (area2 && findBar2) {
+      var matchY      = getCursorY(ed); // distance from area's content origin, at match.start
+      var findBarH    = findBar2.getBoundingClientRect().height;
+      var paddingTop2 = parseFloat(getComputedStyle(area2).paddingTop) || 0;
+      var lineH2      = parseFloat(getComputedStyle(ed).lineHeight) || 24;
+      var target2     = matchY - paddingTop2 - findBarH - lineH2 * 2;
+      area2.scrollTop = Math.max(0, target2);
+    }
+    updateFindUI();
+    return;
+  }
+
+  // R&R mode: remove current class from all
+  _findMatches.forEach(function(el) { el.classList.remove('find-match-current'); });
   var el = _findMatches[idx];
   el.classList.add('find-match-current');
 
