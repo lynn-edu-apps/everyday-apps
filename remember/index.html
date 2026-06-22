@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1372 -->
+<!-- Remember App - Version 0.1375 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1372
+  Version 0.1375
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1480,6 +1480,17 @@ body.select-notes-mode .folder-item-select-check { display: flex; }
   z-index: 5;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+/* Dark mode: plain white stood out sharply against a dark background —
+   reuse the SAME lightened color computed for the quiet-mode toolbar
+   buttons (--bg2-rgb) rather than inventing a separate dark-mode color
+   here. Opaque (no alpha) since this FAB sits on solid ground, not
+   over scrolling note content the way the quiet-mode buttons do. */
+body.dark #note-fab {
+  background: rgb(var(--bg2-rgb, 74,72,67));
+}
+@media (hover: hover) {
+  body.dark #note-fab:hover { background: var(--accent); color: white; }
 }
 #note-fab svg { width: 28px; height: 28px; pointer-events: none; }
 @media (hover: hover) {
@@ -8161,7 +8172,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1372';
+const APP_VERSION = '0.1375';
 
 
 
@@ -10650,15 +10661,74 @@ function urlsToLinks(text, addLineWrappers) {
         // convention used elsewhere for indent-level calculations) before
         // counting, so the gap matches the app's own definition of how
         // wide a tab is, not the browser's arbitrary tab-stop rendering.
-        var _markerMatch = line.match(/^(\s*(?:<svg class="viewer-checkbox"[^>]*>.*?<\/svg>|[•▪◦]|-))([ \t]*)/);
+        // The marker regex used to require the marker to be the literal
+        // first characters of `line` (the RENDERED HTML) — but inline
+        // formatting (highlight, bold, italic, strikethrough, custom-hex
+        // highlight colors) wraps the line in an OPENING TAG first
+        // (<span ...>, <strong>, <em>, <s>), so the hyphen/checkbox SVG
+        // is no longer literally at position 0 once any of those are
+        // present. stripFormattingForDetect() already solved this
+        // correctly for the RAW markdown (used above for _lciClass) —
+        // but that fix doesn't help HERE, because this regex runs
+        // against the already-RENDERED HTML, a different string with a
+        // different structure. Mirror the same "skip past leading
+        // wrappers" idea here, but for HTML opening tags instead of
+        // markdown syntax: capture (and preserve, so the formatting
+        // still visually applies) any leading opening tag(s), then
+        // match the real marker after them. This is the general fix —
+        // it covers every CURRENT inline-formatting tag generically (by
+        // shape, not by enumerating each one) and any future one that
+        // follows the same "wraps in one opening tag" pattern, rather
+        // than special-casing highlight specifically.
+        var _leadingTags = '';
+        var _searchLine = line;
+        var _tagPeel;
+        while ((_tagPeel = _searchLine.match(/^<[a-z][a-z0-9]*(?:\s[^>]*)?>/i))) {
+          // Stop peeling at the checkbox SVG's own opening tag — that IS
+          // the marker, not a wrapper around it. Without this check, the
+          // peeling loop would consume it before the marker regex below
+          // ever got a chance to match against it, breaking every plain
+          // (non-highlighted) checkbox line, not just highlighted ones.
+          if (/^<svg class="viewer-checkbox"/i.test(_tagPeel[0])) break;
+          _leadingTags += _tagPeel[0];
+          _searchLine = _searchLine.slice(_tagPeel[0].length);
+        }
+        var _markerMatch = _searchLine.match(/^(\s*(?:<svg class="viewer-checkbox"[^>]*>.*?<\/svg>|[•▪◦]|-))([ \t]*)/);
         if (_markerMatch) {
           var _markerHtml = _markerMatch[1];
           var _tabWidth = settings.indentSpaces || 2;
           var _gapRaw = _markerMatch[2].replace(/\t/g, ' '.repeat(_tabWidth));
           var _gapSpaces = _gapRaw.length || 1; // at least one space if none captured (e.g. marker glued to text)
-          var _restHtml = line.slice(_markerMatch[0].length);
-          line = '<span class="line-marker">' + _markerHtml + '<span style="white-space:pre">' + ' '.repeat(_gapSpaces) + '</span></span>' +
-                 '<span class="line-content">' + _restHtml + '</span>';
+          // Slice from _searchLine (the peeled string), not the original
+          // line — _markerMatch's offsets are relative to _searchLine,
+          // not line, once any leading tags were peeled off above.
+          var _restHtml = _searchLine.slice(_markerMatch[0].length);
+          // _leadingTags (e.g. <span class="viewer-highlight" ...>) is
+          // both OPENED on the marker side AND explicitly CLOSED right
+          // after the marker, then RE-OPENED at the start of
+          // .line-content so the formatting continues across both
+          // spans without leaving any tag unbalanced. A naive version
+          // that opened the tag once but only ever closed the
+          // surrounding .line-marker span (not the formatting tag
+          // itself) left it open, corrupting everything rendered after
+          // this line — counted and confirmed with a concrete test
+          // before fixing. Build the matching close-tag set by reading
+          // back each opening tag's element name.
+          var _closingTags = '';
+          var _tagNameRe = /^<([a-z][a-z0-9]*)/i;
+          var _peeledForClose = _leadingTags;
+          var _closeStack = [];
+          var _peelMatch2;
+          while ((_peelMatch2 = _peeledForClose.match(/^<[a-z][a-z0-9]*(?:\s[^>]*)?>/i))) {
+            var _tagName = _tagNameRe.exec(_peelMatch2[0])[1];
+            _closeStack.push(_tagName);
+            _peeledForClose = _peeledForClose.slice(_peelMatch2[0].length);
+          }
+          for (var _ci = _closeStack.length - 1; _ci >= 0; _ci--) {
+            _closingTags += '</' + _closeStack[_ci] + '>';
+          }
+          line = '<span class="line-marker">' + _leadingTags + _markerHtml + '<span style="white-space:pre">' + ' '.repeat(_gapSpaces) + '</span>' + _closingTags + '</span>' +
+                 '<span class="line-content">' + _leadingTags + _restHtml + '</span>';
         }
       } else if (!_isListIshLine && _rawLeading > 0) {
         // Plain paragraph with ad-hoc leading spaces/tabs that the user
@@ -19200,7 +19270,12 @@ function makeImportFolderName(label) {
     if (!currentNoteId || !notes[currentNoteId]) return false;
     var lines = (notes[currentNoteId].content || '').split('\n');
     return lines.some(function(line) {
-      var core = line.replace(/^\s*/, '');
+      // Use the shared stripFormattingForDetect(), not a whitespace-only
+      // strip — a checked item wrapped in formatting (==highlight==,
+      // **bold**, a custom-hex highlight color, etc.) was silently
+      // invisible to this check otherwise, same root cause as the
+      // Check State and line-continuation-indent bugs found earlier.
+      var core = stripFormattingForDetect(line);
       if (/^\[x\]/i.test(core)) return true;
       if (/^\[x:[a-z]+\]/i.test(core)) return true;
       if (/^- /.test(core)) {
@@ -19224,7 +19299,9 @@ function makeImportFolderName(label) {
       var idx = parseInt(div.dataset.line);
       if (isNaN(idx)) return;
       var raw = lines[idx] || '';
-      var core = raw.replace(/^\s*/, '');
+      // Same fix as noteHasCheckedItems() above — shared detection
+      // function, not a local whitespace-only strip.
+      var core = stripFormattingForDetect(raw);
       var isChecked = /^\[x\]/i.test(core)
                    || /^\[x:[a-z]+\]/i.test(core)
                    || (/^- /.test(core) && /^~~.+~~$/.test(core.slice(2).trim()));
@@ -21324,36 +21401,29 @@ function makeImportFolderName(label) {
     if (lineIndex >= lines.length) return;
     var line = lines[lineIndex];
 
-    // Robustly strip ALL formatting wrappers to find the core content.
-    // Handles any combination of: # headings, **bold**, *italic*, _italic_,
-    // ~~strike~~, ==highlight==, {color}...{/color}, and whitespace.
-    function stripAllFormatting(s) {
-      var prev;
-      do {
-        prev = s;
-        s = s
-          .replace(/^#{1,6}\s+/, '')          // heading markers
-          .replace(/^\*\*/, '').replace(/\*\*$/, '')  // bold
-          .replace(/^\*/, '').replace(/\*$/, '')       // italic *
-          .replace(/^_/, '').replace(/_$/, '')           // italic _
-          .replace(/^~~/, '').replace(/~~$/, '')         // strikethrough
-          .replace(/^==/, '').replace(/==$/, '')         // highlight
-          .replace(/^\{[a-z]+\}/i, '')                  // color open tag
-          .replace(/\{\/?[a-z]+\}$/i, '')              // color close tag
-          .trim();
-      } while (s !== prev);
-      return s;
-    }
-
-    var core = stripAllFormatting(line);
-    // Match: [ ]/[x] plain, [ :color]/[x:color] colored checkboxes
+    // CRITICAL: never duplicate formatting-strip logic locally — always
+    // call the one shared stripFormattingForDetect(), which every other
+    // checkbox/hyphen detection call site in the app also uses. A local
+    // near-duplicate here previously didn't know about the custom-hex
+    // highlight syntax (==#hex:text== / ==#bg|#fg:text==), so lines
+    // using it were silently rejected by this gate even though the
+    // shared function (and the rest of this very handler, further
+    // below) handled them correctly.
+    var core = stripFormattingForDetect(line);
+    // Use the shared isCheckboxRaw() rather than re-inlining the same
+    // [ ]/[x]/[:color]/- pattern checks locally — one detection
+    // implementation, called everywhere.
     var isCheckbox = /^\[[ x]\]/i.test(core)
                   || /^\[x?:[a-z]+\]/i.test(core)
                   || /^\[ ?:[a-z]+\]/i.test(core);
     var isHyphenItem = /^- /.test(core);
 
-    if (!isCheckbox && !isHyphenItem) {
-      showToast('Tap a line that starts with a checkbox or hyphen', false);
+    if (!isCheckboxRaw(core)) {
+      if (settings.debugLoggingEnabled) {
+        showToast('Check State: not recognized as checkbox-ish. core="' + core.slice(0, 60) + '"', true);
+      } else {
+        showToast('Tap a line that starts with a checkbox or hyphen', false);
+      }
       return;
     }
     e.stopPropagation();
@@ -21363,19 +21433,10 @@ function makeImportFolderName(label) {
       var cb = lineDiv.querySelector('.viewer-checkbox');
       if (cb) cb.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     } else {
-      // Hyphen item — find the '- ' in the core and apply strikethrough to the body,
-      // rebuilding the line by replacing just that portion in the original.
+      // Hyphen item — toggle struck/unstruck state via applyCheckToLine,
+      // which detects the current state internally from the raw line.
       pushUndo();
-      // CRITICAL: use applyCheckToLine — never inline hyphen strikethrough logic
-      // Determine current check state from core (stripped) line
-      var _hCore = stripFormattingForDetect(line);
-      // Detect struck state from the core (stripped) line's body.
-      // Cannot use raw line alone — the whole line may be wrapped in ~~ (e.g. ~~- text~~),
-      // making indexOf('- ') find '- ' inside the wrapper.
-      // Instead: check if applyCheckToLine(line, false, true) differs from the line —
-      // if it does, the line IS currently struck; if not, it is not struck.
-      // Simpler: find '- ' in the core (stripped) and check the body there.
-      // CRITICAL: use 'toggle' — applyCheckToLine detects current state internally.
+      // CRITICAL: use applyCheckToLine — never inline hyphen strikethrough logic.
       // Never inline struck detection here; it will be wrong for edge cases.
       var _hDoStrike = settings.checkStrikethrough !== false;
       var _newHyphenLine = applyCheckToLine(line, 'toggle', _hDoStrike);
@@ -24689,6 +24750,14 @@ function stripFormattingForDetect(s) {
       .replace(/^\*/, '').replace(/\*$/, '')
       .replace(/^_/, '').replace(/_$/, '')
       .replace(/^~~/, '').replace(/~~$/, '')
+      // Custom-hex highlight syntax: ==#hex|#hex:content== (bg+fg) or
+      // ==#hex:content== (bg only) — the embedded hex code(s) and colon
+      // sit between the opening == and the actual content, so a plain
+      // ^==/==$ strip (below) would leave "#FFB8D0:" stuck on the front
+      // of the content, hiding whatever real marker (e.g. "- ") comes
+      // after it from every detection function that uses this helper.
+      .replace(/^==#[0-9a-fA-F]{3,6}\|#[0-9a-fA-F]{3,6}:/, '').replace(/==$/, '')
+      .replace(/^==#[0-9a-fA-F]{3,6}:/, '').replace(/==$/, '')
       .replace(/^==/, '').replace(/==$/, '')
       .replace(/^\{[a-z]+\}/i, '').replace(/\{\/?[a-z]+\}$/i, '')
       .trim();
