@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1375 -->
+<!-- Remember App - Version 0.1380 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1375
+  Version 0.1380
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -3762,10 +3762,30 @@ body:not(.dark) .note-item {
 .help-collapsible-body {
   display: none;
   padding: 0 20px 12px 20px;
+  font-family: var(--font-body);
+  color: var(--fg2);
 }
 .help-collapsible.open .help-collapsible-body {
   display: block;
 }
+/* Matches help-section-body's paragraph styling exactly — the
+   collapsible help sections (Collapsible outline, Tips, Setup, and
+   anything nested under them) never had this set, so their text fell
+   through to the browser/ancestor default color instead of the muted
+   --fg2 the earlier, non-collapsible help sections use. In dark mode
+   specifically, that meant text rendered at --fg (near-white,
+   #f0ebe0) instead of --fg2 (a dimmer tan, #b8b0a0) — much brighter
+   and more prominent than intended, looking almost bold by contrast
+   even though no font-weight was actually different. Set on the
+   CONTAINER (not just `p`) so it correctly inherits down to <li> and
+   any other child elements too, not just paragraphs directly. */
+.help-collapsible-body p {
+  font-size: 0.95em;
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+.help-collapsible-body p:last-child { margin-bottom: 0; }
+.help-collapsible-body strong { color: var(--fg); }
 /* Nested sub-sections inside a help collapsible */
 .help-sub {
   border-top: 1px solid var(--border);
@@ -3816,8 +3836,20 @@ body:not(.dark) .note-item {
 .help-sub-body {
   display: none;
   padding-bottom: 10px;
+  font-family: var(--font-body);
+  color: var(--fg2);
 }
 .help-sub.open .help-sub-body { display: block; }
+/* Same gap, same fix as help-collapsible-body above — nested help
+   sub-sections never had their own paragraph color/size set either.
+   Set on the container so it inherits to <li> too, not just <p>. */
+.help-sub-body p {
+  font-size: 0.95em;
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+.help-sub-body p:last-child { margin-bottom: 0; }
+.help-sub-body strong { color: var(--fg); }
 .help-body code, .help-body pre, .help-body .url-mono {
   font-family: monospace;
 }
@@ -8172,7 +8204,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1375';
+const APP_VERSION = '0.1380';
 
 
 
@@ -8782,6 +8814,93 @@ function lightenHex(hex, percent) {
   g = Math.round(g + (255 - g) * frac);
   b = Math.round(b + (255 - b) * frac);
   return '#' + [r,g,b].map(function(v) { return v.toString(16).padStart(2,'0'); }).join('');
+}
+
+// Maps each font's exact CSS family value (matching note-font-select's
+// <option value="...">) to the weights it actually supports — either a
+// fixed list (static fonts, loaded with semicolon-separated weights in
+// the @import line) or a {min,max} continuous range (variable fonts,
+// loaded with a "min..max" range). Used to: (1) clamp a weight to the
+// nearest one a given font can actually render, when switching fonts
+// with a weight value the new font doesn't support, and (2) decide how
+// fine-grained the weight slider's step should be for the currently
+// selected font (fine for variable fonts, which can render any integer
+// weight in their range; coarse for static fonts, which can only ever
+// show their few discrete weights regardless of step size).
+var FONT_WEIGHT_SUPPORT = {
+  "'Atkinson Hyperlegible', sans-serif": [400, 700],
+  "'Lexend', sans-serif": [400, 500, 600, 700],
+  "'Nunito', sans-serif": [400, 500, 600, 700],
+  "'Rubik', sans-serif": [400, 500, 600, 700],
+  "'IBM Plex Sans', sans-serif": [400, 500, 600, 700],
+  "'Source Sans 3', sans-serif": [400, 500, 600, 700],
+  "'Open Sans', sans-serif": [400, 500, 600, 700],
+  "'Noto Sans', sans-serif": [400, 500, 600, 700],
+  "'Inter', sans-serif": { min: 300, max: 700 },
+  "'Google Sans Flex', sans-serif": { min: 300, max: 700 },
+  "'Afacad', sans-serif": [400, 700],
+  "'Alegreya Sans', sans-serif": [400, 700],
+  "'Comic Relief', cursive": [400, 700],
+  "'Lora', serif": [400, 500, 600, 700],
+  "'Merriweather', serif": [300, 400, 700],
+  "'Literata', serif": [400, 500, 600],
+  "'Spectral', serif": [300, 400, 700],
+  "'Caveat', cursive": [400, 700],
+  "'Patrick Hand SC', cursive": [400],
+  "'Edu SA Beginner', cursive": [400, 700],
+  "'Playwrite NZ Basic', cursive": [100, 400],
+  "'Roboto Mono', 'Courier New', monospace": [400, 500, 700],
+  "Georgia, serif": [400, 700] // system font, not Google-loaded, but the browser only synthesizes bold (700) vs regular (400) for it
+};
+
+// Returns the closest weight `fontValue` can actually render to
+// `weight` — unchanged if the font is variable (any value in its
+// range is fine) or already supports that exact static weight;
+// otherwise the nearest value from its discrete list.
+function getNearestSupportedWeight(fontValue, weight) {
+  var support = FONT_WEIGHT_SUPPORT[fontValue];
+  if (!support) return weight; // unknown font value — leave as-is, don't guess
+  if (!Array.isArray(support)) {
+    // Variable font — any integer within its range is valid; just clamp
+    // to the range's own bounds (e.g. moving from "no font" defaults,
+    // or a stray out-of-range stored value, should still land somewhere sane).
+    return Math.max(support.min, Math.min(support.max, weight));
+  }
+  // Static font — find the closest value in the discrete list.
+  var closest = support[0];
+  var closestDist = Math.abs(weight - closest);
+  for (var i = 1; i < support.length; i++) {
+    var dist = Math.abs(weight - support[i]);
+    if (dist < closestDist) { closest = support[i]; closestDist = dist; }
+  }
+  return closest;
+}
+
+// True if `fontValue` is a variable font (continuous weight range),
+// false if it's static (discrete weight list) or unknown.
+function isVariableWeightFont(fontValue) {
+  var support = FONT_WEIGHT_SUPPORT[fontValue];
+  return !!support && !Array.isArray(support);
+}
+
+// Switches each weight slider's step size based on whether the
+// CURRENTLY selected font for that slider is variable or static. A
+// fine step (10) on a variable font lets you actually reach in-between
+// weights like 450, which the font can genuinely render. The same fine
+// step on a static font would just let you scrub through many slider
+// positions that all silently resolve to the same couple of real
+// weights (e.g. every value 350-449 rendering identically as 400) —
+// confusing, since the slider would visually suggest far more
+// precision than the font can actually show. Coarse (100) for those.
+function updateUiFontWeightStep() {
+  var r = document.getElementById('ui-font-weight-range');
+  if (!r) return;
+  r.step = isVariableWeightFont(settings.font) ? '10' : '100';
+}
+function updateNoteFontWeightStep() {
+  var r = document.getElementById('note-font-weight-range');
+  if (!r) return;
+  r.step = isVariableWeightFont(settings.noteFont) ? '10' : '100';
 }
 
 function applySettings() {
@@ -10145,8 +10264,22 @@ var _readingMode = false;
 function toggleReadingMode() {
   _readingMode = !_readingMode;
   document.body.classList.toggle('reading-mode', _readingMode);
-  // Force view mode when entering reading mode
-  if (_readingMode && !isViewMode) setViewMode(true);
+  // Quiet mode's visual treatment (translucent toolbar, back/speak
+  // pill, fading the rest of the toolbar) is entirely driven by the
+  // body.reading-mode CSS class above — none of it depends on which
+  // of typing mode / R&R mode is actually showing underneath. This
+  // used to force R&R mode (setViewMode(true)) every time quiet mode
+  // was entered, with no real reason found for it — meaning entering
+  // quiet mode from typing mode silently switched you to R&R mode,
+  // and leaving quiet mode never switched you back. Now: if currently
+  // in typing mode, just dismiss the virtual keyboard (the same
+  // editor.blur() the dedicated "Done typing" button already uses,
+  // landing in EMNI — no insertion point, keyboard down, but still
+  // typing mode) instead of leaving typing mode entirely.
+  if (_readingMode && !isViewMode) {
+    var _ed = document.getElementById('note-editor');
+    if (_ed && document.activeElement === _ed) _ed.blur();
+  }
   // Toast hint about @tags when entering quiet mode in view mode
   // showTagsInViewer defaults to true — treat undefined as true
   if (_readingMode && isViewMode && settings.showTagsInViewer !== false) {
@@ -11468,19 +11601,52 @@ function toggleBlockSelection(lineIndex) {
 //       'heading'|'highlight-color'
 // color: optional, used for 'color', 'cbcolor', 'heading', 'highlight-color'
 // Returns the modified line string.
+// Extracts a leading marker that must stay OUTSIDE any wrapping
+// formatting syntax (**bold**, ==highlight==, {color}...{/color}, etc.)
+// — specifically a heading marker (#### ) or a checkbox marker
+// ([ ]/[x]/[ :color]/[x:color], used by strikethrough only, since
+// that's the one formatting type checkboxes commonly combine with).
+// Without this, applying highlight/bold/italic/color to a heading line
+// wrapped the WHOLE line including the #### markers inside the
+// formatting syntax (e.g. ==#### Items==), which no detection code
+// (here or anywhere else) can recognize as a heading — Obsidian and
+// other markdown editors keep the heading marker outside the wrapper
+// (#### ==Items==), and this app's own formatting buttons should
+// produce the same shape, not just tolerate it if a person types it
+// that way themselves.
+function extractWrapPrefix(body, includeCheckbox) {
+  var headingMatch = body.match(/^(#{1,6}\s+)/);
+  if (headingMatch) {
+    return { prefix: headingMatch[1], rest: body.slice(headingMatch[1].length) };
+  }
+  if (includeCheckbox) {
+    var cbMatch = body.match(/^(\[(?:[ x]|x?:[a-z]+)\]\s*)/i);
+    if (cbMatch) {
+      return { prefix: cbMatch[1], rest: body.slice(cbMatch[1].length) };
+    }
+  }
+  return { prefix: '', rest: body };
+}
+
 function toggleLineFormatting(line, type, color) {
   if (!line.trim()) return line; // skip blank lines
   if (type === 'bold') {
     var _bdInd = (line.match(/^(\s*)/) || ['',''])[1];
-    var _bdBody = line.slice(_bdInd.length);
+    var _bdAfterInd = line.slice(_bdInd.length);
+    var _bdSplit = extractWrapPrefix(_bdAfterInd, false);
+    var _bdBody = _bdSplit.rest;
+    var _bdResult;
     if (_bdBody.startsWith('**') && _bdBody.endsWith('**') && _bdBody.length > 4) {
-      return _bdInd + _bdBody.slice(2, -2);
+      _bdResult = _bdBody.slice(2, -2);
     } else {
-      return _bdInd + '**' + _bdBody.replace(/\*\*/g, '') + '**';
+      _bdResult = '**' + _bdBody.replace(/\*\*/g, '') + '**';
     }
+    return _bdInd + _bdSplit.prefix + _bdResult;
   } else if (type === 'italic') {
     var _itInd = (line.match(/^(\s*)/) || ['',''])[1];
-    var _itLine = line.slice(_itInd.length);
+    var _itAfterInd = line.slice(_itInd.length);
+    var _itSplit = extractWrapPrefix(_itAfterInd, false);
+    var _itLine = _itSplit.rest;
     var hasBold = _itLine.startsWith('**') && _itLine.endsWith('**') && _itLine.length > 4;
     var inner = hasBold ? _itLine.slice(2, -2) : _itLine;
     var isItalic = inner.length > 2 && inner.charAt(0) === '*' && inner.charAt(1) !== '*' &&
@@ -11491,18 +11657,17 @@ function toggleLineFormatting(line, type, color) {
     } else {
       newInner = '*' + inner.replace(/\*([^*\n]*)\*/g, '$1') + '*';
     }
-    return _itInd + (hasBold ? '**' + newInner + '**' : newInner);
+    return _itInd + _itSplit.prefix + (hasBold ? '**' + newInner + '**' : newInner);
   } else if (type === 'strikethrough') {
-    // Preserve leading whitespace and any checkbox prefix.
+    // Preserve leading whitespace, a heading marker, and any checkbox prefix.
     // IMPORTANT: For partial internal strikethroughs (e.g. ~~Pizza~~ in body),
     // we wrap the whole body in outer ~~...~~ rather than stripping inner ones.
     // Toggle off only if the body is ALREADY fully wrapped in ~~...~~.
     var _stInd = (line.match(/^(\s*)/) || ['',''])[1];
-    var _stLine = line.slice(_stInd.length);
-    // Match any checkbox variant: [ ], [x], [ :color], [x:color]
-    var cbMatch = _stLine.match(/^(\[(?:[ x]|x?:[a-z]+)\]\s*)/i);
-    var cbPrefix = cbMatch ? cbMatch[1] : '';
-    var lineBody = _stLine.slice(cbPrefix.length);
+    var _stAfterInd = line.slice(_stInd.length);
+    var _stSplit = extractWrapPrefix(_stAfterInd, true);
+    var cbPrefix = _stSplit.prefix;
+    var lineBody = _stSplit.rest;
     var bodyTrimmed = lineBody.trim();
     if (bodyTrimmed.startsWith('~~') && bodyTrimmed.endsWith('~~') && bodyTrimmed.length > 4) {
       // Toggle off: remove outermost ~~ only (preserve internal ones)
@@ -11514,15 +11679,21 @@ function toggleLineFormatting(line, type, color) {
     }
   } else if (type === 'highlight') {
     var _hlInd = (line.match(/^(\s*)/) || ['',''])[1];
-    var _hlBody = line.slice(_hlInd.length);
+    var _hlAfterInd = line.slice(_hlInd.length);
+    var _hlSplit = extractWrapPrefix(_hlAfterInd, false);
+    var _hlBody = _hlSplit.rest;
+    var _hlResult;
     if (_hlBody.startsWith('==') && _hlBody.endsWith('==') && _hlBody.length > 4) {
-      return _hlInd + _hlBody.slice(2, -2);
+      _hlResult = _hlBody.slice(2, -2);
     } else {
-      return _hlInd + '==' + _hlBody.replace(/==/g, '') + '==';
+      _hlResult = '==' + _hlBody.replace(/==/g, '') + '==';
     }
+    return _hlInd + _hlSplit.prefix + _hlResult;
   } else if (type === 'color') {
     var _clInd = (line.match(/^(\s*)/) || ['',''])[1];
-    var _clBody = line.slice(_clInd.length);
+    var _clAfterInd = line.slice(_clInd.length);
+    var _clSplit = extractWrapPrefix(_clAfterInd, false);
+    var _clBody = _clSplit.rest;
     var _hlMatch = _clBody.match(/^==(.*)==$/);
     var _clInner = _hlMatch ? _hlMatch[1] : _clBody;
     var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3';
@@ -11534,7 +11705,7 @@ function toggleLineFormatting(line, type, color) {
       var colorRe = new RegExp('^\\{' + color + '\\}(.*)\\{\\/' + color + '\\}$');
       result = colorRe.test(_clInner) ? stripped : '{' + color + '}' + stripped + '{/' + color + '}';
     }
-    return _clInd + (_hlMatch ? '==' + result + '==' : result);
+    return _clInd + _clSplit.prefix + (_hlMatch ? '==' + result + '==' : result);
   } else if (type === 'cbcolor') {
     var _cbColorRe = /\[([ x]):(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom)\]/gi;
     var _cbPlainRe = /\[([ x])\]/gi;
@@ -11553,17 +11724,25 @@ function toggleLineFormatting(line, type, color) {
     var curLevel = curMatch ? curMatch[1].length : 0;
     return (level === 0 || curLevel === level) ? noHash : '#'.repeat(level) + ' ' + noHash;
   } else if (type === 'highlight-color') {
-    var existingHl = line.match(/^==(#[0-9a-fA-F]{3,6}):(.+)==$/);
-    var plainHl    = line.match(/^==([^=].+)==$/);
+    var _hcInd = (line.match(/^(\s*)/) || ['',''])[1];
+    var _hcAfterInd = line.slice(_hcInd.length);
+    var _hcSplit = extractWrapPrefix(_hcAfterInd, false);
+    var _hcHeadingPrefix = _hcSplit.prefix;
+    var _hcBody = _hcSplit.rest;
+    var existingHl = _hcBody.match(/^==(#[0-9a-fA-F]{3,6}):(.+)==$/);
+    var plainHl    = _hcBody.match(/^==([^=].+)==$/);
+    var _hcResult;
     if (color === 'none') {
-      if (existingHl) return existingHl[2];
-      if (plainHl) return plainHl[1];
+      if (existingHl) _hcResult = existingHl[2];
+      else if (plainHl) _hcResult = plainHl[1];
+      else _hcResult = _hcBody;
     } else {
-      if (existingHl && existingHl[1].toLowerCase() === color.toLowerCase()) return existingHl[2];
-      if (existingHl) return '==' + color + ':' + existingHl[2] + '==';
-      if (plainHl)    return '==' + color + ':' + plainHl[1]    + '==';
-      return '==' + color + ':' + line + '==';
+      if (existingHl && existingHl[1].toLowerCase() === color.toLowerCase()) _hcResult = existingHl[2];
+      else if (existingHl) _hcResult = '==' + color + ':' + existingHl[2] + '==';
+      else if (plainHl)    _hcResult = '==' + color + ':' + plainHl[1]    + '==';
+      else _hcResult = '==' + color + ':' + _hcBody + '==';
     }
+    return _hcInd + _hcHeadingPrefix + _hcResult;
   }
   return line;
 }
@@ -12963,6 +13142,23 @@ function openSettings() {
   var fs = document.getElementById('font-select');
   fs.value = settings.font;
   updateFontPreview();
+  updateUiFontWeightStep();
+
+  // Note font face dropdown was never synced here — it stayed at
+  // whatever the <select> happened to already show (its HTML default,
+  // Atkinson Hyperlegible, the first <option>) unless the in-note Font
+  // Face bottom-sheet pills were used THIS session, since only THAT
+  // click handler updated this dropdown's value. On a fresh app
+  // load/reopen, the actual setting (settings.noteFont) was correctly
+  // saved and applied to notes, but this dropdown never reflected it.
+  var nfs = document.getElementById('note-font-select');
+  var _curNoteFont = settings.noteFont || settings.font || "'Atkinson Hyperlegible', sans-serif";
+  if (nfs) nfs.value = _curNoteFont;
+  // Same gap for the preview text right next to it — its font was only
+  // ever set inside the dropdown's own 'change' handler, never here.
+  var _nfp = document.getElementById('note-font-preview-text');
+  if (_nfp) _nfp.style.fontFamily = _curNoteFont;
+  updateNoteFontWeightStep();
 
   var fsr = document.getElementById('ui-font-size-range');
   fsr.value = settings.uiFontSize;
@@ -17107,6 +17303,21 @@ function makeImportFolderName(label) {
   // Font select
   document.getElementById('font-select').addEventListener('change', function() {
     settings.font = this.value;
+    // If the new font can't render the current UI weight (e.g. it's a
+    // static font and the weight came from a variable font's
+    // in-between value), snap to the closest weight it actually
+    // supports — otherwise the slider and stored setting would silently
+    // disagree with what's really rendered (the browser would render
+    // its own nearest static weight regardless, without telling anyone).
+    var snappedUiWeight = getNearestSupportedWeight(this.value, parseInt(settings.uiFontWeight) || 400);
+    if (snappedUiWeight !== (parseInt(settings.uiFontWeight) || 400)) {
+      settings.uiFontWeight = snappedUiWeight;
+      var uiwr = document.getElementById('ui-font-weight-range');
+      var uiwv = document.getElementById('ui-font-weight-val');
+      if (uiwr) uiwr.value = snappedUiWeight;
+      if (uiwv) uiwv.textContent = snappedUiWeight;
+    }
+    updateUiFontWeightStep();
     updateFontPreview();
     applySettings();
     updateSaveBtnState();
@@ -17129,6 +17340,17 @@ function makeImportFolderName(label) {
     var nfp = document.getElementById('note-font-preview-text');
     if (nfp) nfp.style.fontFamily = this.value;
     document.documentElement.style.setProperty('--font-note', this.value);
+    // Same snapping as the UI font handler above — see its comment.
+    var snappedNoteWeight = getNearestSupportedWeight(this.value, parseInt(settings.fontWeight) || 400);
+    if (snappedNoteWeight !== (parseInt(settings.fontWeight) || 400)) {
+      settings.fontWeight = snappedNoteWeight;
+      var nwr = document.getElementById('note-font-weight-range');
+      var nwv = document.getElementById('note-font-weight-val');
+      if (nwr) nwr.value = snappedNoteWeight;
+      if (nwv) nwv.textContent = snappedNoteWeight;
+      applySettings();
+    }
+    updateNoteFontWeightStep();
     updateSaveBtnState();
   });
   // Font size range
@@ -18671,10 +18893,22 @@ function makeImportFolderName(label) {
   }
   // ── Heading collapse helpers ─────────────────────────────────────────
   isHeadingRaw = function(rawLine) {
-    return /^#{1,6} /.test(rawLine);
+    // Use stripWrapperFormattingOnly() — NOT stripFormattingForDetect(),
+    // which also strips a heading marker as part of ITS job (useful for
+    // checkbox/hyphen callers, where a heading marker is irrelevant
+    // noise) — that would strip away the very thing being tested for
+    // here. A heading wrapped in highlight/custom-hex-highlight
+    // (==#hex:#### Items:==) is a legacy/safety-net case kept for any
+    // existing notes created before the formatting BUTTONS were fixed
+    // to never wrap a heading marker inside formatting syntax in the
+    // first place (see extractWrapPrefix/toggleLineFormatting) —
+    // Obsidian and other markdown editors keep the heading marker
+    // outside the wrapper (#### ==text==), which is the shape this
+    // app's own buttons now produce too.
+    return /^#{1,6} /.test(stripWrapperFormattingOnly(rawLine));
   }
   function getHeadingLevel(rawLine) {
-    var m = rawLine.match(/^(#{1,6}) /);
+    var m = stripWrapperFormattingOnly(rawLine).match(/^(#{1,6}) /);
     return m ? m[1].length : 0;
   }
   getHeadingDescendants = function(lines, parentIdx) {
@@ -24741,21 +24975,27 @@ function flashSelectBtn() {
   }, 300);
 }
 
-function stripFormattingForDetect(s) {
+// Strips only WRAPPER formatting syntax (bold/italic/strikethrough/
+// highlight/custom-hex-highlight/color-tag) — deliberately does NOT
+// strip a leading heading marker, unlike stripFormattingForDetect()
+// below. Needed because heading detection (isHeadingRaw/getHeadingLevel)
+// must look for the SAME wrapper-stripping stripFormattingForDetect()
+// already does for checkbox/hyphen detection (so a highlighted heading,
+// e.g. ==#hex:#### Items:==, is still recognized) — but it can't just
+// call stripFormattingForDetect() itself, since that function's WHOLE
+// job for OTHER callers includes stripping the heading marker too
+// (checkbox/hyphen detection treats a heading marker as irrelevant
+// noise to remove before checking for [ ]/[x]/-). Heading detection
+// needs the opposite: strip everything EXCEPT the heading marker, so
+// it's still there to find afterward.
+function stripWrapperFormattingOnly(s) {
   var prev;
   do {
     prev = s;
-    s = s.replace(/^#{1,6}\s+/, '')
-      .replace(/^\*\*/, '').replace(/\*\*$/, '')
+    s = s.replace(/^\*\*/, '').replace(/\*\*$/, '')
       .replace(/^\*/, '').replace(/\*$/, '')
       .replace(/^_/, '').replace(/_$/, '')
       .replace(/^~~/, '').replace(/~~$/, '')
-      // Custom-hex highlight syntax: ==#hex|#hex:content== (bg+fg) or
-      // ==#hex:content== (bg only) — the embedded hex code(s) and colon
-      // sit between the opening == and the actual content, so a plain
-      // ^==/==$ strip (below) would leave "#FFB8D0:" stuck on the front
-      // of the content, hiding whatever real marker (e.g. "- ") comes
-      // after it from every detection function that uses this helper.
       .replace(/^==#[0-9a-fA-F]{3,6}\|#[0-9a-fA-F]{3,6}:/, '').replace(/==$/, '')
       .replace(/^==#[0-9a-fA-F]{3,6}:/, '').replace(/==$/, '')
       .replace(/^==/, '').replace(/==$/, '')
@@ -24763,6 +25003,10 @@ function stripFormattingForDetect(s) {
       .trim();
   } while (s !== prev);
   return s;
+}
+
+function stripFormattingForDetect(s) {
+  return stripWrapperFormattingOnly(s).replace(/^#{1,6}\s+/, '').trim();
 }
 
 // ===== MOVE COMPLETED TO BOTTOM =====
