@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1386 -->
+<!-- Remember App - Version 0.1393 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1386
+  Version 0.1393
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -3330,6 +3330,11 @@ body.has-mouse .toolbar-drag-handle.dragging {
   /* Fill the full screen height — the fixed toolbars sit on top via padding-top */
   min-height: 100%;
   box-sizing: border-box;
+  /* Establishes a positioning context for .cursor-line-flash (double-
+     tap-to-edit's brief cursor highlight) — without this, that
+     absolutely-positioned overlay would position relative to some
+     further-up ancestor instead, landing in the wrong place entirely. */
+  position: relative;
 }
 
 #note-editor {
@@ -4589,6 +4594,31 @@ mark.help-highlight {
 .help-section-flash {
   animation: helpSectionFlash 0.9s ease-out forwards;
   border-radius: 4px;
+}
+/* Double-tap-to-edit cursor highlight: a thin overlay positioned at the
+   tapped line's location, briefly flashed in the accent color. Uses
+   its OWN keyframe (cursorLineFlash) rather than reusing
+   helpSectionFlash directly — that one is a SOLID accent-color flash,
+   appropriate for highlighting a whole section header with surrounding
+   whitespace in Settings/Help, but far too opaque here: this overlay
+   sits directly on top of text the person needs to actually read
+   underneath it, so it needs to stay translucent throughout the
+   animation, not opaque at any point. A <textarea> has no internal
+   markup to highlight text within directly, so this is a separate
+   absolutely-positioned element layered on top at the cursor's Y
+   position instead, rather than literally highlighting characters. */
+@keyframes cursorLineFlash {
+  0%   { background: rgba(var(--accent-rgb, 91,124,110), 0.35); }
+  60%  { background: rgba(var(--accent-rgb, 91,124,110), 0.35); }
+  100% { background: rgba(var(--accent-rgb, 91,124,110), 0); }
+}
+.cursor-line-flash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  animation: cursorLineFlash 0.9s ease-out forwards;
+  z-index: 1;
 }
 
 .help-section {
@@ -6276,16 +6306,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <button id="settings-jump-btn" aria-label="Jump to section" title="Jump to section" style="width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
-          <div id="settings-jump-menu" style="display:none;position:absolute;right:0;top:40px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:100;min-width:210px;overflow:hidden;">
-            <div class="settings-jump-item" data-section="0">Appearance</div>
-            <div class="settings-jump-item" data-section="1">Text</div>
-            <div class="settings-jump-item" data-section="2">Colors</div>
-            <div class="settings-jump-item" data-section="3">Note Display</div>
-            <div class="settings-jump-item" data-section="4">Layout &amp; Margins</div>
-            <div class="settings-jump-item" data-section="5">Lower Toolbar Buttons</div>
-            <div class="settings-jump-item" data-section="6">Speech</div>
-            <div class="settings-jump-item" data-section="7">Reading Ruler</div>
-            <div class="settings-jump-item" data-section="8">Themes</div>
+          <div id="settings-jump-menu" style="display:none;position:absolute;right:0;top:40px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:100;min-width:210px;overflow:hidden;max-height:60vh;overflow-y:auto;">
+            <div class="settings-jump-item" data-section-id="settings-section-appearance">Appearance</div>
+            <div class="settings-jump-item" data-section-id="settings-section-text">Text</div>
+            <div class="settings-jump-item" data-section-id="settings-section-colors">Colors</div>
+            <div class="settings-jump-item" data-section-id="settings-section-notedisplay">Note Display</div>
+            <div class="settings-jump-item" data-section-id="settings-section-margins">Layout &amp; Margins</div>
+            <div class="settings-jump-item" data-section-id="settings-section-toolbar">Lower Toolbar Buttons</div>
+            <div class="settings-jump-item" data-section-id="settings-section-speech">Speech</div>
+            <div class="settings-jump-item" data-section-id="ruler-settings-section">Reading Ruler</div>
+            <div class="settings-jump-item" data-section-id="settings-section-viewonly">View Only Notes</div>
+            <div class="settings-jump-item" data-section-id="settings-section-checklists">Checklists</div>
+            <div class="settings-jump-item" data-section-id="settings-section-themes">Themes</div>
+            <div class="settings-jump-item" data-section-id="settings-section-debugging">Debugging</div>
           </div>
         </div>
       </div>
@@ -6293,7 +6326,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
 
     <!-- Theme -->
-    <div class="settings-section">
+    <div class="settings-section" id="settings-section-appearance">
     <div class="settings-section-header">
       <div class="settings-label">Appearance</div>
       <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -6327,7 +6360,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
 
     <!-- Typography -->
-    <div class="settings-section">
+    <div class="settings-section" id="settings-section-text">
     <div class="settings-section-header">
       <div class="settings-label">Text</div>
       <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -6552,7 +6585,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
 
     <!-- Colors -->
-    <div class="settings-section">
+    <div class="settings-section" id="settings-section-colors">
     <div class="settings-section-header">
       <div class="settings-label">Colors</div>
       <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -6732,7 +6765,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
 
     <!-- Note Display -->
-    <div class="settings-section">
+    <div class="settings-section" id="settings-section-notedisplay">
     <div class="settings-section-header">
       <div class="settings-label">Note Display</div>
       <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -7062,7 +7095,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
 
     <!-- Speech -->
-    <div class="settings-section">
+    <div class="settings-section" id="settings-section-speech">
     <div class="settings-section-header">
       <div class="settings-label">Speech</div>
       <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -7416,7 +7449,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div><!-- end settings-section-body -->
     </div><!-- end settings-section checklists -->
 
-    <div class="settings-section" data-section="8"><div class="settings-section-header"><div class="settings-label">Themes</div><span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div><div class="settings-section-body">
+    <div class="settings-section" id="settings-section-themes" data-section="8"><div class="settings-section-header"><div class="settings-label">Themes</div><span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div><div class="settings-section-body">
       <div class="settings-row"><div class="settings-row-desc" style="padding:4px 0 8px">Save groups of settings as named themes. Apply a theme globally or assign it to an individual note.</div></div>
       <div class="settings-row" style="padding-bottom:4px"><button id="save-theme-btn" style="padding:0;line-height:1;padding-left:16px;padding-right:16px;height:34px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-family:var(--font-body);font-size:.92em;font-weight:600;cursor:pointer;touch-action:manipulation">Save Current Settings as Theme…</button></div>
       <div id="themes-list-container" style="margin-top:4px"><div id="themes-empty-msg">No themes saved yet.</div></div>
@@ -7701,7 +7734,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <button id="help-collapse-all-btn" style="padding:0 10px;height:22px;border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--fg3);font-family:var(--font-body);font-size:0.72em;cursor:pointer;line-height:1;">Collapse all sections</button>
   </div>
 
-  <div id="help-search-wrap" style="padding:8px 16px 6px;border-bottom:1px solid var(--border);position:sticky;top:56px;z-index:10;background:var(--bg);">
+  <div id="help-search-wrap" style="padding:8px 16px 6px;border-bottom:1px solid var(--border);position:sticky;top:96px;z-index:10;background:var(--bg);">
+    <!-- top is a rough fallback for the instant before JS measures and
+         sets the real value (_positionHelpSearchWrap()) on Help open;
+         it no longer needs to be exact since JS always corrects it. -->
     <div style="display:flex;align-items:center;gap:6px;">
       <div style="flex:1;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;color:var(--fg3);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -8264,7 +8300,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1386';
+const APP_VERSION = '0.1393';
 
 
 
@@ -13454,17 +13490,26 @@ function updateSaveBtnState() {
 // history, and the most likely real cause of "a seemingly random
 // section is expanded" reports. Title text is visible, human-readable,
 // and (checked directly) unique across all current sections.
-function getSettingsSectionKey(sectionEl) {
-  var header = sectionEl.querySelector('.settings-section-header');
-  var label = header ? header.querySelector('.settings-label') : null;
-  if (!label) {
-    // Fallback for any future section that somehow lacks a label —
-    // should not happen given every current section has one, but this
-    // avoids a hard error rather than silently mis-keying.
-    return 'section_' + Array.prototype.indexOf.call(
-      sectionEl.parentElement.querySelectorAll('.settings-section'), sectionEl);
-  }
-  return 'title_' + label.textContent.trim();
+// Shared stable-identity function for collapsible sections in BOTH
+// Settings and Help. Every section in both dialogs now has its own
+// real HTML id (settings-section-appearance, help-sec-tips, etc.) —
+// prefer that always, since it's stable across HTML reordering AND
+// across any future rephrasing/translation of the visible title text.
+// Falls back to title text only for some hypothetical future section
+// that's missing an id, purely so the app doesn't crash; that fallback
+// should never actually be exercised given every current section has
+// an id. Used for: sectionStates / helpSectionStates persistence
+// (sticky open/closed memory) and the Settings/Help jump-to-section
+// menus — one identity scheme for both concerns, in both dialogs.
+function getDialogSectionKey(sectionEl) {
+  if (sectionEl.id) return 'id_' + sectionEl.id;
+  var header = sectionEl.querySelector('.settings-section-header, .help-collapsible-header, .help-sub-header');
+  var label = header ? header.querySelector('.settings-label, .help-collapsible-title, .help-sub-title') : null;
+  if (label) return 'title_' + label.textContent.trim();
+  // Last-resort fallback: position in the page. Should never actually
+  // run given every current section has an id.
+  return 'section_' + Array.prototype.indexOf.call(
+    sectionEl.parentElement.querySelectorAll('.settings-section, .help-collapsible, .help-sub'), sectionEl);
 }
 
 function openSettings() {
@@ -13473,15 +13518,28 @@ function openSettings() {
   // Apply sticky collapsed/expanded state to sections
   var sectionStates = settings.sectionStates || {};
   document.querySelectorAll('#settings-sheet .settings-section').forEach(function(section, idx) {
-    var key = getSettingsSectionKey(section);
-    // Fall back to the OLD index-based key only if the new title-based
-    // key has never been saved — lets anyone with existing saved
-    // preferences keep them through this update; the old key is never
-    // written again after this, so they naturally migrate the first
-    // time they toggle any section.
-    var oldKey = 'section_' + idx;
-    var isOpen = (key in sectionStates) ? sectionStates[key] === true
-               : sectionStates[oldKey] === true;
+    var key = getDialogSectionKey(section); // current scheme: 'id_...'
+    // Three-tier fallback, covering every keying scheme this feature
+    // has ever used, oldest to newest, so nobody's saved preferences
+    // silently reset across any of these updates:
+    //   1. 'section_N' — original, position-based (replaced: could
+    //      silently point at the wrong section after any HTML reorder)
+    //   2. 'title_X' — replaced that with the section's title text
+    //      (replaced: breaks the moment any title is rephrased or
+    //      translated)
+    //   3. 'id_X' — current: the section's real, stable HTML id
+    // None of the older keys are ever written again after this; each
+    // person naturally migrates to the current scheme the first time
+    // they toggle any section.
+    var oldIndexKey = 'section_' + idx;
+    var oldTitleKey = null;
+    var header = section.querySelector('.settings-section-header');
+    var label = header ? header.querySelector('.settings-label') : null;
+    if (label) oldTitleKey = 'title_' + label.textContent.trim();
+    var isOpen;
+    if (key in sectionStates) isOpen = sectionStates[key] === true;
+    else if (oldTitleKey && oldTitleKey in sectionStates) isOpen = sectionStates[oldTitleKey] === true;
+    else isOpen = sectionStates[oldIndexKey] === true;
     section.classList.toggle('open', isOpen);
   });
 
@@ -13690,14 +13748,40 @@ function jumpToSettingsRow(row) {
   }, 80);
 }
 
-function jumpToSettingsSection(idx) {
+function jumpToSettingsSection(sectionId) {
   clearSettingsSearch();
-  var sections = document.querySelectorAll('#settings-sheet .settings-section');
-  var sec = sections[idx];
-  if (!sec) return;
+  // Match by real HTML id directly — every section now has one, so
+  // this is simpler and more robust than the earlier title-text
+  // comparison (which itself replaced an even more fragile numeric
+  // index — see getDialogSectionKey()'s own comment for the full
+  // history of bugs this area has had).
+  var sec = document.getElementById(sectionId);
+  if (!sec || !sec.classList.contains('settings-section')) return;
   sec.classList.add('open');
   setTimeout(function() {
-    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Same fix as Help's jumpToHelpSection(): scrollIntoView({block:
+    // 'start'}) has no idea settings-search-wrap is sticky (top:0) and
+    // floats on top of the scroll container — it scrolls the target
+    // flush to the very top, which then sits partly hidden underneath
+    // the sticky search bar. Measure its actual current height and
+    // scroll just short of that instead, with a little breathing room.
+    var sheet = document.getElementById('settings-sheet');
+    var searchWrap = document.getElementById('settings-search-wrap');
+    var stickyHeight = searchWrap ? searchWrap.getBoundingClientRect().height : 0;
+    if (sheet) {
+      var sheetTop = sheet.getBoundingClientRect().top;
+      var secTop = sec.getBoundingClientRect().top;
+      var targetScrollTop = sheet.scrollTop + (secTop - sheetTop) - stickyHeight - 8;
+      sheet.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+    } else {
+      sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // Brief highlight flash, matching jumpToHelpSection's effect —
+    // reuses the SAME CSS animation class (help-section-flash isn't
+    // Help-specific despite the name; it's just a generic brief
+    // background-flash animation) rather than defining a new one.
+    sec.classList.add('help-section-flash');
+    sec.addEventListener('animationend', function() { sec.classList.remove('help-section-flash'); }, { once: true });
   }, 50);
 }
 
@@ -14406,7 +14490,7 @@ function init() {
     document.querySelectorAll('#settings-sheet .settings-section.open').forEach(function(sec) {
       sec.classList.remove('open');
       if (!settings.sectionStates) settings.sectionStates = {};
-      settings.sectionStates[getSettingsSectionKey(sec)] = false;
+      settings.sectionStates[getDialogSectionKey(sec)] = false;
     });
     saveSettings();
   });
@@ -14430,7 +14514,7 @@ function init() {
       var section = header.parentElement;
       var isOpen = section.classList.toggle('open');
       if (!settings.sectionStates) settings.sectionStates = {};
-      settings.sectionStates[getSettingsSectionKey(section)] = isOpen;
+      settings.sectionStates[getDialogSectionKey(section)] = isOpen;
       saveSettings();
       if (isOpen && section.querySelector('#voice-select')) populateVoices();
       if (isOpen && section.querySelector('#toolbar-visibility-rows')) buildToolbarVisibilityRows();
@@ -14477,7 +14561,27 @@ function init() {
     var parentCol = el.closest('.help-collapsible');
     if (parentCol) parentCol.classList.add('open');
     setTimeout(function() {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // scrollIntoView({block:'start'}) aligns the target's top edge
+      // with the SCROLL CONTAINER's top edge — but help-header and
+      // help-search-wrap are sticky children sitting on top of that
+      // same container, so the target ends up partially hidden
+      // underneath them. Compute their actual combined height live
+      // (rather than a hardcoded offset, which silently went wrong the
+      // moment the Collapse-All row was added between them) and scroll
+      // to exactly that far short of the container's own top instead.
+      var sheet = document.getElementById('help-sheet');
+      var header = document.querySelector('#help-sheet .help-header');
+      var searchWrap = document.getElementById('help-search-wrap');
+      var stickyHeight = (header ? header.getBoundingClientRect().height : 0) +
+                          (searchWrap ? searchWrap.getBoundingClientRect().height : 0);
+      if (sheet) {
+        var sheetTop = sheet.getBoundingClientRect().top;
+        var elTop = el.getBoundingClientRect().top;
+        var targetScrollTop = sheet.scrollTop + (elTop - sheetTop) - stickyHeight - 8; // 8px breathing room
+        sheet.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+      } else {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
       el.classList.add('help-section-flash');
       el.addEventListener('animationend', function() { el.classList.remove('help-section-flash'); }, { once: true });
     }, 80);
@@ -14516,11 +14620,9 @@ function init() {
         var sub = hdr.closest('.help-sub');
         if (sub) {
           var isOpen = sub.classList.toggle('open');
-          if (sub.id) {
-            if (!settings.helpSectionStates) settings.helpSectionStates = {};
-            settings.helpSectionStates[sub.id] = isOpen;
-            saveSettings();
-          }
+          settings.helpSectionStates = settings.helpSectionStates || {};
+          settings.helpSectionStates[getDialogSectionKey(sub)] = isOpen;
+          saveSettings();
         }
       });
     });
@@ -14530,11 +14632,9 @@ function init() {
         var col = hdr.closest('.help-collapsible');
         if (col) {
           var isOpen = col.classList.toggle('open');
-          if (col.id) {
-            if (!settings.helpSectionStates) settings.helpSectionStates = {};
-            settings.helpSectionStates[col.id] = isOpen;
-            saveSettings();
-          }
+          settings.helpSectionStates = settings.helpSectionStates || {};
+          settings.helpSectionStates[getDialogSectionKey(col)] = isOpen;
+          saveSettings();
         }
       });
     });
@@ -14665,12 +14765,29 @@ function init() {
     clearHelpSearch();
   });
 
+  // Positions help-search-wrap's sticky top offset dynamically, based
+  // on help-header's ACTUAL current rendered height — a hardcoded
+  // pixel value (the original approach) silently goes wrong any time
+  // the header's real height changes, which is exactly what happened
+  // when the Collapse All row was added between them: the search bar's
+  // sticky position no longer matched, leaving Jump-to-section landing
+  // a bit short of the true top of the visible content area, since the
+  // sticky stack's real height didn't match what scroll math assumed.
+  function _positionHelpSearchWrap() {
+    var header = document.querySelector('#help-sheet .help-header');
+    var searchWrap = document.getElementById('help-search-wrap');
+    if (header && searchWrap) {
+      searchWrap.style.top = header.getBoundingClientRect().height + 'px';
+    }
+  }
+
   document.getElementById('help-btn').addEventListener('click', function() {
     logDebugAction('Opened Help');
     document.getElementById('help-version').textContent = 'v' + APP_VERSION;
     document.getElementById('help-overlay').classList.add('open');
     document.getElementById('help-sheet').classList.add('open');
     document.getElementById('help-sheet').scrollTop = 0;
+    _positionHelpSearchWrap();
   });
   var APP_URL = 'https://lynn-edu-apps.github.io/everyday-apps/remember/';
 
@@ -14763,20 +14880,17 @@ function init() {
       return (r.right - x) <= TAP_ZONE;
     }
 
-    // Persist open/closed state keyed by the section's own stable HTML
-    // id (help-sec-tips, help-sub-noteslist, etc.) — every Help
-    // collapsible section/sub-section already has one, so no separate
-    // title-text or position-based keying is needed here the way
-    // Settings sections required (see getSettingsSectionKey()).
+    // Persist open/closed state keyed by getDialogSectionKey() — the
+    // one shared identity function used for both Help and Settings
+    // sections, preferring each section's real HTML id (every current
+    // section has one) over its translatable title text.
     function toggleAndSave() {
       var section = header.parentElement;
       var isOpen = section.classList.toggle('open');
-      var key = section.id;
-      if (key) {
-        if (!settings.helpSectionStates) settings.helpSectionStates = {};
-        settings.helpSectionStates[key] = isOpen;
-        saveSettings();
-      }
+      var key = getDialogSectionKey(section);
+      settings.helpSectionStates = settings.helpSectionStates || {};
+      settings.helpSectionStates[key] = isOpen;
+      saveSettings();
     }
 
     header.addEventListener('touchstart', function(e) {
@@ -14801,8 +14915,9 @@ function init() {
   (function() {
     var _hss = settings.helpSectionStates || {};
     document.querySelectorAll('#help-sheet .help-collapsible, #help-sheet .help-sub').forEach(function(sec) {
-      if (sec.id && _hss[sec.id] === true) sec.classList.add('open');
-      else if (sec.id && _hss[sec.id] === false) sec.classList.remove('open');
+      var key = getDialogSectionKey(sec);
+      if (_hss[key] === true) sec.classList.add('open');
+      else if (_hss[key] === false) sec.classList.remove('open');
     });
   })();
 
@@ -18355,18 +18470,18 @@ function makeImportFolderName(label) {
         jumpMenu.style.display === 'none' ? openJumpMenu() : closeJumpMenu();
       });
       jumpMenu.querySelectorAll('.settings-jump-item').forEach(function(item) {
-        var idx = parseInt(item.dataset.section, 10);
+        var sectionId = item.dataset.sectionId;
         var itemTouchHandled = false;
         item.addEventListener('touchstart', function() { itemTouchHandled = true; }, { passive: true });
         item.addEventListener('touchend', function(e) {
           e.preventDefault();
           closeJumpMenu();
-          jumpToSettingsSection(idx);
+          jumpToSettingsSection(sectionId);
         }, { passive: false });
         item.addEventListener('click', function() {
           if (itemTouchHandled) { itemTouchHandled = false; return; }
           closeJumpMenu();
-          jumpToSettingsSection(idx);
+          jumpToSettingsSection(sectionId);
         });
       });
     }
@@ -18429,10 +18544,8 @@ function makeImportFolderName(label) {
   document.getElementById('help-collapse-all-btn').addEventListener('click', function() {
     document.querySelectorAll('#help-sheet .help-collapsible.open, #help-sheet .help-sub.open').forEach(function(sec) {
       sec.classList.remove('open');
-      if (sec.id) {
-        if (!settings.helpSectionStates) settings.helpSectionStates = {};
-        settings.helpSectionStates[sec.id] = false;
-      }
+      settings.helpSectionStates = settings.helpSectionStates || {};
+      settings.helpSectionStates[getDialogSectionKey(sec)] = false;
     });
     saveSettings();
   });
@@ -20289,7 +20402,7 @@ function makeImportFolderName(label) {
     logDebugAction('Closed Note Theme picker (chose Manage Themes)');
     document.getElementById('note-theme-overlay').classList.remove('open');
     openSettings();
-    setTimeout(function(){ jumpToSettingsSection(8); }, 100);
+    setTimeout(function(){ jumpToSettingsSection('settings-section-themes'); }, 100);
   });
   document.getElementById('theme-indicator-pill').addEventListener('click',function(){openNoteThemePicker();});
   // ── Tap to edit mode ────────────────────────────────────────────────────
@@ -22261,7 +22374,7 @@ function makeImportFolderName(label) {
         // click — so without calling it explicitly here, padding-top can
         // be stale from R&R mode's toolbar configuration, throwing the
         // scroll math off by a constant amount.
-        function _scrollTappedLineToTop() {
+        function _scrollTappedLineToTop(showFlash) {
           var area = document.getElementById('note-content-area');
           if (!area) return;
           pinToolbars();
@@ -22284,6 +22397,38 @@ function makeImportFolderName(label) {
           var paddingTop = parseFloat(getComputedStyle(area).paddingTop) || 0;
           var target = cursorY - paddingTop - lineH * 0.5;
           area.scrollTop = Math.max(0, target);
+          // Brief accent-color highlight at the tapped line's position,
+          // requested specifically because the line just jumped to the
+          // top of the screen (necessary, to clear the keyboard) and a
+          // quick highlight helps confirm exactly where the cursor
+          // landed. A <textarea> has no markup to highlight text inside
+          // directly, so this creates a separate, absolutely-positioned
+          // overlay sized to one line's height, placed at the cursor's
+          // current position, then lets it fade via the same accent-
+          // color flash animation Settings/Help jump-to-section already
+          // use. Only shown on the SECOND, more-accurate scroll pass
+          // (350ms, after layout has fully settled) — not the first
+          // (50ms) — so the highlight appears once, at its final correct
+          // position, rather than twice (once at a possibly-slightly-off
+          // spot, then again at the corrected one).
+          if (showFlash) {
+            var _existingFlash = document.getElementById('cursor-line-flash-el');
+            if (_existingFlash) _existingFlash.remove(); // clear any earlier one still fading, e.g. rapid repeated double-taps
+            var _flash = document.createElement('div');
+            _flash.id = 'cursor-line-flash-el';
+            _flash.className = 'cursor-line-flash';
+            // cursorY is already "distance from area's scrollable content
+            // origin" (per the comment above) — exactly the coordinate
+            // space position:absolute needs for a child of a scrolling
+            // container, since such a child scrolls naturally along with
+            // the rest of the content. scrollTop must NOT be subtracted
+            // here (unlike the scrollTop target calculation above, which
+            // needs viewport-relative distance instead).
+            _flash.style.top = cursorY + 'px';
+            _flash.style.height = lineH + 'px';
+            area.appendChild(_flash);
+            _flash.addEventListener('animationend', function() { _flash.remove(); }, { once: true });
+          }
           // Temporarily disabled while diagnosing a suspected constant
           // toolbar-height offset error — re-enable by uncommenting if
           // we need real numbers again.
@@ -22292,8 +22437,8 @@ function makeImportFolderName(label) {
           //     ' scrollTop=' + area.scrollTop.toFixed(0) + ' selStart=' + ed.selectionStart, true);
           // }
         }
-        setTimeout(_scrollTappedLineToTop, 50);
-        setTimeout(_scrollTappedLineToTop, 350);
+        setTimeout(function() { _scrollTappedLineToTop(false); }, 50);
+        setTimeout(function() { _scrollTappedLineToTop(true); }, 350);
       }
     });
   })();
