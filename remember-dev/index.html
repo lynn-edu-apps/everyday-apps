@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1407 -->
+<!-- Remember App - Version 0.1419 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1407
+  Version 0.1419
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -4374,6 +4374,56 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 }
 
 
+/* ===== EXPERIMENTAL SCRATCH PANEL ===== */
+#scratch-panel {
+  position: fixed;
+  top: 5%;
+  right: 0;
+  width: 69vw;
+  max-width: 440px;
+  height: 84%;
+  z-index: 150; /* below every real dialog (200-300), so any dialog that opens always wins visually */
+  display: flex;
+  background: #f7f6f3;
+  border-radius: 10px 0 0 10px;
+  box-shadow: -2px 0 14px rgba(0,0,0,0.28);
+  transform: translateX(105%);
+  transition: transform 0.25s ease;
+  overflow: hidden;
+}
+#scratch-panel.open { transform: translateX(0); }
+#scratch-panel-handle {
+  flex-shrink: 0;
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+}
+#scratch-panel-handle-bar {
+  width: 4px;
+  height: 44px;
+  border-radius: 3px;
+  background: rgba(0,0,0,0.22);
+}
+#scratch-panel-textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 8px 8px 8px 2px;
+  margin: 0;
+  background: #f7f6f3;
+  color: #1c1c1a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+}
+
 /* ===== CONFIRM DIALOG ===== */
 .confirm-overlay {
   display: none;
@@ -4637,24 +4687,11 @@ mark.help-highlight {
   #tour-next-btn:hover { opacity: 0.88; }
 }
 
-.help-go-arrow {
-  flex-shrink: 0;
-  margin-left: auto;
-  padding: 4px 6px;
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 1.1em;
-  line-height: 1;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  white-space: nowrap;
-}
-@media (hover: hover) {
-  .help-go-arrow:hover { background: var(--bg2); }
+/* Help search: "current" match emphasis for Next/Previous navigation */
+mark.help-highlight-current {
+  background: var(--accent);
+  color: white;
+  border-radius: 2px;
 }
 @keyframes helpSectionFlash {
   0%   { background: var(--accent); }
@@ -6297,6 +6334,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 </div>
 
+<!-- ===== EXPERIMENTAL SCRATCH PANEL ===== -->
+<!-- Quick-notes side panel: swipe left from the far right edge of a note
+     screen to open, swipe right starting on the handle to close. Colors
+     and font are deliberately hardcoded for now (not theme-aware) per
+     explicit instruction — this is an experimental feature, not yet
+     promoted to a real settings-backed feature. -->
+<div id="scratch-panel">
+  <div id="scratch-panel-handle" aria-label="Drag handle — swipe right to close">
+    <div id="scratch-panel-handle-bar"></div>
+  </div>
+  <textarea id="scratch-panel-textarea" placeholder="Quick notes…" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+</div>
+
 <!-- ===== QUICK ADD MODAL ===== -->
 <div class="confirm-overlay" id="quick-add-overlay" role="dialog" aria-modal="true">
   <div class="confirm-box" id="quick-add-box" style="padding-top:10px">
@@ -6867,6 +6917,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </div>
         <label class="toggle-switch" aria-label="Convert tabs to spaces on paste">
           <input type="checkbox" id="convert-tabs-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Swipe right from left edge to go back</div>
+          <div class="settings-row-desc">While viewing a note, swipe in from the far left edge of the screen to return to the notes list — the same gesture many other apps support. Turn off if this triggers by accident.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Swipe right from left edge to go back to notes list">
+          <input type="checkbox" id="edge-swipe-home-toggle" checked>
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
@@ -7837,6 +7897,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div>
     </div>
     <div id="help-no-results" style="display:none;padding:8px 2px 2px;color:var(--fg3);font-size:0.9em;font-style:italic;">No help topics match your search.</div>
+    <div id="help-find-nav" style="display:none;align-items:center;gap:8px;padding-top:6px;">
+      <span id="help-find-count" style="font-size:0.85em;color:var(--fg3);flex:1;">0 of 0</span>
+      <button class="find-nav-btn" id="help-find-prev-btn" title="Previous match" aria-label="Previous match" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" width="22" height="22" style="pointer-events:none"><polyline points="6 15 12 9 18 15"/></svg>
+      </button>
+      <button class="find-nav-btn" id="help-find-next-btn" title="Next match" aria-label="Next match" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" width="22" height="22" style="pointer-events:none"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
   </div>
 
   <div class="help-body">
@@ -8383,7 +8452,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1407';
+const APP_VERSION = '0.1419';
 
 
 
@@ -8480,6 +8549,8 @@ const DEFAULT_SETTINGS = {
   globalViewOnly: false,
   toolbarCollapsed: false,
   convertTabsOnPaste: true, // true = tabs→spaces on paste, false = leave as tabs
+  edgeSwipeToHome: true, // swipe right from the left screen edge returns to the notes list
+  scratchPadText: '', // content of the experimental side scratch panel
   tagColorBorders: false,
   tagColorPills: false,   // color tag pills by tag identity in R&R mode
   tagScope: 'block',
@@ -13793,10 +13864,16 @@ function getDialogSectionKey(sectionEl) {
     sectionEl.parentElement.querySelectorAll('.settings-section, .help-collapsible, .help-sub'), sectionEl);
 }
 
-function openSettings() {
-  logDebugAction('Opened Settings');
-  // _syncAdvTypographyUI called at end of openSettings body
-  // Apply sticky collapsed/expanded state to sections
+// restoreSettingsSectionStates() — sets every section's .open class to
+// match its persisted state in settings.sectionStates (the single source
+// of truth for "is this section expanded"). Called when the dialog first
+// opens, AND from clearSettingsSearch() — search-driven expansion (see
+// applySettingsSearch()) is intentionally cosmetic/not persisted as the
+// user types, so this is also what undoes that once the search is
+// cleared or "Go" is tapped, rather than leaving every search-matched
+// section stuck open. True top-level (not nested inside openSettings())
+// since it's called from clearSettingsSearch() too — a separate function.
+function restoreSettingsSectionStates() {
   var sectionStates = settings.sectionStates || {};
   document.querySelectorAll('#settings-sheet .settings-section').forEach(function(section, idx) {
     var key = getDialogSectionKey(section); // current scheme: 'id_...'
@@ -13823,6 +13900,13 @@ function openSettings() {
     else isOpen = sectionStates[oldIndexKey] === true;
     section.classList.toggle('open', isOpen);
   });
+}
+
+function openSettings() {
+  logDebugAction('Opened Settings');
+  // _syncAdvTypographyUI called at end of openSettings body
+  // Apply sticky collapsed/expanded state to sections
+  restoreSettingsSectionStates();
 
   // Sync UI to current settings
   setSegActive('theme-seg', settings.theme);
@@ -13931,6 +14015,7 @@ function openSettings() {
   var _nemRadio = document.querySelector('#note-editing-mode-seg input[value="' + _nem + '"]');
   if (_nemRadio) _nemRadio.checked = true;
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
+  var esToggle=document.getElementById('edge-swipe-home-toggle'); if(esToggle)esToggle.checked=(settings.edgeSwipeToHome !== false);
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
   var debugLogToggle=document.getElementById('debug-logging-toggle'); if(debugLogToggle)debugLogToggle.checked=!!settings.debugLoggingEnabled;
   (function() {
@@ -14015,12 +14100,21 @@ function clearSettingsSearch() {
     var arrow = row.querySelector('.settings-go-arrow');
     if (arrow) arrow.remove();
   });
+  // Undo the cosmetic auto-expansion applySettingsSearch() applies to
+  // every section with a match while typing — without this, every
+  // section a search term ever matched would stay expanded forever.
+  restoreSettingsSectionStates();
 }
 
 function jumpToSettingsRow(row) {
   clearSettingsSearch();
   var sec = row.closest('.settings-section');
-  if (sec) sec.classList.add('open');
+  if (sec) {
+    sec.classList.add('open');
+    settings.sectionStates = settings.sectionStates || {};
+    settings.sectionStates[getDialogSectionKey(sec)] = true;
+    saveSettings();
+  }
   setTimeout(function() {
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     row.classList.add('settings-row-flash');
@@ -14040,6 +14134,9 @@ function jumpToSettingsSection(sectionId) {
   var sec = document.getElementById(sectionId);
   if (!sec || !sec.classList.contains('settings-section')) return;
   sec.classList.add('open');
+  settings.sectionStates = settings.sectionStates || {};
+  settings.sectionStates[getDialogSectionKey(sec)] = true;
+  saveSettings();
   setTimeout(function() {
     // Same fix as Help's jumpToHelpSection(): scrollIntoView({block:
     // 'start'}) has no idea settings-search-wrap is sticky (top:0) and
@@ -14820,7 +14917,9 @@ function init() {
   });
 
   // ===== HELP SEARCH =====
-  var _helpBodyOrig = null; // saved on first search, restored on clear
+  var _helpFindMatches = [];  // array of GROUPS — each group is an array of 1+ <mark> elements representing one logical match (a match spanning a tag boundary, like bold, produces more than one <mark>)
+  var _helpFindCurrent = -1;  // index into _helpFindMatches
+  var _helpHighlightGroupSeq = 0; // unique id per logical match, shared across however many <mark> pieces it gets split into
   function clearHelpSearch() {
     var inp = document.getElementById('help-search-input');
     if (inp) inp.value = '';
@@ -14828,13 +14927,27 @@ function init() {
     if (clr) clr.style.display = 'none';
     var noRes = document.getElementById('help-no-results');
     if (noRes) noRes.style.display = 'none';
-    // Restore original HTML (removes highlights, show/hide states, Go arrows)
     var helpBody = document.getElementById('help-sheet').querySelector('.help-body');
-    if (_helpBodyOrig && helpBody) {
-      helpBody.innerHTML = _helpBodyOrig;
-      _reAttachHelpListeners();
-    }
+    if (helpBody) _removeHighlights(helpBody);
+    document.querySelectorAll('#help-sheet .help-section, #help-sheet .help-collapsible, #help-sheet .help-sub, #help-sheet .help-section-title, #help-sheet .help-collapsible-title').forEach(function(el) {
+      el.style.display = '';
+    });
+    var shareBlock = document.getElementById('help-share-block');
+    if (shareBlock) shareBlock.style.display = '';
+    // Undo the cosmetic auto-expansion applyHelpSearch() applies to every
+    // matching collapsible while typing — without this, every section a
+    // search term ever matched would stay expanded forever (the same bug
+    // already fixed in Settings — see restoreSettingsSectionStates()).
+    restoreHelpSectionStates();
+    _helpFindMatches = [];
+    _helpFindCurrent = -1;
+    _updateHelpFindUI();
   }
+  // jumpToHelpSection(el) — general-purpose "navigate to this element"
+  // utility, still used by the Jump-to-section dropdown menu (a TOC
+  // feature, separate from search). Clears any active search, ensures
+  // the target is open and persisted, then scrolls to it with the same
+  // sticky-header-aware math _scrollToHelpMatch() uses below.
   function jumpToHelpSection(el) {
     clearHelpSearch();
     // If target is a help-sub, open it before scrolling
@@ -14842,6 +14955,15 @@ function init() {
     // If target is inside a help-collapsible, ensure it's open too
     var parentCol = el.closest('.help-collapsible');
     if (parentCol) parentCol.classList.add('open');
+    // Persist the destination's expanded state — same fix as Settings'
+    // jumpToSettingsRow()/jumpToSettingsSection(): without this, the
+    // expansion above is purely cosmetic and reverts the next time Help
+    // is reopened, since restoreHelpSectionStates() only honors
+    // settings.helpSectionStates.
+    settings.helpSectionStates = settings.helpSectionStates || {};
+    if (el.classList.contains('help-sub')) settings.helpSectionStates[getDialogSectionKey(el)] = true;
+    if (parentCol) settings.helpSectionStates[getDialogSectionKey(parentCol)] = true;
+    saveSettings();
     setTimeout(function() {
       // scrollIntoView({block:'start'}) aligns the target's top edge
       // with the SCROLL CONTAINER's top edge — but help-header and
@@ -14868,57 +14990,83 @@ function init() {
       el.addEventListener('animationend', function() { el.classList.remove('help-section-flash'); }, { once: true });
     }, 80);
   }
-  function _makeHelpGoArrow(target) {
-    var arrow = document.createElement('button');
-    arrow.className = 'help-go-arrow';
-    arrow.setAttribute('aria-label', 'Go to this section');
-    arrow.innerHTML = 'Go →';
-    var lastFired = 0;
-    function doJump() {
-      var now = Date.now();
-      if (now - lastFired < 400) return;
-      lastFired = now;
-      jumpToHelpSection(target);
+  // _scrollToHelpMatch(idx) — scrolls the dialog so the match at this
+  // index is visible, marking it as the "current" one. Same sticky-
+  // height-aware math the old per-result "Go" button used to use:
+  // scrollIntoView({block:'start'}) alone would land the target partly
+  // underneath help-header/help-search-wrap, since those are sticky
+  // children sitting on top of the same scroll container.
+  function _scrollToHelpMatch(idx) {
+    if (idx < 0 || idx >= _helpFindMatches.length) return;
+    if (_helpFindCurrent >= 0 && _helpFindMatches[_helpFindCurrent]) {
+      _helpFindMatches[_helpFindCurrent].forEach(function(m) { m.classList.remove('help-highlight-current'); });
     }
-    arrow.addEventListener('mousedown', function(e) { e.preventDefault(); e.stopPropagation(); doJump(); });
-    arrow.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); doJump(); }, { passive: false });
-    return arrow;
+    _helpFindCurrent = idx;
+    var group = _helpFindMatches[idx];
+    group.forEach(function(m) { m.classList.add('help-highlight-current'); });
+    var el = group[0]; // scroll position is based on the match's first piece
+    setTimeout(function() {
+      var sheet = document.getElementById('help-sheet');
+      var header = document.querySelector('#help-sheet .help-header');
+      var searchWrap = document.getElementById('help-search-wrap');
+      var stickyHeight = (header ? header.getBoundingClientRect().height : 0) +
+                          (searchWrap ? searchWrap.getBoundingClientRect().height : 0);
+      if (sheet) {
+        var sheetTop = sheet.getBoundingClientRect().top;
+        var elTop = el.getBoundingClientRect().top;
+        var targetScrollTop = sheet.scrollTop + (elTop - sheetTop) - stickyHeight - 8; // 8px breathing room
+        sheet.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+      } else {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 0);
+    _updateHelpFindUI();
   }
-  // Save original help body HTML before first search
-  function _saveHelpBodyOrig() {
-    if (_helpBodyOrig) return;
-    var helpBody = document.getElementById('help-sheet').querySelector('.help-body');
-    if (helpBody) _helpBodyOrig = helpBody.innerHTML;
+  function _updateHelpFindUI() {
+    var nav = document.getElementById('help-find-nav');
+    var count = document.getElementById('help-find-count');
+    var prevBtn = document.getElementById('help-find-prev-btn');
+    var nextBtn = document.getElementById('help-find-next-btn');
+    if (!nav) return;
+    var has = _helpFindMatches.length > 0;
+    nav.style.display = has ? 'flex' : 'none';
+    if (count) count.textContent = has ? ((_helpFindCurrent + 1) + ' of ' + _helpFindMatches.length) : '0 of 0';
+    if (prevBtn) prevBtn.disabled = !has;
+    if (nextBtn) nextBtn.disabled = !has;
   }
-
-  // Re-attach JS listeners after innerHTML restore (help-sub toggles, copy button etc.)
-  function _reAttachHelpListeners() {
-    // Re-wire help-sub toggle clicks — also persists state, matching
-    // wireCollapsibleHeader()'s primary wiring, so behavior is the same
-    // whether or not a Help search happened first.
-    document.querySelectorAll('#help-sheet .help-sub-header').forEach(function(hdr) {
-      hdr.addEventListener('click', function(e) {
-        if (e.target.closest('.help-go-arrow')) return;
-        var sub = hdr.closest('.help-sub');
-        if (sub) {
-          var isOpen = sub.classList.toggle('open');
-          settings.helpSectionStates = settings.helpSectionStates || {};
-          settings.helpSectionStates[getDialogSectionKey(sub)] = isOpen;
-          saveSettings();
-        }
-      });
+  function helpFindNext() {
+    if (!_helpFindMatches.length) return;
+    _scrollToHelpMatch((_helpFindCurrent + 1) % _helpFindMatches.length);
+  }
+  function helpFindPrev() {
+    if (!_helpFindMatches.length) return;
+    _scrollToHelpMatch((_helpFindCurrent - 1 + _helpFindMatches.length) % _helpFindMatches.length);
+  }
+  // restoreHelpSectionStates() — sets every collapsible/sub's .open class
+  // to match its persisted state in settings.helpSectionStates (the
+  // single source of truth). Called once when Help's dialog markup is
+  // first built, AND from clearHelpSearch() — exactly mirrors
+  // restoreSettingsSectionStates()'s role for the Settings dialog.
+  function restoreHelpSectionStates() {
+    var _hss = settings.helpSectionStates || {};
+    document.querySelectorAll('#help-sheet .help-collapsible, #help-sheet .help-sub').forEach(function(sec) {
+      var key = getDialogSectionKey(sec);
+      if (_hss[key] === true) sec.classList.add('open');
+      else if (_hss[key] === false) sec.classList.remove('open');
     });
-    // Re-wire help-collapsible toggle clicks
-    document.querySelectorAll('#help-sheet .help-collapsible-header').forEach(function(hdr) {
-      hdr.addEventListener('click', function() {
-        var col = hdr.closest('.help-collapsible');
-        if (col) {
-          var isOpen = col.classList.toggle('open');
-          settings.helpSectionStates = settings.helpSectionStates || {};
-          settings.helpSectionStates[getDialogSectionKey(col)] = isOpen;
-          saveSettings();
-        }
-      });
+  }
+  // _removeHighlights(el) — undoes _highlightInElement(): replaces each
+  // <mark class="help-highlight"> with its own text content, merging
+  // back into the surrounding text via normalize(). Surgical — touches
+  // only the highlight marks themselves, never any other element, so
+  // headers/listeners/section state are completely undisturbed.
+  function _removeHighlights(el) {
+    if (!el) return;
+    el.querySelectorAll('mark.help-highlight').forEach(function(mark) {
+      var text = document.createTextNode(mark.textContent);
+      var parent = mark.parentNode;
+      parent.replaceChild(text, mark);
+      parent.normalize();
     });
   }
 
@@ -14929,28 +15077,66 @@ function init() {
     var nodes = [];
     var node;
     while ((node = walker.nextNode())) nodes.push(node);
-    nodes.forEach(function(textNode) {
-      var txt = textNode.nodeValue;
-      var lower = txt.toLowerCase();
-      var idx = lower.indexOf(q);
-      if (idx === -1) return;
-      // Split into before / match / after and wrap match in <mark>
+    if (nodes.length === 0) return;
+    // Build the full concatenated text (spanning across tag boundaries)
+    // and a map from full-text offsets back to each underlying node's
+    // own [start, end) range, so a query that happens to straddle a
+    // <strong>/etc boundary (two separate text nodes) can still be found
+    // and highlighted — searching node-by-node alone misses those.
+    var fullText = '';
+    var nodeRanges = [];
+    nodes.forEach(function(n) {
+      var start = fullText.length;
+      fullText += n.nodeValue;
+      nodeRanges.push({ node: n, start: start, end: fullText.length });
+    });
+    var fullLower = fullText.toLowerCase();
+    var matches = [];
+    var searchFrom = 0;
+    while (true) {
+      var idx = fullLower.indexOf(q, searchFrom);
+      if (idx === -1) break;
+      matches.push({ start: idx, end: idx + q.length, groupId: _helpHighlightGroupSeq++ });
+      searchFrom = idx + q.length;
+    }
+    if (matches.length === 0) return;
+    // For each node, wrap whichever portion(s) of it fall inside a match
+    // in their own <mark> — a match spanning two nodes ends up as two
+    // adjacent <mark> elements (one per node), which reads as one
+    // continuous highlight visually since they sit right next to each
+    // other in the DOM. Each piece carries the same data-match-group id
+    // so it can be recognized as one logical match, not two, when
+    // collecting matches for Next/Previous navigation and counting.
+    nodeRanges.forEach(function(range) {
+      var segments = []; // { from, to, isMatch, groupId } in node-local coordinates
+      var cursor = range.start;
+      matches.forEach(function(m) {
+        var overlapStart = Math.max(m.start, range.start);
+        var overlapEnd = Math.min(m.end, range.end);
+        if (overlapStart < overlapEnd) {
+          if (cursor < overlapStart) segments.push({ from: cursor - range.start, to: overlapStart - range.start, isMatch: false });
+          segments.push({ from: overlapStart - range.start, to: overlapEnd - range.start, isMatch: true, groupId: m.groupId });
+          cursor = overlapEnd;
+        }
+      });
+      if (segments.length === 0) return; // no match touches this node at all — leave it untouched
+      if (cursor < range.end) segments.push({ from: cursor - range.start, to: range.end - range.start, isMatch: false });
       var frag = document.createDocumentFragment();
-      var remaining = txt;
-      var remainingLower = lower;
-      var offset = 0;
-      while (true) {
-        var found = remainingLower.indexOf(q);
-        if (found === -1) { frag.appendChild(document.createTextNode(remaining)); break; }
-        if (found > 0) frag.appendChild(document.createTextNode(remaining.slice(0, found)));
-        var mark = document.createElement('mark');
-        mark.className = 'help-highlight';
-        mark.textContent = remaining.slice(found, found + q.length);
-        frag.appendChild(mark);
-        remaining = remaining.slice(found + q.length);
-        remainingLower = remainingLower.slice(found + q.length);
-      }
-      textNode.parentNode.replaceChild(frag, textNode);
+      var nodeText = range.node.nodeValue;
+      segments.forEach(function(seg) {
+        var text = nodeText.slice(seg.from, seg.to);
+        if (!text) return;
+        if (seg.isMatch) {
+          var mark = document.createElement('mark');
+          mark.className = 'help-highlight';
+          mark.dataset.matchGroup = seg.groupId;
+          mark.textContent = text;
+          frag.appendChild(mark);
+        } else {
+          frag.appendChild(document.createTextNode(text));
+        }
+      });
+      range.node.parentNode.replaceChild(frag, range.node);
     });
   }
 
@@ -14971,11 +15157,12 @@ function init() {
       sub.style.display = subMatch ? '' : 'none';
       if (subMatch) {
         anySubMatch = true;
-        // Don't open — keep collapsed; Go button will open on jump
-        var subHdr = sub.querySelector('.help-sub-header');
-        if (subHdr && !subHdr.querySelector('.help-go-arrow')) {
-          subHdr.appendChild(_makeHelpGoArrow(sub));
-        }
+        // Auto-expand so the match (and its highlight) is immediately
+        // visible without an extra tap — matches how Settings already
+        // auto-expands its own sections on a match. Safe: clearHelpSearch()
+        // restores each sub's real persisted state afterward, so this
+        // never permanently changes anything the user didn't ask for.
+        sub.classList.add('open');
       }
     });
     // For sections with no subs, also match against full section body text
@@ -14989,17 +15176,12 @@ function init() {
     var visible = titleMatch || anySubMatch || bodyMatch;
     container.style.display = visible ? '' : 'none';
     if (visible) {
-      // Open collapsible containers so matched subs are immediately visible
-      if (container.classList.contains('help-collapsible') && anySubMatch) {
-        if (!container.classList.contains('open')) {
-          container.classList.add('open');
-          container.dataset.searchOpened = '1';
-        }
-      }
-      if (titleMatch && titleEl && !titleEl.querySelector('.help-go-arrow')) {
-        titleEl.style.display = 'flex';
-        titleEl.style.alignItems = 'center';
-        titleEl.appendChild(_makeHelpGoArrow(container));
+      // Open collapsible containers whenever they're visible due to a
+      // match — whether that match came from a sub-item or directly from
+      // the collapsible's own body text — so whatever matched is always
+      // immediately visible, never hidden behind the collapse.
+      if (container.classList.contains('help-collapsible') && visible) {
+        container.classList.add('open');
       }
     }
     return visible;
@@ -15010,18 +15192,16 @@ function init() {
     if (clr) clr.style.display = q ? '' : 'none';
     var noRes = document.getElementById('help-no-results');
     if (!q) { clearHelpSearch(); return; }
-    _saveHelpBodyOrig();
-    // Restore clean HTML before re-filtering (removes previous highlight marks)
+    // Remove previous highlights before re-highlighting for the new
+    // query — surgical (only touches <mark> wrappers), never rebuilds
+    // any part of the DOM.
     var _helpBody = document.getElementById('help-sheet').querySelector('.help-body');
-    if (_helpBody && _helpBodyOrig) {
-      _helpBody.innerHTML = _helpBodyOrig;
-      _reAttachHelpListeners();
-    }
-    document.querySelectorAll('#help-sheet .help-go-arrow').forEach(function(a) { a.remove(); });
+    if (_helpBody) _removeHighlights(_helpBody);
     // Hide non-searchable blocks during search
     var shareBlock = document.getElementById('help-share-block');
     if (shareBlock) shareBlock.style.display = 'none';
     var anyVisible = false;
+    _helpHighlightGroupSeq = 0; // fresh group-id numbering for this search pass
     document.querySelectorAll('#help-sheet .help-section').forEach(function(sec) {
       if (_helpSearchContainer(sec, '.help-section-title', q)) anyVisible = true;
     });
@@ -15029,13 +15209,37 @@ function init() {
       if (_helpSearchContainer(col, '.help-collapsible-title', q)) anyVisible = true;
     });
     if (noRes) noRes.style.display = anyVisible ? 'none' : '';
-    // Highlight matches in all visible containers
+    // Highlight matches in all visible containers, then collect them into
+    // the navigable Next/Previous array (in document order) and jump to
+    // the first one — same as Find-in-note already does as soon as you
+    // start typing.
     if (anyVisible) {
       document.querySelectorAll('#help-sheet .help-section, #help-sheet .help-collapsible').forEach(function(c) {
         if (c.style.display !== 'none') _highlightInElement(c, q);
       });
     }
+    // Group marks sharing the same data-match-group into one logical
+    // match each — a match spanning a tag boundary (e.g. bold) produces
+    // more than one <mark>, but should count and navigate as one.
+    var _groups = {};
+    var _groupOrder = [];
+    document.querySelectorAll('#help-sheet mark.help-highlight').forEach(function(m) {
+      var gid = m.dataset.matchGroup;
+      if (!(gid in _groups)) { _groups[gid] = []; _groupOrder.push(gid); }
+      _groups[gid].push(m);
+    });
+    _helpFindMatches = _groupOrder.map(function(gid) { return _groups[gid]; });
+    _helpFindCurrent = -1;
+    if (_helpFindMatches.length > 0) {
+      _scrollToHelpMatch(0);
+    } else {
+      _updateHelpFindUI();
+    }
   }
+  document.getElementById('help-find-prev-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('help-find-prev-btn').addEventListener('click', helpFindPrev);
+  document.getElementById('help-find-next-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('help-find-next-btn').addEventListener('click', helpFindNext);
   var _helpSearchInp = document.getElementById('help-search-input');
   if (_helpSearchInp) {
     _helpSearchInp.addEventListener('input', function() { applyHelpSearch(this.value); });
@@ -15194,14 +15398,7 @@ function init() {
   // Apply any previously-saved open/closed states on initial load too —
   // matches Settings' sticky-section behavior. Safe to run unconditionally:
   // sections with no saved state simply keep their HTML default (closed).
-  (function() {
-    var _hss = settings.helpSectionStates || {};
-    document.querySelectorAll('#help-sheet .help-collapsible, #help-sheet .help-sub').forEach(function(sec) {
-      var key = getDialogSectionKey(sec);
-      if (_hss[key] === true) sec.classList.add('open');
-      else if (_hss[key] === false) sec.classList.remove('open');
-    });
-  })();
+  restoreHelpSectionStates();
 
   document.getElementById('help-close-btn').addEventListener('click', function() {
     logDebugAction('Closed Help');
@@ -15815,6 +16012,141 @@ function makeImportFolderName(label) {
       } else if (dx > 0 && _tourIdx > 0) {
         _tourGoTo(_tourIdx - 1);
       }
+    }, { passive: true });
+  })();
+
+  // _anyDialogOpen() — true if any modal dialog or bottom-sheet bar is
+  // currently visible. Used to gate the edge-swipe gestures below (and
+  // the experimental side scratch panel) so they never fire while some
+  // other dialog is showing. Checks computed display rather than a
+  // specific class, since different overlays use different show/hide
+  // mechanisms (some toggle a class, some set inline style directly).
+  function _anyDialogOpen() {
+    var overlayIds = ['folder-name-overlay', 'sort-overlay', 'quick-add-overlay', 'settings-overlay',
+      'importexport-overlay', 'export-format-overlay', 'rename-overlay', 'help-overlay', 'confirm-overlay'];
+    for (var i = 0; i < overlayIds.length; i++) {
+      var el = document.getElementById(overlayIds[i]);
+      if (el && getComputedStyle(el).display !== 'none') return true;
+    }
+    var barIds = ['font-size-bar', 'theme-bar', 'font-face-bar', 'jump-to-bar', 'outline-actions-bar', 'tag-filter-bar', 'tag-picker-bar'];
+    for (var j = 0; j < barIds.length; j++) {
+      var b = document.getElementById(barIds[j]);
+      if (b && b.classList.contains('visible')) return true;
+    }
+    return false;
+  }
+
+  // Swipe in from the far left edge to go back to the notes list — the
+  // same gesture most other apps support, especially relevant for an
+  // installed PWA (no browser chrome, so there's no native back-swipe at
+  // all otherwise). Same touchstart/touchend-only pattern as the tour's
+  // swipe above — never touchmove+preventDefault, so it can't interfere
+  // with normal scrolling anywhere on the note screen.
+  (function() {
+    var EDGE_ZONE = 24;   // px from the left edge the swipe must START within
+    var SWIPE_MIN = 60;   // minimum horizontal px to count as a swipe
+    var H_RATIO = 2.5;    // horizontal must be this many times larger than vertical — stricter than the tour's, since an accidental trigger here is more disruptive (leaves the note) than in the tour (just changes a slide)
+    var _startX = null, _startY = null;
+
+    document.getElementById('note-screen').addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1 || e.touches[0].clientX > EDGE_ZONE) { _startX = null; return; }
+      _startX = e.touches[0].clientX;
+      _startY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.getElementById('note-screen').addEventListener('touchend', function(e) {
+      if (_startX === null) return;
+      var dx = e.changedTouches[0].clientX - _startX;
+      var dy = e.changedTouches[0].clientY - _startY;
+      _startX = null; _startY = null;
+      if (!settings.edgeSwipeToHome) return;
+      if (!document.body.classList.contains('note-screen-active')) return;
+      if (_anyDialogOpen()) return;
+      // Must be clearly horizontal and rightward: large dx, dx >> dy
+      if (dx < SWIPE_MIN) return;
+      if (dx < Math.abs(dy) * H_RATIO) return;
+      goHome();
+    }, { passive: true });
+  })();
+
+  // ===== EXPERIMENTAL SCRATCH PANEL =====
+  // Quick-notes side panel. Opens via swipe-left starting at the far
+  // right screen edge; closes via swipe-right starting on its handle.
+  // Gated on the same _anyDialogOpen() check as the home-swipe gesture
+  // above, and only active while a note is open (matches "accessible in
+  // any note in the note editor").
+  (function() {
+    var panel = document.getElementById('scratch-panel');
+    var ta = document.getElementById('scratch-panel-textarea');
+    var handle = document.getElementById('scratch-panel-handle');
+    if (!panel || !ta || !handle) return;
+
+    ta.value = settings.scratchPadText || '';
+
+    function openScratchPad() {
+      panel.classList.add('open');
+    }
+    function closeScratchPad() {
+      panel.classList.remove('open');
+      ta.blur();
+    }
+
+    // Debounced save — mirrors the note editor's own debounce delay,
+    // since this can be typed in just as continuously.
+    var _scratchSaveTimer = null;
+    ta.addEventListener('input', function() {
+      if (_scratchSaveTimer) clearTimeout(_scratchSaveTimer);
+      _scratchSaveTimer = setTimeout(function() {
+        settings.scratchPadText = ta.value;
+        saveSettings();
+      }, 400);
+    });
+
+    // Open gesture: swipe left starting at the far right edge of a note screen
+    var OPEN_EDGE_ZONE = 24;
+    var OPEN_SWIPE_MIN = 60;
+    var OPEN_H_RATIO = 2.5;
+    var _openStartX = null, _openStartY = null;
+    document.getElementById('note-screen').addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1 || e.touches[0].clientX < window.innerWidth - OPEN_EDGE_ZONE - 1) {
+        _openStartX = null; return;
+      }
+      _openStartX = e.touches[0].clientX;
+      _openStartY = e.touches[0].clientY;
+    }, { passive: true });
+    document.getElementById('note-screen').addEventListener('touchend', function(e) {
+      if (_openStartX === null) return;
+      var dx = e.changedTouches[0].clientX - _openStartX;
+      var dy = e.changedTouches[0].clientY - _openStartY;
+      _openStartX = null; _openStartY = null;
+      if (!document.body.classList.contains('note-screen-active')) return;
+      if (_anyDialogOpen()) return;
+      if (panel.classList.contains('open')) return; // already open — let the handle's own gesture close it
+      // Must be clearly horizontal and LEFTWARD: large negative dx, |dx| >> dy
+      if (dx > -OPEN_SWIPE_MIN) return;
+      if (Math.abs(dx) < Math.abs(dy) * OPEN_H_RATIO) return;
+      openScratchPad();
+    }, { passive: true });
+
+    // Close gesture: swipe right starting on the handle itself
+    var CLOSE_SWIPE_MIN = 40;
+    var CLOSE_H_RATIO = 2.0;
+    var _closeStartX = null, _closeStartY = null;
+    handle.addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1) { _closeStartX = null; return; }
+      _closeStartX = e.touches[0].clientX;
+      _closeStartY = e.touches[0].clientY;
+    }, { passive: true });
+    handle.addEventListener('touchend', function(e) {
+      if (_closeStartX === null) return;
+      var dx = e.changedTouches[0].clientX - _closeStartX;
+      var dy = e.changedTouches[0].clientY - _closeStartY;
+      _closeStartX = null; _closeStartY = null;
+      if (_anyDialogOpen()) return;
+      // Must be clearly horizontal and RIGHTWARD: large dx, dx >> dy
+      if (dx < CLOSE_SWIPE_MIN) return;
+      if (dx < Math.abs(dy) * CLOSE_H_RATIO) return;
+      closeScratchPad();
     }, { passive: true });
   })();
 
@@ -21220,6 +21552,10 @@ function makeImportFolderName(label) {
   })();
   document.getElementById('convert-tabs-toggle').addEventListener('change', function() {
     settings.convertTabsOnPaste = this.checked;
+    updateSaveBtnState();
+  });
+  document.getElementById('edge-swipe-home-toggle').addEventListener('change', function() {
+    settings.edgeSwipeToHome = this.checked;
     updateSaveBtnState();
   });
   document.getElementById('show-toolbar-collapse-tab-toggle').addEventListener('change', function() {
