@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1419 -->
+<!-- Remember App - Version 0.1421 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1419
+  Version 0.1421
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -4377,7 +4377,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
 /* ===== EXPERIMENTAL SCRATCH PANEL ===== */
 #scratch-panel {
   position: fixed;
-  top: 5%;
+  top: calc(5% - 15px);
   right: 0;
   width: 69vw;
   max-width: 440px;
@@ -4412,7 +4412,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   border: none;
   outline: none;
   resize: none;
-  padding: 8px 8px 8px 2px;
+  padding: 16px 8px 8px 2px;
   margin: 0;
   background: #f7f6f3;
   color: #1c1c1a;
@@ -4422,6 +4422,31 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-y: auto;
+}
+#scratch-page-curl {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: linear-gradient(135deg, transparent 42%, #ded9cf 42%, #c9c3b5 100%);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  z-index: 1;
+}
+#scratch-page-num {
+  font-size: 13px;
+  font-weight: 700;
+  color: #6b6258;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  margin: 0 9px 7px 0;
+  pointer-events: none;
 }
 
 /* ===== CONFIRM DIALOG ===== */
@@ -6345,6 +6370,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div id="scratch-panel-handle-bar"></div>
   </div>
   <textarea id="scratch-panel-textarea" placeholder="Quick notes…" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+  <button id="scratch-page-curl" aria-label="Switch scratch pad page">
+    <span id="scratch-page-num">1</span>
+  </button>
 </div>
 
 <!-- ===== QUICK ADD MODAL ===== -->
@@ -8452,7 +8480,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1419';
+const APP_VERSION = '0.1421';
 
 
 
@@ -8550,7 +8578,10 @@ const DEFAULT_SETTINGS = {
   toolbarCollapsed: false,
   convertTabsOnPaste: true, // true = tabs→spaces on paste, false = leave as tabs
   edgeSwipeToHome: true, // swipe right from the left screen edge returns to the notes list
-  scratchPadText: '', // content of the experimental side scratch panel
+  scratchPadText: '', // content of the experimental side scratch panel, page 1
+  scratchPadText2: '', // page 2
+  scratchPadText3: '', // page 3
+  scratchPadPage: 1, // which page (1-3) was last shown
   tagColorBorders: false,
   tagColorPills: false,   // color tag pills by tag identity in R&R mode
   tagScope: 'block',
@@ -16074,14 +16105,21 @@ function makeImportFolderName(label) {
   // right screen edge; closes via swipe-right starting on its handle.
   // Gated on the same _anyDialogOpen() check as the home-swipe gesture
   // above, and only active while a note is open (matches "accessible in
-  // any note in the note editor").
+  // any note in the note editor"). Supports 3 independent pages, cycled
+  // via the page-curl button in the bottom-right corner.
   (function() {
     var panel = document.getElementById('scratch-panel');
     var ta = document.getElementById('scratch-panel-textarea');
     var handle = document.getElementById('scratch-panel-handle');
+    var curl = document.getElementById('scratch-page-curl');
+    var pageNum = document.getElementById('scratch-page-num');
     if (!panel || !ta || !handle) return;
 
-    ta.value = settings.scratchPadText || '';
+    var PAGE_KEYS = ['scratchPadText', 'scratchPadText2', 'scratchPadText3'];
+    var _curPage = Math.min(3, Math.max(1, settings.scratchPadPage || 1)) - 1; // 0-indexed internally
+
+    ta.value = settings[PAGE_KEYS[_curPage]] || '';
+    if (pageNum) pageNum.textContent = (_curPage + 1);
 
     function openScratchPad() {
       panel.classList.add('open');
@@ -16092,15 +16130,29 @@ function makeImportFolderName(label) {
     }
 
     // Debounced save — mirrors the note editor's own debounce delay,
-    // since this can be typed in just as continuously.
+    // since this can be typed in just as continuously. Always writes to
+    // whichever page is currently showing.
     var _scratchSaveTimer = null;
+    function _saveCurrentPageNow() {
+      if (_scratchSaveTimer) { clearTimeout(_scratchSaveTimer); _scratchSaveTimer = null; }
+      settings[PAGE_KEYS[_curPage]] = ta.value;
+      saveSettings();
+    }
     ta.addEventListener('input', function() {
       if (_scratchSaveTimer) clearTimeout(_scratchSaveTimer);
-      _scratchSaveTimer = setTimeout(function() {
-        settings.scratchPadText = ta.value;
-        saveSettings();
-      }, 400);
+      _scratchSaveTimer = setTimeout(_saveCurrentPageNow, 400);
     });
+
+    if (curl) {
+      curl.addEventListener('click', function() {
+        _saveCurrentPageNow(); // flush immediately so the last keystroke before tapping isn't lost
+        _curPage = (_curPage + 1) % 3;
+        settings.scratchPadPage = _curPage + 1;
+        ta.value = settings[PAGE_KEYS[_curPage]] || '';
+        if (pageNum) pageNum.textContent = (_curPage + 1);
+        saveSettings();
+      });
+    }
 
     // Open gesture: swipe left starting at the far right edge of a note screen
     var OPEN_EDGE_ZONE = 24;
