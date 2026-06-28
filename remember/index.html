@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1421 -->
+<!-- Remember App - Version 0.1430 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1421
+  Version 0.1430
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -1949,6 +1949,28 @@ body.list-continuation-indent .viewer-line.list-cont-checkbox-color > .line-cont
 body.list-continuation-indent .viewer-line.list-cont-hyphen > .line-content {
   flex: 1;
   min-width: 0;
+}
+/* .viewer-checkbox and .viewer-hyphen-marker both carry a baked-in
+   margin-right for their normal (non-split) inline rendering. Inside
+   the .line-marker flex split, that CSS margin is real measured width
+   on top of the explicit gap-span we already insert to match the typed
+   whitespace after the marker — an extra, uncounted amount that bullet
+   markers (.viewer-bullet-char, used by * and +) never get, since that
+   class carries no such margin. .viewer-hyphen-marker ALSO leaves a
+   second, empty copy of itself at the start of .line-content (the
+   marker's own wrapper tag gets closed then re-opened there so tag-
+   balance survives the split) — empty or not, its margin-right still
+   pushes the real text away from .line-content's edge, which is what
+   the wrapped continuation line aligns to. Neutralize the margin in
+   BOTH places so the explicit gap-span is the sole source of spacing,
+   for every marker type alike. */
+.line-marker .viewer-checkbox {
+  margin-right: 0;
+  margin-bottom: 0;
+}
+.line-marker .viewer-hyphen-marker,
+.line-content .viewer-hyphen-marker {
+  margin-right: 0;
 }
 
 /* ===== PARAGRAPH FIRST-LINE INDENT (plain text, paragraphContinuationIndent OFF) =====
@@ -8480,7 +8502,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1421';
+const APP_VERSION = '0.1430';
 
 
 
@@ -8678,7 +8700,7 @@ const DEFAULT_SETTINGS = {
   quietMode: false,              // open note in quiet mode (set by theme only)
   showMultiLevelBullets: false,  // cycle bullet style by indent level (•, ◦, ▪)
   showThemeIndicator: true,
-  debugLoggingEnabled: false     // log toolbar/menu actions + note open/exit to a hidden debug-log note
+  debugLoggingEnabled: true      // TEMPORARY for alpha testing — log toolbar/menu actions + note open/exit to a hidden debug-log note. Default back to false once alpha testing concludes.
 };
 
 const THEMEABLE_SETTINGS=[
@@ -8804,6 +8826,24 @@ function loadState() {
   // Sanitize sortBy — legacy values like 'viewedAt-desc' don't match data-sort attrs
   var _validSortKeys = ['viewedAt','editedAt','createdAt','name'];
   if (_validSortKeys.indexOf(settings.sortBy) === -1) settings.sortBy = 'viewedAt';
+  // Diagnostic for the intermittent "ghost folder" bug (reported: after
+  // a network drop/reconnect on iOS, the home screen sometimes shows
+  // sample-folder notes as if at root, with no back button and the
+  // top-level notes missing). If any note references a folder that
+  // doesn't exist in what we just loaded, that's the exact anomaly —
+  // log it here, BEFORE the sanitization step below silently strips it,
+  // so a real occurrence leaves hard evidence (counts, timing) instead
+  // of just persisting silently with no trace of what the data actually
+  // looked like at the moment.
+  var _orphanedFolderRefs = Object.keys(notes).filter(function(id) {
+    return notes[id].folderId && !folders[notes[id].folderId];
+  });
+  if (_orphanedFolderRefs.length > 0) {
+    logDebugAction('FOLDER ANOMALY at load: ' + _orphanedFolderRefs.length +
+      ' note(s) reference missing folder(s) [' + _orphanedFolderRefs.slice(0, 5).join(', ') + ']. ' +
+      'folders loaded=' + Object.keys(folders).length + ', notes loaded=' + Object.keys(notes).length +
+      ', visibility=' + (typeof document !== 'undefined' ? document.visibilityState : 'n/a'));
+  }
   // Sanitize note folderIds — remove refs to deleted folders
   Object.keys(notes).forEach(function(id) {
     if (notes[id].folderId && !folders[notes[id].folderId]) notes[id].folderId = null;
@@ -10408,6 +10448,23 @@ function sortedNoteIds() {
 }
 
 function renderNotesList() {
+  // Self-healing: if currentFolderId references a folder that no longer
+  // exists, the breadcrumb/back-button check below would silently
+  // render as if we're at the root (no breadcrumb, no back button)
+  // while the notes filter further down would still filter by the
+  // stale folder ID — exactly the reported "ghost folder" bug (sample
+  // notes shown instead of top-level ones, no back button, the folder
+  // itself missing). Reset to root here, before either of those checks
+  // run, so the very next render is correct instead of the bug
+  // persisting indefinitely. Logged so a real occurrence leaves hard
+  // evidence (the stale ID, current folder/note counts) rather than
+  // just silently correcting with no trace.
+  if (currentFolderId && !folders[currentFolderId]) {
+    logDebugAction('FOLDER ANOMALY self-healed in renderNotesList: currentFolderId "' + currentFolderId +
+      '" did not match any existing folder (folders=' + Object.keys(folders).length +
+      ', notes=' + Object.keys(notes).length + '). Reset to root.');
+    currentFolderId = null;
+  }
   var list = document.getElementById('notes-list');
 
   // Update breadcrumb
@@ -11264,8 +11321,8 @@ function urlsToLinks(text, addLineWrappers) {
             if (_hColorIdx) _hTagBorderClass = ' tag-border tag-border-' + ((_hColorIdx - 1) % _TAG_COLORS + 1);
           }
         }
-        return '<div class="viewer-line' + _hTagBorderClass + '" data-line="' + i + '">'
-          + '<div class="viewer-h' + level + '"' + _hStyle + '>' + (content || '&nbsp;') + '</div>'
+        return '<div class="viewer-line' + _hTagBorderClass + '"' + _hStyle + ' data-line="' + i + '">'
+          + '<div class="viewer-h' + level + '">' + (content || '&nbsp;') + '</div>'
           + '</div>';
       }
       if (!line || rawLine.trim() === '') return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
@@ -11488,16 +11545,44 @@ function urlsToLinks(text, addLineWrappers) {
           _leadingTags += _tagPeel[0];
           _searchLine = _searchLine.slice(_tagPeel[0].length);
         }
-        var _markerMatch = _searchLine.match(/^(\s*(?:<svg class="viewer-checkbox"[^>]*>.*?<\/svg>|[•▪◦]|-))([ \t]*)/);
-        if (_markerMatch) {
-          var _markerHtml = _markerMatch[1];
+        // Match the bare marker only (no gap yet) — the checkbox SVG
+        // alternative consumes its own full open+close tag pair, but the
+        // bare-character alternatives (hyphen "-", bullet glyph) do NOT:
+        // those markers are wrapped in their own decorative span (e.g.
+        // <span class="viewer-hyphen-marker">-</span>), so a closing
+        // </span> sits between the bare marker character and the REAL
+        // typed gap. Measuring the gap immediately after the bare
+        // character (the old approach) saw that closing tag instead of
+        // whitespace, fell back to a forced minimum of 1 space in the
+        // marker box, and left the real typed gap behind as a stray
+        // leading space at the very start of .line-content — double-
+        // counting the gap and misaligning wrapped lines by one space
+        // width relative to where the first line's text actually starts.
+        // Fix: after the bare marker character, explicitly skip past any
+        // immediately-following closing tag(s) before measuring the gap,
+        // so the gap is measured once, correctly, regardless of marker
+        // type. (Checkbox lines have no closing tag at this position —
+        // their svg already consumed its own — so this loop simply does
+        // nothing for them, leaving existing checkbox behavior unchanged.)
+        var _markerOnlyMatch = _searchLine.match(/^(\s*(?:<svg class="viewer-checkbox"[^>]*>.*?<\/svg>|[•▪◦]|[-*+]))/);
+        if (_markerOnlyMatch) {
+          var _markerHtml = _markerOnlyMatch[1];
+          var _afterMarker = _searchLine.slice(_markerOnlyMatch[0].length);
+          var _closeTagsRun = '';
+          var _closeTagPeel;
+          while ((_closeTagPeel = _afterMarker.match(/^<\/[a-z][a-z0-9]*>/i))) {
+            _closeTagsRun += _closeTagPeel[0];
+            _afterMarker = _afterMarker.slice(_closeTagPeel[0].length);
+          }
+          var _gapMatch = _afterMarker.match(/^([ \t]*)/);
           var _tabWidth = settings.indentSpaces || 4;
-          var _gapRaw = _markerMatch[2].replace(/\t/g, ' '.repeat(_tabWidth));
+          var _gapRaw = _gapMatch[1].replace(/\t/g, ' '.repeat(_tabWidth));
           var _gapSpaces = _gapRaw.length || 1; // at least one space if none captured (e.g. marker glued to text)
-          // Slice from _searchLine (the peeled string), not the original
-          // line — _markerMatch's offsets are relative to _searchLine,
-          // not line, once any leading tags were peeled off above.
-          var _restHtml = _searchLine.slice(_markerMatch[0].length);
+          // _restHtml keeps the marker's own closing tag(s) (so HTML stays
+          // valid when _leadingTags gets re-opened below) but excludes the
+          // real gap whitespace, which is now fully accounted for by
+          // _gapSpaces in the marker box instead.
+          var _restHtml = _closeTagsRun + _afterMarker.slice(_gapMatch[0].length);
           // _leadingTags (e.g. <span class="viewer-highlight" ...>) is
           // both OPENED on the marker side AND explicitly CLOSED right
           // after the marker, then RE-OPENED at the start of
@@ -12128,6 +12213,248 @@ function getSmartIndentPrefix(lineText) {
   }
   return prefix;
 }
+
+// ===== SHARED CHECKLIST PASTE / QUICK-ADD / MOVE-MODE HELPERS =====
+// THE single source of truth for "smart indent + double-space" behavior
+// when inserting a block of content next to existing checklist items —
+// used identically by doPaste() (the Paste-before/after popover),
+// doInsert() (Quick Add, all modes including top/bottom/before/after/
+// rule), and the move-mode blank-line fixup. Previously each of these
+// had its own independent, slightly-different reimplementation that
+// silently drifted out of sync (the original bug report this session).
+// Every call site below MUST go through these functions rather than
+// writing its own indent/blank-line logic.
+
+// isChecklistLine(line) — the one place that decides "is this raw line
+// (any formatting, any marker style) a checkbox/hyphen/bullet list
+// item" for this system. Thin wrapper over the canonical
+// isCheckboxRaw(stripFormattingForDetect(...)) chain — never
+// reimplements detection itself.
+function isChecklistLine(line) {
+  return isCheckboxRaw(stripFormattingForDetect(line));
+}
+
+// leadingWhitespaceOf(line) — exact leading whitespace, unmodified.
+function leadingWhitespaceOf(line) {
+  return (line.match(/^([ \t]*)/) || ['', ''])[1];
+}
+
+// resolveChecklistBoundary(lines, idx, role, smartBlankOn) — examines a
+// single line at `idx` to decide whether it represents a checklist
+// neighbor, with one exception: if that line is blank AND smartBlankOn,
+// peek exactly one line further in the direction AWAY from where new
+// content will land ('leading' peeks up, 'trailing' peeks down) to find
+// a checklist neighbor hiding behind a double-spacing gap. Never peeks
+// past more than one blank — a run of 2+ blanks reads as "no checklist
+// neighbor here," not a context to dig through.
+function resolveChecklistBoundary(lines, idx, role, smartBlankOn) {
+  if (idx < 0 || idx >= lines.length) {
+    return { checklist: false, indentPrefix: '', isBlank: false, exists: false };
+  }
+  var line = lines[idx];
+  if (line.trim() === '') {
+    if (!smartBlankOn) return { checklist: false, indentPrefix: '', isBlank: true, exists: true };
+    var peekIdx = role === 'leading' ? idx - 1 : idx + 1;
+    if (peekIdx < 0 || peekIdx >= lines.length) {
+      return { checklist: false, indentPrefix: '', isBlank: true, exists: true };
+    }
+    var peekLine = lines[peekIdx];
+    if (peekLine.trim() === '' || !isChecklistLine(peekLine)) {
+      return { checklist: false, indentPrefix: '', isBlank: true, exists: true };
+    }
+    return { checklist: true, indentPrefix: leadingWhitespaceOf(peekLine), isBlank: true, exists: true };
+  }
+  if (isChecklistLine(line)) {
+    return { checklist: true, indentPrefix: leadingWhitespaceOf(line), isBlank: false, exists: true };
+  }
+  return { checklist: false, indentPrefix: '', isBlank: false, exists: true };
+}
+
+// isHomogeneousChecklistBlock(blockLines) — true only if every non-blank
+// line in the block is itself a checklist line (any marker style).
+// Blank lines are always allowed; anything else (plain text, headings,
+// etc.) disqualifies the whole block from the "fancy" treatment below —
+// per the rule, we only do indent/spacing magic when the WHOLE inserted
+// block is checklist-items-and-blanks, nothing else.
+function isHomogeneousChecklistBlock(blockLines) {
+  for (var i = 0; i < blockLines.length; i++) {
+    var l = blockLines[i];
+    if (l.trim() === '') continue;
+    if (!isChecklistLine(l)) return false;
+  }
+  return true;
+}
+
+// prepareChecklistBlock(blockLines, indentPrefix, smartBlankOn,
+//                        leadingAlreadyBlank, trailingIsChecklist)
+//
+// Takes a block already confirmed homogeneous and an anchor indent
+// prefix, and returns the final line array to splice into the note.
+//
+// Always: every non-blank line is re-indented to `indentPrefix`,
+// regardless of whatever indent or marker style it arrived with — only
+// leading whitespace changes, never the marker character or content.
+//
+// If smartBlankOn is false: that's it. No blank line is added, removed,
+// or reordered anywhere, not even multiples the user happened to copy —
+// they haven't opted into this "magic," so nothing about blank lines is
+// touched.
+//
+// If smartBlankOn is true: the block's own leading/trailing blank lines
+// are stripped (a stray blank at the start/end of what was copied
+// shouldn't create extra space at the seams — the seams are governed by
+// leadingAlreadyBlank/trailingIsChecklist instead), internal runs of
+// 2+ blank lines are collapsed to exactly 1, and then a leading blank is
+// added only if the boundary isn't already blank, and a trailing blank
+// is added only if what follows is itself a checklist line.
+function prepareChecklistBlock(blockLines, indentPrefix, smartBlankOn, leadingAlreadyBlank, trailingIsChecklist) {
+  var reindented = blockLines.map(function(l) {
+    if (l.trim() === '') return l;
+    return indentPrefix + l.replace(/^[ \t]*/, '');
+  });
+  if (!smartBlankOn) return reindented;
+
+  var start = 0, end = reindented.length;
+  while (start < end && reindented[start].trim() === '') start++;
+  while (end > start && reindented[end - 1].trim() === '') end--;
+  var core = reindented.slice(start, end);
+
+  var collapsed = [];
+  for (var i = 0; i < core.length; i++) {
+    if (core[i].trim() === '') {
+      if (collapsed.length && collapsed[collapsed.length - 1].trim() === '') continue;
+      collapsed.push('');
+    } else {
+      collapsed.push(core[i]);
+    }
+  }
+
+  var result = collapsed.slice();
+  if (!leadingAlreadyBlank) result.unshift('');
+  if (trailingIsChecklist) result.push('');
+  return result;
+}
+
+// computeChecklistInsertion(lines, nearIdx, nearRole, blockLines, opts)
+//
+// THE single entry point doPaste() and doInsert() both call. Returns
+// { applies, lines, spliceStart, deleteCount }. The caller always does
+// the SAME thing regardless of mode or whether the smart pipeline
+// applied: lines.splice(result.spliceStart, result.deleteCount,
+// ...result.lines) — spliceStart/deleteCount fully encapsulate not
+// just WHERE to insert but also which existing physical line, if any,
+// must be consumed (removed). A boundary can resolve its checklist
+// neighbor by peeking THROUGH an existing blank line (see
+// resolveChecklistBoundary); if it did, and that boundary ends up
+// getting its own freshly-added blank from prepareChecklistBlock, the
+// PHYSICAL blank that was peeked through must be deleted as part of the
+// splice — otherwise it sits right alongside the freshly-added one,
+// producing two blank lines where there should be exactly one. (This
+// was a real bug: "rule" mode with an existing single blank already
+// after the divider produced two blanks once the new item was added.)
+//
+// opts.smartBlankOn: settings.smartIndentBlankLine.
+// opts.forceLeadingBlank: true only for Quick Add's "top" and "rule"
+// modes, where the leading side structurally never has a pre-existing
+// blank to preserve (nothing precedes a top-of-note insertion; nothing
+// sits between a rule and the line right after it before we insert) —
+// so "leave alone if already blank" never applies there; it's always
+// add-exactly-one when the rest of the gate passes.
+function computeChecklistInsertion(lines, nearIdx, nearRole, blockLines, opts) {
+  var smartBlankOn = !!opts.smartBlankOn;
+  var defaultSpliceStart = nearRole === 'leading' ? nearIdx + 1 : nearIdx;
+  var nearBoundary = resolveChecklistBoundary(lines, nearIdx, nearRole, smartBlankOn);
+
+  if (!nearBoundary.checklist || !isHomogeneousChecklistBlock(blockLines)) {
+    return { applies: false, lines: blockLines, spliceStart: defaultSpliceStart, deleteCount: 0 };
+  }
+
+  var leadingIdx = nearRole === 'leading' ? nearIdx : nearIdx - 1;
+  var trailingIdx = nearRole === 'trailing' ? nearIdx : nearIdx + 1;
+  var leadingBoundary = nearRole === 'leading' ? nearBoundary : resolveChecklistBoundary(lines, leadingIdx, 'leading', smartBlankOn);
+  var trailingBoundary = nearRole === 'trailing' ? nearBoundary : resolveChecklistBoundary(lines, trailingIdx, 'trailing', smartBlankOn);
+
+  var leadingAlreadyBlank = opts.forceLeadingBlank ? false : (leadingIdx < 0 || lines[leadingIdx].trim() === '');
+  var trailingIsChecklist = trailingBoundary.checklist;
+
+  var finalLines = prepareChecklistBlock(blockLines, nearBoundary.indentPrefix, smartBlankOn, leadingAlreadyBlank, trailingIsChecklist);
+
+  var spliceStart = defaultSpliceStart;
+  var deleteCount = 0;
+  // Trailing seam: trailingIdx always equals defaultSpliceStart. If
+  // we're adding our own trailing blank AND that determination came
+  // from peeking through an actual existing blank line there, consume it.
+  if (trailingIsChecklist && trailingBoundary.isBlank) {
+    deleteCount += 1;
+  }
+  // Leading seam: leadingIdx always equals defaultSpliceStart - 1. We
+  // only add our own leading blank when !leadingAlreadyBlank — normally
+  // that already implies there's nothing blank there to conflict with,
+  // EXCEPT when forceLeadingBlank overrides the real check (top/rule
+  // modes), so this only ever fires in that combination.
+  if (!leadingAlreadyBlank && leadingBoundary.isBlank && leadingBoundary.checklist) {
+    spliceStart -= 1;
+    deleteCount += 1;
+  }
+
+  return { applies: true, lines: finalLines, spliceStart: spliceStart, deleteCount: deleteCount };
+}
+
+// _viewerLineNeighbors(firstEl, lastEl) — the .viewer-line immediately
+// before/after a given element pair, based on actual DOM position among
+// ALL .viewer-line elements right now. Used by move-mode to capture
+// boundary neighbors both before removal (the "source" gap that closes
+// up) and after reinsertion (the "destination" gap) — indexOf-based
+// lookups stay correct regardless of which moment they're taken at.
+function _viewerLineNeighbors(firstEl, lastEl) {
+  var viewer = document.getElementById('note-viewer');
+  var all = Array.from(viewer.querySelectorAll('.viewer-line'));
+  var i0 = all.indexOf(firstEl), i1 = all.indexOf(lastEl);
+  return {
+    above: i0 > 0 ? all[i0 - 1] : null,
+    below: (i1 >= 0 && i1 < all.length - 1) ? all[i1 + 1] : null
+  };
+}
+
+// _fixupMoveBlankLines(pairs) — after a move-mode reorder (drag, step,
+// or jump — every trigger funnels through this), ensures exactly one
+// blank line at any boundary pair where BOTH sides are checklist lines.
+// Only acts when settings.smartIndentBlankLine is on — the user hasn't
+// agreed to this cleanup otherwise. Reuses isChecklistLine(), the same
+// detection paste/Quick Add use, so a line is never "checklist" in one
+// code path and not the other. Each pair's indices are read fresh from
+// the elements' CURRENT dataset.line (kept in sync by _resyncAfterMove,
+// already called by every move trigger before this runs), so multiple
+// fixes in the same pass never need manual offset math.
+function _fixupMoveBlankLines(pairs) {
+  if (!settings.smartIndentBlankLine || !currentNoteId || !notes[currentNoteId]) return;
+  var changedAny = false;
+  pairs.forEach(function(pair) {
+    if (!pair || !pair.above || !pair.below) return;
+    var lines = notes[currentNoteId].content.split('\n');
+    var aboveIdx = parseInt(pair.above.dataset.line, 10);
+    var belowIdx = parseInt(pair.below.dataset.line, 10);
+    if (isNaN(aboveIdx) || isNaN(belowIdx) || belowIdx <= aboveIdx) return;
+    if (!isChecklistLine(lines[aboveIdx]) || !isChecklistLine(lines[belowIdx])) return;
+    var between = lines.slice(aboveIdx + 1, belowIdx);
+    if (!between.every(function(l) { return l.trim() === ''; })) return; // non-blank between — leave alone
+    if (between.length === 1) return; // already exactly one
+    var newLines = lines.slice(0, aboveIdx + 1).concat(['']).concat(lines.slice(belowIdx));
+    notes[currentNoteId].content = newLines.join('\n');
+    changedAny = true;
+    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    renderBlockSelections();
+    _refreshMoveBlocks();
+    _resyncAfterMove();
+  });
+  if (changedAny) {
+    notes[currentNoteId].editedAt = Date.now();
+    document.getElementById('note-editor').value = notes[currentNoteId].content;
+    saveNotes();
+  }
+}
+
+
 
 // ===== INDENT / DEDENT HELPERS =====
 // indentLines: add N spaces to the start of every line touched by the selection.
@@ -12945,7 +13272,21 @@ function scheduleSave() {
         _updatingTimestamp = true;
         var _updated = updateLastModifiedInContent(_curContent, _noteName);
         if (_updated !== _curContent) {
+          // Setting .value resets the cursor to end-of-text (browser
+          // default) unless explicitly restored — this is what was
+          // causing the insertion point to jump to the end of the note
+          // every time the [last modified] timestamp ticked over to a
+          // new minute mid-edit. The timestamp line can be anywhere in
+          // the note relative to where the user is actually typing, so
+          // the restored position must be computed from the actual
+          // diff between old and new content, not assumed to be "the
+          // same offset" or "unaffected.”
+          var _selStart = _ed.selectionStart;
+          var _selEnd   = _ed.selectionEnd;
+          var _newStart = _adjustCursorForContentDiff(_curContent, _updated, _selStart);
+          var _newEnd   = _selEnd === _selStart ? _newStart : _adjustCursorForContentDiff(_curContent, _updated, _selEnd);
           _ed.value = _updated;
+          _ed.setSelectionRange(_newStart, _newEnd);
           notes[currentNoteId].content = _updated;
         }
         _updatingTimestamp = false;
@@ -22052,188 +22393,139 @@ function makeImportFolderName(label) {
 
     var current = notes[currentNoteId].content || '';
     var currentLines = current.split('\n');
-
-    // ── Smart indent: find reference line and extract leading whitespace only ──
-    // Use stripFormattingForDetect so formatted lines like ==- text== are recognised.
-    // Extract indent from ORIGINAL refLine (before stripping which calls .trim()).
-    var _indentPrefix = '';
-    var _refLine = null;
     var _insertedIsCheckboxish = addCheckbox || addHyphen;
+    var smartBlankOn = !!settings.smartIndentBlankLine;
 
-    (function() {
-      if (_qaMode === 'bottom') {
-        for (var ri = currentLines.length - 1; ri >= 0; ri--) {
-          if (currentLines[ri].trim() !== '') { _refLine = currentLines[ri]; break; }
-        }
-      } else if (_qaMode === 'after' && _qaTargetLine !== null) {
-        _refLine = currentLines[_qaTargetLine] || null;
-      } else if (_qaMode === 'before' && _qaTargetLine !== null) {
-        // For before-mode look at the line above, fall back to target
-        var above = _qaTargetLine > 0 ? currentLines[_qaTargetLine - 1] : null;
-        if (above !== null && isCheckboxRaw(stripFormattingForDetect(above))) {
-          _refLine = above;
-        } else {
-          _refLine = currentLines[_qaTargetLine] || null;
-        }
+    // ── Determine the anchor boundary + role for this Quick Add mode ──
+    // Mirrors doPaste()'s tapped-line logic exactly, through the SAME
+    // shared computeChecklistInsertion() pipeline (defined above near
+    // getSmartIndentPrefix) — this is the fix for doInsert() previously
+    // having its own, independent, slightly-different reimplementation
+    // of indent detection and blank-line collapsing. 'top' and 'rule'
+    // get forceLeadingBlank: nothing real precedes either position to
+    // already be blank, so "add or preserve exactly one blank there" is
+    // unconditional rather than "leave alone if already blank."
+    var nearIdx = null, nearRole = 'leading', forceLeadingBlank = false;
+    var ruleNotFound = false;
+    if (_qaMode === 'top') {
+      nearIdx = 0; nearRole = 'trailing'; forceLeadingBlank = true;
+    } else if (_qaMode === 'after' && _qaTargetLine !== null) {
+      nearIdx = _qaTargetLine; nearRole = 'leading';
+    } else if (_qaMode === 'before' && _qaTargetLine !== null) {
+      nearIdx = _qaTargetLine; nearRole = 'trailing';
+    } else if (_qaMode === 'rule') {
+      var hrIdxPre = findFirstHrIndex(current);
+      if (hrIdxPre !== -1) {
+        nearIdx = hrIdxPre + 1; nearRole = 'trailing'; forceLeadingBlank = true;
+      } else {
+        ruleNotFound = true; // falls through to bottom-style fallback below
+        showToast('No divider found — added at bottom', false);
       }
-      // Apply indent only when ref line is checkbox-ish (through formatting) AND
-      // the inserted content is also checkbox-ish — prevents indenting headings etc.
-      if (_refLine !== null && _insertedIsCheckboxish &&
-          isCheckboxRaw(stripFormattingForDetect(_refLine))) {
-        _indentPrefix = (_refLine.match(/^(\s*)/)||['',''])[1];
-      }
-    })();
-
-    // Default indent: apply when inserting checkbox/hyphen items and smart indent didn't apply
-    if (_insertedIsCheckboxish && _indentPrefix === '' && settings.defaultCheckboxIndent > 0) {
-      var _defIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
-      _indentPrefix = ' '.repeat(_defIndentSpaces);
+    }
+    if (_qaMode === 'bottom' || ruleNotFound) {
+      nearIdx = currentLines.length - 1; nearRole = 'leading';
     }
 
-    var processedLines;
+    // Build the lines to insert: force hyphen/checkbox markers if either
+    // toggle is checked (guaranteeing a homogeneous checklist block);
+    // otherwise pass typed lines through as-is, so content that already
+    // looks like checklist items (typed or pasted into Quick Add without
+    // checking either toggle) gets the exact same treatment doPaste()
+    // gives equivalent content — no special-casing either path.
+    var rawBlock;
     if (!hasVisibleText) {
       var blankCount = (lines.length - 1) + (addBlankLine ? 1 : 0);
-      processedLines = [];
-      for (var i = 0; i < blankCount; i++) processedLines.push('');
+      rawBlock = [];
+      for (var i = 0; i < blankCount; i++) rawBlock.push('');
     } else {
-      processedLines = lines.map(function(l) {
-        if (l.trim().length > 0) {
-          // Strip leading whitespace — _indentPrefix provides it cleanly (avoids double-indent)
-          var lTrimmed = l.replace(/^\s+/, '');
-          if (addCheckbox) return _indentPrefix + '- [ ] ' + lTrimmed;
-          if (addHyphen)   return _indentPrefix + '- '   + lTrimmed;
-          return _indentPrefix + lTrimmed;
-        }
-        return l; // blank lines: no indent added
+      rawBlock = lines.map(function(l) {
+        if (l.trim().length === 0) return l;
+        var lTrimmed = l.replace(/^\s+/, '');
+        if (addCheckbox) return '- [ ] ' + lTrimmed;
+        if (addHyphen)   return '- '   + lTrimmed;
+        return lTrimmed;
       });
-      if (addBlankLine) processedLines.push('');
     }
-    // addHorizRule applies regardless of whether there is text
-    if (addHorizRule) processedLines.push('- - - - -');
 
-    // ── Blank-line-before: prepend one blank line to processedLines ──────
-    if (addBlankLineBefore && hasVisibleText) {
-      processedLines.unshift('');
+    // ── Splice position + content ── unified across every mode (top,
+    // bottom, before, after, rule) via computeChecklistInsertion's
+    // spliceStart/deleteCount, instead of each mode separately building
+    // newContent through a mix of string concatenation and array
+    // splicing. deleteCount can be 1 when the smart pipeline found its
+    // checklist neighbor by peeking through an existing blank line that
+    // needs consuming — e.g. "rule" mode with a single blank already
+    // sitting after the divider: without consuming it here, the smart
+    // pipeline's own freshly-added blank would end up doubled up right
+    // alongside it (a real reported bug).
+    var processedLines;
+    var _smartApplied = false;
+    var _finalSpliceStart, _finalDeleteCount;
+    if (nearIdx !== null && hasVisibleText) {
+      var _ciResult = computeChecklistInsertion(currentLines, nearIdx, nearRole, rawBlock, {
+        smartBlankOn: smartBlankOn,
+        forceLeadingBlank: forceLeadingBlank
+      });
+      _finalSpliceStart = _ciResult.spliceStart;
+      _finalDeleteCount = _ciResult.deleteCount;
+      if (_ciResult.applies) {
+        processedLines = _ciResult.lines;
+        _smartApplied = true;
+      } else if (_insertedIsCheckboxish) {
+        // Not adjacent to an existing checklist context (or the typed
+        // block wasn't homogeneous) — still apply a flat default indent
+        // to the forced checklist lines, same fallback as before.
+        var _defIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
+        var _defPrefix = _defIndentSpaces > 0 ? ' '.repeat(_defIndentSpaces) : '';
+        processedLines = rawBlock.map(function(l) { return l.trim() === '' ? l : _defPrefix + l; });
+      } else {
+        processedLines = rawBlock;
+      }
+    } else if (nearIdx !== null) {
+      // No visible text (inserting blank lines only) — the smart
+      // pipeline never applies here (matches prior behavior); just use
+      // the plain mode-based position.
+      _finalSpliceStart = nearRole === 'leading' ? nearIdx + 1 : nearIdx;
+      _finalDeleteCount = 0;
+      processedLines = rawBlock;
+    } else {
+      // Defensive fallback — shouldn't normally happen.
+      _finalSpliceStart = currentLines.length;
+      _finalDeleteCount = 0;
+      processedLines = rawBlock;
     }
+
+    // ── Manual "Add dividing line" checkboxes — only when the smart
+    // checklist pipeline ISN'T already managing blank lines for this
+    // insertion (a homogeneous checklist block, with double-spacing on,
+    // adjacent to an existing checklist item). In that specific case the
+    // smart pipeline's seam decisions are authoritative: a manual
+    // checkbox left checked from a previous, unrelated plain-paragraph
+    // insertion must never add a blank line the user doesn't want
+    // inside their list — they shouldn't have to remember to uncheck it
+    // every time. Outside that case (plain/mixed content, or double-
+    // spacing off), the manual checkboxes behave exactly as before,
+    // still guarding against doubling a blank that's already there.
+    var _smartOwnsBlankLines = _smartApplied && smartBlankOn;
+    if (hasVisibleText && !_smartOwnsBlankLines) {
+      if (addBlankLine && !(processedLines.length && processedLines[processedLines.length - 1].trim() === '')) {
+        processedLines = processedLines.concat(['']);
+      }
+      if (addBlankLineBefore && !(processedLines.length && processedLines[0].trim() === '')) {
+        processedLines = [''].concat(processedLines);
+      }
+    }
+    // addHorizRule applies regardless of whether there is text, and
+    // regardless of the checklist pipeline — a divider isn't itself a
+    // checklist item, so it's appended after all of the above.
+    if (addHorizRule) processedLines = processedLines.concat(['- - - - -']);
 
     var insertText = processedLines.join('\n');
-    var newContent;
-    if (_qaMode === 'top') {
-      newContent = insertText + (current ? '\n' + current : '');
-    } else if (_qaMode === 'bottom') {
-      newContent = (current ? current + '\n' : '') + insertText;
-    } else if ((_qaMode === 'before' || _qaMode === 'after') && _qaTargetLine !== null) {
-      var currentLines = current.split('\n');
-      var insertIdx = _qaMode === 'before' ? _qaTargetLine : _qaTargetLine + 1;
-      insertIdx = Math.max(0, Math.min(insertIdx, currentLines.length));
-      var toInsert = insertText.split('\n');
-      currentLines.splice.apply(currentLines, [insertIdx, 0].concat(toInsert));
-      newContent = currentLines.join('\n');
-    } else if (_qaMode === 'rule') {
-      var hrIdx = findFirstHrIndex(current);
-      if (hrIdx === -1) {
-        // No divider found — insert at bottom
-        newContent = (current ? current + '\n' : '') + insertText;
-        showToast('No divider found — added at bottom', false);
-      } else {
-        var ruleLines = current ? current.split('\n') : [];
-        var ruleInsertAt = hrIdx + 1;
-        var ruleToInsert = insertText.split('\n');
-        ruleLines.splice.apply(ruleLines, [ruleInsertAt, 0].concat(ruleToInsert));
-        newContent = ruleLines.join('\n');
-      }
-    } else {
-      // Fallback to bottom
-      newContent = (current ? current + '\n' : '') + insertText;
-    }
-
-    // Calculate where inserted lines start in the new content
-    var insertedLines = insertText.split('\n');
-    var insertedCount = insertedLines.length;
-    var newLines = newContent.split('\n');
-    var insertStartIdx;
-    if (_qaMode === 'top') {
-      insertStartIdx = 0;
-    } else if (_qaMode === 'bottom') {
-      insertStartIdx = newLines.length - insertedCount;
-    } else if (_qaMode === 'rule') {
-      var hrIdxNew = findFirstHrIndex(current);
-      insertStartIdx = hrIdxNew === -1 ? newLines.length - insertedCount : hrIdxNew + 1;
-    } else {
-      // before/after — same insertIdx computed above
-      insertStartIdx = _qaMode === 'before' ? _qaTargetLine : _qaTargetLine + 1;
-    }
-
-    // ── Enforce single blank line between checkbox-ish items ─────────────
-    // When inserting checkbox-ish content adjacent to another checkbox-ish line,
-    // ensure exactly one blank line separator when smartIndentBlankLine is on OR
-    // either blank-line option is checked. Prevents blank-line doubling.
-    // Direction: after/bottom → look above insertion point; before → look below.
-    (function() {
-      if (!_insertedIsCheckboxish) return;
-      var wantBlank = settings.smartIndentBlankLine || addBlankLine || addBlankLineBefore;
-      if (!wantBlank) return;
-      var nl = newContent.split('\n');
-
-      function collapseBlanksBetween(insertStart, insertEnd, lookAbove) {
-        // lookAbove=true: check line above insertStart for checkbox-ish neighbour
-        // lookAbove=false: check line below insertEnd for checkbox-ish neighbour
-        var neighbourIdx = lookAbove ? insertStart - 1 : insertEnd + 1;
-        // Skip blank lines to find the actual neighbour
-        if (lookAbove) {
-          while (neighbourIdx >= 0 && nl[neighbourIdx] !== undefined && nl[neighbourIdx].trim() === '') neighbourIdx--;
-        } else {
-          while (neighbourIdx < nl.length && nl[neighbourIdx].trim() === '') neighbourIdx++;
-        }
-        if (neighbourIdx < 0 || neighbourIdx >= nl.length) return;
-        var neighbour = nl[neighbourIdx];
-        if (!isCheckboxRaw(stripFormattingForDetect(neighbour))) return;
-
-        // Count blank lines between neighbour and first inserted line
-        var blankStart, blankEnd;
-        if (lookAbove) {
-          blankStart = neighbourIdx + 1;
-          blankEnd   = insertStart - 1;
-        } else {
-          blankStart = insertEnd + 1;
-          blankEnd   = neighbourIdx - 1;
-        }
-        // Replace run of blank lines with exactly one blank line
-        var blankCount = 0;
-        for (var bi = blankStart; bi <= blankEnd; bi++) {
-          if (nl[bi] !== undefined && nl[bi].trim() === '') blankCount++;
-        }
-        if (blankCount === 1) return; // already perfect
-        // Remove the blank lines in this range, insert exactly one
-        nl.splice(blankStart, blankEnd - blankStart + 1, '');
-      }
-
-      // Determine where inserted lines sit in newContent
-      var insertedArr = insertText.split('\n');
-      var iCount = insertedArr.length;
-      var iStart;
-      if (_qaMode === 'top') {
-        iStart = 0;
-      } else if (_qaMode === 'bottom') {
-        iStart = nl.length - iCount;
-      } else if (_qaMode === 'rule') {
-        var rhrIdx = findFirstHrIndex(current);
-        iStart = rhrIdx === -1 ? nl.length - iCount : rhrIdx + 1;
-      } else {
-        iStart = _qaMode === 'before' ? _qaTargetLine : _qaTargetLine + 1;
-      }
-      var iEnd = iStart + iCount - 1;
-
-      if (_qaMode === 'before') {
-        // Inserted above target — check blank lines below inserted block
-        collapseBlanksBetween(iStart, iEnd, false);
-      } else {
-        // after/bottom/top/rule — check blank lines above inserted block
-        collapseBlanksBetween(iStart, iEnd, true);
-      }
-
-      newContent = nl.join('\n');
-    })();
+    var toInsert = insertText.split('\n');
+    var newLinesArr = currentLines.slice();
+    newLinesArr.splice.apply(newLinesArr, [_finalSpliceStart, _finalDeleteCount].concat(toInsert));
+    var newContent = newLinesArr.join('\n');
+    var insertStartIdx = _finalSpliceStart;
+    var insertedCount = toInsert.length;
 
     var ed = document.getElementById('note-editor');
     pushUndo(); // save pre-insertion state so Undo restores it
@@ -22246,6 +22538,22 @@ function makeImportFolderName(label) {
     if (isViewMode) {
       document.getElementById('note-viewer').innerHTML = urlsToLinks(newContent, true);
       updateViewOnlyBtns();
+      // Homogeneous checklist insertion: leave the inserted lines
+      // selected (selectedBlocks) so Indent/Dedent can act on them
+      // immediately, matching doPaste()'s equivalent behavior. Also
+      // turn on selectMode itself (not just the underlying selection
+      // set) so the "Select lines" toolbar button visually reflects
+      // that lines are genuinely selected — setting selectedBlocks
+      // alone left the selection functionally real but the button
+      // looked inactive, which is its own bug.
+      if (_smartApplied) {
+        selectedBlocks.clear();
+        for (var sbi = insertStartIdx; sbi < insertStartIdx + insertedCount; sbi++) selectedBlocks.add(sbi);
+        selectMode = true;
+        renderBlockSelections();
+        updateSelectModeBtn();
+        updateViewOnlyBtns();
+      }
       // Scroll to and briefly highlight the inserted lines
       setTimeout(function() {
         var viewer = document.getElementById('note-viewer');
@@ -24706,9 +25014,6 @@ function createInitialNotes() {
     folderId: sampleFolderId
   };
 
-  saveFolders();
-  saveNotes();
-
   // ── Prototype themes — always install/update using fixed IDs ───────────
   var themeEveningId = 'theme-sample-evening';
   themes[themeEveningId] = {
@@ -25220,6 +25525,18 @@ function createInitialNotes() {
     };
   }
 
+  // Save EVERYTHING created above — folders, every sample note (including
+  // the 8 theme-illustrating notes and "Why Remember?" created after this
+  // point used to be saved), and the folder assignments — together, in
+  // one atomic pair of writes, at the true end of the function. The
+  // previous save call sat partway through note creation, meaning the
+  // 8 theme-sample notes and "Why Remember?" relied on some unrelated,
+  // later save elsewhere in the app to ever reach localStorage at all —
+  // if a reload happened before that (e.g. the service-worker
+  // controllerchange reload elsewhere in this file) those notes could
+  // be silently lost, or saved inconsistently with the folder data.
+  saveFolders();
+  saveNotes();
   }
 
 // ===== UNDO / REDO =====
@@ -25830,6 +26147,10 @@ function _performDrop(target, position) {
   // Sort by current DOM position to preserve line order regardless of which handle was dragged
   var allLines = Array.from(viewer.querySelectorAll('.viewer-line'));
   srcs.sort(function(a, b) { return allLines.indexOf(a) - allLines.indexOf(b); });
+  // Capture the "source" neighbors (what will become adjacent to each
+  // other once the moved block is removed) BEFORE removal — this
+  // information is gone the instant the DOM splice below happens.
+  var _srcNeighbors = _viewerLineNeighbors(srcs[0], srcs[srcs.length - 1]);
   // Remove from current positions
   srcs.forEach(function(el) { el.parentNode.removeChild(el); });
   // Re-insert before/after target, maintaining order
@@ -25845,8 +26166,20 @@ function _performDrop(target, position) {
       ref = el.nextSibling;
     });
   }
+  // Capture the "destination" neighbors now that the block has landed.
+  var _destNeighbors = _viewerLineNeighbors(srcs[0], srcs[srcs.length - 1]);
   _resyncAfterMove();
   _writeMoveContentBack();
+  // Smart-spacing cleanup: same shared pipeline move-mode, doPaste(),
+  // and Quick Add all use — fixes both the gap left behind at the old
+  // position AND the seams at the new position, only when both sides
+  // of a given boundary are checklist lines and the double-space
+  // setting is on.
+  _fixupMoveBlankLines([
+    _srcNeighbors,
+    { above: _destNeighbors.above, below: srcs[0] },
+    { above: srcs[srcs.length - 1], below: _destNeighbors.below }
+  ]);
   _moveSelIdx = _moveBlocks.indexOf(srcs[0]);
   _updateMoveBtns();
   _scrollToMoveSelected();
@@ -26184,12 +26517,15 @@ function _moveStep(dir) {
   var viewer = document.getElementById('note-viewer');
   var lastIdx = _moveSelIdx + _moveGroupSize - 1;
 
+  var _srcNeighbors, _destNeighbors;
   if (dir === -1) { // up — insert group before the block above the top
     if (_moveSelIdx <= 0) return;
+    _srcNeighbors = _viewerLineNeighbors(groupEls[0], groupEls[groupEls.length - 1]);
     var anchor = _moveBlocks[_moveSelIdx - 1];
     groupEls.forEach(function(el) { viewer.insertBefore(el, anchor); });
   } else { // down — insert group after the block immediately below the bottom of group
     if (lastIdx >= _moveBlocks.length - 1) return;
+    _srcNeighbors = _viewerLineNeighbors(groupEls[0], groupEls[groupEls.length - 1]);
     // The block we're jumping over is _moveBlocks[lastIdx + 1]
     // Insert the group after it: find what comes after that block, insert before it
     var insertBefore = _moveBlocks[lastIdx + 1].nextSibling;
@@ -26198,8 +26534,14 @@ function _moveStep(dir) {
       else              viewer.appendChild(el);
     });
   }
+  _destNeighbors = _viewerLineNeighbors(groupEls[0], groupEls[groupEls.length - 1]);
   _reanchorMoveGroup(groupEls[0]);
   _writeMoveContentBack();
+  _fixupMoveBlankLines([
+    _srcNeighbors,
+    { above: _destNeighbors.above, below: groupEls[0] },
+    { above: groupEls[groupEls.length - 1], below: _destNeighbors.below }
+  ]);
 }
 
 function _moveJump(toTop) {
@@ -26209,14 +26551,21 @@ function _moveJump(toTop) {
   if (!groupEls.length) return;
   if (!_moveUndoPushed) { pushUndo(); _moveUndoPushed = true; }
   var viewer = document.getElementById('note-viewer');
+  var _srcNeighbors = _viewerLineNeighbors(groupEls[0], groupEls[groupEls.length - 1]);
   if (toTop) {
     var first = viewer.firstChild;
     groupEls.forEach(function(el) { viewer.insertBefore(el, first); });
   } else {
     groupEls.forEach(function(el) { viewer.appendChild(el); });
   }
+  var _destNeighbors = _viewerLineNeighbors(groupEls[0], groupEls[groupEls.length - 1]);
   _reanchorMoveGroup(groupEls[0]);
   _writeMoveContentBack();
+  _fixupMoveBlankLines([
+    _srcNeighbors,
+    { above: _destNeighbors.above, below: groupEls[0] },
+    { above: groupEls[groupEls.length - 1], below: _destNeighbors.below }
+  ]);
 }
 
 function _bindMoveRepeat(btn, fn) {
@@ -26430,7 +26779,7 @@ function stripWrapperFormattingOnly(s) {
   do {
     prev = s;
     s = s.replace(/^\*\*/, '').replace(/\*\*$/, '')
-      .replace(/^\*/, '').replace(/\*$/, '')
+      .replace(/^\*(?!\s)/, '').replace(/\*$/, '')
       .replace(/^_/, '').replace(/_$/, '')
       .replace(/^~~/, '').replace(/~~$/, '')
       .replace(/^==#[0-9a-fA-F]{3,6}\|#[0-9a-fA-F]{3,6}:/, '').replace(/==$/, '')
@@ -26609,6 +26958,38 @@ function _formatTimestamp() {
   }
 }
 
+// _adjustCursorForContentDiff(oldStr, newStr, pos) — given a cursor
+// position in oldStr, computes the equivalent position in newStr after
+// some substring of oldStr was replaced with different (possibly
+// different-length) text elsewhere in the string. Finds the common
+// prefix and common suffix shared by both strings; a cursor sitting
+// entirely before the changed region is left untouched, one sitting
+// entirely after it shifts by the overall length delta, and one
+// sitting inside the changed region itself (rare — only if the edit
+// happens to overlap the cursor) is clamped to the nearest edge of the
+// new text rather than guessing a position inside it. Used to keep the
+// cursor in place across programmatic content rewrites that happen
+// elsewhere in the note while the user is actively typing — e.g. the
+// [last modified] timestamp auto-update below, which was previously
+// resetting the cursor to the end of the note every time it ticked
+// over to a new minute mid-edit.
+function _adjustCursorForContentDiff(oldStr, newStr, pos) {
+  var maxPrefix = Math.min(oldStr.length, newStr.length);
+  var prefixLen = 0;
+  while (prefixLen < maxPrefix && oldStr[prefixLen] === newStr[prefixLen]) prefixLen++;
+  var maxSuffix = Math.min(oldStr.length - prefixLen, newStr.length - prefixLen);
+  var suffixLen = 0;
+  while (suffixLen < maxSuffix &&
+         oldStr[oldStr.length - 1 - suffixLen] === newStr[newStr.length - 1 - suffixLen]) {
+    suffixLen++;
+  }
+  var oldChangeStart = prefixLen;
+  var oldChangeEnd = oldStr.length - suffixLen;
+  if (pos <= oldChangeStart) return pos;
+  if (pos >= oldChangeEnd) return pos + (newStr.length - oldStr.length);
+  return newStr.length - suffixLen;
+}
+
 // Inserts or updates the [last modified] line in content string.
 // If the note has the Today suffix and no [last modified] line, inserts at line 2.
 // Returns updated content string.
@@ -26763,78 +27144,31 @@ function doPaste(before) {
     if (!text || !text.trim()) { showToast('Nothing to paste', false); return; }
     _markClipAsked(text); // user just pasted this — don't auto-prompt for same content again
     pushUndo();
-    var lines    = (notes[currentNoteId].content || '').split('\n');
-    var insertAt = before ? lineIndex : lineIndex + 1;
+    var lines = (notes[currentNoteId].content || '').split('\n');
     // Split pasted text into lines
     var pastedLines = text.split('\n');
 
-    // ── Smart-indent-aware paste ──────────────────────────────────────────
-    // If the line immediately BEFORE the insertion point is a checklist
-    // item (checkbox or hyphen), treat the pasted block the same way
-    // continuing to type/press-Enter on that list would: every pasted
-    // line that doesn't already have its own marker gets the anchor's
-    // marker/indentation prepended (a "plain" paste becomes new list
-    // items), and lines that already have their own marker are left
-    // alone (pasting already-structured content keeps its own markers
-    // and indentation, per-line). When settings.smartIndentBlankLine is
-    // on, blank-line separators are added between every resulting item —
-    // both inside the pasted block AND at the seams with the existing
-    // anchor line and whatever line originally followed — so the result
-    // is indistinguishable from manually typing/pressing Enter through
-    // the same content with that setting on.
-    var anchorLine = insertAt > 0 ? lines[insertAt - 1] : null;
-    var anchorPrefix = anchorLine !== null ? getSmartIndentPrefix(anchorLine) : null;
-    var insertedLines; // what actually gets spliced into `lines`
+    // ── Smart-indent-aware paste ── delegates entirely to the shared
+    // checklist-insertion pipeline (computeChecklistInsertion, defined
+    // above near getSmartIndentPrefix) — the SAME pipeline Quick Add's
+    // doInsert() and move-mode's blank-line fixup use, so all three
+    // behave identically instead of drifting out of sync. The tapped
+    // line is the "near" boundary; its role is 'trailing' when pasting
+    // before it (the new content ends up above it) and 'leading' when
+    // pasting after it (the new content ends up below it). spliceStart/
+    // deleteCount (not a separately-computed insertAt) is what actually
+    // governs the splice below — deleteCount can be 1 when the smart
+    // pipeline found its checklist neighbor by peeking through an
+    // existing blank line that needs consuming, so the freshly-added
+    // blank doesn't end up doubled up alongside it.
+    var nearRole = before ? 'trailing' : 'leading';
+    var result = computeChecklistInsertion(lines, lineIndex, nearRole, pastedLines, {
+      smartBlankOn: !!settings.smartIndentBlankLine
+    });
+    var insertedLines = result.lines;
+    var insertAt = result.spliceStart;
 
-    if (anchorPrefix === null) {
-      // Not a checklist context — unchanged behavior.
-      insertedLines = pastedLines;
-    } else {
-      var wantBlank = !!settings.smartIndentBlankLine;
-      var followingLine = insertAt < lines.length ? lines[insertAt] : null;
-      var followingIsListItem = followingLine !== null && getSmartIndentPrefix(followingLine) !== null;
-
-      var processed = pastedLines.map(function(pl) {
-        // Blank lines the user pasted on purpose (e.g. already had their
-        // own spacing) are left as literal blank lines, not treated as
-        // "plain text" to prefix.
-        if (pl.trim() === '') return pl;
-        return (getSmartIndentPrefix(pl) !== null) ? pl : (anchorPrefix + pl);
-      });
-
-      if (wantBlank) {
-        // Insert one blank line between every pair of consecutive
-        // checklist-item lines in `processed` — i.e. after every line
-        // that isn't already blank and isn't the last one, skipping if
-        // the next line is already blank (avoid doubling up if the
-        // user's own pasted content already had blank separators).
-        var withSeparators = [];
-        processed.forEach(function(pl, idx) {
-          withSeparators.push(pl);
-          var isLast = idx === processed.length - 1;
-          var nextIsBlank = !isLast && processed[idx + 1].trim() === '';
-          if (pl.trim() !== '' && !isLast && !nextIsBlank) withSeparators.push('');
-        });
-        insertedLines = withSeparators;
-        // Seam before the pasted block: anchor line is always a list
-        // item here (that's how anchorPrefix got set), so always add a
-        // separator unless the pasted block's own first line is blank.
-        if (insertedLines.length && insertedLines[0].trim() !== '') {
-          insertedLines = [''].concat(insertedLines);
-        }
-        // Seam after the pasted block: only if what follows is ALSO a
-        // list item (continuing the same kind of list) — otherwise this
-        // would insert a spurious blank line before unrelated content.
-        if (followingIsListItem && insertedLines.length &&
-            insertedLines[insertedLines.length - 1].trim() !== '') {
-          insertedLines = insertedLines.concat(['']);
-        }
-      } else {
-        insertedLines = processed;
-      }
-    }
-
-    lines.splice.apply(lines, [insertAt, 0].concat(insertedLines));
+    lines.splice.apply(lines, [result.spliceStart, result.deleteCount].concat(insertedLines));
     notes[currentNoteId].content = lines.join('\n');
     notes[currentNoteId].editedAt = Date.now();
     document.getElementById('note-editor').value = notes[currentNoteId].content;
@@ -26850,6 +27184,23 @@ function doPaste(before) {
       for (var pi = insertAt; pi < insertAt + insertedLines.length; pi++) {
         var div = viewer.querySelector('.viewer-line[data-line="' + pi + '"]');
         if (div) { div.classList.add('paste-highlight'); pastedDivs.push(div); }
+      }
+      // Homogeneous checklist paste: leave the pasted lines selected
+      // (selectedBlocks) so Indent/Dedent can act on them immediately,
+      // without requiring "Select lines" first. Only in R&R mode, and
+      // only for this specific case — a plain/mixed-content paste
+      // doesn't change the existing selection at all. Also turn on
+      // selectMode itself (not just the underlying selection set) so
+      // the "Select lines" toolbar button visually reflects that lines
+      // are genuinely selected — setting selectedBlocks alone left the
+      // selection functionally real but the button looked inactive.
+      if (result.applies && isViewMode) {
+        selectedBlocks.clear();
+        for (var si = insertAt; si < insertAt + insertedLines.length; si++) selectedBlocks.add(si);
+        selectMode = true;
+        renderBlockSelections();
+        updateSelectModeBtn();
+        updateViewOnlyBtns();
       }
       // Scroll first pasted line into view
       if (pastedDivs.length > 0) pastedDivs[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
