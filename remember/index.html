@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1460 -->
+<!-- Remember App - Version 0.1461 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1460
+  Version 0.1461
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -4525,6 +4525,29 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   word-wrap: break-word;
   overflow-y: auto;
 }
+#scratch-copy-fab {
+  position: absolute;
+  bottom: 8px;
+  left: 6px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.08);
+  color: #6b6258;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s;
+  padding: 0;
+}
+@media (hover: hover) {
+  #scratch-copy-fab:hover { background: rgba(0,0,0,0.15); }
+}
+#scratch-copy-fab:active { transform: scale(0.9); }
 #scratch-page-curl {
   position: absolute;
   bottom: 0;
@@ -6498,6 +6521,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div id="scratch-panel-handle-bar"></div>
   </div>
   <textarea id="scratch-panel-textarea" placeholder="Quick notes…" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+  <button id="scratch-copy-fab" aria-label="Copy this scratch pad page" title="Copy page contents">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;pointer-events:none;">
+      <rect x="7" y="5" width="9" height="12" rx="2"/>
+      <path d="M4 14V3.5A1.5 1.5 0 0 1 5.5 2H13"/>
+    </svg>
+  </button>
   <button id="scratch-page-curl" aria-label="Switch scratch pad page">
     <span id="scratch-page-num">1</span>
   </button>
@@ -6817,7 +6846,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <input type="range" class="settings-range" id="paragraph-spacing-range" min="0.5" max="3.0" step="0.1" value="1.0">
           </div>
           <div class="settings-row">
-            <div class="settings-row-desc" style="padding:0 0 4px">Height of empty lines in Read &amp; Revise mode. Larger values add space between paragraphs. Does not affect spacing within wrapped text.</div>
+            <div class="settings-row-desc" style="padding:0 0 4px">Height of empty lines in Read &amp; Revise mode. Larger values add space between paragraphs. Does not affect spacing within wrapped text. <strong>Note:</strong> this setting is suspended while Ruled Lines or Dot Grid is active — blank lines are forced to match the ruled line spacing so they stay on the grid.</div>
           </div>
 
           <!-- Letter Spacing -->
@@ -7582,7 +7611,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;">
         <div>
           <div class="settings-row-label">Ruled lines / grid</div>
-          <div class="settings-row-desc">A decorative paper-style background, in both Typing and Read &amp; Revise mode — never changes your note's actual text. Works with whatever background color you've already chosen.</div>
+          <div class="settings-row-desc">A decorative paper-style background, in both Typing and Read &amp; Revise mode — never changes your note's actual text. Works with whatever background color you've already chosen. When active, the <em>Blank Line Height</em> setting (in Text) is overridden so blank lines stay on the ruled grid.</div>
         </div>
         <div class="settings-radio-group" id="ruled-line-style-seg">
           <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="none"> Off</label>
@@ -8680,7 +8709,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1460';
+const APP_VERSION = '0.1461';
 
 
 
@@ -17476,6 +17505,26 @@ function makeImportFolderName(label) {
       });
     }
 
+    // Copy FAB — copies current page content to clipboard
+    var copyFab = document.getElementById('scratch-copy-fab');
+    if (copyFab) {
+      copyFab.addEventListener('click', function() {
+        var text = ta.value;
+        if (!text.trim()) { showToast('Nothing to copy', false); return; }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function() {
+            showToast('Copied', false);
+          }).catch(function() {
+            showToast('Copy failed', false);
+          });
+        } else {
+          // Fallback: select all + copy
+          ta.select();
+          try { document.execCommand('copy'); showToast('Copied', false); } catch(e) { showToast('Copy not available', false); }
+        }
+      });
+    }
+
     // Open gesture: swipe left starting at the far right edge of a note screen
     var OPEN_EDGE_ZONE = 24;
     var OPEN_SWIPE_MIN = 60;
@@ -23212,6 +23261,10 @@ function makeImportFolderName(label) {
     if (!isViewMode) return;
     var cb = e.target.closest('.viewer-checkbox');
     if (!cb) return;
+    // Suppress click if touchend already handled this gesture — prevents
+    // double-fire on touch devices (touchend fires immediately, click
+    // fires 300ms later on zoomed pages).
+    if (cb._cbTouchHandled) { cb._cbTouchHandled = false; return; }
     e.stopPropagation();
     if (!currentNoteId || !notes[currentNoteId]) return;
 
@@ -23220,6 +23273,39 @@ function makeImportFolderName(label) {
     var lineIndex = parseInt(lineDiv.dataset.line);
     if (isNaN(lineIndex)) return;
 
+    _handleCheckboxToggle(cb, lineIndex);
+  }, true);
+
+  // touchend fires immediately on finger-lift, even when the page is
+  // zoomed — no 300ms delay. This makes checkbox taps feel instant when
+  // zoomed in. We track whether a touchend handled the gesture so the
+  // click event (which still fires 300ms later) doesn't double-fire.
+  document.getElementById('note-viewer').addEventListener('touchend', function(e) {
+    if (!isViewMode) return;
+    var cb = e.target.closest('.viewer-checkbox');
+    if (!cb) return;
+    // Only treat as a tap if the finger barely moved (not a scroll)
+    var touch = e.changedTouches[0];
+    var startY = cb._cbTouchStartY || touch.clientY;
+    var moved = Math.abs(touch.clientY - startY);
+    if (moved > 8) return;
+    e.preventDefault(); // prevent the delayed click from also firing
+    cb._cbTouchHandled = true; // signal the click handler to skip
+    e.stopPropagation();
+    if (!currentNoteId || !notes[currentNoteId]) return;
+    var lineDiv = cb.closest('.viewer-line');
+    if (!lineDiv) return;
+    var lineIndex = parseInt(lineDiv.dataset.line);
+    if (isNaN(lineIndex)) return;
+    _handleCheckboxToggle(cb, lineIndex);
+  }, true);
+
+  document.getElementById('note-viewer').addEventListener('touchstart', function(e) {
+    var cb = e.target.closest('.viewer-checkbox');
+    if (cb && e.touches[0]) cb._cbTouchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  function _handleCheckboxToggle(cb, lineIndex) {
     var lines = notes[currentNoteId].content.split('\n');
     var line = lines[lineIndex];
     var isChecked = cb.dataset.cb === 'checked';
@@ -23318,7 +23404,7 @@ function makeImportFolderName(label) {
         if (_totalCb > 0 && _uncheckedCb === 0) showConfetti();
       }
     });
-  }, true);
+  }
 
   // ===== DELETE LINE =====
   document.getElementById('delete-line-btn').addEventListener('click', function() {
@@ -23755,6 +23841,26 @@ function makeImportFolderName(label) {
           }, 1200);
         }, 1500);
       }, 50);
+    } else {
+      // Typing mode: scroll the inserted text into view near the top of
+      // the visible area (same goal as R&R mode's scroll above, but using
+      // getCursorY() since the textarea has no individual line elements).
+      // Set the selection to the start of the inserted block so getCursorY
+      // measures the right position, then restore after measuring.
+      setTimeout(function() {
+        var area = document.getElementById('note-content-area');
+        if (!area || !ed) return;
+        var savedSel = { start: ed.selectionStart, end: ed.selectionEnd };
+        // Calculate the character offset of the insertion start
+        var _charOffset = newLinesArr.slice(0, insertStartIdx).join('\n').length +
+                          (insertStartIdx > 0 ? 1 : 0);
+        ed.setSelectionRange(_charOffset, _charOffset);
+        var insertedY = getCursorY(ed);
+        ed.setSelectionRange(savedSel.start, savedSel.end); // restore
+        var topOffset = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0);
+        var targetScroll = insertedY - topOffset - (parseInt(getComputedStyle(ed).lineHeight) || 28) * 2;
+        area.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+      }, 60);
     }
   }
 
