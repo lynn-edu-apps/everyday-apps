@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1457 -->
+<!-- Remember App - Version 0.1460 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1457
+  Version 0.1460
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -4541,6 +4541,9 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   align-items: flex-end;
   justify-content: flex-end;
   z-index: 1;
+  /* Prevent double-tap zoom on iOS — the page-number is a tap target and
+     double-tapping it would otherwise trigger the native zoom gesture. */
+  touch-action: manipulation;
 }
 #scratch-page-num {
   font-size: 13px;
@@ -4594,7 +4597,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   margin-bottom: 6px;
   flex-shrink: 0;
 }
-.confirm-msg { font-size: 0.95em; color: var(--fg2); margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap; overflow-y: auto; flex: 1; }
+.confirm-msg { font-size: 0.95em; color: var(--fg2); margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap; overflow-y: auto; overflow-x: hidden; flex: 1; touch-action: pan-y; overscroll-behavior: contain; }
 .confirm-btns { display: flex; column-gap: 10px; row-gap: 16px; justify-content: flex-end; flex-wrap: wrap; }
 
 /* Quick-add line-pick mode */
@@ -7597,12 +7600,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </div>
         <div class="settings-row-desc" style="font-size:0.85em;color:var(--fg3);">Auto: dark lines on a light background, light lines on a dark background.</div>
       </div>
-      <div class="settings-row range-row" id="ruled-line-spacing-row">
-        <div class="settings-row-label">Line spacing <span id="ruled-line-spacing-val">1.5</span>× font size
-          <div class="settings-row-desc" style="font-weight:400;margin-top:2px;">On some devices/browsers, text nearly fills the ruled lines with little breathing room. Increase this ratio to add more space between lines — 1.5 matches the default line-height, 2.0 adds noticeably more room.</div>
-        </div>
-        <input type="range" id="ruled-line-spacing-slider" min="1.2" max="3.0" step="0.05" value="1.5" style="width:100%;flex-shrink:0;">
-      </div>
       <div class="settings-row range-row" id="ruled-line-nudge-row">
         <div class="settings-row-label">Line position <span id="ruled-line-nudge-val">-5</span>px</div>
         <input type="range" id="ruled-line-nudge-slider" min="-20" max="20" step="0.5" value="-5" style="width:100%;flex-shrink:0;">
@@ -8683,7 +8680,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1457';
+const APP_VERSION = '0.1460';
 
 
 
@@ -8937,15 +8934,16 @@ function _applyRuledLinesImpl() {
   // here specifically (not globally) while a ruled style is active.
   if (titleRow) titleRow.style.borderBottomColor = 'transparent';
   var totalOffset = paddingTop + titleRowHeight + cal.fontLeadingGap + (settings.ruledLineNudge || 0);
-  // Apply the user's minimum spacing ratio — ensures comfortable breathing
-  // room on platforms (Windows/Chrome) where the font's own metrics leave
-  // glyphs filling nearly the full line box. Math.max means iOS (already
-  // comfortable at natural spacing) is unaffected; Windows users can set
-  // this higher to get the same feel. Stored as a ratio so it scales
-  // naturally when font-size changes.
-  var fontSizePx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-size-editor')) || 20;
-  var minSpacing = fontSizePx * (settings.ruledLineSpacing !== undefined ? settings.ruledLineSpacing : 1.5);
-  var spacing = Math.max(cal.spacing, minSpacing);
+  // spacing: always use the calibrated measured value. ruledLineSpacing
+  // is a minimum ratio for blank-line height only (applied below), NOT
+  // for the ruled-line interval itself — if spacing > cal.spacing, rules
+  // are drawn wider apart than text lines, and drift accumulates every
+  // line. In typing mode this is uncorrectable (textarea has no per-line
+  // elements to remeasure); in R&R mode the SVG path measures actual
+  // element heights anyway. The Windows "text fills the full line box"
+  // issue should be addressed via the main lineHeight setting or nudge,
+  // not by decoupling the ruling interval from the text line height.
+  var spacing = cal.spacing;
 
   // Blank lines drifting off the rule grid was the other half of what
   // the prototype's "Fix blank-line height" checkbox addressed: the
@@ -8954,12 +8952,10 @@ function _applyRuledLinesImpl() {
   // independent settings that DON'T match by default — so a blank
   // line's box is shorter than a real text line's box unless someone
   // has manually set them equal. Rather than require that manual step
-  // every time ruled lines are turned on, force blank lines to the
-  // SAME height ruled lines are actually calibrated to (cal.spacing,
-  // converted to the em-based factor this CSS variable expects) while
-  // a ruled style is active — restored to the user's real setting in
-  // the style==='none' branch above when ruled lines are off, so this
-  // never permanently overwrites their preference, just suspends it.
+  var fontSizePx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-size-editor')) || 20;
+  // Force blank lines in R&R mode to exactly one calibrated line-height
+  // while ruled lines are active, so they occupy one ruled-line slot.
+  // No user setting needed — this is always the correct behavior.
   document.documentElement.style.setProperty('--blank-line-height-factor', spacing / fontSizePx);
 
   var tone = settings.ruledLineTone || 'auto';
@@ -9428,7 +9424,6 @@ const DEFAULT_SETTINGS = {
   ruledLineStyle: 'none',        // 'none' | 'ruled' | 'legalPad' | 'grid' — decorative paper-style background, both modes
   ruledLineTone: 'auto',         // 'auto'|'light'|'dark' — auto picks dark lines on light bg, light lines on dark bg
   ruledLineNudge: -5,            // px, fine-tunes how close text sits to the line below it (negative = closer)
-  ruledLineSpacing: 1.5,         // ratio of font-size; overrides calibrated spacing if larger — use >1.5 on Windows/Chrome for more breathing room
   checkboxLineNudge: -1,         // px, same idea but specifically for checkbox-ish lines, independent of ruledLineNudge
   gridLineNudge: -14.5,          // px, separate nudge for dotted grid — dots align differently than horizontal bands
   marginLineColor: '#c83030',    // legal-pad margin line color (separate from tone, user-pickable)
@@ -9453,7 +9448,7 @@ const THEMEABLE_SETTINGS=[
 ['showParagraphRules','Paragraph rules',0],['showBlockRules','List item rules',0],
 ['showBlockRulesTop','Rule above checkbox sections',0],
 ['ruledLineTone','Ruled line color (auto/light/dark)',0],
-['ruledLineNudge','Ruled line position',0],['ruledLineSpacing','Ruled line spacing ratio',0],['checkboxLineNudge','Checkbox line position',0],['gridLineNudge','Dot grid position',0],
+['ruledLineNudge','Ruled line position',0],['checkboxLineNudge','Checkbox line position',0],['gridLineNudge','Dot grid position',0],
 ['marginLineColor','Margin line color',0],['marginLineNudge','Margin line horizontal position',0],
 ['outlineMode','Collapsible outline mode',0],
 ['outlineCollapseOnOpen','Collapse all on open (outline)',0],
@@ -15338,10 +15333,6 @@ function openSettings() {
   var _rlnVal = document.getElementById('ruled-line-nudge-val');
   if (_rlnSlider) _rlnSlider.value = (settings.ruledLineNudge !== undefined ? settings.ruledLineNudge : -5);
   if (_rlnVal) _rlnVal.textContent = (settings.ruledLineNudge !== undefined ? settings.ruledLineNudge : -5);
-  var _rlsSlider = document.getElementById('ruled-line-spacing-slider');
-  var _rlsVal = document.getElementById('ruled-line-spacing-val');
-  if (_rlsSlider) _rlsSlider.value = (settings.ruledLineSpacing !== undefined ? settings.ruledLineSpacing : 1.5);
-  if (_rlsVal) _rlsVal.textContent = (settings.ruledLineSpacing !== undefined ? settings.ruledLineSpacing : 1.5);
   var _cblnSlider = document.getElementById('checkbox-line-nudge-slider');
   var _cblnVal = document.getElementById('checkbox-line-nudge-val');
   if (_cblnSlider) _cblnSlider.value = (settings.checkboxLineNudge !== undefined ? settings.checkboxLineNudge : -1);
@@ -20431,7 +20422,19 @@ function makeImportFolderName(label) {
     var msg = lines.length === 0
       ? 'All settings are at their default values.'
       : lines.length + ' non-default setting' + (lines.length === 1 ? '' : 's') + ':\n\n' + lines.join('\n\n');
-    showConfirm('Non-Default Settings', msg, 'OK', function(){}, false, null, null, 'centered');
+    // Use a special "OK + Copy" confirm rather than plain showConfirm
+    showConfirm('Non-Default Settings', msg, 'OK', function(){}, false, 'Copy', function() {
+      var fullText = 'Non-Default Settings (v' + APP_VERSION + '):\n\n' + msg;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(fullText).then(function() {
+          showToast('Copied to clipboard');
+        }).catch(function() {
+          showToast('Copy failed — try long-pressing the text');
+        });
+      } else {
+        showToast('Clipboard not available — try long-pressing the text');
+      }
+    }, 'centered');
   });
 
   document.getElementById('reset-defaults-btn').addEventListener('click', function() {
@@ -20877,8 +20880,17 @@ function makeImportFolderName(label) {
     var area = document.getElementById('note-content-area');
     if (area) {
       var topOffset = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + 8;
-      var lineTop = lineDiv.offsetTop;
-      area.scrollTo({ top: lineTop - topOffset, behavior: 'smooth' });
+      // Use getBoundingClientRect rather than offsetTop: .note-viewer has
+      // position:relative (added for z-index stacking above the ruled-lines
+      // overlay), making it the offsetParent for .viewer-line elements.
+      // offsetTop would be relative to .note-viewer, not to the scroll
+      // container — giving a small number instead of the line's true
+      // position within the note. getBoundingClientRect is viewport-relative
+      // and immune to offsetParent chain changes.
+      var lineRect = lineDiv.getBoundingClientRect();
+      var areaRect = area.getBoundingClientRect();
+      var lineTopInArea = lineRect.top - areaRect.top + area.scrollTop;
+      area.scrollTo({ top: lineTopInArea - topOffset, behavior: 'smooth' });
     } else {
       lineDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -23001,14 +23013,12 @@ function makeImportFolderName(label) {
   _updateRuledLineRowVisibility = function() {
     var style = settings.ruledLineStyle || 'none';
     var toneRow = document.getElementById('ruled-line-tone-row');
-    var spacingRow = document.getElementById('ruled-line-spacing-row');
     var nudgeRow = document.getElementById('ruled-line-nudge-row');
     var gridNudgeRow = document.getElementById('grid-line-nudge-row');
     var cbNudgeRow = document.getElementById('checkbox-line-nudge-row');
     var marginRow = document.getElementById('margin-line-color-row');
     var show = style !== 'none';
     if (toneRow) toneRow.style.display = show ? '' : 'none';
-    if (spacingRow) spacingRow.style.display = show ? '' : 'none';
     // The main nudge row is for ruled/legalPad; grid gets its own separate
     // row since dots and bands need meaningfully different alignment values.
     if (nudgeRow) nudgeRow.style.display = (show && style !== 'grid') ? '' : 'none';
@@ -23033,17 +23043,6 @@ function makeImportFolderName(label) {
       updateSaveBtnState();
     });
   });
-  var _ruledSpacingSlider = document.getElementById('ruled-line-spacing-slider');
-  var _ruledSpacingVal = document.getElementById('ruled-line-spacing-val');
-  if (_ruledSpacingSlider) {
-    var _ruledSpacingDebounce;
-    _ruledSpacingSlider.addEventListener('input', function() {
-      settings.ruledLineSpacing = parseFloat(this.value);
-      if (_ruledSpacingVal) _ruledSpacingVal.textContent = this.value;
-      clearTimeout(_ruledSpacingDebounce);
-      _ruledSpacingDebounce = setTimeout(function() { applyRuledLines(); updateSaveBtnState(); }, 80);
-    });
-  }
   var _ruledNudgeSlider = document.getElementById('ruled-line-nudge-slider');
   var _ruledNudgeVal = document.getElementById('ruled-line-nudge-val');
   if (_ruledNudgeSlider) {
@@ -23232,36 +23231,93 @@ function makeImportFolderName(label) {
     // unchecking) — !isChecked is the line's NEW state here.
     if (!isChecked) playCheckSound();
 
+    // ── Optimistic visual update ──────────────────────────────────────────
+    // Swap the checkbox SVG to its new state IMMEDIATELY, before the full
+    // re-render. The full urlsToLinks() pass (which processes the entire
+    // note) can take tens of ms for a long note — during that time the
+    // browser paints nothing, making the checkbox feel unresponsive.
+    // By replacing just the SVG element synchronously here, the checkbox
+    // reflects its new state in the very next paint (~1 frame), and the
+    // full re-render follows on the frame after.
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var _oldSvg = cb; // cb is the .viewer-checkbox SVG that was tapped
+    var _cbRect = _oldSvg.querySelector('rect');
+    // Read the color from the existing SVG — use fill (checked) or stroke
+    // (unchecked) from the rect's inline style, falling back to the
+    // computed CSS variable if not set inline.
+    var _cbColor = (_cbRect && (_cbRect.style.fill || _cbRect.style.stroke)) ||
+                   'var(--color-gray)';
+    var _newSvg = document.createElementNS(svgNS, 'svg');
+    _newSvg.setAttribute('class', 'viewer-checkbox');
+    _newSvg.setAttribute('viewBox', '0 0 18 18');
+    _newSvg.setAttribute('fill', 'none');
+    _newSvg.setAttribute('xmlns', svgNS);
+    var _newRect = document.createElementNS(svgNS, 'rect');
+    _newRect.setAttribute('x', '1.5'); _newRect.setAttribute('y', '1.5');
+    _newRect.setAttribute('width', '15'); _newRect.setAttribute('height', '15');
+    _newRect.setAttribute('rx', '3');
+    if (!isChecked) {
+      // Becoming checked: filled rect + checkmark
+      _newSvg.setAttribute('data-cb', 'checked');
+      _newRect.style.fill = _cbColor;
+      _newSvg.appendChild(_newRect);
+      var _check = document.createElementNS(svgNS, 'polyline');
+      _check.setAttribute('points', '4,9.5 7.5,13 14,5.5');
+      _check.setAttribute('stroke', 'white');
+      _check.setAttribute('stroke-width', '2.2');
+      _check.setAttribute('stroke-linecap', 'round');
+      _check.setAttribute('stroke-linejoin', 'round');
+      _newSvg.appendChild(_check);
+    } else {
+      // Becoming unchecked: outline rect only
+      _newSvg.setAttribute('data-cb', 'unchecked');
+      _newRect.setAttribute('fill', 'none');
+      _newRect.style.stroke = _cbColor;
+      _newRect.setAttribute('stroke-width', '1.8');
+      _newRect.setAttribute('opacity', '0.6');
+      _newSvg.appendChild(_newRect);
+    }
+    _oldSvg.parentNode.replaceChild(_newSvg, _oldSvg);
+    // ─────────────────────────────────────────────────────────────────────
+
     pushUndo();
     notes[currentNoteId].content = lines.join('\n');
     document.getElementById('note-editor').value = notes[currentNoteId].content;
     scheduleSave();
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
-    document.getElementById('note-viewer').classList.toggle('crossout-mode', deletingLine);
-    updateViewOnlyBtns();
+    // Defer the full re-render to the next animation frame. The optimistic
+    // SVG swap above has already given visual feedback; the browser can now
+    // paint that update on this frame before we start the expensive work.
+    var _reRenderContent = notes[currentNoteId].content;
+    var _deletingLine = deletingLine;
+    var _wasUnchecked = !isChecked;
+    requestAnimationFrame(function() {
+      document.getElementById('note-viewer').innerHTML = urlsToLinks(_reRenderContent, true);
+      document.getElementById('note-viewer').classList.toggle('crossout-mode', _deletingLine);
+      updateViewOnlyBtns();
 
-    // ── Move completed to bottom ──────────────────────────────────────────
-    if (!isChecked && settings.moveCompletedToBottom && !isAlreadyAtBottom(lineIndex)) {
-      var _doMove = function() { doMoveCompletedToBottom(lineIndex); };
-      if (settings.moveCompletedConfirm) {
-        showConfirm('Move to bottom?', 'Move this completed item to the bottom of the note?',
-          'Move', _doMove, false, 'Leave here', null, 'centered');
-      } else {
-        _doMove();
+      // ── Move completed to bottom ────────────────────────────────────────
+      if (_wasUnchecked && settings.moveCompletedToBottom && !isAlreadyAtBottom(lineIndex)) {
+        var _doMove = function() { doMoveCompletedToBottom(lineIndex); };
+        if (settings.moveCompletedConfirm) {
+          showConfirm('Move to bottom?', 'Move this completed item to the bottom of the note?',
+            'Move', _doMove, false, 'Leave here', null, 'centered');
+        } else {
+          _doMove();
+        }
       }
-    }
 
-    // ── Confetti: fire when last unchecked checkbox-ish item is checked ──
-    if (!isChecked && settings.confettiOnComplete) {
-      var _cbLines = notes[currentNoteId].content.split('\n');
-      var _totalCb = 0, _uncheckedCb = 0;
-      _cbLines.forEach(function(ln) {
-        if (!isCheckboxRaw(stripFormattingForDetect(ln))) return;
-        _totalCb++;
-        if (!isLineChecked(ln)) _uncheckedCb++;
-      });
-      if (_totalCb > 0 && _uncheckedCb === 0) showConfetti();
-    }
+      // ── Confetti: fire when last unchecked checkbox-ish item is checked ─
+      if (_wasUnchecked && settings.confettiOnComplete) {
+        var _cbLines = notes[currentNoteId].content.split('\n');
+        var _totalCb = 0, _uncheckedCb = 0;
+        _cbLines.forEach(function(ln) {
+          if (!isCheckboxRaw(stripFormattingForDetect(ln))) return;
+          _totalCb++;
+          if (!isLineChecked(ln)) _uncheckedCb++;
+        });
+        if (_totalCb > 0 && _uncheckedCb === 0) showConfetti();
+      }
+    });
   }, true);
 
   // ===== DELETE LINE =====
