@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1430 -->
+<!-- Remember App - Version 0.1457 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1430
+  Version 0.1457
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -2468,6 +2468,21 @@ body.has-mouse .font-face-arrow { display: block; }
   line-height: 1;
   padding: 0;
 }
+#settings-fab-scroll {
+  background: var(--bg3);
+  border: none;
+  color: var(--fg2);
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border);
+  line-height: 1;
+  padding: 0;
+}
 #settings-fab-save {
   background: var(--accent);
   border: none;
@@ -2490,6 +2505,7 @@ body.has-mouse .font-face-arrow { display: block; }
 }
 @media (hover: hover) {
   #settings-fab-cancel:hover { filter: brightness(0.92); }
+  #settings-fab-scroll:hover { filter: brightness(0.92); }
   #settings-fab-save:hover:not(.dimmed) { filter: brightness(1.08); }
 }
 
@@ -2741,8 +2757,26 @@ body.has-mouse .font-face-arrow { display: block; }
 .viewer-hr {
   border: none;
   border-top: 2px solid var(--fg3);
-  margin: 8px 0;
   /* pointer-events left as default so clicks bubble to .viewer-line for selection */
+}
+/* Give the viewer-line containing an <hr> a minimum height equal to the
+   calibrated body line-height, so ruled-lines mode treats it the same as a
+   normal text line (one slot, one rule at the bottom) instead of almost-zero
+   height that causes the surrounding rules to bunch up. The <hr> sits in the
+   middle of that space visually, matching how a divider looks on real ruled
+   paper. Can't use :has() for older iOS WebKit, so height is set via the
+   class that urlsToLinks always applies to HR lines. Done in CSS (not JS)
+   so it affects both the CSS gradient path and the SVG measurement path. */
+.viewer-line:has(.viewer-hr) {
+  min-height: calc(var(--line-height) * var(--font-size-editor));
+  display: flex;
+  align-items: center;
+}
+/* Fallback for browsers that don't support :has() — keep the <hr> itself
+   taller so that even without the :has() the viewer-line gets some height */
+.viewer-hr {
+  margin: 8px 0;
+  width: 100%;
 }
 
 /* ===== FIND IN NOTE BAR ===== */
@@ -3199,16 +3233,40 @@ body.has-mouse .toolbar-drag-handle.dragging {
 /* Inline note title — lives inside content area, scrolls with content */
 .note-inline-title-row {
   /* inline-flex so the row only takes as much width as the title text,
-     keeping the rename button snug next to the title on all screen sizes */
+     keeping the rename button snug next to the title on all screen sizes.
+     width:100% was previously set here to make the border-bottom span the
+     full width, but that also caused the opaque background to cover the full
+     width — hiding the dot-grid overlay to the right of the title even where
+     there's no text. The full-width border is now drawn via ::after instead. */
   display: inline-flex;
   align-items: center;
   gap: 2px;
   margin-bottom: 8px;
-  border-bottom: 2px solid var(--border);
   padding-bottom: 4px;
   flex-shrink: 0;
   max-width: 100%;
-  width: 100%;
+  /* Opaque background so dots don't show directly behind title text/icon */
+  background: var(--bg);
+  position: relative;
+  z-index: 1;
+}
+/* Full-width border-bottom drawn as a positioned pseudo-element so the
+   title row's own background stays content-width (shrink-to-fit), but
+   the visual divider still spans the full note width. */
+.note-inline-title-row::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  /* Extend left into the left margin (the content area's padding area)
+     so the underline starts at the true left edge of the container,
+     not just at the left edge of the title text column. The content
+     area's padding-left is calc(22px + var(--note-margin-left)), so
+     pulling left by that amount brings us flush with the container edge. */
+  left: calc(-22px - var(--note-margin-left, 0px));
+  /* Extend right far enough to cover full width regardless of title length */
+  width: 200vw;
+  height: 2px;
+  background: var(--border);
 }
 
 .note-inline-title {
@@ -3388,6 +3446,12 @@ body.has-mouse .toolbar-drag-handle.dragging {
   overflow: hidden;
   tab-size: 4; /* visual tab width — tabs are converted to spaces on paste */
   -moz-tab-size: 4;
+  /* Explicit stacking position so this reliably paints ABOVE
+     #ruled-lines-overlay (z-index:0) regardless of DOM order — without
+     this, stacking between same-level siblings isn't guaranteed once
+     either one has an explicit z-index. */
+  position: relative;
+  z-index: 1;
 }
 #note-editor::placeholder { color: var(--fg3); }
 
@@ -3406,6 +3470,10 @@ body.has-mouse .toolbar-drag-handle.dragging {
   -webkit-user-select: text;
   user-select: text;
   cursor: text;
+  /* Same reasoning as #note-editor above — explicit stacking position
+     so this reliably paints above #ruled-lines-overlay. */
+  position: relative;
+  z-index: 1;
 }
 /* Live preview of indent-width in Settings — same typography as the real
    note viewer (font/size/line-height/color) for visual fidelity, but
@@ -3651,6 +3719,11 @@ body:not(.dark) .note-item {
   display: flex;
   justify-content: center;
   pointer-events: none;  /* padding area won't intercept taps meant for textarea */
+  /* z-index so this sits above the ruled-lines overlay, preventing dots
+     from showing through the border-radius corner areas of the oops button
+     where the background-clip cuts off the button's own painted background. */
+  position: relative;
+  z-index: 1;
 }
 
 .oops-btn {
@@ -3659,15 +3732,22 @@ body:not(.dark) .note-item {
   font-size: 0.9em;
   font-weight: 600;
   color: var(--fg3);
-  background: transparent;
+  /* Opaque background so it sits cleanly above the ruled-lines overlay —
+     element-level opacity<1 would make the background semi-transparent and
+     let the dot-grid overlay bleed through regardless of z-index. The button
+     reads as secondary/non-urgent via the muted fg3/border colors; no extra
+     opacity needed on top of that. */
+  background: var(--bg);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 20px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
   min-height: 44px;
-  opacity: 0.7;
+  position: relative;
+  z-index: 1;
 }
+
 .oops-btn:hover {
   color: var(--danger);
   border-color: var(--danger);
@@ -4775,6 +4855,28 @@ mark.help-highlight-current {
   z-index: 1;
 }
 
+/* Ruled lines / grid overlay — a REAL element, not a background image
+   on the scrolling container. background-attachment:local (the
+   previous approach) is painted on a separate schedule from the
+   compositor-scrolled text on iOS WebKit, causing a visible lag/bounce
+   during fast or momentum scrolling. An ordinary absolutely-positioned
+   child of the SAME scrolling container scrolls as real content,
+   through the identical compositor path the text itself uses — no
+   special-cased background-scroll-tracking mode involved at all, so
+   there's nothing for WebKit to paint out of sync. Sits behind the
+   text (z-index 0, lower than cursor-line-flash's 1) and ignores
+   pointer events so it never interferes with tapping/selecting text.
+   Height is set dynamically in JS to cover the full scrollable content
+   — see applyRuledLines(). */
+#ruled-lines-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .help-section {
   padding: 24px 20px 0;
 }
@@ -5579,6 +5681,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 
   <div class="note-content-area" id="note-content-area">
+    <div id="ruled-lines-overlay" aria-hidden="true"></div>
     <div class="note-inline-title-row">
       <div id="note-title" class="note-inline-title" contenteditable="false" role="button" aria-label="Rename note" data-placeholder="Title…" style="cursor:pointer"></div>
       <button class="icon-btn title-pencil-btn" id="rename-btn" aria-label="Rename note" title="Rename note">
@@ -6484,6 +6587,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div id="settings-jump-menu" style="display:none;position:absolute;right:0;top:40px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:100;min-width:210px;overflow:hidden;max-height:60vh;overflow-y:auto;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px 4px;border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;background:var(--bg);z-index:1;">
+              <span style="font-size:0.8em;color:var(--fg3);font-weight:600;letter-spacing:0.03em;">JUMP TO SECTION</span>
+              <button id="settings-jump-close" aria-label="Close" style="padding:0;width:24px;height:24px;border:none;background:transparent;color:var(--fg3);cursor:pointer;font-size:1.1em;line-height:1;display:flex;align-items:center;justify-content:center;border-radius:4px;">&#x2715;</button>
+            </div>
             <div class="settings-jump-item" data-section-id="settings-section-appearance">Appearance</div>
             <div class="settings-jump-item" data-section-id="settings-section-text">Text</div>
             <div class="settings-jump-item" data-section-id="settings-section-colors">Colors</div>
@@ -6492,6 +6599,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <div class="settings-jump-item" data-section-id="settings-section-toolbar">Lower Toolbar Buttons</div>
             <div class="settings-jump-item" data-section-id="settings-section-speech">Speech</div>
             <div class="settings-jump-item" data-section-id="ruler-settings-section">Reading Ruler</div>
+            <div class="settings-jump-item" data-section-id="settings-section-ruledlines">Ruled Lines &amp; Grid</div>
             <div class="settings-jump-item" data-section-id="settings-section-viewonly">View Only Notes</div>
             <div class="settings-jump-item" data-section-id="settings-section-checklists">Checklists</div>
             <div class="settings-jump-item" data-section-id="settings-section-themes">Themes</div>
@@ -7150,8 +7258,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </label>
       </div>
 
-
-
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Spaces per indent / unindent</div>
@@ -7462,6 +7568,74 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </div>
     </div>
 
+    <!-- RULED LINES & GRID -->
+    <div class="settings-section" id="settings-section-ruledlines">
+    <div class="settings-section-header">
+      <div class="settings-label">Ruled Lines &amp; Grid</div>
+      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="settings-section-body">
+
+      <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div>
+          <div class="settings-row-label">Ruled lines / grid</div>
+          <div class="settings-row-desc">A decorative paper-style background, in both Typing and Read &amp; Revise mode — never changes your note's actual text. Works with whatever background color you've already chosen.</div>
+        </div>
+        <div class="settings-radio-group" id="ruled-line-style-seg">
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="none"> Off</label>
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="ruled"> Ruled lines</label>
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="legalPad"> Legal pad</label>
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="grid"> Dotted grid</label>
+        </div>
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;" id="ruled-line-tone-row">
+        <div class="settings-row-label">Line color</div>
+        <div class="settings-radio-group" id="ruled-line-tone-seg">
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-tone" value="auto"> Auto</label>
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-tone" value="light"> Light</label>
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-tone" value="dark"> Dark</label>
+        </div>
+        <div class="settings-row-desc" style="font-size:0.85em;color:var(--fg3);">Auto: dark lines on a light background, light lines on a dark background.</div>
+      </div>
+      <div class="settings-row range-row" id="ruled-line-spacing-row">
+        <div class="settings-row-label">Line spacing <span id="ruled-line-spacing-val">1.5</span>× font size
+          <div class="settings-row-desc" style="font-weight:400;margin-top:2px;">On some devices/browsers, text nearly fills the ruled lines with little breathing room. Increase this ratio to add more space between lines — 1.5 matches the default line-height, 2.0 adds noticeably more room.</div>
+        </div>
+        <input type="range" id="ruled-line-spacing-slider" min="1.2" max="3.0" step="0.05" value="1.5" style="width:100%;flex-shrink:0;">
+      </div>
+      <div class="settings-row range-row" id="ruled-line-nudge-row">
+        <div class="settings-row-label">Line position <span id="ruled-line-nudge-val">-5</span>px</div>
+        <input type="range" id="ruled-line-nudge-slider" min="-20" max="20" step="0.5" value="-5" style="width:100%;flex-shrink:0;">
+      </div>
+      <div class="settings-row range-row" id="grid-line-nudge-row">
+        <div class="settings-row-label">Dot grid position <span id="grid-line-nudge-val">-14.5</span>px</div>
+        <input type="range" id="grid-line-nudge-slider" min="-20" max="20" step="0.5" value="-14.5" style="width:100%;flex-shrink:0;">
+      </div>
+      <div class="settings-row range-row" id="checkbox-line-nudge-row">
+        <div class="settings-row-label">Checkbox-line position (independent) <span id="checkbox-line-nudge-val">-1</span>px</div>
+        <input type="range" id="checkbox-line-nudge-slider" min="-20" max="20" step="0.5" value="-1" style="width:100%;flex-shrink:0;">
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px" id="margin-line-color-row">
+        <div class="settings-row-label">Margin line color (Legal pad)</div>
+        <div class="color-swatch-row" id="margin-line-color-swatches">
+          <button class="settings-color-swatch" data-value="#c83030" style="background:#c83030" title="Red (default)"></button>
+          <button class="settings-color-swatch" data-value="#3b82c4" style="background:#3b82c4" title="Blue"></button>
+          <button class="settings-color-swatch" data-value="#4a9e6b" style="background:#4a9e6b" title="Green"></button>
+          <button class="settings-color-swatch" data-value="#8b5cf6" style="background:#8b5cf6" title="Violet"></button>
+          <button class="settings-color-swatch" data-value="#808080" style="background:#808080" title="Gray"></button>
+          <span class="swatch-hex-label" id="hex-label-margin-line-color">#c83030</span>
+        </div>
+      </div>
+      <div class="settings-row range-row" id="margin-line-nudge-row">
+        <div class="settings-row-label">Margin line position <span id="margin-line-nudge-val">0</span>px
+          <div class="settings-row-desc" style="font-weight:400;margin-top:2px;">Shift the double margin lines left or right as a unit. Positive values move them right — useful on larger screens or when using a wider left margin.</div>
+        </div>
+        <input type="range" id="margin-line-nudge-slider" min="-40" max="200" step="1" value="0" style="width:100%;flex-shrink:0;">
+      </div>
+
+    </div>
+    </div>
+
     <!-- THEMES -->
     <div class="settings-section" id="settings-section-viewonly" data-section="9">
       <div class="settings-section-header"><div class="settings-label">View Only Notes</div><span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
@@ -7700,6 +7874,9 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <!-- Floating Save/Cancel FAB — sticky at bottom-right as settings scrolls -->
     <div id="settings-fab">
       <button id="settings-fab-cancel" title="Cancel" aria-label="Cancel settings">✕</button>
+      <button id="settings-fab-scroll" title="Scroll to top / bottom" aria-label="Scroll settings to top or bottom">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="7 8 12 3 17 8"/><polyline points="7 16 12 21 17 16"/></svg>
+      </button>
       <button id="settings-fab-save" title="Save" aria-label="Save settings">✓</button>
     </div>
 
@@ -7936,7 +8113,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <button id="help-jump-btn" aria-label="Jump to section" title="Jump to section" style="width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
-        <div id="help-jump-menu" style="display:none;position:absolute;right:0;top:40px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:100;min-width:230px;overflow:hidden;">
+        <div id="help-jump-menu" style="display:none;position:absolute;right:0;top:40px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:100;min-width:230px;max-height:60vh;overflow-y:auto;overflow-x:hidden;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px 4px;border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;background:var(--bg);z-index:1;">
+            <span style="font-size:0.8em;color:var(--fg3);font-weight:600;letter-spacing:0.03em;">JUMP TO SECTION</span>
+            <button id="help-jump-close" aria-label="Close" style="padding:0;width:24px;height:24px;border:none;background:transparent;color:var(--fg3);cursor:pointer;font-size:1.1em;line-height:1;display:flex;align-items:center;justify-content:center;border-radius:4px;">&#x2715;</button>
+          </div>
           <div class="settings-jump-item" data-help-section="help-sec-privacy">Your notes are private</div>
           <div class="settings-jump-item" data-help-section="help-sec-formatting">About notes and formatting</div>
           <div class="settings-jump-item" data-help-section="help-sec-markdown-ai">Markdown &amp; AI tool compatibility</div>
@@ -8502,7 +8683,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1430';
+const APP_VERSION = '0.1457';
 
 
 
@@ -8540,6 +8721,555 @@ function toggleToolbarCollapse() {
   settings.toolbarCollapsed = collapsed;
   saveSettings();
   applyToolbarCollapsed(collapsed);
+}
+
+// ===== RULED LINES / GRID (decorative paper-style background) =====
+// Renders ruled lines, legal-pad margin lines, or a dotted grid as a
+// background on #note-content-area — purely decorative, never touches
+// the note's actual text. Applied identically in both typing and R&R
+// mode because #note-content-area is the one scrollable container
+// both modes share (the textarea itself never scrolls internally — it
+// auto-grows via resizeEditor(); #note-content-area does all the
+// scrolling) and already owns the real padding/margins both modes
+// render inside. The gradient and the padding MUST live on the same
+// element, or rules end up either overlapping text or unable to reach
+// the margins — confirmed the hard way while prototyping this.
+//
+// Calibration (real rendered line spacing) is cached separately from
+// re-application (background-position, which also depends on the
+// toolbar-driven padding-top that changes far more often than font
+// settings do) so pinToolbars() — which fires on every scroll and
+// keyboard open/close — can cheaply re-apply position without
+// re-measuring spacing every time.
+// Queued by loadState() when orphaned notes get moved into a newly
+// created recovery folder — shown to the user once the UI is ready
+// (see showFolderRestoreWarningsIfAny(), called from init()). Never
+// silently fixed with no notice; the person needs to actually find out.
+var _pendingFolderRestoreWarnings = [];
+
+// showFolderRestoreWarningsIfAny() — called once the UI is ready
+// (init()). If loadState() had to recover orphaned notes into a new
+// folder, this is where the person actually finds out — a single-OK
+// dialog, not a toast that's easy to miss, since this is exactly the
+// kind of thing that should never be discovered by accident later.
+function showFolderRestoreWarningsIfAny() {
+  if (!_pendingFolderRestoreWarnings.length) return;
+  var fromBackup = _pendingFolderRestoreWarnings.filter(function(w) { return w.fromBackup; });
+  var generic = _pendingFolderRestoreWarnings.filter(function(w) { return !w.fromBackup; });
+  var msg = 'Some of your notes lost track of which folder they belonged to (likely a storage ' +
+    'glitch, not anything you did). ';
+  if (fromBackup.length) {
+    msg += 'Good news: ' + fromBackup.map(function(w) {
+      return w.count + ' note' + (w.count === 1 ? '' : 's') + ' back into "' + w.name + '"';
+    }).join('; ') + ', recovered from a recent backup. ';
+  }
+  if (generic.length) {
+    msg += 'For the rest, rather than leave them unfiled, they were moved: ' +
+      generic.map(function(w) {
+        return w.count + ' note' + (w.count === 1 ? '' : 's') + ' into "' + w.name + '"';
+      }).join('; ') + '. Please look through that folder and move things back where you\'d like ' +
+      'them. ';
+  }
+  msg += 'Nothing was deleted.';
+  showConfirm('Notes recovered', msg, 'OK', function() {}, false, null);
+  _pendingFolderRestoreWarnings = [];
+}
+
+var _ruledLineCalibration = null;
+
+// computeRuledLineCalibration() — measures real rendered line spacing
+// using a temporary hidden mirror div, same technique as getCursorY()
+// (create, measure, remove immediately, never lingers in the DOM).
+// Mode- and content-independent: styled with the SAME font variables
+// the note itself uses, so it works for an empty note, a one-line
+// note, or anything else, without needing to scan the note's actual
+// rendered content (which would have to dodge headings, blank lines,
+// and checkboxes to find a valid same-type pair — needlessly fragile
+// by comparison, and this approach already does the job for both
+// doPaste()-style calibration needs and this one alike).
+function computeRuledLineCalibration() {
+  var rootCS = getComputedStyle(document.documentElement);
+  var mirror = document.createElement('div');
+  mirror.setAttribute('aria-hidden', 'true');
+  mirror.style.cssText = [
+    'position:absolute', 'top:-9999px', 'left:-9999px',
+    'visibility:hidden', 'pointer-events:none',
+    'white-space:pre-wrap', 'word-wrap:break-word',
+    'width:300px',
+    'font-family:' + rootCS.getPropertyValue('--font-note'),
+    'font-size:' + rootCS.getPropertyValue('--font-size-editor'),
+    'font-weight:' + rootCS.getPropertyValue('--font-weight-editor'),
+    'line-height:' + rootCS.getPropertyValue('--line-height')
+  ].join(';');
+  mirror.textContent = 'Calibration text long enough to wrap onto a few lines, used only to measure real rendered line spacing — never shown, removed immediately after measuring.';
+  document.body.appendChild(mirror);
+
+  var range = document.createRange();
+  range.selectNodeContents(mirror);
+  var rects = Array.from(range.getClientRects());
+  var mirrorTop = mirror.getBoundingClientRect().top;
+  var fontLeadingGap = rects.length ? (rects[0].top - mirrorTop) : 0;
+  var lastIdx = rects.length - 1;
+  var fallbackSpacing = (parseFloat(rootCS.getPropertyValue('--line-height')) || 1.5) *
+                         (parseFloat(rootCS.getPropertyValue('--font-size-editor')) || 20);
+  var spacing = lastIdx > 0
+    ? ((rects[lastIdx].top - mirrorTop) - fontLeadingGap) / lastIdx
+    : fallbackSpacing;
+
+  document.body.removeChild(mirror);
+  return { fontLeadingGap: fontLeadingGap, spacing: spacing };
+}
+
+// hexToRgba(hex, alpha) — small, local to this feature; not a
+// general-purpose color utility elsewhere in the app to reuse.
+function _ruledLineHexToRgba(hex, alpha) {
+  var h = (hex || '#808080').replace('#', '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  var r = parseInt(h.substr(0, 2), 16) || 0;
+  var g = parseInt(h.substr(2, 2), 16) || 0;
+  var b = parseInt(h.substr(4, 2), 16) || 0;
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+// recalibrateRuledLines() — re-measures spacing (expensive-ish: one
+// short-lived DOM element + a layout read) and re-applies. Call this
+// when font/size/line-height settings might have changed (applySettings,
+// note open) — NOT from high-frequency callers like pinToolbars().
+function recalibrateRuledLines() {
+  try {
+    _ruledLineCalibration = computeRuledLineCalibration();
+    applyRuledLines();
+  } catch (e) {
+    if (settings.debugLoggingEnabled) {
+      logDebugAction('RULED LINES ERROR in recalibrateRuledLines: ' + (e && e.message ? e.message : e) +
+        (e && e.stack ? ' | ' + e.stack.split('\n')[0] : ''));
+    }
+  }
+}
+
+// updateRuledLinesOverlayHeight() — keeps #ruled-lines-overlay's height
+// in sync with however tall the actual note content currently is.
+// Measured from the real content elements (title row + whichever of
+// editor/viewer is currently visible), NOT from area.scrollHeight —
+// the overlay is itself a child of that same scrollable area, so
+// measuring scrollHeight would risk circularity (the overlay's own
+// height could influence the very value being read). A buffer equal
+// to a few calibrated line-spacings is added past the end so a few
+// extra ruled lines continue past the last line of actual text,
+// matching how a real ruled notebook page looks — never stopping
+// exactly at the last word.
+function updateRuledLinesOverlayHeight() {
+  var overlay = document.getElementById('ruled-lines-overlay');
+  if (!overlay) return;
+  if ((settings.ruledLineStyle || 'none') === 'none') {
+    overlay.style.height = '0px';
+    return;
+  }
+  var titleRow = document.querySelector('.note-inline-title-row');
+  var titleRowH = titleRow ? titleRow.offsetHeight : 0;
+  var ed = document.getElementById('note-editor');
+  var viewer = document.getElementById('note-viewer');
+  var viewerVisible = viewer && getComputedStyle(viewer).display !== 'none';
+  var contentEl = viewerVisible ? viewer : ed;
+  var contentH = contentEl ? contentEl.offsetHeight : 0;
+  var buffer = _ruledLineCalibration ? _ruledLineCalibration.spacing * 12 : 360;
+  overlay.style.height = (titleRowH + contentH + buffer) + 'px';
+}
+
+// applyRuledLines() — cheap: builds gradient strings from the CACHED
+// calibration plus the CURRENT padding-top, and applies them. Safe to
+// call frequently (e.g. every pinToolbars()). Recalibrates once on
+// first call if nothing has cached a calibration yet.
+function applyRuledLines() {
+  if (settings.debugLoggingEnabled) logDebugAction('applyRuledLines() called, style=' + (settings.ruledLineStyle || 'none'));
+  try {
+    _applyRuledLinesImpl();
+  } catch (e) {
+    if (settings.debugLoggingEnabled) {
+      logDebugAction('RULED LINES ERROR in applyRuledLines: ' + (e && e.message ? e.message : e) +
+        (e && e.stack ? ' | ' + e.stack.split('\n')[0] : ''));
+    }
+  }
+}
+
+function _applyRuledLinesImpl() {
+  var area = document.getElementById('note-content-area');
+  var overlay = document.getElementById('ruled-lines-overlay');
+  if (!area || !overlay) return;
+
+  var style = settings.ruledLineStyle || 'none';
+  if (style === 'none') {
+    overlay.style.backgroundImage = 'none';
+    overlay.style.backgroundSize = 'auto';
+    overlay.style.backgroundPosition = '0px 0px';
+    overlay.style.height = '0px';
+    var _offSvg = overlay.querySelector('svg.heading-gap-svg');
+    if (_offSvg) _offSvg.remove();
+    var _titleRowOff = document.querySelector('.note-inline-title-row');
+    if (_titleRowOff) _titleRowOff.style.borderBottomColor = '';
+    document.querySelectorAll('.viewer-line.list-cont-checkbox, .viewer-line.list-cont-checkbox-color')
+      .forEach(function(el) { el.style.transform = ''; });
+    // Restore the user's actual Blank line height setting — see the
+    // override below for why this needs restoring, not just left alone.
+    document.documentElement.style.setProperty('--blank-line-height-factor',
+      (settings.blankLineHeight !== undefined ? settings.blankLineHeight : 1));
+    return;
+  }
+
+  if (!_ruledLineCalibration) _ruledLineCalibration = computeRuledLineCalibration();
+  var cal = _ruledLineCalibration;
+  var areaCS = getComputedStyle(area);
+  var paddingTop = parseFloat(areaCS.paddingTop) || 0;
+  // The note name/title row sits INSIDE #note-content-area, above the
+  // textarea/viewer — paddingTop alone only accounts for the toolbar
+  // area above the title, not the title row's own height. Without
+  // this, the first ruled line was painted right at the top of the
+  // padding, landing on top of the note name itself. offsetHeight
+  // includes the row's own margin-bottom (a block-level sibling's
+  // margin doesn't collapse into a child measurement, so this is the
+  // correct full vertical space the row actually occupies).
+  var titleRow = document.querySelector('.note-inline-title-row');
+  var titleRowHeight = titleRow ? titleRow.offsetHeight : 0;
+  // The title row also draws its own border-bottom as a permanent UI
+  // divider (separate from this feature, present in every build) —
+  // with ruled lines active that reads as a redundant, slightly-off
+  // extra line right above the real first rule, so it's suppressed
+  // here specifically (not globally) while a ruled style is active.
+  if (titleRow) titleRow.style.borderBottomColor = 'transparent';
+  var totalOffset = paddingTop + titleRowHeight + cal.fontLeadingGap + (settings.ruledLineNudge || 0);
+  // Apply the user's minimum spacing ratio — ensures comfortable breathing
+  // room on platforms (Windows/Chrome) where the font's own metrics leave
+  // glyphs filling nearly the full line box. Math.max means iOS (already
+  // comfortable at natural spacing) is unaffected; Windows users can set
+  // this higher to get the same feel. Stored as a ratio so it scales
+  // naturally when font-size changes.
+  var fontSizePx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-size-editor')) || 20;
+  var minSpacing = fontSizePx * (settings.ruledLineSpacing !== undefined ? settings.ruledLineSpacing : 1.5);
+  var spacing = Math.max(cal.spacing, minSpacing);
+
+  // Blank lines drifting off the rule grid was the other half of what
+  // the prototype's "Fix blank-line height" checkbox addressed: the
+  // app's Blank line height setting (settings.blankLineHeight, default
+  // 1) and Line height (settings.lineHeight, default 1.5) are
+  // independent settings that DON'T match by default — so a blank
+  // line's box is shorter than a real text line's box unless someone
+  // has manually set them equal. Rather than require that manual step
+  // every time ruled lines are turned on, force blank lines to the
+  // SAME height ruled lines are actually calibrated to (cal.spacing,
+  // converted to the em-based factor this CSS variable expects) while
+  // a ruled style is active — restored to the user's real setting in
+  // the style==='none' branch above when ruled lines are off, so this
+  // never permanently overwrites their preference, just suspends it.
+  document.documentElement.style.setProperty('--blank-line-height-factor', spacing / fontSizePx);
+
+  var tone = settings.ruledLineTone || 'auto';
+  var ruleColor;
+  if (tone === 'auto') {
+    // Compute WCAG relative luminance of the current background to decide
+    // whether to use dark or light lines. bgColor is normally a hex string
+    // (e.g. '#f5f0e8') from the --bg CSS variable, but can occasionally
+    // come back as rgb(), rgba(), or empty when the value comes from a
+    // stylesheet rule (body.dark { --bg }) rather than an inline setProperty.
+    // Fall back to checking the body's 'dark' class (set reliably by
+    // applySettings before this runs) rather than assuming light mode.
+    var _isDarkBg = document.body.classList.contains('dark'); // reliable fallback
+    try {
+      var _hexRaw = bgColor.trim();
+      var _parsedLum = null;
+      // Handle rgb(r,g,b) format
+      var _rgbMatch = _hexRaw.match(/rgb[a]?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+      if (_rgbMatch) {
+        var _rp = parseInt(_rgbMatch[1]) / 255;
+        var _gp = parseInt(_rgbMatch[2]) / 255;
+        var _bp = parseInt(_rgbMatch[3]) / 255;
+        var _toL2 = function(c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+        _parsedLum = 0.2126 * _toL2(_rp) + 0.7152 * _toL2(_gp) + 0.0722 * _toL2(_bp);
+      } else {
+        var _hex = _hexRaw.replace('#', '');
+        if (_hex.length === 3) _hex = _hex[0]+_hex[0]+_hex[1]+_hex[1]+_hex[2]+_hex[2];
+        if (/^[0-9a-fA-F]{6}$/.test(_hex)) {
+          var _rr = parseInt(_hex.substr(0, 2), 16) / 255;
+          var _gg = parseInt(_hex.substr(2, 2), 16) / 255;
+          var _bb = parseInt(_hex.substr(4, 2), 16) / 255;
+          var _toLinear = function(c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+          _parsedLum = 0.2126 * _toLinear(_rr) + 0.7152 * _toLinear(_gg) + 0.0722 * _toLinear(_bb);
+        }
+      }
+      if (_parsedLum !== null) {
+        _isDarkBg = _parsedLum <= 0.25;
+      }
+    } catch (_) { /* keep body class fallback */ }
+    ruleColor = _isDarkBg ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.28)';
+  } else {
+    ruleColor = tone === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.45)';
+  }
+  var marginRgba = _ruledLineHexToRgba(settings.marginLineColor, 0.6);
+
+  // Read the ACTUAL current background — never hardcoded, since ruled
+  // lines need to work with any background color the user has already
+  // chosen. --bg is set on body (not documentElement) when the user
+  // has a custom color active, so body must be checked first or this
+  // silently falls back to the stylesheet's plain default instead of
+  // whatever the person actually picked.
+  var bgColor = getComputedStyle(document.body).getPropertyValue('--bg').trim() ||
+                getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() ||
+                areaCS.backgroundColor;
+
+  var horizontalRule =
+    'repeating-linear-gradient(to bottom,' +
+    'transparent 0px,' +
+    'transparent ' + (spacing - 1) + 'px,' +
+    ruleColor + ' ' + (spacing - 1) + 'px,' +
+    ruleColor + ' ' + spacing + 'px)';
+
+  var dotRadius = 1;
+  var dottedGrid =
+    'radial-gradient(circle, ' + ruleColor + ' ' + dotRadius + 'px, transparent ' + (dotRadius + 0.3) + 'px)';
+
+  var _mln = settings.marginLineNudge || 0; // horizontal nudge for the double margin lines
+  var _ml1 = 13 + _mln, _ml2 = 16 + _mln; // base positions + nudge; keep the 3px gap between lines
+  var legalPadMargin =
+    'linear-gradient(to right,' +
+    'transparent 0, transparent ' + _ml1 + 'px,' +
+    marginRgba + ' ' + _ml1 + 'px,' + marginRgba + ' ' + (_ml1 + 1) + 'px,' +
+    'transparent ' + (_ml1 + 1) + 'px, transparent ' + _ml2 + 'px,' +
+    marginRgba + ' ' + _ml2 + 'px,' + marginRgba + ' ' + (_ml2 + 1) + 'px,' +
+    'transparent ' + (_ml2 + 1) + 'px)';
+
+  // Phantom-rule mask: a repeating gradient repeats infinitely in both
+  // directions from its anchor, so there's always a "phantom" instance
+  // of the rule one period before the intended first one. This patch,
+  // matching the surface's ACTUAL current background read above, hides
+  // it — confirmed during prototyping as the real cause of a misplaced
+  // top rule, not a positioning miscalculation.
+  var topMask =
+    'linear-gradient(to bottom,' +
+    bgColor + ' 0px,' +
+    bgColor + ' ' + totalOffset + 'px,' +
+    'transparent ' + totalOffset + 'px)';
+
+  // All of this paints onto #ruled-lines-overlay — a REAL element that
+  // is itself part of the normal scrolled content (see its CSS comment
+  // for why) — not onto #note-content-area's own background. No
+  // background-attachment:local is needed or used here: an ordinary
+  // element's background, painted at its default 'scroll' attachment,
+  // moves correctly with scrolling because the ELEMENT ITSELF moves
+  // with scrolling, through the same compositor path as the text. The
+  // previous background-attachment:local approach was a special,
+  // separately-scheduled repaint mode that visibly lagged behind
+  // compositor-scrolled text during fast/momentum scrolling on iOS
+  // WebKit — confirmed as the cause of the reported bounce/wiggle.
+  // Always clear any heading-gap SVG before applying the CSS gradient.
+  // The SVG is left in the overlay after R&R mode renders; if we then
+  // switch to typing mode (or open a note without headings), the gradient
+  // applies on top of the orphaned SVG — producing duplicate lines at
+  // every position where both draw. Remove first, draw fresh every time.
+  var _oldHgSvg = overlay.querySelector('svg.heading-gap-svg');
+  if (_oldHgSvg) _oldHgSvg.remove();
+
+  if (style === 'grid') {
+    // No top-mask for the dotted grid — dots paint across the full overlay
+    // including the title area, matching how the legalPad margin lines paint
+    // the full height. An individual dot in the title area reads as paper
+    // texture, not a visual error; and unlike a horizontal rule spanning the
+    // full width, a stray dot at the wrong vertical phase is imperceptible.
+    // The gridOffset still positions the dot-grid PHASE so the dot rows
+    // stay aligned with the text below the title, just without masking
+    // dots that happen to fall in the title region.
+    var gridOffset = paddingTop + titleRowHeight + cal.fontLeadingGap + (settings.gridLineNudge !== undefined ? settings.gridLineNudge : -14.5);
+    overlay.style.backgroundImage = dottedGrid;
+    overlay.style.backgroundSize = spacing + 'px ' + spacing + 'px';
+    overlay.style.backgroundPosition = '0px ' + gridOffset + 'px';
+  } else if (style === 'legalPad') {
+    // Margin lines are a single non-repeating gradient — no phantom-
+    // repeat issue of their own, and need to stay continuous top to
+    // bottom, so they're listed first (rendered in front, always
+    // visible) with the mask only affecting the rule pattern behind it.
+    overlay.style.backgroundImage = legalPadMargin + ', ' + topMask + ', ' + horizontalRule;
+    overlay.style.backgroundSize = 'auto';
+    overlay.style.backgroundPosition = '0px 0px, 0px 0px, 0px ' + totalOffset + 'px';
+  } else {
+    overlay.style.backgroundImage = topMask + ', ' + horizontalRule;
+    overlay.style.backgroundSize = 'auto';
+    overlay.style.backgroundPosition = '0px 0px, 0px ' + totalOffset + 'px';
+  }
+
+  updateRuledLinesOverlayHeight();
+
+  if (settings.debugLoggingEnabled) {
+    logDebugAction('Ruled lines applied: style=' + style + ' spacing=' + spacing.toFixed(2) +
+      ' totalOffset=' + totalOffset.toFixed(2) + ' bgColor=' + bgColor +
+      ' tone=' + tone + (tone === 'auto' ? '(isDark=' + _isDarkBg + ')' : '') +
+      ' areaFound=' + !!area);
+  }
+
+  // Checkbox-ish lines get their OWN independent nudge — a transform,
+  // since that's purely visual and never disturbs layout/spacing of
+  // anything else. Only meaningful in R&R mode; typing mode is raw
+  // textarea text with no per-line checkbox styling to nudge, so this
+  // harmlessly matches zero elements there.
+  document.querySelectorAll('.viewer-line.list-cont-checkbox, .viewer-line.list-cont-checkbox-color')
+    .forEach(function(el) { el.style.transform = 'translateY(' + (settings.checkboxLineNudge || 0) + 'px)'; });
+
+  // In R&R mode, draw heading-gap ruled lines on top of (or instead of)
+  // the repeating-gradient horizontal rules, using measured per-element
+  // positions so headings get blank space rather than rules through them.
+  // The gradient approach stays as the base layer (and handles typing mode
+  // entirely); this SVG layer only fires in R&R mode when headings exist.
+  var viewer = document.getElementById('note-viewer');
+  var viewerVisible = viewer && getComputedStyle(viewer).display !== 'none';
+  // Note: viewer-hN classes are on the CHILD div INSIDE .viewer-line,
+  // not on the outer .viewer-line itself (see urlsToLinks line ~12086:
+  // '<div class="viewer-line..."><div class="viewer-h1">...'). So we
+  // query for the inner child, not a compound outer.inner selector.
+  var hasHeadings = viewerVisible && viewer.querySelector('.viewer-h1,.viewer-h2,.viewer-h3,.viewer-h4,.viewer-h5,.viewer-h6');
+  if (style !== 'grid' && viewerVisible && hasHeadings) {
+    // SVG takes over completely — clear the CSS gradient so it doesn't
+    // also draw rules through the heading areas (the double/triple-line
+    // symptom: gradient draws evenly-spaced lines everywhere PLUS SVG
+    // draws gap-aware lines, stacking two sets on top of each other).
+    // For legalPad: do NOT set legalPadMargin here either — the SVG
+    // draws the vertical margin lines itself (and extends them to the
+    // full buffer height). Setting it here AND in the SVG causes the
+    // doubled/bold margin line in the non-buffer section that the user
+    // reported: CSS gradient margin + SVG margin stacked on top.
+    overlay.style.backgroundImage = 'none';
+    overlay.style.backgroundSize = 'auto';
+    overlay.style.backgroundPosition = '0px 0px';
+    drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleColor, legalPadMargin, marginRgba, style);
+  } else if (style !== 'grid' && viewerVisible) {
+    // No headings — remove any leftover SVG from a previous render where
+    // headings existed; the gradient-only approach is sufficient.
+    var oldSvg = overlay.querySelector('svg.heading-gap-svg');
+    if (oldSvg) oldSvg.remove();
+    overlay.style.backgroundImage = overlay.style.backgroundImage; // no-op, already set above
+  }
+}
+
+// drawHeadingGapLines() — builds an inline SVG that draws one horizontal
+// line per non-heading viewer-line, and one closing line at the bottom of
+// each heading box, leaving the heading's interior free of ruled lines.
+// Applied as a child of the overlay div on top of the CSS gradient, so
+// typing mode (which has no .viewer-line elements) is unaffected.
+function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleColor, legalPadMargin, marginRgba, style) {
+  var overlayRect = overlay.getBoundingClientRect();
+  var W = overlayRect.width;
+  if (!W) return; // not yet laid out
+
+  var viewerLines = Array.from(viewer.querySelectorAll('.viewer-line'));
+  if (settings.debugLoggingEnabled) {
+    var headingCount = viewerLines.filter(function(el) {
+      var fc = el.firstElementChild;
+      return fc && /viewer-h[1-6]/.test(fc.className);
+    }).length;
+    logDebugAction('drawHeadingGapLines: ' + viewerLines.length + ' viewer-lines, ' +
+      headingCount + ' heading lines, W=' + W.toFixed(0) + ' spacing=' + spacing.toFixed(1));
+  }
+  if (!viewerLines.length) return;
+
+  // Replace any previous heading-gap SVG — easier than diffing lines.
+  var oldSvg = overlay.querySelector('svg.heading-gap-svg');
+  if (oldSvg) oldSvg.remove();
+
+  var svgNS = 'http://www.w3.org/2000/svg';
+  var svgEl = document.createElementNS(svgNS, 'svg');
+  svgEl.setAttribute('class', 'heading-gap-svg');
+  svgEl.setAttribute('xmlns', svgNS);
+  // Cover the full overlay area; the gradient-based approach already handles
+  // blank lines past the last content, so this SVG only needs to cover the
+  // actual viewer content.
+  var totalH = overlay.offsetHeight || 600;
+  svgEl.setAttribute('width', W);
+  svgEl.setAttribute('height', totalH);
+  svgEl.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;width:' + W + 'px;height:' + totalH + 'px';
+
+  var nudge = settings.ruledLineNudge || 0;
+
+  viewerLines.forEach(function(el) {
+    var r = el.getBoundingClientRect();
+    var elTop = r.top - overlayRect.top;
+    var elH   = r.height;
+    if (elH < 2) return;
+
+    // viewer-hN class is on the child div INSIDE .viewer-line, not on
+    // the outer viewer-line itself — check the first child element.
+    var firstChild = el.firstElementChild;
+    var isHeading = firstChild && (
+      firstChild.classList.contains('viewer-h1') || firstChild.classList.contains('viewer-h2') ||
+      firstChild.classList.contains('viewer-h3') || firstChild.classList.contains('viewer-h4') ||
+      firstChild.classList.contains('viewer-h5') || firstChild.classList.contains('viewer-h6'));
+    // HR viewer-lines: the CSS :has(.viewer-hr) rule gives them one line-height
+    // of space. In browsers without :has() support, fall back to using spacing
+    // as a floor so they always occupy at least one body-line slot.
+    var isHr = firstChild && firstChild.tagName === 'HR';
+    var effectiveH = (isHr && elH < spacing * 0.8) ? spacing : elH;
+
+    if (isHeading) {
+      // Gap approach: draw one rule closing the gap at the bottom of the
+      // heading's box. Nothing inside the heading — headings float in open
+      // ruled space, like section labels on real ruled paper.
+      var lineY = elTop + elH + nudge;
+      var ln = document.createElementNS(svgNS, 'line');
+      ln.setAttribute('x1', 0); ln.setAttribute('x2', W);
+      ln.setAttribute('y1', lineY.toFixed(1)); ln.setAttribute('y2', lineY.toFixed(1));
+      ln.setAttribute('stroke', ruleColor); ln.setAttribute('stroke-width', '1');
+      svgEl.appendChild(ln);
+    } else {
+      // Normal body line: draw one rule per visual row in this element.
+      var rows = Math.max(1, Math.round(effectiveH / spacing));
+      for (var i = 1; i <= rows; i++) {
+        var y = elTop + (effectiveH / rows) * i + nudge;
+        var line = document.createElementNS(svgNS, 'line');
+        line.setAttribute('x1', 0); line.setAttribute('x2', W);
+        line.setAttribute('y1', y.toFixed(1)); line.setAttribute('y2', y.toFixed(1));
+        line.setAttribute('stroke', ruleColor); line.setAttribute('stroke-width', '1');
+        svgEl.appendChild(line);
+      }
+    }
+  });
+
+  // Buffer lines past the last content — the CSS gradient approach handles
+  // this automatically (it repeats forever), but when the SVG is in charge
+  // we need to add them explicitly so ruled paper continues below the note.
+  var lastLineY = 0;
+  svgEl.querySelectorAll('line[x1="0"]').forEach(function(ln) {
+    var y = parseFloat(ln.getAttribute('y1'));
+    if (y > lastLineY) lastLineY = y;
+  });
+  var BUFFER_LINES = 14;
+  for (var b = 1; b <= BUFFER_LINES; b++) {
+    var by = lastLineY + spacing * b;
+    var bl = document.createElementNS(svgNS, 'line');
+    bl.setAttribute('x1', 0); bl.setAttribute('x2', W);
+    bl.setAttribute('y1', by.toFixed(1)); bl.setAttribute('y2', by.toFixed(1));
+    bl.setAttribute('stroke', ruleColor); bl.setAttribute('stroke-width', '1');
+    svgEl.appendChild(bl);
+  }
+  // Expand SVG height to cover the buffer lines
+  var newH = lastLineY + spacing * (BUFFER_LINES + 1);
+  svgEl.setAttribute('height', newH);
+  svgEl.style.height = newH + 'px';
+
+  // For legalPad, add the double margin lines into the SVG so they overlay
+  // the SVG's own content correctly. Uses the same base positions (13/16px)
+  // and the same marginLineNudge offset as the CSS gradient version, so
+  // both rendering paths produce identical visual output.
+  // IMPORTANT: drawn AFTER the buffer expansion above so they use newH
+  // (the fully expanded SVG height), not the pre-buffer totalH — otherwise
+  // the margin lines stop short before the buffer ruled lines at the bottom.
+  if (style === 'legalPad') {
+    var _svgMln = settings.marginLineNudge || 0;
+    var mx = [13 + _svgMln, 16 + _svgMln];
+    mx.forEach(function(x) {
+      var vl = document.createElementNS(svgNS, 'line');
+      vl.setAttribute('x1', x); vl.setAttribute('x2', x);
+      vl.setAttribute('y1', 0); vl.setAttribute('y2', newH);
+      vl.setAttribute('stroke', marginRgba); vl.setAttribute('stroke-width', '1');
+      svgEl.appendChild(vl);
+    });
+  }
+
+  overlay.appendChild(svgEl);
 }
 
 function pinToolbars() {
@@ -8592,6 +9322,7 @@ function pinToolbars() {
 
   area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + findBarH + 12) + 'px';
   // (overflow detection removed — use applySmallScreenOverflow instead)
+  applyRuledLines();
 }
 
 // ===== STATE =====
@@ -8694,6 +9425,14 @@ const DEFAULT_SETTINGS = {
   showParagraphRules: false,     // show horizontal rules between paragraphs in view mode
   showBlockRules: false,         // show horizontal rule below each checkbox/hyphen list item in view mode
   showBlockRulesTop: false,      // show rule above a checkbox section when preceded by blank line
+  ruledLineStyle: 'none',        // 'none' | 'ruled' | 'legalPad' | 'grid' — decorative paper-style background, both modes
+  ruledLineTone: 'auto',         // 'auto'|'light'|'dark' — auto picks dark lines on light bg, light lines on dark bg
+  ruledLineNudge: -5,            // px, fine-tunes how close text sits to the line below it (negative = closer)
+  ruledLineSpacing: 1.5,         // ratio of font-size; overrides calibrated spacing if larger — use >1.5 on Windows/Chrome for more breathing room
+  checkboxLineNudge: -1,         // px, same idea but specifically for checkbox-ish lines, independent of ruledLineNudge
+  gridLineNudge: -14.5,          // px, separate nudge for dotted grid — dots align differently than horizontal bands
+  marginLineColor: '#c83030',    // legal-pad margin line color (separate from tone, user-pickable)
+  marginLineNudge: 0,            // px, shifts both margin lines horizontally together as a unit (positive = right)
   showBulletsForHyphens: false,  // render leading '- ' as bullet • in view mode (only applies to '-'; '*'/'+' always render as a bullet)
   outlineMode: false,            // collapsible outline mode in Read & Revise
   outlineCollapseOnOpen: false,  // collapse all outline sections when note opens
@@ -8713,6 +9452,9 @@ const THEMEABLE_SETTINGS=[
 ['indentSpaces','Spaces per indent',0],['checkStrikethrough','Strikethrough when checked',0],['checkSoundEnabled','Sound when checking off an item',0],['checkSound','Check-off sound',0],
 ['showParagraphRules','Paragraph rules',0],['showBlockRules','List item rules',0],
 ['showBlockRulesTop','Rule above checkbox sections',0],
+['ruledLineTone','Ruled line color (auto/light/dark)',0],
+['ruledLineNudge','Ruled line position',0],['ruledLineSpacing','Ruled line spacing ratio',0],['checkboxLineNudge','Checkbox line position',0],['gridLineNudge','Dot grid position',0],
+['marginLineColor','Margin line color',0],['marginLineNudge','Margin line horizontal position',0],
 ['outlineMode','Collapsible outline mode',0],
 ['outlineCollapseOnOpen','Collapse all on open (outline)',0],
 ['showBulletsForHyphens','Bullets for hyphens',0],['showMultiLevelBullets','Multi-level bullets',0],
@@ -8759,6 +9501,7 @@ var getHeadingLevel = function() { return 0; }; // replaced in init
 var getParentDescendants = function() { return []; }; // replaced in init
 var applyOutlineMode = function() {};
 var checkTopBarOverflow = function() {}; // defined inside init() // replaced in init
+var _updateRuledLineRowVisibility = function() {}; // defined inside init(); called from openSettings() too — must be module-level
 var closeAllBars = function() {}; // replaced in init
 var updateTagFilterIndicator = function() {}; // replaced in init
 var applyTagFilter = function() {}; // replaced in init
@@ -8804,6 +9547,47 @@ var updateSelectModeBtn = function() {}; // replaced in init
 let settingsSnapshot = null; // copy of settings when dialog was opened
 
 // ===== STORAGE =====
+// ===== FOLDER STRUCTURE BACKUP (defense-in-depth) =====
+// The root cause of folders occasionally reading back empty from
+// localStorage isn't confirmed yet (see project notes/chat history) —
+// so rather than rely solely on detecting and patching the damage
+// after the fact, a SEPARATE backup of the folder structure is kept,
+// updated only when the live data looks internally consistent (no
+// notes pointing at folders that don't exist). Deliberately written at
+// a DIFFERENT moment than the live saveFolders() calls during normal
+// editing — if a transient failure corrupts one specific write, it's
+// unlikely to also have corrupted this one, since they don't happen at
+// the same time. This is best-effort, not a guarantee: it's still the
+// same browser storage, so a true storage-wide wipe would take this
+// down too — but it meaningfully improves the common case where only
+// one key's data is affected.
+var FOLDER_BACKUP_KEY = 'remember_folders_backup';
+
+function backupFolderStructureIfGood(currentFolders, currentNotes) {
+  try {
+    var hasOrphans = Object.keys(currentNotes).some(function(id) {
+      return currentNotes[id].folderId && !currentFolders[currentNotes[id].folderId];
+    });
+    if (hasOrphans) return; // never overwrite a known-good backup with data we already suspect
+    localStorage.setItem(FOLDER_BACKUP_KEY, JSON.stringify({
+      folders: currentFolders,
+      savedAt: Date.now()
+    }));
+  } catch (e) { /* best-effort only — never block normal operation on this */ }
+}
+
+function restoreFoldersFromBackupIfPossible() {
+  try {
+    var raw = localStorage.getItem(FOLDER_BACKUP_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (!parsed || !parsed.folders || typeof parsed.folders !== 'object') return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
 function loadState() {
   try {
     const s = localStorage.getItem('remember_settings');
@@ -8844,14 +9628,151 @@ function loadState() {
       'folders loaded=' + Object.keys(folders).length + ', notes loaded=' + Object.keys(notes).length +
       ', visibility=' + (typeof document !== 'undefined' ? document.visibilityState : 'n/a'));
   }
-  // Sanitize note folderIds — remove refs to deleted folders
+  // Targeted repair for the specific "Remember — Sample Notes" folder
+  // going missing while its notes survive (the exact anomaly logged
+  // above) — recreate the folder and re-link the notes we can
+  // POSITIVELY identify, before the sanitization step below would
+  // otherwise permanently strip their folder references. Built-in
+  // sample notes (other than "Checklist Sampler", which has a randomly
+  // generated id) use fixed, predictable ids set by createInitialNotes()
+  // — never anything a user's own folder could coincidentally match —
+  // so this only ever repairs the one specific built-in folder, never a
+  // user-created one we have no reliable way to identify.
+  if (!folders['folder-sample-notes']) {
+    var _knownSampleNoteIds = [
+      'note-color-sampler', 'note-heading-sampler', 'note-outline-sampler',
+      'note-tag-sampler', 'note-tag-cb-diagnostic', 'note-code-sampler',
+      'note-image-sampler', 'note-bullet-sampler', 'note-boat-checklist-today',
+      'note-sample-evening', 'note-sample-checklist', 'note-sample-cosy',
+      'note-sample-article', 'note-sample-taskmaster', 'note-sample-dyslexia',
+      'note-sample-poem', 'note-sample-fun'
+    ];
+    var _foundSampleIds = _knownSampleNoteIds.filter(function(id) { return !!notes[id]; });
+    if (_foundSampleIds.length > 0) {
+      folders['folder-sample-notes'] = {
+        id: 'folder-sample-notes',
+        name: 'Remember — Sample Notes',
+        parentId: null,
+        createdAt: Date.now()
+      };
+      _foundSampleIds.forEach(function(id) { notes[id].folderId = 'folder-sample-notes'; });
+      // "Checklist Sampler" has a random id, so it's matched by its
+      // exact built-in name as a secondary signal — only applied when
+      // we already have positive fixed-id evidence above (never on its
+      // own), and only if it doesn't already have a different folder.
+      Object.keys(notes).forEach(function(id) {
+        if (notes[id].name === 'Checklist Sampler' && !notes[id].folderId) {
+          notes[id].folderId = 'folder-sample-notes';
+          _foundSampleIds.push(id);
+        }
+      });
+      logDebugAction('REPAIR: recreated missing "Remember — Sample Notes" folder and re-linked ' +
+        _foundSampleIds.length + ' note(s): [' + _foundSampleIds.slice(0, 5).join(', ') + ']');
+      saveFolders();
+      saveNotes();
+    }
+  }
+  // Sanitize note folderIds — remove refs to deleted folders, but ONLY
+  // when the evidence points to an isolated stale reference on ONE
+  // note, not to the folder DATA itself having been lost. Deliberate
+  // folder deletion (deleteFolderWithContents/deleteFolderMoveContents)
+  // already does its own explicit cleanup at the moment of deletion —
+  // this defensive check exists purely to catch accidental corruption,
+  // and was previously erasing folder references unconditionally the
+  // instant a folder was missing, with no distinction between "this one
+  // note has a stale reference" (safe — low blast radius, the folder
+  // really is gone) and "many notes all reference the same missing
+  // folder" (the folder data itself is what's missing — erasing the
+  // references in THAT case permanently destroys recoverable
+  // information for no benefit, since the repair step above already
+  // handles the one case we can reconstruct, and erasing the rest just
+  // forecloses ever reconnecting them if the underlying folder data
+  // turns out to come back). Group by which folder is missing; only
+  // auto-clear references that are genuinely isolated (exactly one note
+  // pointing to that specific missing folder).
+  var _missingFolderGroups = {};
   Object.keys(notes).forEach(function(id) {
-    if (notes[id].folderId && !folders[notes[id].folderId]) notes[id].folderId = null;
+    var fid = notes[id].folderId;
+    if (fid && !folders[fid]) {
+      (_missingFolderGroups[fid] = _missingFolderGroups[fid] || []).push(id);
+    }
+  });
+  var _folderBackup = restoreFoldersFromBackupIfPossible();
+  Object.keys(_missingFolderGroups).forEach(function(fid) {
+    var affectedIds = _missingFolderGroups[fid];
+    if (affectedIds.length === 1) {
+      notes[affectedIds[0]].folderId = null;
+      return;
+    }
+    // Many notes sharing one missing folder. First choice: restore the
+    // REAL folder — and any missing ancestors, walking the parentId
+    // chain — from the backup, if it has one. This recovers the
+    // person's actual folder name and position in their hierarchy,
+    // instead of a generic catch-all.
+    var _restoredFromBackup = false;
+    if (_folderBackup && _folderBackup.folders && _folderBackup.folders[fid]) {
+      var _chain = [];
+      var _walkId = fid;
+      var _guard = 0;
+      while (_walkId && !folders[_walkId] && _folderBackup.folders[_walkId] && _guard < 50) {
+        _chain.push(_walkId);
+        _walkId = _folderBackup.folders[_walkId].parentId;
+        _guard++;
+      }
+      if (_chain.length) {
+        _chain.forEach(function(cid) { folders[cid] = _folderBackup.folders[cid]; });
+        _restoredFromBackup = true;
+        logDebugAction('FOLDER ANOMALY: restored folder "' + _folderBackup.folders[fid].name +
+          '" (+' + (_chain.length - 1) + ' ancestor folder(s)) from backup dated ' +
+          new Date(_folderBackup.savedAt).toISOString() + ' — ' + affectedIds.length +
+          ' note(s) reconnected to their real folder.');
+        _pendingFolderRestoreWarnings.push({
+          name: _folderBackup.folders[fid].name, count: affectedIds.length, fromBackup: true
+        });
+      }
+    }
+    if (_restoredFromBackup) return;
+
+    // Many notes sharing one missing folder — the folder DATA itself
+    // was lost, not any individual note. Nothing should ever
+    // silently disappear or sit invisibly unfiled — create a real,
+    // visible recovery folder and move them there, then queue a
+    // warning so the person actually finds out this happened instead
+    // of just discovering it by accident later.
+    var _restoreName = 'Restored Notes';
+    var _restoreSuffix = 1;
+    while (Object.keys(folders).some(function(fk) { return folders[fk].name === _restoreName; })) {
+      _restoreSuffix++;
+      _restoreName = 'Restored Notes ' + _restoreSuffix;
+    }
+    var _restoreId = 'folder-restored-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+    folders[_restoreId] = {
+      id: _restoreId,
+      name: _restoreName,
+      parentId: null,
+      createdAt: Date.now()
+    };
+    affectedIds.forEach(function(id) { notes[id].folderId = _restoreId; });
+    logDebugAction('FOLDER ANOMALY: ' + affectedIds.length +
+      ' notes referenced missing folder "' + fid + '" — moved into new recovery folder "' +
+      _restoreName + '" (id=' + _restoreId + ') instead of being silently unfiled.');
+    _pendingFolderRestoreWarnings.push({ name: _restoreName, count: affectedIds.length, fromBackup: false });
   });
   // Sanitize folder parentIds
   Object.keys(folders).forEach(function(id) {
     if (folders[id].parentId && !folders[id].parentId === null && !folders[folders[id].parentId]) folders[id].parentId = null;
   });
+  // Persist any repairs immediately — don't rely on some unrelated
+  // later save to happen to carry them over before the next close.
+  if (_pendingFolderRestoreWarnings.length > 0) {
+    saveFolders();
+    saveNotes();
+  }
+  // Update the backup now that folders/notes are in a known-good state
+  // (either they always were, or the repairs above just made them so) —
+  // this is what makes next time's recovery (if any) use REAL folder
+  // names instead of the generic fallback.
+  backupFolderStructureIfGood(folders, notes);
 
   // First-time use: call createInitialNotes if no notes exist
   if (Object.keys(notes).length === 0) {
@@ -8958,6 +9879,13 @@ function saveNotes() {
 }
 function saveFolders() {
   try { localStorage.setItem('remember_folders', JSON.stringify(folders)); } catch(e) {}
+  // Refresh the backup during normal use too (folder created/renamed/
+  // deleted), not just at app load — deliberately delayed rather than
+  // synchronous with the line above, so this write happens at a
+  // genuinely different moment than the primary one, preserving the
+  // "a transient failure on one is unlikely to also hit the other"
+  // property the backup exists for.
+  setTimeout(function() { backupFolderStructureIfGood(folders, notes); }, 2000);
 }
 
 function saveCurrentRef() {
@@ -9724,6 +10652,9 @@ function applySettings() {
   }
   // Re-pin toolbars since font/size changes affect header and toolbar heights
   pinToolbars();
+  // Font/size/line-height could have just changed — re-measure, not
+  // just re-apply with stale spacing.
+  recalibrateRuledLines();
 
   // Several settings (viewIndentWidth, indentSpaces, headingIndent,
   // showBulletsForHyphens, showMultiLevelBullets, and others) are baked
@@ -12103,6 +13034,9 @@ function openNote(id, speakDelay) {
   // Re-pin toolbars now that note-screen is visible and has layout dimensions.
   // On Android the second toolbar may be hidden until this runs post-display.
   setTimeout(pinToolbars, 0);
+  // A per-note theme could have just changed font/size/line-height —
+  // re-measure, not just re-apply with whatever was cached before.
+  setTimeout(recalibrateRuledLines, 0);
   // Sync quiet-mode speak/stop button visibility too — quiet mode may
   // already be on from a previous session (persisted setting), in
   // which case toggleReadingMode() (the only other place this gets
@@ -13066,6 +14000,12 @@ function resizeEditor() {
       area.scrollTop = targetScrollTop;
     }
   });
+
+  // The textarea's height (just changed above) directly affects how
+  // tall #note-content-area's scrollable content is — keep the ruled-
+  // lines overlay's height in sync so it covers exactly that, not a
+  // stale height from before this edit.
+  updateRuledLinesOverlayHeight();
 }
 
 // Scrolls note-content-area so the cursor line is visible within the
@@ -14386,6 +15326,38 @@ function openSettings() {
   var _nem = settings.noteEditingMode || 'both';
   var _nemRadio = document.querySelector('#note-editing-mode-seg input[value="' + _nem + '"]');
   if (_nemRadio) _nemRadio.checked = true;
+
+  // Ruled lines / grid
+  var _rls = settings.ruledLineStyle || 'none';
+  var _rlsRadio = document.querySelector('#ruled-line-style-seg input[value="' + _rls + '"]');
+  if (_rlsRadio) _rlsRadio.checked = true;
+  var _rlt = settings.ruledLineTone || 'auto';
+  var _rltRadio = document.querySelector('#ruled-line-tone-seg input[value="' + _rlt + '"]');
+  if (_rltRadio) _rltRadio.checked = true;
+  var _rlnSlider = document.getElementById('ruled-line-nudge-slider');
+  var _rlnVal = document.getElementById('ruled-line-nudge-val');
+  if (_rlnSlider) _rlnSlider.value = (settings.ruledLineNudge !== undefined ? settings.ruledLineNudge : -5);
+  if (_rlnVal) _rlnVal.textContent = (settings.ruledLineNudge !== undefined ? settings.ruledLineNudge : -5);
+  var _rlsSlider = document.getElementById('ruled-line-spacing-slider');
+  var _rlsVal = document.getElementById('ruled-line-spacing-val');
+  if (_rlsSlider) _rlsSlider.value = (settings.ruledLineSpacing !== undefined ? settings.ruledLineSpacing : 1.5);
+  if (_rlsVal) _rlsVal.textContent = (settings.ruledLineSpacing !== undefined ? settings.ruledLineSpacing : 1.5);
+  var _cblnSlider = document.getElementById('checkbox-line-nudge-slider');
+  var _cblnVal = document.getElementById('checkbox-line-nudge-val');
+  if (_cblnSlider) _cblnSlider.value = (settings.checkboxLineNudge !== undefined ? settings.checkboxLineNudge : -1);
+  if (_cblnVal) _cblnVal.textContent = (settings.checkboxLineNudge !== undefined ? settings.checkboxLineNudge : -1);
+  var _glnSlider = document.getElementById('grid-line-nudge-slider');
+  var _glnVal = document.getElementById('grid-line-nudge-val');
+  if (_glnSlider) _glnSlider.value = (settings.gridLineNudge !== undefined ? settings.gridLineNudge : -14.5);
+  if (_glnVal) _glnVal.textContent = (settings.gridLineNudge !== undefined ? settings.gridLineNudge : -14.5);
+  var _mlcLabel = document.getElementById('hex-label-margin-line-color');
+  if (_mlcLabel) _mlcLabel.textContent = settings.marginLineColor || '#c83030';
+  var _mlnSlider = document.getElementById('margin-line-nudge-slider');
+  var _mlnVal = document.getElementById('margin-line-nudge-val');
+  if (_mlnSlider) _mlnSlider.value = (settings.marginLineNudge !== undefined ? settings.marginLineNudge : 0);
+  if (_mlnVal) _mlnVal.textContent = (settings.marginLineNudge !== undefined ? settings.marginLineNudge : 0);
+  if (typeof _updateRuledLineRowVisibility === 'function') _updateRuledLineRowVisibility();
+
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
   var esToggle=document.getElementById('edge-swipe-home-toggle'); if(esToggle)esToggle.checked=(settings.edgeSwipeToHome !== false);
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
@@ -14650,9 +15622,27 @@ function closeSettings() {
   logDebugAction('Closed Settings (saved): ' + _describeSettingsChanges());
   document.getElementById('settings-overlay').classList.remove('open');
   document.getElementById('settings-sheet').classList.remove('open');
+  // If a per-note theme is active, saveSettings() will write
+  // _noteThemeSnapshot instead of settings (to avoid persisting theme-
+  // overridden values as the user's global settings). But that means any
+  // change the user made in this dialog would be silently discarded.
+  // Fix: before clearing settingsSnapshot, apply only the keys that actually
+  // changed during this dialog session directly to _noteThemeSnapshot, so
+  // those user-intentional changes survive the per-note-theme save path.
+  if (_noteThemeSnapshot && settingsSnapshot) {
+    Object.keys(settings).forEach(function(k) {
+      if (JSON.stringify(settings[k]) !== JSON.stringify(settingsSnapshot[k])) {
+        _noteThemeSnapshot[k] = settings[k];
+      }
+    });
+  }
   settingsSnapshot = null;
   saveSettings();
   applySettings();
+  // Re-run after one frame: applySettings() calls recalibrateRuledLines()
+  // synchronously while the dialog transition may still be running, so the
+  // overlay dimensions can be stale. This second call gets settled values.
+  requestAnimationFrame(function() { recalibrateRuledLines(); });
 }
 
 function cancelSettings() {
@@ -18858,6 +19848,18 @@ function makeImportFolderName(label) {
   document.getElementById('settings-fab-cancel').addEventListener('click', function() {
     cancelSettings();
   });
+  document.getElementById('settings-fab-scroll').addEventListener('click', function() {
+    var sheet = document.getElementById('settings-sheet');
+    if (!sheet) return;
+    // If near the top (within 80px), scroll to bottom; otherwise scroll to top.
+    // "Already at top → go to bottom" mirrors the scroll-top/bottom buttons in
+    // the note editor — same mental model, same feel.
+    if (sheet.scrollTop < 80) {
+      sheet.scrollTo({ top: sheet.scrollHeight, behavior: 'smooth' });
+    } else {
+      sheet.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
   document.getElementById('settings-cancel-btn-top').addEventListener('click', cancelSettings);
   document.getElementById('settings-save-btn-top').addEventListener('click', closeSettings);
 
@@ -19515,21 +20517,16 @@ function makeImportFolderName(label) {
     var jumpBtn  = document.getElementById('settings-jump-btn');
     var jumpMenu = document.getElementById('settings-jump-menu');
     if (jumpBtn && jumpMenu) {
-      function openJumpMenu() {
-        jumpMenu.style.display = 'block';
-        setTimeout(function() {
-          function onOutside(e) {
-            if (!jumpMenu.contains(e.target) && e.target !== jumpBtn) {
-              jumpMenu.style.display = 'none';
-              document.removeEventListener('click', onOutside, true);
-              document.removeEventListener('touchend', onOutside, true);
-            }
-          }
-          document.addEventListener('click', onOutside, true);
-          document.addEventListener('touchend', onOutside, true);
-        }, 0);
-      }
+      function openJumpMenu() { jumpMenu.style.display = 'block'; }
       function closeJumpMenu() { jumpMenu.style.display = 'none'; }
+
+      // X close button
+      var jumpClose = document.getElementById('settings-jump-close');
+      if (jumpClose) {
+        jumpClose.addEventListener('click', function(e) { e.stopPropagation(); closeJumpMenu(); });
+        jumpClose.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); closeJumpMenu(); }, { passive: false });
+      }
+
       var jumpTouchHandled = false;
       jumpBtn.addEventListener('touchstart', function() { jumpTouchHandled = true; }, { passive: true });
       jumpBtn.addEventListener('touchend', function(e) {
@@ -19540,17 +20537,25 @@ function makeImportFolderName(label) {
         if (jumpTouchHandled) { jumpTouchHandled = false; return; }
         jumpMenu.style.display === 'none' ? openJumpMenu() : closeJumpMenu();
       });
+
+      // Items: navigate AND close on a confirmed tap; ignore if the finger
+      // moved more than TAP_THRESHOLD px (that's a scroll, not a tap).
+      var TOC_TAP_THRESHOLD = 8;
       jumpMenu.querySelectorAll('.settings-jump-item').forEach(function(item) {
         var sectionId = item.dataset.sectionId;
-        var itemTouchHandled = false;
-        item.addEventListener('touchstart', function() { itemTouchHandled = true; }, { passive: true });
+        var _tStartY = 0;
+        item.addEventListener('touchstart', function(e) {
+          _tStartY = e.touches[0].clientY;
+        }, { passive: true });
         item.addEventListener('touchend', function(e) {
+          var moved = Math.abs(e.changedTouches[0].clientY - _tStartY);
+          if (moved > TOC_TAP_THRESHOLD) return; // scroll, not a tap
           e.preventDefault();
           closeJumpMenu();
           jumpToSettingsSection(sectionId);
         }, { passive: false });
         item.addEventListener('click', function() {
-          if (itemTouchHandled) { itemTouchHandled = false; return; }
+          // click fires on mouse/pointer devices (no scroll ambiguity there)
           closeJumpMenu();
           jumpToSettingsSection(sectionId);
         });
@@ -19559,29 +20564,21 @@ function makeImportFolderName(label) {
   })();
 
   // Help TOC jump-to-section — same pattern as Settings' jump menu
-  // above, but keyed by the target section's stable HTML id (set on
-  // each help-section/help-collapsible) rather than a position index,
-  // since jumpToHelpSection() takes an element directly and Help's
-  // sections already use stable ids for sectionStates persistence too.
+  // above, but keyed by the target section's stable HTML id.
   (function() {
     var hJumpBtn  = document.getElementById('help-jump-btn');
     var hJumpMenu = document.getElementById('help-jump-menu');
     if (!hJumpBtn || !hJumpMenu) return;
-    function openHelpJumpMenu() {
-      hJumpMenu.style.display = 'block';
-      setTimeout(function() {
-        function onOutside(e) {
-          if (!hJumpMenu.contains(e.target) && e.target !== hJumpBtn) {
-            hJumpMenu.style.display = 'none';
-            document.removeEventListener('click', onOutside, true);
-            document.removeEventListener('touchend', onOutside, true);
-          }
-        }
-        document.addEventListener('click', onOutside, true);
-        document.addEventListener('touchend', onOutside, true);
-      }, 0);
-    }
+    function openHelpJumpMenu() { hJumpMenu.style.display = 'block'; }
     function closeHelpJumpMenu() { hJumpMenu.style.display = 'none'; }
+
+    // X close button
+    var hJumpClose = document.getElementById('help-jump-close');
+    if (hJumpClose) {
+      hJumpClose.addEventListener('click', function(e) { e.stopPropagation(); closeHelpJumpMenu(); });
+      hJumpClose.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); closeHelpJumpMenu(); }, { passive: false });
+    }
+
     var hJumpTouchHandled = false;
     hJumpBtn.addEventListener('touchstart', function() { hJumpTouchHandled = true; }, { passive: true });
     hJumpBtn.addEventListener('touchend', function(e) {
@@ -19592,18 +20589,23 @@ function makeImportFolderName(label) {
       if (hJumpTouchHandled) { hJumpTouchHandled = false; return; }
       hJumpMenu.style.display === 'none' ? openHelpJumpMenu() : closeHelpJumpMenu();
     });
+
+    var HTOC_TAP_THRESHOLD = 8;
     hJumpMenu.querySelectorAll('.settings-jump-item').forEach(function(item) {
       var targetId = item.dataset.helpSection;
-      var itemTouchHandled2 = false;
-      item.addEventListener('touchstart', function() { itemTouchHandled2 = true; }, { passive: true });
+      var _htStartY = 0;
+      item.addEventListener('touchstart', function(e) {
+        _htStartY = e.touches[0].clientY;
+      }, { passive: true });
       item.addEventListener('touchend', function(e) {
+        var moved = Math.abs(e.changedTouches[0].clientY - _htStartY);
+        if (moved > HTOC_TAP_THRESHOLD) return; // scroll, not a tap
         e.preventDefault();
         closeHelpJumpMenu();
         var target = document.getElementById(targetId);
         if (target) jumpToHelpSection(target);
       }, { passive: false });
       item.addEventListener('click', function() {
-        if (itemTouchHandled2) { itemTouchHandled2 = false; return; }
         closeHelpJumpMenu();
         var target = document.getElementById(targetId);
         if (target) jumpToHelpSection(target);
@@ -20611,6 +21613,14 @@ function makeImportFolderName(label) {
         if (typeof _tagFilterActive !== 'undefined' && _tagFilterActive) applyTagFilter();
         // Re-apply hide-completed after any viewer re-render
         if (_hideCompleted) applyHideCompleted();
+        // R&R mode's content height (unlike typing mode's textarea) has
+        // no manual resize step of its own — it's just however tall the
+        // rendered HTML naturally is — so this MutationObserver firing
+        // after every real content change IS the natural "content
+        // height might have changed" signal for keeping the ruled-
+        // lines overlay's height in sync, the same way resizeEditor()
+        // does it for typing mode.
+        updateRuledLinesOverlayHeight();
         // Diagnostic measurement for the intermittent tag-pill bug (no-op
         // unless debug logging is on)
         if (typeof logTagPillDiagnostics === 'function') logTagPillDiagnostics();
@@ -21985,6 +22995,110 @@ function makeImportFolderName(label) {
     });
   });
   document.getElementById('global-view-only-toggle').addEventListener('change', function() { settings.globalViewOnly=this.checked; updateSaveBtnState(); });
+
+  // Ruled lines / grid — style determines which of the dependent rows
+  // (tone, nudges, margin color) are relevant to show at all.
+  _updateRuledLineRowVisibility = function() {
+    var style = settings.ruledLineStyle || 'none';
+    var toneRow = document.getElementById('ruled-line-tone-row');
+    var spacingRow = document.getElementById('ruled-line-spacing-row');
+    var nudgeRow = document.getElementById('ruled-line-nudge-row');
+    var gridNudgeRow = document.getElementById('grid-line-nudge-row');
+    var cbNudgeRow = document.getElementById('checkbox-line-nudge-row');
+    var marginRow = document.getElementById('margin-line-color-row');
+    var show = style !== 'none';
+    if (toneRow) toneRow.style.display = show ? '' : 'none';
+    if (spacingRow) spacingRow.style.display = show ? '' : 'none';
+    // The main nudge row is for ruled/legalPad; grid gets its own separate
+    // row since dots and bands need meaningfully different alignment values.
+    if (nudgeRow) nudgeRow.style.display = (show && style !== 'grid') ? '' : 'none';
+    if (gridNudgeRow) gridNudgeRow.style.display = (style === 'grid') ? '' : 'none';
+    if (cbNudgeRow) cbNudgeRow.style.display = show ? '' : 'none';
+    if (marginRow) marginRow.style.display = (style === 'legalPad') ? '' : 'none';
+    var marginNudgeRow = document.getElementById('margin-line-nudge-row');
+    if (marginNudgeRow) marginNudgeRow.style.display = (style === 'legalPad') ? '' : 'none';
+  };
+  document.querySelectorAll('#ruled-line-style-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.ruledLineStyle = this.value;
+      _updateRuledLineRowVisibility();
+      applyRuledLines();
+      updateSaveBtnState();
+    });
+  });
+  document.querySelectorAll('#ruled-line-tone-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.ruledLineTone = this.value;
+      applyRuledLines();
+      updateSaveBtnState();
+    });
+  });
+  var _ruledSpacingSlider = document.getElementById('ruled-line-spacing-slider');
+  var _ruledSpacingVal = document.getElementById('ruled-line-spacing-val');
+  if (_ruledSpacingSlider) {
+    var _ruledSpacingDebounce;
+    _ruledSpacingSlider.addEventListener('input', function() {
+      settings.ruledLineSpacing = parseFloat(this.value);
+      if (_ruledSpacingVal) _ruledSpacingVal.textContent = this.value;
+      clearTimeout(_ruledSpacingDebounce);
+      _ruledSpacingDebounce = setTimeout(function() { applyRuledLines(); updateSaveBtnState(); }, 80);
+    });
+  }
+  var _ruledNudgeSlider = document.getElementById('ruled-line-nudge-slider');
+  var _ruledNudgeVal = document.getElementById('ruled-line-nudge-val');
+  if (_ruledNudgeSlider) {
+    _ruledNudgeSlider.addEventListener('input', function() {
+      settings.ruledLineNudge = parseFloat(this.value);
+      if (_ruledNudgeVal) _ruledNudgeVal.textContent = this.value;
+    });
+    var _ruledNudgeDebounce;
+    _ruledNudgeSlider.addEventListener('input', function() {
+      clearTimeout(_ruledNudgeDebounce);
+      _ruledNudgeDebounce = setTimeout(function() { applyRuledLines(); updateSaveBtnState(); }, 80);
+    });
+  }
+  var _gridNudgeSlider = document.getElementById('grid-line-nudge-slider');
+  var _gridNudgeVal = document.getElementById('grid-line-nudge-val');
+  if (_gridNudgeSlider) {
+    var _gridNudgeDebounce;
+    _gridNudgeSlider.addEventListener('input', function() {
+      settings.gridLineNudge = parseFloat(this.value);
+      if (_gridNudgeVal) _gridNudgeVal.textContent = this.value;
+      clearTimeout(_gridNudgeDebounce);
+      _gridNudgeDebounce = setTimeout(function() { applyRuledLines(); updateSaveBtnState(); }, 80);
+    });
+  }
+  var _cbNudgeSlider = document.getElementById('checkbox-line-nudge-slider');
+  var _cbNudgeVal = document.getElementById('checkbox-line-nudge-val');
+  if (_cbNudgeSlider) {
+    var _cbNudgeDebounce;
+    _cbNudgeSlider.addEventListener('input', function() {
+      settings.checkboxLineNudge = parseFloat(this.value);
+      if (_cbNudgeVal) _cbNudgeVal.textContent = this.value;
+      clearTimeout(_cbNudgeDebounce);
+      _cbNudgeDebounce = setTimeout(function() { applyRuledLines(); updateSaveBtnState(); }, 80);
+    });
+  }
+  document.querySelectorAll('#margin-line-color-swatches .settings-color-swatch').forEach(function(sw) {
+    sw.addEventListener('click', function() {
+      settings.marginLineColor = sw.dataset.value;
+      var lbl = document.getElementById('hex-label-margin-line-color');
+      if (lbl) lbl.textContent = sw.dataset.value;
+      applyRuledLines();
+      updateSaveBtnState();
+    });
+  });
+  var _mlnSliderWire = document.getElementById('margin-line-nudge-slider');
+  var _mlnValWire = document.getElementById('margin-line-nudge-val');
+  if (_mlnSliderWire) {
+    var _mlnDebounce;
+    _mlnSliderWire.addEventListener('input', function() {
+      settings.marginLineNudge = parseFloat(this.value);
+      if (_mlnValWire) _mlnValWire.textContent = this.value;
+      clearTimeout(_mlnDebounce);
+      _mlnDebounce = setTimeout(function() { applyRuledLines(); updateSaveBtnState(); }, 80);
+    });
+  }
   document.getElementById('retain-quiet-mode-toggle').addEventListener('change', function() {
     settings.retainQuietMode = this.checked;
     updateSaveBtnState();
@@ -23884,6 +24998,10 @@ function makeImportFolderName(label) {
     renderNotesList();
     showScreen('home-screen');
   }
+  // If loadState() had to recover orphaned notes into a new folder,
+  // this is the first point where the confirm-dialog DOM is guaranteed
+  // ready — show it now rather than let it be discovered by accident.
+  showFolderRestoreWarningsIfAny();
 
   // ===== URL ACTION HANDLING (Siri Shortcuts / Web Share Target) =====
   handleUrlAction();
