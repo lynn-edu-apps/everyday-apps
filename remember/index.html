@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1461 -->
+<!-- Remember App - Version 0.1472 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1461
+  Version 0.1472
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -667,7 +667,7 @@ body.in-iframe #home-screen {
   color: var(--accent);
   flex-shrink: 0;
 }
-.note-item-icon svg { width: 22px; height: 22px; }
+.note-item-icon svg { width: var(--icon-size); height: var(--icon-size); }
 
 .note-item-body { flex: 1; min-width: 0; user-select: none; -webkit-user-select: none; }
 .note-item-name {
@@ -684,9 +684,20 @@ body.wrap-note-names .note-item-name {
   overflow: visible;
   text-overflow: clip;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+body.wrap-note-names .note-item-preview {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: clip;
+}
+body.hide-note-preview .note-item-preview {
+  display: none;
 }
 .note-item-folder-path {
   font-family: var(--font-body);
@@ -713,7 +724,7 @@ body.wrap-note-names .note-item-name {
   font-family: var(--font-note);
   font-size: var(--font-size-editor);
   font-weight: var(--font-weight-editor);
-  color: var(--fg2);
+  color: var(--note-preview-color, var(--fg2));
   margin-top: 1px;
   white-space: nowrap;
   overflow: hidden;
@@ -1242,7 +1253,7 @@ body.dark .note-viewer span.viewer-highlight {
 body.wrap-note-names .folder-item-name {
   white-space: normal;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: clip;
@@ -2784,6 +2795,7 @@ body.has-mouse .font-face-arrow { display: block; }
   display: none;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;    /* allows count + nav buttons to wrap to line 2 */
   padding: 6px 12px;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
@@ -2798,7 +2810,7 @@ body.has-mouse .font-face-arrow { display: block; }
   display: flex;
 }
 #find-input {
-  flex: 1;
+  flex: 0 0 100%;   /* full first line; count + buttons wrap below */
   padding: 7px 12px;
   border: 1.5px solid var(--border);
   border-radius: 8px;
@@ -2815,8 +2827,9 @@ body.has-mouse .font-face-arrow { display: block; }
   font-weight: 600;
   color: var(--fg2);
   white-space: nowrap;
-  min-width: 48px;
-  text-align: center;
+  flex: 1;           /* expands on line 2, pushes nav buttons right */
+  min-width: 36px;
+  text-align: left;
   font-family: var(--font-body);
 }
 .find-nav-btn {
@@ -3292,6 +3305,17 @@ body.has-mouse .toolbar-drag-handle.dragging {
   content: attr(data-placeholder);
   color: var(--fg3);
   pointer-events: none;
+}
+/* When "Wrap long note names" is on, let the inline editor title also
+   wrap instead of truncating — the title row height adapts (pinToolbars
+   re-measures on openNote), so this is safe. Matches notes list behavior. */
+body.wrap-note-names .note-inline-title {
+  white-space: normal;
+  text-overflow: clip;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .title-pencil-btn {
@@ -4100,11 +4124,14 @@ body:not(.dark) .note-item {
   color: var(--fg);
   margin: 0;
   padding: 0;
+  flex: 1;
 }
 
 .settings-section-chevron {
-  width: 22px;
-  height: 22px;
+  /* Scale with the icon size setting — at Large/XL the chevron should be
+     easily visible. Clamp keeps it from being tiny on compact or huge on XL. */
+  width: clamp(24px, var(--icon-size), 40px);
+  height: clamp(24px, var(--icon-size), 40px);
   flex-shrink: 0;
   color: var(--fg2);
   pointer-events: none;
@@ -4126,14 +4153,21 @@ body:not(.dark) .note-item {
 }
 /* Collapsed hint — span before chevron */
 .section-collapse-hint {
+  /* Three periods shown just before the chevron when section is collapsed.
+     Actual periods sit at text baseline, looking like ... not ·· · (middle dots).
+     .settings-label has flex:1 (below) which ensures these always appear
+     at the right edge regardless of the section label's width. */
   display: none;
-  font-size: 0.72em;
-  font-style: italic;
+  font-size: 0.85em;
+  letter-spacing: 2px;
   color: var(--fg3);
   font-weight: 400;
   white-space: nowrap;
   pointer-events: auto;
   cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-right: 3px;
 }
 .settings-section:not(.open) .section-collapse-hint {
   display: inline;
@@ -4240,11 +4274,35 @@ body:not(.dark) .note-item {
   touch-action: manipulation;
 }
 .settings-radio-label input[type="radio"] {
-  width: 1.1em;
-  height: 1.1em;
-  accent-color: var(--accent);
-  flex-shrink: 0;
+  /* Custom radio buttons — native appearance hidden so we can make them
+     bigger and accessible for low-vision users. The filled dot is achieved
+     with a box-shadow inset that punches a background-colored hole in the
+     center of the accent-colored disc. Tap area stays full-label-width
+     regardless of visual size (from the label's existing padding). */
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border: 2px solid var(--fg2);
+  border-radius: 50%;
   cursor: pointer;
+  flex-shrink: 0;
+  background: var(--bg);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+.settings-radio-label input[type="radio"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--bg); /* small white dot in mostly-accent disc */
+}
+@media (hover: hover) {
+  .settings-radio-label input[type="radio"]:not(:checked):hover {
+    border-color: var(--accent);
+  }
 }
 
 select.settings-select {
@@ -5083,11 +5141,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 <!-- ===== HOME SEARCH BAR ===== -->
 <div id="home-search-bar" style="display:none;padding:6px 12px 4px;background:var(--bg);border-bottom:1px solid var(--border);">
   <div class="search-field" style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;color:var(--fg3);pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:clamp(16px,calc(var(--icon-size)*0.65),28px);height:clamp(16px,calc(var(--icon-size)*0.65),28px);flex-shrink:0;color:var(--fg3);pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input id="home-search-input" type="text" placeholder="Search notes…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
       style="flex:1;background:none;border:none;outline:none;font-family:var(--font-body);font-size:var(--font-ui);color:var(--fg);min-width:0;-webkit-appearance:none;">
-    <button id="home-search-clear" aria-label="Clear search" style="background:var(--bg3);border:none;padding:6px;border-radius:50%;cursor:pointer;color:var(--fg);line-height:0;flex-shrink:0;touch-action:manipulation;display:flex;align-items:center;justify-content:center;">
-      <svg viewBox="2 2 20 20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="width:22px;height:22px;pointer-events:none;display:block;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    <button id="home-search-clear" aria-label="Clear search" style="background:var(--bg3);border:none;padding:clamp(4px,calc(var(--icon-size)*0.14),8px);border-radius:50%;cursor:pointer;color:var(--fg);line-height:0;flex-shrink:0;touch-action:manipulation;display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="2 2 20 20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="width:clamp(18px,calc(var(--icon-size)*0.6),30px);height:clamp(18px,calc(var(--icon-size)*0.6),30px);pointer-events:none;display:block;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
 </div>
@@ -5510,6 +5568,14 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <path d="m434.25 120.32 21.504-21.777c3.9414-3.9883 3.9062-10.43-0.089843-14.371-3.9883-3.9414-10.43-3.9062-14.371 0.089843l-21.504 21.777c-3.9414 3.9883-3.9062 10.43 0.089843 14.371 3.9961 3.9414 10.43 3.9062 14.371-0.089844z"/>
             <path d="m238.82 120.32c3.9414 3.9883 10.375 4.0312 14.371 0.089844 3.9883-3.9414 4.0312-10.375 0.089844-14.371l-21.504-21.777c-3.9414-3.9883-10.375-4.0312-14.371-0.089843-3.9883 3.9414-4.0312 10.375-0.089844 14.371z"/>
             <path d="m178.03 212.7h30.918c5.6133 0 10.164-4.5508 10.164-10.164s-4.5508-10.164-10.164-10.164h-30.918c-5.6133 0-10.164 4.5508-10.164 10.164 0.007812 5.6133 4.5586 10.164 10.164 10.164z"/>
+        </svg>
+      </button>
+      <!-- Toolbar help -->
+      <button class="icon-btn" id="toolbar-help-btn" tabindex="-1" aria-label="Toolbar help" title="Toolbar help" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="pointer-events:none">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+          <line x1="12" y1="17" x2="12.01" y2="17" stroke-width="3" stroke-linecap="round"/>
         </svg>
       </button>
       <!-- Quick add -->
@@ -6532,6 +6598,17 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </button>
 </div>
 
+<!-- ===== TOOLBAR HELP POPUP ===== -->
+<div id="toolbar-help-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:300;align-items:center;justify-content:center;padding:16px;">
+  <div id="toolbar-help-panel" style="background:var(--bg);border-radius:14px;width:100%;max-width:520px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div style="font-size:1.05em;font-weight:600;color:var(--fg);">Toolbar Buttons</div>
+      <button id="toolbar-help-close" aria-label="Close" style="padding:0;width:30px;height:30px;border:none;background:transparent;color:var(--fg3);cursor:pointer;font-size:1.3em;line-height:1;display:flex;align-items:center;justify-content:center;border-radius:6px;">&#x2715;</button>
+    </div>
+    <div id="toolbar-help-body" style="overflow-y:auto;overflow-x:hidden;padding:14px 18px;flex:1;overscroll-behavior:contain;touch-action:pan-y;"></div>
+  </div>
+</div>
+
 <!-- ===== QUICK ADD MODAL ===== -->
 <div class="confirm-overlay" id="quick-add-overlay" role="dialog" aria-modal="true">
   <div class="confirm-box" id="quick-add-box" style="padding-top:10px">
@@ -6603,20 +6680,20 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
     <!-- Collapse all row -->
     <div style="padding:2px 20px 4px;text-align:right;">
-      <button id="settings-collapse-all-btn" style="padding:0 10px;height:22px;border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--fg3);font-family:var(--font-body);font-size:0.72em;cursor:pointer;line-height:1;">Collapse all sections</button>
+      <button id="settings-collapse-all-btn" style="padding:3px 12px;min-height:28px;border:1.5px solid var(--fg3);border-radius:999px;background:transparent;color:var(--fg2);font-family:var(--font-body);font-size:0.78em;cursor:pointer;line-height:1.4;font-weight:500;">Collapse all sections</button>
     </div>
 
     <!-- Search -->
     <div id="settings-search-wrap" style="padding:10px 20px 6px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;background:var(--bg);">
-      <div style="display:flex;align-items:center;gap:6px;">
-        <div style="flex:1;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;color:var(--fg3);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="settings-search-input" type="search" placeholder="Search settings…" autocomplete="off" autocorrect="off" spellcheck="false" style="flex:1;border:none;background:transparent;color:var(--fg);font-family:var(--font-body);font-size:0.95em;outline:none;min-width:0;">
-          <button id="settings-search-clear" aria-label="Clear search" style="display:none;padding:0;width:20px;height:20px;border:none;background:transparent;color:var(--fg3);cursor:pointer;flex-shrink:0;line-height:1;font-size:1.1em;">&#x2715;</button>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;min-height:max(38px,var(--icon-size));">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:clamp(16px,calc(var(--icon-size)*0.72),32px);height:clamp(16px,calc(var(--icon-size)*0.72),32px);flex-shrink:0;color:var(--fg3);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="settings-search-input" type="search" placeholder="Search for a setting…" autocomplete="off" autocorrect="off" spellcheck="false" style="flex:1;border:none;background:transparent;color:var(--fg);font-family:var(--font-body);font-size:0.95em;outline:none;min-width:0;">
+          <button id="settings-search-clear" aria-label="Clear search" style="display:none;padding:0;width:26px;height:26px;border:none;background:transparent;color:var(--fg3);cursor:pointer;flex-shrink:0;font-size:1em;display:flex;align-items:center;justify-content:center;">&#x2715;</button>
         </div>
         <div style="position:relative;flex-shrink:0;">
-          <button id="settings-jump-btn" aria-label="Jump to section" title="Jump to section" style="width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          <button id="settings-jump-btn" aria-label="Jump to section" title="Jump to section" style="width:max(36px,var(--icon-size));height:max(36px,var(--icon-size));border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:clamp(18px,calc(var(--icon-size)*0.65),30px);height:clamp(18px,calc(var(--icon-size)*0.65),30px);pointer-events:none;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div id="settings-jump-menu" style="display:none;position:absolute;right:0;top:40px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:100;min-width:210px;overflow:hidden;max-height:60vh;overflow-y:auto;">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px 4px;border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;background:var(--bg);z-index:1;">
@@ -6646,7 +6723,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-appearance">
     <div class="settings-section-header">
       <div class="settings-label">Appearance</div>
-      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="settings-section-body">
 
@@ -6680,7 +6757,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-text">
     <div class="settings-section-header">
       <div class="settings-label">Text</div>
-      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="settings-section-body">
 
@@ -6905,7 +6982,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-colors">
     <div class="settings-section-header">
       <div class="settings-label">Colors</div>
-      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="settings-section-body">
 
@@ -6948,6 +7025,27 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <span class="swatch-hex-label" id="hex-label-light-fg">#2a2520</span>
         </div>
       </div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="settings-row-label">Note preview color
+          <div class="settings-row-desc" style="font-weight:400;margin-top:2px;">Color of the preview text shown below note names in the list. Useful for low-vision users who need higher contrast.</div>
+        </div>
+        <div class="color-swatch-row" id="light-preview-color-swatches">
+          <button class="settings-color-swatch" data-value="#6b6258" style="background:#6b6258" title="Default preview gray"></button>
+          <button class="settings-color-swatch" data-value="#1a1a1a" style="background:#1a1a1a" title="Near black"></button>
+          <button class="settings-color-swatch" data-value="#1e3a5f" style="background:#1e3a5f" title="Ocean blue"></button>
+          <button class="settings-color-swatch" data-value="#2e5c99" style="background:#2e5c99" title="Steel blue"></button>
+          <button class="settings-color-swatch" data-value="#5c2d00" style="background:#5c2d00" title="Russet brown"></button>
+          <button class="settings-color-swatch" data-value="#4a1060" style="background:#4a1060" title="Deep violet"></button>
+          <button class="settings-color-swatch" data-value="#7a2020" style="background:#7a2020" title="Deep red"></button>
+          <button class="settings-color-swatch" data-value="#005a5a" style="background:#005a5a" title="Dark teal"></button>
+          <button class="settings-color-swatch" data-value="#a0235a" style="background:#a0235a" title="Deep rose"></button>
+          <button class="settings-color-swatch" data-value="#8b1a6b" style="background:#8b1a6b" title="Dark magenta"></button>
+          <button class="custom-color-btn" id="ccp-btn-light-preview-color" data-rowkey="light-preview-color" title="Custom color slot 1">+</button>
+          <button class="custom-color-btn" id="ccp-btn-light-preview-color-2" data-rowkey="light-preview-color-2" title="Custom color slot 2">+</button>
+          <button class="custom-color-btn" id="ccp-btn-light-preview-color-3" data-rowkey="light-preview-color-3" title="Custom color slot 3">+</button>
+          <span class="swatch-hex-label" id="hex-label-light-preview-color">#6b6258</span>
+        </div>
+      </div>
 
       <div class="settings-subsection-title">Dark Mode 🌙</div>
 
@@ -6987,6 +7085,27 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <button class="custom-color-btn" id="ccp-btn-dark-fg-2" data-rowkey="dark-fg-2" title="Custom color slot 2">+</button>
           <button class="custom-color-btn" id="ccp-btn-dark-fg-3" data-rowkey="dark-fg-3" title="Custom color slot 3">+</button>
           <span class="swatch-hex-label" id="hex-label-dark-fg" style="color:#f0ebe0;">#f0ebe0</span>
+        </div>
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="settings-row-label" style="color:#f0ebe0;">Note preview color
+          <div class="settings-row-desc" style="font-weight:400;margin-top:2px;color:#b8b0a0;">Color of the preview text in the dark-mode notes list. Increase for better contrast.</div>
+        </div>
+        <div class="color-swatch-row" id="dark-preview-color-swatches">
+          <button class="settings-color-swatch" data-value="#b8b0a0" style="background:#b8b0a0" title="Default preview gray"></button>
+          <button class="settings-color-swatch" data-value="#e8e8e8" style="background:#e8e8e8" title="Light gray"></button>
+          <button class="settings-color-swatch" data-value="#ffffff" style="background:#ffffff" title="Pure white"></button>
+          <button class="settings-color-swatch" data-value="#5b8ccc" style="background:#5b8ccc" title="Cornflower blue"></button>
+          <button class="settings-color-swatch" data-value="#d0e8ff" style="background:#d0e8ff" title="Soft blue-white"></button>
+          <button class="settings-color-swatch" data-value="#d0f0d0" style="background:#d0f0d0" title="Soft green-white"></button>
+          <button class="settings-color-swatch" data-value="#ffe8d0" style="background:#ffe8d0" title="Soft amber-white"></button>
+          <button class="settings-color-swatch" data-value="#e8d0ff" style="background:#e8d0ff" title="Soft lavender-white"></button>
+          <button class="settings-color-swatch" data-value="#f5e6a3" style="background:#f5e6a3" title="Soft gold"></button>
+          <button class="settings-color-swatch" data-value="#a8d5a2" style="background:#a8d5a2" title="Soft sage green"></button>
+          <button class="custom-color-btn" id="ccp-btn-dark-preview-color" data-rowkey="dark-preview-color" title="Custom color slot 1">+</button>
+          <button class="custom-color-btn" id="ccp-btn-dark-preview-color-2" data-rowkey="dark-preview-color-2" title="Custom color slot 2">+</button>
+          <button class="custom-color-btn" id="ccp-btn-dark-preview-color-3" data-rowkey="dark-preview-color-3" title="Custom color slot 3">+</button>
+          <span class="swatch-hex-label" id="hex-label-dark-preview-color" style="color:#f0ebe0;">#b8b0a0</span>
         </div>
       </div>
       </div>
@@ -7085,7 +7204,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-notedisplay">
     <div class="settings-section-header">
       <div class="settings-label">Note Display</div>
-      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="settings-section-body">
 
@@ -7163,10 +7282,20 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Wrap long note names</div>
-          <div class="settings-row-desc">Show note names on up to 2 lines instead of cutting them off with … Useful with larger font sizes.</div>
+          <div class="settings-row-desc">Show note names on up to 3 lines instead of cutting them off with … Useful with larger font sizes. When on, the note preview also wraps to 3 lines.</div>
         </div>
         <label class="toggle-switch" aria-label="Wrap long note names">
           <input type="checkbox" id="wrap-note-names-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Show note preview</div>
+          <div class="settings-row-desc">Show the first line of note content below the note name in the list. Turn off for a compact, name-only list.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show note preview">
+          <input type="checkbox" id="show-note-preview-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
@@ -7305,7 +7434,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-margins">
       <div class="settings-section-header">
         <div class="settings-label">Layout &amp; Margins</div>
-        <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="settings-section-body">
         <div class="settings-row-desc" style="padding:0 0 8px">Add extra space to the left or right edges. Useful on wide screens to center content. Does not affect toolbars.</div>
@@ -7392,7 +7521,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-toolbar">
       <div class="settings-section-header">
         <span class="settings-label">Lower Toolbar Buttons</span>
-        <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="settings-section-body">
         <div class="settings-row-desc" style="padding:4px 0 10px">
@@ -7424,7 +7553,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-speech">
     <div class="settings-section-header">
       <div class="settings-label">Speech</div>
-      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="settings-section-body">
 
@@ -7540,7 +7669,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="ruler-settings-section">
     <div class="settings-section-header">
       <div class="settings-label">Reading Ruler</div>
-      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="settings-section-body">
 
@@ -7604,7 +7733,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-ruledlines">
     <div class="settings-section-header">
       <div class="settings-label">Ruled Lines &amp; Grid</div>
-      <span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="settings-section-body">
 
@@ -7617,6 +7746,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="none"> Off</label>
           <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="ruled"> Ruled lines</label>
           <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="legalPad"> Legal pad</label>
+          <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="graph"> Graph paper</label>
           <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="grid"> Dotted grid</label>
         </div>
       </div>
@@ -7664,7 +7794,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
     <!-- THEMES -->
     <div class="settings-section" id="settings-section-viewonly" data-section="9">
-      <div class="settings-section-header"><div class="settings-label">View Only Notes</div><span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+      <div class="settings-section-header"><div class="settings-label">View Only Notes</div><span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
       <div class="settings-section-body">
         <div class="settings-row">
           <label class="settings-label" for="global-view-only-toggle">All notes open as view only</label>
@@ -7678,7 +7808,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-checklists" data-section="10">
       <div class="settings-section-header">
         <div class="settings-label">Checklists</div>
-        <span class="section-collapse-hint">(tap to expand) </span>
+        <span class="section-collapse-hint">...</span>
         <svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="settings-section-body">
@@ -7837,7 +7967,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div><!-- end settings-section-body -->
     </div><!-- end settings-section checklists -->
 
-    <div class="settings-section" id="settings-section-themes" data-section="8"><div class="settings-section-header"><div class="settings-label">Themes</div><span class="section-collapse-hint">(tap to expand) </span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div><div class="settings-section-body">
+    <div class="settings-section" id="settings-section-themes" data-section="8"><div class="settings-section-header"><div class="settings-label">Themes</div><span class="section-collapse-hint">...</span><svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div><div class="settings-section-body">
       <div class="settings-row"><div class="settings-row-desc" style="padding:4px 0 8px">Save groups of settings as named themes. Apply a theme globally or assign it to an individual note.</div></div>
       <div class="settings-row" style="padding-bottom:4px"><button id="save-theme-btn" style="padding:0;line-height:1;padding-left:16px;padding-right:16px;height:34px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-family:var(--font-body);font-size:.92em;font-weight:600;cursor:pointer;touch-action:manipulation">Save Current Settings as Theme…</button></div>
       <div id="themes-list-container" style="margin-top:4px"><div id="themes-empty-msg">No themes saved yet.</div></div>
@@ -7849,7 +7979,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="settings-section" id="settings-section-debugging">
       <div class="settings-section-header">
         <div class="settings-label">Debugging</div>
-        <span class="section-collapse-hint">(tap to expand) </span>
+        <span class="section-collapse-hint">...</span>
         <svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="settings-section-body">
@@ -8122,22 +8252,22 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
   <!-- Collapse all row -->
   <div style="padding:2px 16px 4px;text-align:right;">
-    <button id="help-collapse-all-btn" style="padding:0 10px;height:22px;border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--fg3);font-family:var(--font-body);font-size:0.72em;cursor:pointer;line-height:1;">Collapse all sections</button>
+    <button id="help-collapse-all-btn" style="padding:3px 12px;min-height:28px;border:1.5px solid var(--fg3);border-radius:999px;background:transparent;color:var(--fg2);font-family:var(--font-body);font-size:0.78em;cursor:pointer;line-height:1.4;font-weight:500;">Collapse all sections</button>
   </div>
 
   <div id="help-search-wrap" style="padding:8px 16px 6px;border-bottom:1px solid var(--border);position:sticky;top:96px;z-index:10;background:var(--bg);">
     <!-- top is a rough fallback for the instant before JS measures and
          sets the real value (_positionHelpSearchWrap()) on Help open;
          it no longer needs to be exact since JS always corrects it. -->
-    <div style="display:flex;align-items:center;gap:6px;">
-      <div style="flex:1;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;color:var(--fg3);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;min-height:max(38px,var(--icon-size));">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:clamp(16px,calc(var(--icon-size)*0.72),32px);height:clamp(16px,calc(var(--icon-size)*0.72),32px);flex-shrink:0;color:var(--fg3);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input id="help-search-input" type="search" placeholder="Search help…" autocomplete="off" autocorrect="off" spellcheck="false" style="flex:1;border:none;background:transparent;color:var(--fg);font-family:var(--font-body);font-size:0.95em;outline:none;min-width:0;">
-        <button id="help-search-clear" aria-label="Clear search" style="display:none;padding:0;width:20px;height:20px;border:none;background:transparent;color:var(--fg3);cursor:pointer;flex-shrink:0;line-height:1;font-size:1.1em;">&#x2715;</button>
+        <button id="help-search-clear" aria-label="Clear search" style="display:none;padding:0;width:26px;height:26px;border:none;background:transparent;color:var(--fg3);cursor:pointer;flex-shrink:0;font-size:1em;display:flex;align-items:center;justify-content:center;">&#x2715;</button>
       </div>
       <div style="position:relative;flex-shrink:0;">
-        <button id="help-jump-btn" aria-label="Jump to section" title="Jump to section" style="width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <button id="help-jump-btn" aria-label="Jump to section" title="Jump to section" style="width:max(36px,var(--icon-size));height:max(36px,var(--icon-size));border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:clamp(18px,calc(var(--icon-size)*0.65),30px);height:clamp(18px,calc(var(--icon-size)*0.65),30px);pointer-events:none;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <div id="help-jump-menu" style="display:none;position:absolute;right:0;top:40px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,0.18);z-index:100;min-width:230px;max-height:60vh;overflow-y:auto;overflow-x:hidden;">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px 4px;border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;background:var(--bg);z-index:1;">
@@ -8709,7 +8839,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1461';
+const APP_VERSION = '0.1472';
 
 
 
@@ -8987,17 +9117,16 @@ function _applyRuledLinesImpl() {
   // No user setting needed — this is always the correct behavior.
   document.documentElement.style.setProperty('--blank-line-height-factor', spacing / fontSizePx);
 
+  // Read bgColor FIRST so the auto-tone luminance check below can use it.
+  var areaCS2 = getComputedStyle(area);
+  var bgColor = getComputedStyle(document.body).getPropertyValue('--bg').trim() ||
+                getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() ||
+                areaCS2.backgroundColor;
+
   var tone = settings.ruledLineTone || 'auto';
+  var _isDarkBg = document.body.classList.contains('dark'); // always set; refined below if parseable
   var ruleColor;
   if (tone === 'auto') {
-    // Compute WCAG relative luminance of the current background to decide
-    // whether to use dark or light lines. bgColor is normally a hex string
-    // (e.g. '#f5f0e8') from the --bg CSS variable, but can occasionally
-    // come back as rgb(), rgba(), or empty when the value comes from a
-    // stylesheet rule (body.dark { --bg }) rather than an inline setProperty.
-    // Fall back to checking the body's 'dark' class (set reliably by
-    // applySettings before this runs) rather than assuming light mode.
-    var _isDarkBg = document.body.classList.contains('dark'); // reliable fallback
     try {
       var _hexRaw = bgColor.trim();
       var _parsedLum = null;
@@ -9029,16 +9158,6 @@ function _applyRuledLinesImpl() {
     ruleColor = tone === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.45)';
   }
   var marginRgba = _ruledLineHexToRgba(settings.marginLineColor, 0.6);
-
-  // Read the ACTUAL current background — never hardcoded, since ruled
-  // lines need to work with any background color the user has already
-  // chosen. --bg is set on body (not documentElement) when the user
-  // has a custom color active, so body must be checked first or this
-  // silently falls back to the stylesheet's plain default instead of
-  // whatever the person actually picked.
-  var bgColor = getComputedStyle(document.body).getPropertyValue('--bg').trim() ||
-                getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() ||
-                areaCS.backgroundColor;
 
   var horizontalRule =
     'repeating-linear-gradient(to bottom,' +
@@ -9105,6 +9224,43 @@ function _applyRuledLinesImpl() {
     overlay.style.backgroundImage = dottedGrid;
     overlay.style.backgroundSize = spacing + 'px ' + spacing + 'px';
     overlay.style.backgroundPosition = '0px ' + gridOffset + 'px';
+  } else if (style === 'graph') {
+    // Graph paper: horizontal lines at text line-height intervals (same as
+    // ruled, with the same nudge and top-mask) PLUS vertical lines at the
+    // same spacing interval, making square grid cells. The color uses the
+    // same subtle bluish-gray from the original prototype — `rgba(70,110,160,
+    // 0.17)` on light backgrounds, `rgba(180,200,230,0.18)` on dark — to
+    // give that distinctive graph paper look separate from plain ruled lines.
+    // Auto tone: override ruleColor with the blue-tinted version.
+    var graphColor;
+    if (tone === 'auto') {
+      graphColor = _isDarkBg ? 'rgba(180,200,230,0.18)' : 'rgba(70,110,160,0.17)';
+    } else if (tone === 'dark') {
+      graphColor = 'rgba(0,0,0,0.22)';
+    } else {
+      graphColor = 'rgba(255,255,255,0.35)';
+    }
+    var graphVertical = 'repeating-linear-gradient(to right,' +
+      'transparent 0px,' +
+      'transparent ' + (spacing - 1) + 'px,' +
+      graphColor + ' ' + (spacing - 1) + 'px,' +
+      graphColor + ' ' + spacing + 'px)';
+    var graphHorizontal = 'repeating-linear-gradient(to bottom,' +
+      'transparent 0px,' +
+      'transparent ' + (spacing - 1) + 'px,' +
+      graphColor + ' ' + (spacing - 1) + 'px,' +
+      graphColor + ' ' + spacing + 'px)';
+    var graphTopMask =
+      'linear-gradient(to bottom,' +
+      bgColor + ' 0px,' +
+      bgColor + ' ' + totalOffset + 'px,' +
+      'transparent ' + totalOffset + 'px)';
+    // Three layers: mask (hides phantom lines above first row) + vertical
+    // grid + horizontal grid. All three shift to totalOffset so the grid
+    // starts aligned with the first text line, leaving the title area clean.
+    overlay.style.backgroundImage = graphTopMask + ', ' + graphVertical + ', ' + graphHorizontal;
+    overlay.style.backgroundSize = 'auto, ' + spacing + 'px auto, auto ' + spacing + 'px';
+    overlay.style.backgroundPosition = '0px 0px, 0px ' + totalOffset + 'px, 0px ' + totalOffset + 'px';
   } else if (style === 'legalPad') {
     // Margin lines are a single non-repeating gradient — no phantom-
     // repeat issue of their own, and need to stay continuous top to
@@ -9148,21 +9304,17 @@ function _applyRuledLinesImpl() {
   // '<div class="viewer-line..."><div class="viewer-h1">...'). So we
   // query for the inner child, not a compound outer.inner selector.
   var hasHeadings = viewerVisible && viewer.querySelector('.viewer-h1,.viewer-h2,.viewer-h3,.viewer-h4,.viewer-h5,.viewer-h6');
-  if (style !== 'grid' && viewerVisible && hasHeadings) {
+  if (viewerVisible && hasHeadings) {
     // SVG takes over completely — clear the CSS gradient so it doesn't
     // also draw rules through the heading areas (the double/triple-line
     // symptom: gradient draws evenly-spaced lines everywhere PLUS SVG
     // draws gap-aware lines, stacking two sets on top of each other).
-    // For legalPad: do NOT set legalPadMargin here either — the SVG
-    // draws the vertical margin lines itself (and extends them to the
-    // full buffer height). Setting it here AND in the SVG causes the
-    // doubled/bold margin line in the non-buffer section that the user
-    // reported: CSS gradient margin + SVG margin stacked on top.
+    // For graph: clear ALL background layers, SVG handles both H and V lines.
     overlay.style.backgroundImage = 'none';
     overlay.style.backgroundSize = 'auto';
     overlay.style.backgroundPosition = '0px 0px';
-    drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleColor, legalPadMargin, marginRgba, style);
-  } else if (style !== 'grid' && viewerVisible) {
+    drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleColor, legalPadMargin, marginRgba, style, bgColor, _isDarkBg);
+  } else if (viewerVisible) {
     // No headings — remove any leftover SVG from a previous render where
     // headings existed; the gradient-only approach is sufficient.
     var oldSvg = overlay.querySelector('svg.heading-gap-svg');
@@ -9176,7 +9328,7 @@ function _applyRuledLinesImpl() {
 // each heading box, leaving the heading's interior free of ruled lines.
 // Applied as a child of the overlay div on top of the CSS gradient, so
 // typing mode (which has no .viewer-line elements) is unaffected.
-function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleColor, legalPadMargin, marginRgba, style) {
+function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleColor, legalPadMargin, marginRgba, style, bgColor, _isDarkBg) {
   var overlayRect = overlay.getBoundingClientRect();
   var W = overlayRect.width;
   if (!W) return; // not yet laid out
@@ -9209,6 +9361,97 @@ function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleCo
   svgEl.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;width:' + W + 'px;height:' + totalH + 'px';
 
   var nudge = settings.ruledLineNudge || 0;
+
+  // Dotted grid: handled entirely here with its own <pattern> approach,
+  // returns before the horizontal line-drawing loop below runs. This
+  // prevents the loop from drawing ruled lines ON TOP of the dot pattern.
+  if (style === 'grid') {
+    var _dotR = 1;
+    var _dotColor = ruleColor;
+    var _gPatId = 'rlo-dp-' + Math.floor(spacing);
+    var _defsEl = document.createElementNS(svgNS, 'defs');
+    var _pat = document.createElementNS(svgNS, 'pattern');
+    _pat.setAttribute('id', _gPatId);
+    _pat.setAttribute('patternUnits', 'userSpaceOnUse');
+    _pat.setAttribute('width', spacing);
+    _pat.setAttribute('height', spacing);
+    _pat.setAttribute('patternTransform', 'translate(0,' + totalOffset + ')');
+    var _dotEl = document.createElementNS(svgNS, 'circle');
+    _dotEl.setAttribute('cx', spacing / 2); _dotEl.setAttribute('cy', spacing / 2);
+    _dotEl.setAttribute('r', _dotR); _dotEl.setAttribute('fill', _dotColor);
+    _pat.appendChild(_dotEl);
+    _defsEl.appendChild(_pat);
+    svgEl.insertBefore(_defsEl, svgEl.firstChild);
+    // Per-segment patterns: each body run between headings gets its own SVG
+    // <pattern> anchored to the MEASURED Y of that run's first text line.
+    // Eliminates drift: dots always at exact text-line positions regardless
+    // of heading heights. Gap at headings = no rect drawn there (implicit).
+    var _segs = []; // {anchorY, top, bottom}
+    var _sAnchor = -1, _sTop = -1;
+
+    viewerLines.forEach(function(el) {
+      var r = el.getBoundingClientRect();
+      var elTop = r.top - overlayRect.top;
+      if (r.height < 2) return;
+      var fc = el.firstElementChild;
+      if (fc && /viewer-h[1-6]/.test(fc.className)) {
+        if (_sAnchor >= 0) { _segs.push({anchorY:_sAnchor, top:_sTop, bottom:elTop}); _sAnchor=-1; _sTop=-1; }
+      } else {
+        if (_sAnchor < 0) {
+          // Apply gridLineNudge to anchor so dots sit at the same relative
+          // position to text lines as in notes without headings (CSS path).
+          var _gln = (settings.gridLineNudge !== undefined ? settings.gridLineNudge : -14.5);
+          _sAnchor = elTop + _gln;
+          _sTop = elTop;
+        }
+      }
+    });
+    var _lastRg = viewerLines.length ? viewerLines[viewerLines.length-1].getBoundingClientRect() : null;
+    var _lastBotG = _lastRg ? (_lastRg.bottom - overlayRect.top) : totalOffset;
+    if (_sAnchor >= 0) _segs.push({anchorY:_sAnchor, top:_sTop, bottom:_lastBotG});
+
+    if (settings.debugLoggingEnabled) {
+      logDebugAction('dotGrid: ' + _segs.length + ' segments, totalOffset=' + totalOffset.toFixed(1) + ' spacing=' + spacing.toFixed(1));
+      _segs.forEach(function(s,i){ logDebugAction('  seg['+i+'] anchor='+s.anchorY.toFixed(1)+' top='+s.top.toFixed(1)+' bot='+s.bottom.toFixed(1)); });
+    }
+
+    _segs.forEach(function(seg, idx) {
+      var pid = _gPatId + '-s' + idx;
+      var sp = document.createElementNS(svgNS, 'pattern');
+      sp.setAttribute('id', pid); sp.setAttribute('patternUnits', 'userSpaceOnUse');
+      sp.setAttribute('width', spacing); sp.setAttribute('height', spacing);
+      sp.setAttribute('patternTransform', 'translate(0,' + seg.anchorY + ')');
+      var sd = document.createElementNS(svgNS, 'circle');
+      sd.setAttribute('cx', spacing/2); sd.setAttribute('cy', spacing/2);
+      sd.setAttribute('r', _dotR); sd.setAttribute('fill', _dotColor);
+      sp.appendChild(sd); _defsEl.appendChild(sp);
+      var sr = document.createElementNS(svgNS, 'rect');
+      sr.setAttribute('x', 0); sr.setAttribute('y', seg.top);
+      sr.setAttribute('width', W); sr.setAttribute('height', seg.bottom - seg.top);
+      sr.setAttribute('fill', 'url(#' + pid + ')');
+      svgEl.appendChild(sr);
+    });
+
+    var _bufAnchorG = _segs.length ? _segs[_segs.length-1].anchorY : totalOffset;
+    var _bpid = _gPatId + '-buf';
+    var _bp = document.createElementNS(svgNS, 'pattern');
+    _bp.setAttribute('id', _bpid); _bp.setAttribute('patternUnits', 'userSpaceOnUse');
+    _bp.setAttribute('width', spacing); _bp.setAttribute('height', spacing);
+    _bp.setAttribute('patternTransform', 'translate(0,' + _bufAnchorG + ')');
+    var _bd = document.createElementNS(svgNS, 'circle');
+    _bd.setAttribute('cx', spacing/2); _bd.setAttribute('cy', spacing/2);
+    _bd.setAttribute('r', _dotR); _bd.setAttribute('fill', _dotColor);
+    _bp.appendChild(_bd); _defsEl.appendChild(_bp);
+    var _br2 = document.createElementNS(svgNS, 'rect');
+    _br2.setAttribute('x',0); _br2.setAttribute('y', _lastBotG);
+    _br2.setAttribute('width', W); _br2.setAttribute('height', spacing * 14);
+    _br2.setAttribute('fill', 'url(#' + _bpid + ')');
+    svgEl.appendChild(_br2);
+    var _dotH = _lastBotG + spacing * 14;
+    svgEl.setAttribute('height', _dotH); svgEl.style.height = _dotH + 'px';
+    overlay.appendChild(svgEl);
+    return; // grid fully handled — skip ruled-line loop below
+  }
 
   viewerLines.forEach(function(el) {
     var r = el.getBoundingClientRect();
@@ -9294,6 +9537,37 @@ function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleCo
     });
   }
 
+
+
+  // For graph paper: add vertical lines at spacing intervals across the full
+  // overlay width. Vertical lines don't need a gap for headings — a vertical
+  // line running through a heading reads fine visually. They DO need to start
+  // from totalOffset (same as horizontal lines) so they don't appear in the
+  // title area above the text column. Uses the same bluish-gray tint as the
+  // CSS gradient path for graph, derived from the same tone/isDark inputs.
+  if (style === 'graph') {
+    var _graphCol = (_isDarkBg !== undefined)
+      ? (_isDarkBg ? 'rgba(180,200,230,0.18)' : 'rgba(70,110,160,0.17)')
+      : ruleColor; // fallback if called without isDarkBg
+    var _gCols = Math.ceil(W / spacing) + 2;
+    for (var _gi = 0; _gi <= _gCols; _gi++) {
+      var _gx = _gi * spacing;
+      var _gvl = document.createElementNS(svgNS, 'line');
+      _gvl.setAttribute('x1', _gx); _gvl.setAttribute('x2', _gx);
+      _gvl.setAttribute('y1', totalOffset); _gvl.setAttribute('y2', newH);
+      _gvl.setAttribute('stroke', _graphCol); _gvl.setAttribute('stroke-width', '1');
+      svgEl.appendChild(_gvl);
+    }
+    // Also recolor horizontal lines in the SVG to match the graph blue tint
+    // (they were drawn using ruleColor above, which might be black/white).
+    // Re-stroke all existing line elements that are horizontal (y1 === y2).
+    svgEl.querySelectorAll('line').forEach(function(ln) {
+      if (ln.getAttribute('y1') === ln.getAttribute('y2')) {
+        ln.setAttribute('stroke', _graphCol);
+      }
+    });
+  }
+
   overlay.appendChild(svgEl);
 }
 
@@ -9365,7 +9639,8 @@ const DEFAULT_SETTINGS = {
   tagScope: 'block',
   showToolbarCollapseTab: true,
   noteEditingMode: 'both', // 'both', 'typing', 'rronly'
-  wrapNoteNames: false,
+  wrapNoteNames: false,      // wrap long note names to up to 3 lines
+  showNotePreview: true,     // show first-line content preview below note name in list
   speakInQuiet: false,
   alwaysSpeakWholeNote: false,
   theme: 'auto',
@@ -9385,8 +9660,10 @@ const DEFAULT_SETTINGS = {
   fontVariantNumeric: null, // null=unset, or tabular-nums/oldstyle-nums/lining-nums
   lightBgColor: '#f5f0e8',
   lightFgColor: '#2a2520',
+  lightNotePreviewColor: '#6b6258',  // note preview text color in light mode (default = --fg2)
   darkBgColor: '#1e1c1a',
   darkFgColor: '#f0ebe0',
+  darkNotePreviewColor: '#b8b0a0',   // note preview text color in dark mode (default = dark --fg2)
   accentColor: '#5b7c6e',
   voiceURI: '',
   speechRate: 0.9,
@@ -10426,6 +10703,7 @@ function applySettings() {
   document.body.classList.toggle('typing-mode-only', _nem === 'typing');
   document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
   document.body.classList.toggle('wrap-note-names', !!settings.wrapNoteNames);
+  document.body.classList.toggle('hide-note-preview', settings.showNotePreview === false);
   document.body.classList.toggle('tag-color-borders', !!settings.tagColorBorders);
   document.body.classList.toggle('tag-color-pills', !!settings.tagColorPills);
   document.body.classList.toggle('toolbar-collapsed', !!settings.toolbarCollapsed);
@@ -10661,6 +10939,11 @@ function applySettings() {
       body.style.setProperty('--bg-dialog', lightenHex(activeBg, 15));
     }
   }
+  // Note preview text color — set AFTER the if(useDark) block so it always
+  // fires regardless of which branch ran. (Was accidentally inside if(!useDark)
+  // which meant dark mode never applied darkNotePreviewColor.)
+  var _previewCol = useDark ? (settings.darkNotePreviewColor || '#b8b0a0') : (settings.lightNotePreviewColor || '#6b6258');
+  body.style.setProperty('--note-preview-color', _previewCol);
   if (activeFg) {
     body.style.setProperty('--fg', activeFg);
   }
@@ -15111,6 +15394,12 @@ function updateSwatches() {
   }
   markRow('light-bg-swatches', settings.lightBgColor || '#f5f0e8');
   markRow('light-fg-swatches', settings.lightFgColor || '#2a2520');
+  markRow('light-preview-color-swatches', settings.lightNotePreviewColor || '#6b6258');
+  var _lpvLabel = document.getElementById('hex-label-light-preview-color');
+  if (_lpvLabel) _lpvLabel.textContent = settings.lightNotePreviewColor || '#6b6258';
+  markRow('dark-preview-color-swatches', settings.darkNotePreviewColor || '#b8b0a0');
+  var _dpvLabel = document.getElementById('hex-label-dark-preview-color');
+  if (_dpvLabel) _dpvLabel.textContent = settings.darkNotePreviewColor || '#b8b0a0';
   markRow('dark-bg-swatches', settings.darkBgColor || '#1e1c1a');
   markRow('dark-fg-swatches', settings.darkFgColor || '#f0ebe0');
   markRow('accent-swatches', settings.accentColor || '#5b7c6e');
@@ -15417,6 +15706,7 @@ function openSettings() {
   var tcpToggle=document.getElementById('tag-color-pills-toggle'); if(tcpToggle)tcpToggle.checked=!!settings.tagColorPills;
   var _tsR=document.querySelector('#tag-scope-seg input[value="'+(settings.tagScope||'block')+'"]'); if(_tsR)_tsR.checked=true;
   var wnnToggle=document.getElementById('wrap-note-names-toggle'); if(wnnToggle)wnnToggle.checked=!!settings.wrapNoteNames;
+  var snpToggle=document.getElementById('show-note-preview-toggle'); if(snpToggle)snpToggle.checked=settings.showNotePreview!==false;
   var siqToggle=document.getElementById('speak-in-quiet-toggle'); if(siqToggle)siqToggle.checked=!!settings.speakInQuiet;
   var aswToggle=document.getElementById('always-speak-whole-toggle'); if(aswToggle)aswToggle.checked=!!settings.alwaysSpeakWholeNote;
   var dvmRow=document.getElementById('default-view-mode-row'); if(dvmRow)dvmRow.style.display=(settings.noteEditingMode==='typing'||settings.noteEditingMode==='rronly')?'none':'';
@@ -17828,9 +18118,10 @@ function makeImportFolderName(label) {
   // class), AND no dynamic-section fallback either — hiding one of these
   // from the toolbar via Settings makes it inaccessible until shown
   // again, rather than relocating it into the More menu.
-  var TOOLBAR_ONLY_BUTTON_IDS = ['tap-to-edit-btn', 'check-mode-btn', 'add-blank-line-btn'];
+  var TOOLBAR_ONLY_BUTTON_IDS = ['tap-to-edit-btn', 'check-mode-btn', 'add-blank-line-btn', 'toolbar-help-btn'];
 
   var HIDEABLE_BUTTONS = [
+    { id: 'toolbar-help-btn',        label: 'Toolbar help' },
     { id: 'tap-to-edit-btn',        label: 'Tap to edit' },
     { id: 'undo-btn',               label: 'Undo' },
     { id: 'redo-btn',               label: 'Redo' },
@@ -17874,7 +18165,7 @@ function makeImportFolderName(label) {
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -20072,6 +20363,8 @@ function makeImportFolderName(label) {
   }
   wireSwatchRow('light-bg-swatches', 'lightBgColor');
   wireSwatchRow('light-fg-swatches', 'lightFgColor');
+  wireSwatchRow('light-preview-color-swatches', 'lightNotePreviewColor', '#6b6258', 'hex-label-light-preview-color');
+  wireSwatchRow('dark-preview-color-swatches', 'darkNotePreviewColor', '#b8b0a0', 'hex-label-dark-preview-color');
   wireSwatchRow('dark-bg-swatches', 'darkBgColor');
   wireSwatchRow('dark-fg-swatches', 'darkFgColor');
   wireSwatchRow('accent-swatches', 'accentColor');
@@ -22617,11 +22910,147 @@ function makeImportFolderName(label) {
   document.getElementById('tap-to-edit-btn').addEventListener('click', function() {
     if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode();
   });
-  // (Tap to Edit no longer has a static More menu item — it's dynamic-only now.
-  // If hidden from the toolbar it will only be reachable via the dynamic
-  // section of the More menu, built by rebuildMoreMenuItems().)
+  document.getElementById('tap-to-edit-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('tap-to-edit-btn').addEventListener('click', function() {
+    if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode();
+  });
 
-  // Viewer line tap in edit-block mode
+  // ── Toolbar Help (?) button ───────────────────────────────────────────────
+  // Button descriptions: id → { name, desc }
+  var _TOOLBAR_HELP_UPPER = [
+    { id: 'back-btn',        name: 'Back',           desc: 'Return to the notes list. Your note is saved automatically.' },
+    { id: 'speak-btn',       name: 'Speak',          desc: 'Read the note aloud using text-to-speech. Tap Stop to end.' },
+    { id: 'stop-btn',        name: 'Stop',           desc: 'Stop text-to-speech playback.' },
+    { id: 'copy-btn',        name: 'Copy',           desc: 'Copy selected text to the clipboard. If nothing is selected, copies everything.' },
+    { id: 'delete-line-btn', name: 'Cut lines',      desc: 'Cut selected lines to the clipboard, removing them from the note. Uses scissors icon.' },
+    { id: 'paste-btn',       name: 'Paste',          desc: 'Paste clipboard text at the cursor.' },
+    { id: 'select-all-btn',  name: 'Select all',     desc: 'Select all text in the note.' },
+    { id: 'view-mode-btn',   name: 'Read & Revise',  desc: 'Switch between Typing mode (editable) and Read & Revise mode (formatted, tappable checkboxes).' },
+  ];
+  var _TOOLBAR_HELP_LOWER = [
+    { id: 'tap-to-edit-btn',      name: 'Tap to edit',        desc: 'Enables "tap to edit" mode — tap anywhere in Read & Revise view to jump into editing at that spot.' },
+    { id: 'toolbar-help-btn',     name: 'Toolbar help',       desc: 'Shows this cheat sheet of all toolbar buttons.' },
+    { id: 'move-mode-btn',        name: 'Move lines',         desc: 'Drag-to-reorder mode. Tap a line and drag it up or down. Tap again or use Done to exit.' },
+    { id: 'dictate-btn',          name: 'Dictate',            desc: 'Start voice dictation. Speak to insert text hands-free.' },
+    { id: 'dismiss-keyboard-btn', name: 'Done typing',        desc: 'Dismiss the keyboard without leaving the note.' },
+    { id: 'indent-btn',           name: 'Indent',             desc: 'Indent the selected line(s) one level to the right.' },
+    { id: 'dedent-btn',           name: 'Unindent',           desc: 'Move the selected line(s) one indent level to the left.' },
+    { id: 'code-fence-btn',       name: 'Code block',         desc: 'Wrap the selected text in a fenced code block (``` markers).' },
+    { id: 'undo-btn',             name: 'Undo',               desc: 'Undo the last edit.' },
+    { id: 'redo-btn',             name: 'Redo',               desc: 'Redo the last undone edit.' },
+    { id: 'add-blank-line-btn',   name: 'Add blank line',     desc: 'Insert a blank line after the current line in Read & Revise mode.' },
+    { id: 'check-mode-btn',       name: 'Check state',        desc: 'Check or uncheck all selected checkbox lines at once.' },
+    { id: 'toggle-checkbox-btn',  name: 'Toggle checkbox',    desc: 'Convert the current line to a checkbox item (- [ ]), or remove the checkbox.' },
+    { id: 'quick-add-btn',        name: 'Quick add',          desc: 'Open the Add Text to Note dialog — insert text at the top, bottom, before/after a specific line, or after a divider.' },
+    { id: 'bold-mode-btn',        name: 'Bold',               desc: 'Make selected text bold (**bold**).' },
+    { id: 'italic-mode-btn',      name: 'Italic',             desc: 'Make selected text italic (*italic*).' },
+    { id: 'heading-btn',          name: 'Heading',            desc: 'Cycle the current line through heading levels H1–H6, then back to normal text.' },
+    { id: 'highlight-mode-btn',   name: 'Highlight',          desc: 'Apply the chosen highlight color to selected text (==highlighted==).' },
+    { id: 'color-mode-btn',       name: 'Color',              desc: 'Apply the chosen text color to selected text ({color}text{/color}).' },
+    { id: 'crossout-group',       name: 'Strikethrough',      desc: 'Toggle strikethrough formatting (~~text~~) on selected text.' },
+    { id: 'find-btn',             name: 'Find in note',       desc: 'Open the search bar to find and highlight text within this note.' },
+    { id: 'font-size-btn',        name: 'Text size',          desc: 'Adjust the font size for this note.' },
+    { id: 'ruler-btn',            name: 'Reading ruler',      desc: 'Show or hide a horizontal guide line to help you track your place while reading.' },
+    { id: 'theme-btn',            name: 'Light / Dark',       desc: 'Switch the app between light mode, dark mode, and auto (follows your system setting).' },
+    { id: 'jump-to-btn',          name: 'Jump to heading',    desc: 'Open a menu to jump to any heading (# Heading) in this note.' },
+    { id: 'jump-next-section-btn',name: 'Next section',       desc: 'Scroll to the next heading in the note, one at a time.' },
+    { id: 'outline-mode-btn',     name: 'Outline mode',       desc: 'Toggle collapsible chevrons on checklist and heading lines so you can collapse/expand sections.' },
+    { id: 'show-tags-btn',        name: 'Show @tags',         desc: 'Toggle visibility of @tag pills in Read & Revise mode.' },
+    { id: 'tag-filter-btn',       name: 'Filter by tag',      desc: 'Open the tag filter bar to show only lines with specific @tags.' },
+    { id: 'insert-tag-btn',       name: 'Insert tag',         desc: 'Pick and insert a @tag at the cursor position.' },
+    { id: 'tag-presence-btn',     name: 'Has tags',           desc: 'Toggle a filter that shows only notes containing @tags in the notes list.' },
+    { id: 'uncheck-all-btn',      name: 'Uncheck all',        desc: 'Remove all checkmarks from checkbox items in this note at once.' },
+    { id: 'hide-completed-btn',   name: 'Hide completed',     desc: 'Hide all checked (completed) checkbox lines in Read & Revise mode.' },
+    { id: 'scroll-top-btn',       name: 'Scroll to top',      desc: 'Jump to the very beginning of the note.' },
+    { id: 'scroll-bottom-btn',    name: 'Scroll to bottom',   desc: 'Jump to the end of the note.' },
+    { id: 'share-note-btn',       name: 'Share note',         desc: 'Share this note via the system share sheet (copy, email, messages, etc.).' },
+    { id: 'copy-for-speech-btn',  name: 'Copy for speech',    desc: 'Copy the note text with markdown formatting stripped, ready for pasting into a text-to-speech app.' },
+    { id: 'share-for-speech-btn', name: 'Share for speech',   desc: 'Share the note text with formatting stripped, for use in external text-to-speech apps.' },
+    { id: 'print-btn',            name: 'Print',              desc: 'Print this note using the system print dialog.' },
+    { id: 'delete-note-btn',      name: 'Delete note',        desc: 'Permanently delete this note. A confirmation dialog appears first.' },
+    { id: 'settings-btn-toolbar', name: 'Settings',           desc: 'Open the Settings dialog to change font, colors, toolbar layout, and more.' },
+  ];
+
+  function _buildToolbarHelpContent() {
+    var bottomBar = document.getElementById('note-bottom-bar');
+    var html = '';
+    var _sectionStyle = 'margin:0 0 8px;font-size:0.78em;font-weight:700;color:var(--fg3);letter-spacing:0.06em;text-transform:uppercase;';
+    // Layout: left column = icon, right column = name + description stacked vertically
+    var _itemStyle = 'padding:10px 0;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;';
+    var _iconStyle = 'width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--fg);';
+    var _textColStyle = 'flex:1;min-width:0;';
+    var _nameStyle = 'font-weight:600;color:var(--fg);font-size:0.95em;line-height:1.3;margin-bottom:3px;';
+    var _descStyle = 'color:var(--fg2);font-size:0.85em;line-height:1.4;';
+
+    function _getIconHtml(id) {
+      var el = document.getElementById(id);
+      if (!el) return '<div style="' + _iconStyle + '"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>';
+      var svg = el.querySelector('svg');
+      if (!svg) return '<div style="' + _iconStyle + '">?</div>';
+      var clone = svg.cloneNode(true);
+      clone.setAttribute('width', '30');
+      clone.setAttribute('height', '30');
+      clone.style.cssText = 'width:30px;height:30px;pointer-events:none;display:block;flex-shrink:0;';
+      // Ensure icon is dark/visible regardless of original color
+      if (!clone.getAttribute('stroke') || clone.getAttribute('stroke') === 'currentColor') {
+        clone.style.color = 'var(--fg)';
+      }
+      return '<div style="' + _iconStyle + '">' + clone.outerHTML + '</div>';
+    }
+
+    function _renderList(list) {
+      var out = '';
+      list.forEach(function(b) {
+        out += '<div style="' + _itemStyle + '">' +
+          _getIconHtml(b.id) +
+          '<div style="' + _textColStyle + '">' +
+            '<div style="' + _nameStyle + '">' + b.name + '</div>' +
+            '<div style="' + _descStyle + '">' + b.desc + '</div>' +
+          '</div>' +
+        '</div>';
+      });
+      return out;
+    }
+
+    // Always show ALL upper toolbar buttons — fixed set regardless of current mode
+    html += '<div style="' + _sectionStyle + '">Upper Toolbar</div>';
+    html += _renderList(_TOOLBAR_HELP_UPPER);
+
+    // Lower toolbar: read from settings (persistent) not DOM visibility (mode-dependent).
+    var _currentOrder = (settings.toolbarOrder && settings.toolbarOrder.length)
+      ? settings.toolbarOrder : DEFAULT_TOOLBAR_ORDER;
+    var _hiddenSet = {};
+    (settings.toolbarHidden || []).forEach(function(id) { _hiddenSet[id] = true; });
+    var _lowerMap = {};
+    _TOOLBAR_HELP_LOWER.forEach(function(b) { _lowerMap[b.id] = b; });
+
+    var _enabledBtns = _currentOrder
+      .filter(function(id) { return _lowerMap[id] && !_hiddenSet[id]; })
+      .map(function(id) { return _lowerMap[id]; });
+    html += '<div style="' + _sectionStyle + 'margin-top:14px;">Lower Toolbar — Current Order</div>';
+    html += _renderList(_enabledBtns);
+
+    var _disabledBtns = _TOOLBAR_HELP_LOWER.filter(function(b) { return !!_hiddenSet[b.id]; });
+    if (_disabledBtns.length) {
+      html += '<div style="' + _sectionStyle + 'margin-top:14px;">Disabled Buttons (hidden in Settings → Toolbar)</div>';
+      html += '<div style="font-size:0.82em;color:var(--fg3);margin-bottom:8px;">These buttons are turned off in Settings → Toolbar. Tap to re-enable them.</div>';
+      html += _renderList(_disabledBtns);
+    }
+    return html;
+  }
+
+  var _tbHelpOverlay = document.getElementById('toolbar-help-overlay');
+  var _tbHelpBody = document.getElementById('toolbar-help-body');
+  document.getElementById('toolbar-help-btn').addEventListener('click', function() {
+    if (_tbHelpBody) _tbHelpBody.innerHTML = _buildToolbarHelpContent();
+    if (_tbHelpOverlay) { _tbHelpOverlay.style.display = 'flex'; }
+  });
+  document.getElementById('toolbar-help-close').addEventListener('click', function() {
+    if (_tbHelpOverlay) _tbHelpOverlay.style.display = 'none';
+  });
+  _tbHelpOverlay.addEventListener('click', function(e) {
+    if (e.target === _tbHelpOverlay) _tbHelpOverlay.style.display = 'none';
+  });
   document.getElementById('note-viewer').addEventListener('click', function(e) {
     if (!_editBlockMode) return;
     var lineDiv = e.target.closest('.viewer-line');
@@ -23032,6 +23461,11 @@ function makeImportFolderName(label) {
     document.body.classList.toggle('wrap-note-names', this.checked);
     updateSaveBtnState();
   });
+  document.getElementById('show-note-preview-toggle').addEventListener('change', function() {
+    settings.showNotePreview = this.checked;
+    document.body.classList.toggle('hide-note-preview', !this.checked);
+    updateSaveBtnState();
+  });
   document.getElementById('speak-in-quiet-toggle').addEventListener('change', function() {
     settings.speakInQuiet = this.checked;
     document.body.classList.toggle('speak-in-quiet', this.checked);
@@ -23068,7 +23502,7 @@ function makeImportFolderName(label) {
     var marginRow = document.getElementById('margin-line-color-row');
     var show = style !== 'none';
     if (toneRow) toneRow.style.display = show ? '' : 'none';
-    // The main nudge row is for ruled/legalPad; grid gets its own separate
+    // The main nudge row is for ruled/legalPad/graph; grid gets its own separate
     // row since dots and bands need meaningfully different alignment values.
     if (nudgeRow) nudgeRow.style.display = (show && style !== 'grid') ? '' : 'none';
     if (gridNudgeRow) gridNudgeRow.style.display = (style === 'grid') ? '' : 'none';
