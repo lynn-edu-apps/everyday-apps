@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1472 -->
+<!-- Remember App - Version 0.1485 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1472
+  Version 0.1485
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -8839,7 +8839,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1472';
+const APP_VERSION = '0.1485';
 
 
 
@@ -9065,6 +9065,13 @@ function _applyRuledLinesImpl() {
     if (_titleRowOff) _titleRowOff.style.borderBottomColor = '';
     document.querySelectorAll('.viewer-line.list-cont-checkbox, .viewer-line.list-cont-checkbox-color')
       .forEach(function(el) { el.style.transform = ''; });
+    // Remove any dot-grid bottom padding added to heading elements to keep
+    // their height on grid — must be removed when grid turns off so headings
+    // return to their natural CSS height.
+    document.querySelectorAll('[data-dot-grid-padded]').forEach(function(el) {
+      el.style.paddingBottom = '';
+      delete el.dataset.dotGridPadded;
+    });
     // Restore the user's actual Blank line height setting — see the
     // override below for why this needs restoring, not just left alone.
     document.documentElement.style.setProperty('--blank-line-height-factor',
@@ -9313,7 +9320,13 @@ function _applyRuledLinesImpl() {
     overlay.style.backgroundImage = 'none';
     overlay.style.backgroundSize = 'auto';
     overlay.style.backgroundPosition = '0px 0px';
-    drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleColor, legalPadMargin, marginRgba, style, bgColor, _isDarkBg);
+    // For the dot grid, pass gridOffset (uses gridLineNudge) not totalOffset
+    // (uses ruledLineNudge). The CSS gradient path uses gridOffset; the SVG
+    // path must use the same value to produce identical dot positions.
+    var _gridOrRuledOffset = (style === 'grid') ?
+      (paddingTop + titleRowHeight + cal.fontLeadingGap + (settings.gridLineNudge !== undefined ? settings.gridLineNudge : -14.5)) :
+      totalOffset;
+    drawHeadingGapLines(overlay, viewer, area, spacing, _gridOrRuledOffset, ruleColor, legalPadMargin, marginRgba, style, bgColor, _isDarkBg);
   } else if (viewerVisible) {
     // No headings — remove any leftover SVG from a previous render where
     // headings existed; the gradient-only approach is sufficient.
@@ -9332,6 +9345,19 @@ function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleCo
   var overlayRect = overlay.getBoundingClientRect();
   var W = overlayRect.width;
   if (!W) return; // not yet laid out
+
+  // Remove any dot-grid padding from a previous render before measuring.
+  // If we don't clear it, re-measurements see stale inflated heading heights,
+  // causing cumulative drift on subsequent calls.
+  if (style === 'grid') {
+    document.querySelectorAll('[data-dot-grid-padded]').forEach(function(el) {
+      el.style.paddingBottom = '';
+      delete el.dataset.dotGridPadded;
+    });
+    // Re-measure overlay after clearing (heading heights may have changed)
+    overlayRect = overlay.getBoundingClientRect();
+    W = overlayRect.width;
+  }
 
   var viewerLines = Array.from(viewer.querySelectorAll('.viewer-line'));
   if (settings.debugLoggingEnabled) {
@@ -9382,71 +9408,181 @@ function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleCo
     _pat.appendChild(_dotEl);
     _defsEl.appendChild(_pat);
     svgEl.insertBefore(_defsEl, svgEl.firstChild);
-    // Per-segment patterns: each body run between headings gets its own SVG
-    // <pattern> anchored to the MEASURED Y of that run's first text line.
-    // Eliminates drift: dots always at exact text-line positions regardless
-    // of heading heights. Gap at headings = no rect drawn there (implicit).
-    var _segs = []; // {anchorY, top, bottom}
-    var _sAnchor = -1, _sTop = -1;
+    // Global dot pattern anchored to totalOffset — same anchor as the CSS gradient
+    // path (no-headings case). This ensures dots appear at identical absolute
+    // positions whether the note has headings or not, preserving the user's
+    // nudge calibration. Body rects are drawn for each non-heading body run;
+    // heading areas have no rect (implicit gap).
+    //
+    // HEADING PADDING — two-phase approach:
+    // Phase 1: measure all (headingEl, nextBodyTop) pairs with NO DOM changes.
+    // Phase 2: apply padding top-to-bottom with cumulative shift tracking.
+    //
+    // Root cause of previous 2px error: formula used headingBottom, but body
+    // text starts at headingBottom + some_gap (margin/padding between elements).
+    // Fix: measure where the ACTUAL first body line is, use that as the target.
+    //
+    // Multiple headings: each heading's extra padding shifts all subsequent
+    // elements down. We track the cumulative shift so each heading's formula
+    // uses the adjusted (post-padding) body position, not the raw measured one.
+    var _gln5 = (settings.gridLineNudge !== undefined ? settings.gridLineNudge : -14.5);
 
+    // Find the first actual body-text line in the note — skip headings, blank lines,
+    // and horizontal rules, but don't stop at them. A note can start with any
+    // number of headings/blanks/HRs before the first text line, and per-note themes
+    // may change font/line-height, so we never hardcode a position.
+    // Using the measured Y of the first real body line as _Y1g means:
+    //   _patAnchor = firstBodyTop + gridLineNudge
+    //   → dots appear at gridLineNudge + spacing/2 from each body line top
+    //   → that exact offset is what the user calibrated (NOT hardcoded — varies with
+    //      gridLineNudge and spacing, which depend on user settings and font size)
+    // Phase2[0] (heading before this line) gets extra=0 (body already at reference)
+    // All subsequent segments are aligned to this same measured reference.
+    var _measFirstBody = null;
+    for (var _fbi = 0; _fbi < viewerLines.length; _fbi++) {
+      var _fbl = viewerLines[_fbi];
+      if (_fbl.classList.contains('blank-viewer-line')) continue;  // skip blank lines
+      var _fbfc = _fbl.firstElementChild;
+      if (_fbfc && /viewer-h[1-6]/.test(_fbfc.className)) continue; // skip headings (changed from break)
+      if (_fbfc && _fbfc.tagName === 'HR') continue;                 // skip horizontal rules
+      var _fbr = _fbl.getBoundingClientRect();
+      if (_fbr.height >= 2) { _measFirstBody = _fbr.top - overlayRect.top; break; }
+    }
+    // Fallback: empty note or all headings (extremely rare)
+    var _Y1g = (_measFirstBody !== null) ? _measFirstBody : (totalOffset - _gln5);
+    // _patAnchor = totalOffset (= gridOffset, same anchor as CSS gradient path).
+    // This makes SVG dots in heading-note R&R sit at the SAME absolute positions
+    // as CSS dots in no-heading notes — they are identical: totalOffset + n*spacing + spacing/2.
+    // Previously: _patAnchor = _Y1g + _gln5 = measFirst + gridLineNudge, which
+    // differed from totalOffset by (measFirst - totalOffset + gridLineNudge) pixels
+    // (6px in testing), causing a visible grid shift between heading and no-heading
+    // notes in R&R mode. One-line fix.
+    var _patAnchor = totalOffset;
+
+    // Phase 1: measure
+    var _hMeas = [];
+    viewerLines.forEach(function(el, idx) {
+      var fc = el.firstElementChild;
+      if (!fc || !/viewer-h[1-6]/.test(fc.className)) return;
+      for (var j = idx + 1; j < viewerLines.length; j++) {
+        var nextEl = viewerLines[j];
+        var nfc = nextEl.firstElementChild;
+        if (nfc && /viewer-h[1-6]/.test(nfc.className)) break; // next heading
+        // Skip blank viewer lines — they have height >= 2 but are visual
+        // spacers between heading and content, not real content lines.
+        // Aligning blank lines to the grid doesn't help since their height
+        // (--blank-line-height-factor × fontSize) is not a multiple of spacing,
+        // leaving the actual first content line still off-grid.
+        if (nextEl.classList.contains('blank-viewer-line')) continue;
+        var nr = nextEl.getBoundingClientRect();
+        if (nr.height >= 2) {
+          _hMeas.push({ el: el, bodyTop: nr.top - overlayRect.top, bodyEl: nextEl });
+          break;
+        }
+      }
+    });
+
+    // Phase 2: compute and apply padding with cumulative tracking
+    if (settings.debugLoggingEnabled) {
+      logDebugAction('dotGrid: totalOffset=' + totalOffset.toFixed(1) +
+        ' _gln5=' + _gln5.toFixed(1) + ' _Y1g=' + _Y1g.toFixed(1) +
+        ' _patAnchor=' + _patAnchor.toFixed(1) +
+        ' measFirst=' + (_measFirstBody !== null ? _measFirstBody.toFixed(1) : 'null(formula)') +
+        ' spacing=' + spacing.toFixed(1) + ' headings=' + _hMeas.length);
+      logDebugAction('  noHdg dot rows would be at: ' +
+        [0,1,2,3].map(function(n){ return (totalOffset + n*spacing + spacing/2).toFixed(1); }).join(', ') + '...');
+      _hMeas.forEach(function(m, i) {
+        logDebugAction('  hMeas[' + i + '] bodyTop(raw)=' + m.bodyTop.toFixed(1));
+      });
+    }
+    var _cumExtra = 0;
+    _hMeas.forEach(function(m, i2) {
+      // Adjust measured body position for cumulative shifts from headings above
+      var adjBodyTop = m.bodyTop + _cumExtra;
+      // Compute extra so that (adjBodyTop + extra) ≡ _Y1g (mod spacing),
+      // i.e. the body line lands on the same grid class as no-heading notes
+      var delta = ((_Y1g - adjBodyTop) % spacing + spacing) % spacing;
+      var extra = (delta < 0.5) ? 0 : delta;
+      var _fp = adjBodyTop + extra;
+      m.finalBodyPos = _fp; // stored for Phase 3 verification
+      if (settings.debugLoggingEnabled) {
+        logDebugAction('  Phase2[' + i2 + '] adjBodyTop=' + adjBodyTop.toFixed(1) +
+          ' delta=' + delta.toFixed(1) + ' extra=' + extra.toFixed(1) +
+          ' cumBefore=' + _cumExtra.toFixed(1) +
+          ' finalBodyPos=' + _fp.toFixed(1) +
+          ' nearestDot=' + (_patAnchor + Math.round((_fp - _patAnchor) / spacing) * spacing + spacing/2).toFixed(1));
+      }
+      if (extra > 0.5) {
+        var curPb = parseFloat(getComputedStyle(m.el).paddingBottom) || 0;
+        m.el.style.paddingBottom = (curPb + extra) + 'px';
+        m.el.dataset.dotGridPadded = '1';
+      }
+      _cumExtra += extra;
+    });
+    if (settings.debugLoggingEnabled) {
+      logDebugAction('  dotGrid cumExtra=' + _cumExtra.toFixed(1));
+    }
+    overlayRect = overlay.getBoundingClientRect();
+
+    // Phase 3: re-measure actual body positions AFTER padding and overlay re-measure.
+    // Verifies that the DOM actually moved body lines to the computed finalBodyPos.
+    if (settings.debugLoggingEnabled) {
+      _hMeas.forEach(function(m, i3) {
+        if (!m.bodyEl) return;
+        var verR = m.bodyEl.getBoundingClientRect();
+        var actualTop = verR.top - overlayRect.top;
+        var expected = m.finalBodyPos || 0;
+        var ndot = _patAnchor + Math.round((actualTop - _patAnchor) / spacing) * spacing + spacing/2;
+        logDebugAction('  Verify[' + i3 + ']' +
+          ' expected=' + expected.toFixed(1) +
+          ' actual=' + actualTop.toFixed(1) +
+          ' diff=' + (actualTop - expected).toFixed(1) +
+          ' nearestDot=' + ndot.toFixed(1) +
+          ' dotOffset=' + (ndot - actualTop).toFixed(1));
+      });
+    }
+
+    var _pat2 = document.createElementNS(svgNS, 'pattern');
+    _pat2.setAttribute('id', _gPatId);
+    _pat2.setAttribute('patternUnits', 'userSpaceOnUse');
+    _pat2.setAttribute('width', spacing);
+    _pat2.setAttribute('height', spacing);
+    // totalOffset already includes gridLineNudge — same value the CSS path uses
+    _pat2.setAttribute('patternTransform', 'translate(0,' + _patAnchor + ')');
+    var _dot2 = document.createElementNS(svgNS, 'circle');
+    _dot2.setAttribute('cx', spacing / 2); _dot2.setAttribute('cy', spacing / 2);
+    _dot2.setAttribute('r', _dotR); _dot2.setAttribute('fill', _dotColor);
+    _pat2.appendChild(_dot2); _defsEl.appendChild(_pat2);
+
+    var _inBodyG = false, _bodyTopG = 0;
+    var _flushG = function(endY) {
+      if (!_inBodyG || endY <= _bodyTopG) return;
+      var _br = document.createElementNS(svgNS, 'rect');
+      _br.setAttribute('x', 0); _br.setAttribute('y', _bodyTopG);
+      _br.setAttribute('width', W); _br.setAttribute('height', endY - _bodyTopG);
+      _br.setAttribute('fill', 'url(#' + _gPatId + ')');
+      svgEl.appendChild(_br); _inBodyG = false;
+    };
     viewerLines.forEach(function(el) {
       var r = el.getBoundingClientRect();
       var elTop = r.top - overlayRect.top;
       if (r.height < 2) return;
       var fc = el.firstElementChild;
       if (fc && /viewer-h[1-6]/.test(fc.className)) {
-        if (_sAnchor >= 0) { _segs.push({anchorY:_sAnchor, top:_sTop, bottom:elTop}); _sAnchor=-1; _sTop=-1; }
+        _flushG(elTop);
       } else {
-        if (_sAnchor < 0) {
-          // Apply gridLineNudge to anchor so dots sit at the same relative
-          // position to text lines as in notes without headings (CSS path).
-          var _gln = (settings.gridLineNudge !== undefined ? settings.gridLineNudge : -14.5);
-          _sAnchor = elTop + _gln;
-          _sTop = elTop;
-        }
+        if (!_inBodyG) { _bodyTopG = elTop; _inBodyG = true; }
       }
     });
     var _lastRg = viewerLines.length ? viewerLines[viewerLines.length-1].getBoundingClientRect() : null;
     var _lastBotG = _lastRg ? (_lastRg.bottom - overlayRect.top) : totalOffset;
-    if (_sAnchor >= 0) _segs.push({anchorY:_sAnchor, top:_sTop, bottom:_lastBotG});
-
-    if (settings.debugLoggingEnabled) {
-      logDebugAction('dotGrid: ' + _segs.length + ' segments, totalOffset=' + totalOffset.toFixed(1) + ' spacing=' + spacing.toFixed(1));
-      _segs.forEach(function(s,i){ logDebugAction('  seg['+i+'] anchor='+s.anchorY.toFixed(1)+' top='+s.top.toFixed(1)+' bot='+s.bottom.toFixed(1)); });
-    }
-
-    _segs.forEach(function(seg, idx) {
-      var pid = _gPatId + '-s' + idx;
-      var sp = document.createElementNS(svgNS, 'pattern');
-      sp.setAttribute('id', pid); sp.setAttribute('patternUnits', 'userSpaceOnUse');
-      sp.setAttribute('width', spacing); sp.setAttribute('height', spacing);
-      sp.setAttribute('patternTransform', 'translate(0,' + seg.anchorY + ')');
-      var sd = document.createElementNS(svgNS, 'circle');
-      sd.setAttribute('cx', spacing/2); sd.setAttribute('cy', spacing/2);
-      sd.setAttribute('r', _dotR); sd.setAttribute('fill', _dotColor);
-      sp.appendChild(sd); _defsEl.appendChild(sp);
-      var sr = document.createElementNS(svgNS, 'rect');
-      sr.setAttribute('x', 0); sr.setAttribute('y', seg.top);
-      sr.setAttribute('width', W); sr.setAttribute('height', seg.bottom - seg.top);
-      sr.setAttribute('fill', 'url(#' + pid + ')');
-      svgEl.appendChild(sr);
-    });
-
-    var _bufAnchorG = _segs.length ? _segs[_segs.length-1].anchorY : totalOffset;
-    var _bpid = _gPatId + '-buf';
-    var _bp = document.createElementNS(svgNS, 'pattern');
-    _bp.setAttribute('id', _bpid); _bp.setAttribute('patternUnits', 'userSpaceOnUse');
-    _bp.setAttribute('width', spacing); _bp.setAttribute('height', spacing);
-    _bp.setAttribute('patternTransform', 'translate(0,' + _bufAnchorG + ')');
-    var _bd = document.createElementNS(svgNS, 'circle');
-    _bd.setAttribute('cx', spacing/2); _bd.setAttribute('cy', spacing/2);
-    _bd.setAttribute('r', _dotR); _bd.setAttribute('fill', _dotColor);
-    _bp.appendChild(_bd); _defsEl.appendChild(_bp);
-    var _br2 = document.createElementNS(svgNS, 'rect');
-    _br2.setAttribute('x',0); _br2.setAttribute('y', _lastBotG);
-    _br2.setAttribute('width', W); _br2.setAttribute('height', spacing * 14);
-    _br2.setAttribute('fill', 'url(#' + _bpid + ')');
-    svgEl.appendChild(_br2);
+    _flushG(_lastBotG);
+    // Buffer: continue dot grid below last content
+    var _bufR2 = document.createElementNS(svgNS, 'rect');
+    _bufR2.setAttribute('x', 0); _bufR2.setAttribute('y', _lastBotG);
+    _bufR2.setAttribute('width', W); _bufR2.setAttribute('height', spacing * 14);
+    _bufR2.setAttribute('fill', 'url(#' + _gPatId + ')');
+    svgEl.appendChild(_bufR2);
     var _dotH = _lastBotG + spacing * 14;
     svgEl.setAttribute('height', _dotH); svgEl.style.height = _dotH + 'px';
     overlay.appendChild(svgEl);
@@ -9839,6 +9975,22 @@ var restoreFromNoteTheme = function() {};   // replaced in init
 var updateThemeIndicator = function() {};   // replaced in init
 var updateNoteThemeMoreLabel = function() {}; // replaced in init
 var enterEditBlockMode = function() {}; // replaced in init
+// Smart-indent escape state — shared across note editor, Quick Add, edit block
+var _siActive=false, _siTA=null, _siPrefixStart=0, _siPrefixLen=0;
+var _siEscapeAt=0; // timestamp of last SI escape, for debouncing rapid Backspace events
+function _siSet(ta,start,len){_siActive=true;_siTA=ta;_siPrefixStart=start;_siPrefixLen=len;}
+function _siClear(){_siActive=false;_siTA=null;}
+// Returns true + modifies textarea if cursor is right after SI prefix with nothing typed.
+// Caller must e.preventDefault() when this returns true.
+function _siCheckAndClear(ta,e){
+  if(!_siActive||ta!==_siTA){_siClear();return false;}
+  if(ta.selectionStart!==ta.selectionEnd){_siClear();return false;}
+  if(ta.selectionStart!==_siPrefixStart+_siPrefixLen){_siClear();return false;}
+  var v=ta.value;
+  ta.value=v.slice(0,_siPrefixStart)+v.slice(_siPrefixStart+_siPrefixLen);
+  ta.setSelectionRange(_siPrefixStart,_siPrefixStart);
+  _siClear();return true;
+}
 var exitEditBlockMode = function() {}; // replaced in init
 var applyHideCompleted = function() {}; // replaced in init
 var applyTagPresenceFilter = function() {}; // replaced in init
@@ -13445,12 +13597,18 @@ function getSmartIndentPrefix(lineText) {
   var ws2 = m[3];
   var rawCheckbox = m[4];
   var ws3 = m[5] || '';
-  var prefix = ws1 + markerChar + ws2;
+  // Always use exactly one space after the marker regardless of how many
+  // spaces appear in the source line. iOS autocorrect can silently insert
+  // an extra space after certain words when Enter is pressed; if we copied
+  // ws2 verbatim, each Enter would carry forward one more space than the
+  // last, producing "- " → "-  " → "-   " accumulation. A canonical
+  // single space after the marker is always correct for list items.
+  var prefix = ws1 + markerChar + ' ';
   if (rawCheckbox) {
     // Colored checkbox [x:red]/[ :red] → carry the color forward, always fresh-unchecked
     var colorMatch = rawCheckbox.match(/:([a-z]+)/);
     prefix += colorMatch ? ('[ :' + colorMatch[1] + ']') : '[ ]';
-    prefix += ws3;
+    prefix += ' '; // always exactly one space after ] regardless of ws3
   }
   return prefix;
 }
@@ -16182,6 +16340,13 @@ function openTagPicker(callerContext) {
   var chips = document.getElementById('tag-picker-chips');
   var preview = document.getElementById('tag-picker-preview');
   if (!bar || !chips || !preview) return;
+  // When opened from a confirm-overlay dialog (quickadd, editblock), raise
+  // the tag picker above the dialog (z-index:10010). Reset on close.
+  if (callerContext === 'quickadd' || callerContext === 'editblock') {
+    bar.style.zIndex = '10020';
+  } else {
+    bar.style.zIndex = '';
+  }
   logDebugAction('Opened tag picker (' + callerContext + ')');
   chips.innerHTML = '';
 
@@ -19092,7 +19257,7 @@ function makeImportFolderName(label) {
 
   // Migration: remove retired buttons from saved order, add new ones
   // Retired = moved out of toolbar to More menu or removed entirely
-  var _retiredBtns = ['export-note-btn', 'color-swatch-cycle', 'scroll-top-btn', 'scroll-bottom-btn'];
+  var _retiredBtns = ['export-note-btn', 'color-swatch-cycle'];
   var _savedOrder = settings.toolbarOrder || [];
   // Remove any retired buttons from saved order
   _savedOrder = _savedOrder.filter(function(id) { return _retiredBtns.indexOf(id) === -1; });
@@ -19102,13 +19267,7 @@ function makeImportFolderName(label) {
   // be checked BEFORE insertMissingIdsAtDefaultPosition runs below, since
   // that function adds missing ids to the order — after which "was this
   // id missing" would no longer mean "has the user never seen this yet".
-  var _newHiddenByDefault = ['ruler-btn', 'theme-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn'];
   var _hiddenArr = settings.toolbarHidden || [];
-  _newHiddenByDefault.forEach(function(id) {
-    if (_savedOrder.indexOf(id) === -1 && _hiddenArr.indexOf(id) === -1) {
-      _hiddenArr.push(id);
-    }
-  });
   settings.toolbarHidden = _hiddenArr;
   // Insert any id that's in DEFAULT_TOOLBAR_ORDER but missing from the
   // user's saved order (e.g. a newly-added button like tap-to-edit-btn)
@@ -19703,7 +19862,11 @@ function makeImportFolderName(label) {
         e.shiftKey ? findPrev() : findNext();
         return;
       }
+      if (e.key !== 'Enter' && e.key !== 'Backspace') _siClear();
       var ed = this;
+      if (e.key === 'Enter' && _siActive && _siTA === ed) {
+        if (_siCheckAndClear(ed, e)) { e.preventDefault(); resizeEditor(); scheduleSave(); return; }
+      }
       var val = ed.value;
       var pos = ed.selectionStart;
       var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
@@ -19713,15 +19876,62 @@ function makeImportFolderName(label) {
         e.preventDefault();
         var before = val.substring(0, pos);
         var after = val.substring(ed.selectionEnd);
-        // If smartIndentBlankLine is on, add an extra blank line before the new item
         var inserted = settings.smartIndentBlankLine ? '\n\n' + prefix : '\n' + prefix;
         ed.value = before + inserted + after;
         var newPos = pos + inserted.length;
         ed.setSelectionRange(newPos, newPos);
+        _siSet(ed, pos + (settings.smartIndentBlankLine ? 2 : 1), prefix.length);
         resizeEditor();
         scheduleSave();
       }
     }
+  });
+
+  // Smart-indent beforeinput: handle Backspace escape and swipe-type extra space.
+  // iOS virtual keyboard doesn't reliably fire keydown for Backspace — use
+  // beforeinput with inputType='deleteContentBackward' as the primary handler.
+  // Also catches swipe-keyboard " word" insertion and strips the leading space.
+  document.getElementById('note-editor').addEventListener('beforeinput', function(e) {
+    if (!_siActive || _siTA !== this) return;
+    var ta = this;
+    if (e.inputType === 'deleteContentBackward') {
+      // Debounce: iOS sometimes fires multiple deleteContentBackward events in
+      // rapid succession even for a single brief tap. If we just escaped SI,
+      // suppress any follow-up deletions within 300ms to prevent the extra
+      // event from deleting the newline or characters in the previous line.
+      if (Date.now() - _siEscapeAt < 300) { e.preventDefault(); return; }
+      if (_siActive && _siTA === ta && ta.selectionStart === ta.selectionEnd) {
+        var _bpos = ta.selectionStart;
+        var _bval = ta.value;
+        var _bls  = _bval.lastIndexOf('\n', _bpos - 1) + 1;
+        var _blc  = _bval.substring(_bls, _bpos);
+        if (_blc.length > 0 && /^[ \t]*([-*+])[ \t]+(?:\[\s*(?:[xX]|:[a-z]+)?\s*\][ \t]+)?$/.test(_blc)) {
+          ta.value = _bval.slice(0, _bls) + _bval.slice(_bpos);
+          ta.setSelectionRange(_bls, _bls);
+          e.preventDefault();
+          _siEscapeAt = Date.now(); // arm debounce window
+          resizeEditor(); scheduleSave();
+        }
+      }
+      _siClear(); return;
+    }
+    if (e.inputType === 'insertText' && e.data && e.data.charAt(0) === ' ' &&
+        ta.selectionStart === _siPrefixStart + _siPrefixLen && ta.selectionStart === ta.selectionEnd) {
+      // iOS swipe keyboard is inserting " word" (space + word) right after our
+      // smart-indent prefix — strip the leading space before it lands.
+      e.preventDefault();
+      var stripped = e.data.slice(1);
+      if (stripped) {
+        var val = ta.value;
+        var _swPos = ta.selectionStart; // capture BEFORE ta.value= — iOS resets it to end
+        var _swEnd = ta.selectionEnd;
+        ta.value = val.slice(0, _swPos) + stripped + val.slice(_swEnd);
+        ta.setSelectionRange(_swPos + stripped.length, _swPos + stripped.length);
+        resizeEditor(); scheduleSave();
+      }
+      _siClear(); return;
+    }
+    _siClear(); // any other beforeinput ends the SI escape window
   });
 
   // ===== DICTATION (Speech-to-Text) =====
@@ -22910,10 +23120,6 @@ function makeImportFolderName(label) {
   document.getElementById('tap-to-edit-btn').addEventListener('click', function() {
     if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode();
   });
-  document.getElementById('tap-to-edit-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-  document.getElementById('tap-to-edit-btn').addEventListener('click', function() {
-    if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode();
-  });
 
   // ── Toolbar Help (?) button ───────────────────────────────────────────────
   // Button descriptions: id → { name, desc }
@@ -24459,9 +24665,12 @@ function makeImportFolderName(label) {
       if (e.shiftKey) { dedentLines(this); } else { indentLines(this); }
       return;
     }
-    // Smart indent: plain Enter inside quick-add textarea
+    if (e.key !== 'Enter' && e.key !== 'Backspace') _siClear();
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       var ed = this;
+      if (_siActive && _siTA === ed) {
+        if (_siCheckAndClear(ed, e)) { e.preventDefault(); return; }
+      }
       var val = ed.value;
       var pos = ed.selectionStart;
       var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
@@ -24469,9 +24678,6 @@ function makeImportFolderName(label) {
       var prefix = getSmartIndentPrefix(lineText);
       if (prefix !== null) {
         e.preventDefault();
-        // Apply defaultCheckboxIndent if: no leading whitespace on new prefix yet,
-        // and the line is checkbox/hyphen-ish, and user hasn't typed their own indent.
-        // Never override if the prefix already has leading spaces/tabs.
         var _pfxLeading = (prefix.match(/^([ \t]*)/) || ['',''])[1];
         if (_pfxLeading === '' && settings.defaultCheckboxIndent > 0) {
           var _defSp = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
@@ -24483,8 +24689,44 @@ function makeImportFolderName(label) {
         ed.value = before + inserted + after;
         var newPos = pos + inserted.length;
         ed.setSelectionRange(newPos, newPos);
+        _siSet(ed, pos + 1, prefix.length);
       }
     }
+  });
+  // Quick Add: same SI beforeinput handler as note editor
+  document.getElementById('quick-add-input').addEventListener('beforeinput', function(e) {
+    if (!_siActive || _siTA !== this) return;
+    var ta = this;
+    if (e.inputType === 'deleteContentBackward') {
+      if (Date.now() - _siEscapeAt < 300) { e.preventDefault(); return; }
+      if (_siActive && _siTA === ta && ta.selectionStart === ta.selectionEnd) {
+        var _bpos = ta.selectionStart;
+        var _bval = ta.value;
+        var _bls  = _bval.lastIndexOf('\n', _bpos - 1) + 1;
+        var _blc  = _bval.substring(_bls, _bpos);
+        if (_blc.length > 0 && /^[ \t]*([-*+])[ \t]+(?:\[\s*(?:[xX]|:[a-z]+)?\s*\][ \t]+)?$/.test(_blc)) {
+          ta.value = _bval.slice(0, _bls) + _bval.slice(_bpos);
+          ta.setSelectionRange(_bls, _bls);
+          e.preventDefault();
+          _siEscapeAt = Date.now();
+        }
+      }
+      _siClear(); return;
+    }
+    if (e.inputType === 'insertText' && e.data && e.data.charAt(0) === ' ' &&
+        ta.selectionStart === _siPrefixStart + _siPrefixLen && ta.selectionStart === ta.selectionEnd) {
+      e.preventDefault();
+      var stripped = e.data.slice(1);
+      if (stripped) {
+        var val = ta.value;
+        var _swPos = ta.selectionStart; // capture BEFORE ta.value= — iOS resets it to end
+        var _swEnd = ta.selectionEnd;
+        ta.value = val.slice(0, _swPos) + stripped + val.slice(_swEnd);
+        ta.setSelectionRange(_swPos + stripped.length, _swPos + stripped.length);
+      }
+      _siClear(); return;
+    }
+    _siClear();
   });
   updateViewOnlyBtns = function() {
     var crossoutBtn   = document.getElementById('crossout-mode-btn');
@@ -24555,7 +24797,7 @@ function makeImportFolderName(label) {
     // Dynamic-only now — no static More menu entry exists for this item.
     var _showTTE = (settings.toolbarHidden || []).indexOf('tap-to-edit-btn') === -1;
     var tapToEditBtn = document.getElementById('tap-to-edit-btn');
-    if (tapToEditBtn) tapToEditBtn.style.display = (inView && _showTTE) ? '' : 'none';
+    if (tapToEditBtn) tapToEditBtn.style.display = (inView && _showTTE) ? 'flex' : 'none';
     // Exit tap-to-edit mode when leaving view mode
     if (!inView && _editBlockMode) exitEditBlockMode();
     // Move button: show/hide only — title and color are set together below
@@ -25847,13 +26089,13 @@ function createInitialNotes() {
   var welcomeId = makeId();
   var readMeFirstId = 'note-read-me-first';
   var readMeFirstContent = [
-    '## Two Things to Know Before You Start',
+    '#### Two Things to Know Before You Start',
     '',
     'Welcome! This short note explains the two things that make Remember a little different from other note apps: plain text and two modes.',
     '',
     '- - -',
     '',
-    '## Plain Text',
+    '#### Plain Text',
     '',
     'Your notes are stored as plain text — just letters, numbers, and punctuation. No hidden formatting codes. This means your notes are simple, reliable, and will never look garbled.',
     '',
@@ -25882,11 +26124,11 @@ function createInitialNotes() {
     '',
     '- - -',
     '',
-    '## Two Modes',
+    '#### Two Modes',
     '',
     'Remember has two modes for viewing and working with a note. You switch between them using the pencil icon in the top toolbar.',
     '',
-    '### Typing Mode',
+    '##### Typing Mode',
     '',
     'This is where you type. You see the plain text exactly as it is stored — including any Markdown characters. Tap anywhere in the text to place your cursor and start typing. This mode is best for:',
     '',
@@ -25894,7 +26136,7 @@ function createInitialNotes() {
     '- Typing a long list or many paragraphs in a row',
     '- Editing text precisely',
     '',
-    '### Read & Revise Mode',
+    '##### Read & Revise Mode',
     '',
     'This is where you read and refine your note. Your Markdown formatting is applied — bold looks bold, checkboxes appear as real boxes you can tap, links are tappable, and headings appear larger.',
     '',
@@ -26002,7 +26244,7 @@ function createInitialNotes() {
     '- [ ] *Convince everyone pineapple belongs on pizza*',
     '- [ ] **Nap at every opportunity**',
     '- [ ] Find out who keeps eating my lunch at the office',
-    '   - [x] ~~Blame it on Dave~~ — it was totally Dave',
+    '    - [x] ~~Blame it on Dave~~ — it was totally Dave',
     '',
     '**{blue}URLs are tappable in Read & Revise mode!{/blue}**',
     'Tap the link below in Read & Revise mode to visit Wikipedia:',
@@ -26209,26 +26451,26 @@ function createInitialNotes() {
   // Heading Sampler — demonstrates Jump to Heading feature
   var headingSamplerId = 'note-heading-sampler';
   var headingSamplerContent = [
-    '## Your Quick Reference Guide',
+    '### Your Quick Reference Guide',
     '',
     'This note demonstrates heading navigation.',
     'Open the More menu (⋯) and tap **Jump to heading…** to jump directly to any section.',
     '',
-    '## Getting Started',
+    '#### Getting Started',
     '',
-    '### Creating Notes',
+    '##### Creating Notes',
     'Tap the + button on the home screen to create a new note. The title is set automatically from the first line of your content.',
     '',
-    '### Opening Notes',
+    '##### Opening Notes',
     'Tap any note in the list to open it. Notes remember which mode you left them in.',
     '',
-    '### Editing vs Viewing',
+    '##### Editing vs Viewing',
     'Toggle between Typing mode (keyboard visible) and Read & Revise mode (formatted, links active) using the pencil button.',
     '',
-    '## Writing & Formatting',
+    '#### Writing & Formatting',
     '',
-    '### Headings',
-    'Start a line with # for H1, ## for H2, up to ###### for H6. Headings enable Jump to Heading navigation.',
+    '##### Headings',
+    'Start a line with ### for H3, #### for H4, up to ###### for H6 for smaller headings. Need H1 or H2? See the heading examples at the bottom of this note. Headings enable Jump to Heading navigation.',
     '',
     '#### Heading Level 4',
     'Useful for sub-sections within a sub-section.',
@@ -26239,46 +26481,59 @@ function createInitialNotes() {
     '###### Heading Level 6',
     'The deepest heading level available.',
     '',
-    '### Bold and Italic',
+    '##### Bold and Italic',
     'Wrap text in **double asterisks** for bold, or use the B button in Read & Revise mode.',
     '',
-    '### Strikethrough',
+    '##### Strikethrough',
     'Wrap in ~~double tildes~~ for strikethrough. Great for crossing off completed tasks.',
     '',
-    '### Checkboxes',
+    '##### Checkboxes',
     '- [ ] Start a line with - [ ] for a checkbox.',
     '- [x] This one is already checked. Tap it in Read & Revise mode to toggle.',
     '',
-    '## Organization',
+    '#### Organization',
     '',
-    '### Folders',
+    '##### Folders',
     'Long-press or right-click the home screen to create a folder. Drag notes in, or use Move to…',
     '',
-    '### Favorites',
+    '##### Favorites',
     'Long-press a note and choose Favorite to pin it near the top of your list.',
     '',
-    '### Search',
+    '##### Search',
     'Use Find in note (More menu) to search within the current note.',
     '',
-    '## Speaking & Dictation',
+    '#### Speaking & Dictation',
     '',
-    '### Speak',
+    '##### Speak',
     'Tap the Speak button to have your note read aloud. The current sentence highlights as it is read.',
     '',
-    '### Dictation',
+    '##### Dictation',
     'Tap the microphone button to dictate text directly into the note.',
     '',
-    '## Settings & Customization',
+    '#### Settings & Customization',
     '',
-    '### Font & Size',
+    '##### Font & Size',
     'Choose your note font and size from the More menu (Text size, Font face) or in Settings.',
     '',
-    '### Advanced Typography',
+    '##### Advanced Typography',
     'Settings → Text → Advanced Typography: adjust line spacing, letter spacing, word spacing, ligatures, and number style.',
     '',
-    '### Themes',
+    '##### Themes',
     'Switch between Light, Auto, and Dark mode from the More menu (Light / Dark).',
+    '#### Heading Level 4 (already shown above)',
+    'You\'ll see #### headings used throughout this guide for sub-sections.',
     '',
+    '',
+    '#### — Heading Examples — All Six Levels',
+    '',
+    '# Heading Level 1 — largest',
+    '## Heading Level 2',
+    '### Heading Level 3',
+    '#### Heading Level 4',
+    '##### Heading Level 5',
+    '###### Heading Level 6 — smallest',
+    '',
+    'Tip: This guide uses #### and ##### for its own sections to keep the text readable at large font sizes.',
     '',
   ].join('\n');
   notes[headingSamplerId] = {
@@ -26290,7 +26545,7 @@ function createInitialNotes() {
   // Outline Sampler
   var outlineSamplerId = 'note-outline-sampler';
   var outlineSamplerContent = [
-    '## A Sample Project with Nested Tasks',
+    '#### A Sample Project with Nested Tasks',
     '',
     'Turn on Settings → Note Display → Collapsible outline, then view this note.',
     'Tap the ∨ chevron to collapse/expand.',
@@ -26357,14 +26612,14 @@ function createInitialNotes() {
   // Tag sampler note
   var tagSamplerId = 'note-tag-sampler';
   var tagSamplerContent = [
-    '## Try Filtering by @tag',
+    '#### Try Filtering by @tag',
     '',
     'In Read & Revise mode, tap More (⋯) → Filter by tag. Tap a tag chip to include (green)',
     'or exclude (red) it. Use AND/OR to control how multiple tags combine.',
     '',
     '- - - - -',
     '',
-    '## Errands @errands',
+    '#### Errands @errands',
     '',
     '- [ ] Pick up prescription @health @errands',
     '- [ ] Return library books @errands',
@@ -26373,20 +26628,20 @@ function createInitialNotes() {
     '    - [ ] Coffee @food @morning',
     '    - [ ] Dog food @pet',
     '',
-    '## Work @work',
+    '#### Work @work',
     '',
     '- [ ] Review pull request @work @urgent',
     '- [ ] Send weekly update email @work',
     '- [ ] Book flight for conference @work @travel',
     '- [ ] Renew parking pass @work @errands',
     '',
-    '## Health @health',
+    '#### Health @health',
     '',
     '- [ ] Morning walk @health @morning',
     '- [ ] Dentist appointment @health @appointment',
     '- [ ] Refill vitamins @health @errands',
     '',
-    '## Weekend @weekend',
+    '#### Weekend @weekend',
     '',
     '- [ ] Clean the car @weekend @errands',
     '- [ ] Call mum @weekend @family',
@@ -26413,7 +26668,7 @@ function createInitialNotes() {
   // narrow down which structural feature (if any) triggers it.
   var tagCbDiagId = 'note-tag-cb-diagnostic';
   var tagCbDiagContent = [
-    '## Tag + Checkbox Diagnostic',
+    'A diagnostic note for testing tag and checkbox rendering.',
     '',
     'Created to help track down an intermittent tag-rendering bug on',
     'checkbox-ish lines, and to verify wrapped-line alignment after the',
@@ -26422,7 +26677,7 @@ function createInitialNotes() {
     'lines up with the first word after the marker, not with the marker',
     'itself, and that the gap after the marker matches what was typed.',
     '',
-    '### Section A — checkbox, one space after marker, long enough to wrap',
+    '##### Section A — checkbox, one space after marker, long enough to wrap',
     '- [ ] Pick up the prescription refill from the pharmacy on Main Street before it closes this evening @health',
     '- [ ] Return the stack of library books that have been sitting by the front door for two weeks now @errands',
     '',
@@ -26460,7 +26715,7 @@ function createInitialNotes() {
   // Code Block Sampler note
   var codeSamplerId = 'note-code-sampler';
   var codeSamplerContent = [
-    '## Code Blocks',
+    '#### Code Blocks',
     '',
     'Wrap code in triple backticks to display it in a monospace block:',
     '',
@@ -26528,14 +26783,14 @@ function createInitialNotes() {
   // Image Sampler note
   var imgSamplerId = 'note-image-sampler';
   var imgSamplerContent = [
-    '## Inline Images in Notes',
+    '#### Inline Images in Notes',
     '',
     'In Read & Revise mode, images linked with Markdown syntax appear inline.',
     'Images require an internet connection.',
     '',
     '- - - - -',
     '',
-    '## Tux the Penguin',
+    '#### Tux the Penguin',
     '*The official Linux mascot, created by Larry Ewing*',
     '',
     '![Tux, the Linux mascot](https://upload.wikimedia.org/wikipedia/commons/a/af/Tux.png)',
@@ -26548,7 +26803,7 @@ function createInitialNotes() {
     '',
     '- - - - -',
     '',
-    '## Wilber the GIMP Mascot',
+    '#### Wilber the GIMP Mascot',
     '*Mascot of the GIMP image editor, created by Tuomas Kuosmanen and updated by Aryeom Han. CC BY-SA 4.0.*',
     '',
     '![Wilber, the GIMP mascot](https://upload.wikimedia.org/wikipedia/commons/3/3d/Gimp-logo.png)',
@@ -26568,7 +26823,7 @@ function createInitialNotes() {
   // Bullet Sampler note — showcases Bullets for Hyphens + Multi-level + List Item Rules
   var bulletSamplerId = 'note-bullet-sampler';
   var bulletSamplerContent = [
-    '## Nested List Styles',
+    '#### Nested List Styles',
     '',
     'Try these settings in Settings → Note Display:',
     '- Bullets for hyphens (Read & Revise mode)',
@@ -26579,94 +26834,94 @@ function createInitialNotes() {
     '',
     '- - - - -',
     '',
-    '## Weekly Groceries',
+    '#### Weekly Groceries',
     '',
     '- Fruit and vegetables',
-    '  - Apples',
-    '  - Bananas',
-    '  - Salad leaves',
-    '    - Rocket',
-    '    - Spinach',
-    '    - Watercress',
-    '  - Tomatoes',
-    '  - Avocados',
+    '    - Apples',
+    '    - Bananas',
+    '    - Salad leaves',
+    '        - Rocket',
+    '        - Spinach',
+    '        - Watercress',
+    '    - Tomatoes',
+    '    - Avocados',
     '- Dairy',
-    '  - Milk',
-    '  - Butter',
-    '  - Cheddar cheese',
-    '    - Mild',
-    '    - Extra mature',
-    '  - Greek yoghurt',
+    '    - Milk',
+    '    - Butter',
+    '    - Cheddar cheese',
+    '        - Mild',
+    '        - Extra mature',
+    '    - Greek yoghurt',
     '- Bakery',
-    '  - Sourdough loaf',
-    '  - Bagels',
-    '    - Plain',
-    '    - Sesame',
+    '    - Sourdough loaf',
+    '    - Bagels',
+    '        - Plain',
+    '        - Sesame',
     '- Pantry',
-    '  - Olive oil',
-    '  - Pasta',
-    '    - Spaghetti',
-    '    - Penne',
-    '  - Tinned tomatoes',
-    '  - Lentils',
+    '    - Olive oil',
+    '    - Pasta',
+    '        - Spaghetti',
+    '        - Penne',
+    '    - Tinned tomatoes',
+    '    - Lentils',
     '',
     '- - - - -',
     '',
-    '## Home Projects',
+    '#### Home Projects',
     '',
     '- Fix things',
-    '  - Kitchen',
-    '    - Replace dripping tap washer',
-    '    - Tighten loose cabinet hinge',
-    '    - Clean extractor fan filter',
-    '  - Bathroom',
-    '    - Re-grout shower tiles',
-    '    - Replace shower head',
-    '  - Garden',
-    '    - Repair fence panel',
-    '    - Replace broken paving slab',
-    '    - Fix gate latch',
+    '    - Kitchen',
+    '        - Replace dripping tap washer',
+    '        - Tighten loose cabinet hinge',
+    '        - Clean extractor fan filter',
+    '    - Bathroom',
+    '        - Re-grout shower tiles',
+    '        - Replace shower head',
+    '    - Garden',
+    '        - Repair fence panel',
+    '        - Replace broken paving slab',
+    '        - Fix gate latch',
     '- Redecorate',
-    '  - Living room',
-    '    - Choose a new paint colour',
-    '    - Buy rollers and dust sheets',
-    '    - Paint walls',
-    '    - Touch up skirting boards',
-    '  - Hallway',
-    '    - Strip old wallpaper',
-    '    - Fill cracks',
-    '    - Hang new wallpaper',
+    '    - Living room',
+    '        - Choose a new paint colour',
+    '        - Buy rollers and dust sheets',
+    '        - Paint walls',
+    '        - Touch up skirting boards',
+    '    - Hallway',
+    '        - Strip old wallpaper',
+    '        - Fill cracks',
+    '        - Hang new wallpaper',
     '',
     '- - - - -',
     '',
-    '## Weekend Plans',
+    '#### Weekend Plans',
     '',
     '- Saturday morning',
-    '  - Farmers market',
-    '    - Bread from the artisan baker',
-    '    - Honey from the local stall',
-    '    - Fresh flowers',
-    '  - Coffee with friends',
-    '    - Text Sarah to confirm',
-    '    - Book table at the café',
+    '    - Farmers market',
+    '        - Bread from the artisan baker',
+    '        - Honey from the local stall',
+    '        - Fresh flowers',
+    '    - Coffee with friends',
+    '        - Text Sarah to confirm',
+    '        - Book table at the café',
     '- Saturday afternoon',
-    '  - Walk in the park',
-    '    - Charge camera battery',
-    '    - Download a podcast',
-    '  - Tidy the shed',
-    '    - Sort tools by type',
-    '    - Throw away broken items',
+    '    - Walk in the park',
+    '        - Charge camera battery',
+    '        - Download a podcast',
+    '    - Tidy the shed',
+    '        - Sort tools by type',
+    '        - Throw away broken items',
     '- Sunday',
-    '  - Cook a big batch meal',
-    '    - Choose recipe',
-    '      - Chilli con carne',
-    '      - Vegetable curry',
-    '      - Minestrone soup',
-    '    - Write shopping list',
-    '    - Portion and freeze',
-    '  - Rest and read',
-    '    - Pick next book from the pile',
-    '    - Make a cup of tea',
+    '    - Cook a big batch meal',
+    '        - Choose recipe',
+    '            - Chilli con carne',
+    '            - Vegetable curry',
+    '            - Minestrone soup',
+    '        - Write shopping list',
+    '        - Portion and freeze',
+    '    - Rest and read',
+    '        - Pick next book from the pile',
+    '        - Make a cup of tea',
     '',
     '',
   ].join('\n');
@@ -26770,7 +27025,7 @@ function createInitialNotes() {
   var eveningNoteId = 'note-sample-evening';
   if (!notes[eveningNoteId]) {
     var eveningContent = [
-      '## A Quiet Evening',
+      'Written at dusk, when the day finally slows down.',
       '',
       '*Tip: This note opens in quiet mode — the toolbar is hidden for distraction-free reading. Tap anywhere then tap the ⋯ button to show the toolbar.*',
       '',
@@ -26780,7 +27035,7 @@ function createInitialNotes() {
       '',
       'Today had its rough edges — a difficult conversation, a task left half-done, a moment where I felt out of step with the world. But here, in the quiet, those things feel smaller.',
       '',
-      '## What I noticed today',
+      '#### What I noticed today',
       '',
       'The light on the kitchen wall at 5pm was a particular shade of amber I do not have a name for.',
       '',
@@ -26788,7 +27043,7 @@ function createInitialNotes() {
       '',
       'I remembered, for no particular reason, a summer from childhood. Salt air and the sound of a screen door.',
       '',
-      '## What I am grateful for',
+      '#### What I am grateful for',
       '',
       'A warm cup of tea and nowhere urgent to be.',
       '',
@@ -26809,7 +27064,7 @@ function createInitialNotes() {
   var checklistNoteId = 'note-sample-checklist';
   if (!notes[checklistNoteId]) {
     var checklistContent = [
-      '## Morning Routine',
+      '#### Morning Routine',
       '',
       '- [ ] Make bed',
       '- [ ] Drink a glass of water',
@@ -26817,7 +27072,7 @@ function createInitialNotes() {
       '- [ ] Review the day\'s plan',
       '- [ ] Eat breakfast before checking phone',
       '',
-      '## Work — Today\'s Focus',
+      '#### Work — Today\'s Focus',
       '',
       '- [ ] Clear inbox (15 min max)',
       '- [ ] Deep work block: project draft',
@@ -26827,7 +27082,7 @@ function createInitialNotes() {
       '- [ ] One difficult task before lunch',
       '- [ ] Review and reply to messages',
       '',
-      '## Evening Wind-Down',
+      '#### Evening Wind-Down',
       '',
       '- [ ] Tidy desk',
       '- [ ] Write three things that went well',
@@ -26847,7 +27102,7 @@ function createInitialNotes() {
   var cosyNoteId = 'note-sample-cosy';
   if (!notes[cosyNoteId]) {
     var cosyContent = [
-      '## Books I Want to Read',
+      '#### Books I Want to Read',
       '',
       '*Tip: This note opens in quiet mode — the toolbar is hidden for distraction-free reading. Tap anywhere then tap the ⋯ button to show the toolbar.*',
       '',
@@ -26869,14 +27124,14 @@ function createInitialNotes() {
       '  - Selected Poems — Mary Oliver',
       '  - Letters to a Young Poet — Rilke',
       '',
-      '## Recently Finished',
+      '#### Recently Finished',
       '',
       '- The Midnight Library — Matt Haig',
       '  - Gentle, hopeful, easy to read in one sitting',
       '- When Breath Becomes Air — Paul Kalanithi',
       '  - Deeply moving. Keep tissues nearby.',
       '',
-      '## Reading Goals',
+      '#### Reading Goals',
       '',
       '- One book per month minimum',
       '- Mix fiction and non-fiction',
@@ -26967,17 +27222,17 @@ function createInitialNotes() {
   var articleNoteId = 'note-sample-article';
   if (!notes[articleNoteId]) {
     var articleContent = [
-      '## The Art of Slowing Down',
+      'An essay on time, attention, and the pace of a life well-lived.',
       '',
       'We live in an age that prizes speed above almost everything else. Faster replies, faster deliveries, faster results. But there is a growing body of evidence that suggests slowing down is not a luxury — it is a necessity.',
       '',
-      '## What the Research Says',
+      '#### What the Research Says',
       '',
       'Studies in cognitive science consistently show that the brain performs better when it is given time to consolidate information. Sleep, rest, and deliberate pauses are not interruptions to productive work — they are part of it.',
       '',
       'A 2019 study found that participants who took short walking breaks between tasks showed measurably higher creativity scores than those who worked without interruption.',
       '',
-      '## Practical Steps',
+      '#### Practical Steps',
       '',
       'The good news is that slowing down does not require a dramatic lifestyle change. Small adjustments compound over time.',
       '',
@@ -26993,7 +27248,7 @@ function createInitialNotes() {
       '',
       'Before you close your laptop, write down three things that happened today. Not accomplishments necessarily — just things you noticed.',
       '',
-      '## A Final Thought',
+      '#### A Final Thought',
       '',
       'Speed is a tool. Like any tool, it is useful in the right context and harmful in the wrong one. The skill is knowing the difference.',
       '',
@@ -27009,7 +27264,7 @@ function createInitialNotes() {
   var taskNoteId = 'note-sample-taskmaster';
   if (!notes[taskNoteId]) {
     var taskContent = [
-      '## Weekly Errands',
+      '#### Weekly Errands',
       '',
       '- [ ] Post office — return the package',
       '- [ ] Pharmacy — pick up prescription',
@@ -27020,7 +27275,7 @@ function createInitialNotes() {
       '- [ ] Hardware store — lightbulbs for kitchen',
       '- [ ] Library — return two books',
       '',
-      '## Household Tasks',
+      '#### Household Tasks',
       '',
       '- [ ] Clean the bathroom',
       '- [ ] Vacuum living room and hallway',
@@ -27030,13 +27285,13 @@ function createInitialNotes() {
       '- [ ] Wipe down kitchen counters',
       '- [ ] Empty dishwasher',
       '',
-      '## Phone Calls',
+      '#### Phone Calls',
       '',
       '- [ ] Call the dentist — schedule checkup',
       '- [ ] Ring the insurance company about the bill',
       '- [ ] Check in with Mum',
       '',
-      '## Work This Week',
+      '#### Work This Week',
       '',
       '- [ ] Finish the quarterly report draft',
       '- [ ] Reply to the email from the client',
@@ -27056,23 +27311,23 @@ function createInitialNotes() {
   var dyslexiaNoteId = 'note-sample-dyslexia';
   if (!notes[dyslexiaNoteId]) {
     var dyslexiaContent = [
-      '## Easy Reading Sample',
+      'Styled with the Dyslexia Friendly theme for easier reading.',
       '',
       'This note uses the Dyslexia Friendly theme. It sets a larger font size, wider spacing between letters and words, extra space between lines, and turns off font ligatures.',
       '',
       'Ligatures are the way some fonts join certain letter pairs together. Turning them off makes each letter stand alone, which many people find easier to read.',
       '',
-      '## Why Spacing Matters',
+      '#### Why Spacing Matters',
       '',
       'Research on reading and dyslexia consistently shows that generous spacing helps. More space between letters reduces the chance of letters blending together visually. More space between lines gives the eye a clear path from one line to the next.',
       '',
-      '## Try It Yourself',
+      '#### Try It Yourself',
       '',
       'You can adjust the spacing settings for any note or globally in Settings. Look for Letter Spacing, Word Spacing, and Line Spacing under the Text section.',
       '',
       'You can also save your preferred combination as a new theme and apply it to any note.',
       '',
-      '## About This Font',
+      '#### About This Font',
       '',
       'The font used here is Atkinson Hyperlegible, designed by the Braille Institute specifically for low-vision and accessibility use. It is already built into Remember.',
       '',
@@ -27088,6 +27343,7 @@ function createInitialNotes() {
   var poemNoteId = 'note-sample-poem';
   if (!notes[poemNoteId]) {
     var poemContent = [
+      '',
       'Before the Light Changes',
       '',
       'The morning comes in sideways',
@@ -27124,11 +27380,11 @@ function createInitialNotes() {
   var funNoteId = 'note-sample-fun';
   if (!notes[funNoteId]) {
     var funContent = [
-      'Saturday Debrief 📝',
+      '📝 Notes from a very chaotic Saturday',
       '',
       'OK so today was {pink}**A LOT**{/pink} and I need to write it all down before I forget 😂',
       '',
-      '## The Haul 🛍️',
+      '#### The Haul 🛍️',
       '',
       'Went to the shops ==just to browse== (sure Jan) and came back with:',
       '',
@@ -27138,12 +27394,12 @@ function createInitialNotes() {
       '- A candle that smells like {orange}vanilla and something fancy{/orange} 🕯️',
       '- Impulse lip gloss at the checkout. Classic.',
       '',
-      '## Hair Situation 💇',
+      '#### Hair Situation 💇',
       '',
       'Finally booked the appointment. {pink}Going lighter for summer{/pink} ☀️',
       'Mia says I should go full blonde. Mia also once dyed her fringe green so.',
       '',
-      '## Tonight 🍾',
+      '#### Tonight 🍾',
       '',
       'Pre-drinks at Jess\u0027s at 8 then heading to that new place on the high street',
       'Wearing the {blue}blue dress{/blue} + the new hoops 👌',
@@ -27164,25 +27420,25 @@ function createInitialNotes() {
   var whyNoteId = 'note-why-remember';
   if (!notes[whyNoteId]) {
     var whyContent = [
-      '# Why Remember?',
+      'A free, private note-taking app built for everyone.',
       '',
-      '## It\'s completely free',
+      '#### It\'s completely free',
       '',
       'Remember is free. Not "free with ads," not "free for 30 days," not "free but the good features cost extra." Everything in the app is free, forever, for personal use. Schools and organizations can use it free too. No account required, no login, no subscription.',
       '',
-      '## What is Remember, exactly?',
+      '#### What is Remember, exactly?',
       '',
       'Remember is a note-taking app that runs in your web browser — on any phone, tablet, or computer. You can also save it to your home screen and it behaves just like a regular app, without any browser toolbars getting in the way. This is called a PWA (Progressive Web App).',
       '',
       'It is a plain text editor — think of it as a smarter, more personal version of Notepad. It is great for jotting things down, keeping checklists, and organizing your thoughts. It is not a word processor like Microsoft Word, it does not have calendar features, and it will not send you reminders.',
       '',
-      '## Checklists that actually work',
+      '#### Checklists that actually work',
       '',
       'Remember has some of the best checklist features of any free note app. Tap any checkbox to check or uncheck it. Long-press a parent item\'s chevron to check or uncheck all its sub-items at once. Items can be nested to any depth — tap the chevron to collapse or expand a whole section so you only see what is relevant right now. You can also check off hyphen-style bullet items with a tap, which applies a strikethrough.',
       '',
       'Checklists work beautifully on a phone — which matters, because that is where you actually use them.',
       '',
-      '## Your notes stay private — and safe from viruses',
+      '#### Your notes stay private — and safe from viruses',
       '',
       'Your notes are stored only on your device. Nothing is sent to any server or cloud service. There is no company storing your data, no risk of a data breach, and no one reading your notes.',
       '',
@@ -27190,7 +27446,7 @@ function createInitialNotes() {
       '',
       'Use the Export feature to back up your notes — save the file to Google Drive, iCloud, Dropbox, or email it to yourself. You can also **import notes from other apps**. Remember can import from WorkFlowy, Dynalist, OmniOutliner, CarbonFin Outliner (OPML format), and TickTick (CSV format), so you can bring your existing notes with you.',
       '',
-      '## For people who find other apps difficult',
+      '#### For people who find other apps difficult',
       '',
       'This is the heart of why Remember was built. Most note apps assume you are a healthy 30-year-old with perfect vision and steady hands. Remember does not.',
       '',
@@ -27214,7 +27470,7 @@ function createInitialNotes() {
       '',
       'Many note apps require precise gestures — dragging to select text, drag-and-drop to reorder, pinch-zoom to resize. Remember provides toolbar buttons for all of these so you never have to drag anything if you do not want to.',
       '',
-      '## Customization — for people who like to tinker',
+      '#### Customization — for people who like to tinker',
       '',
       'All customization is completely optional. Many people use Remember with the default settings and never look at any of it. But if you enjoy this sort of thing, you can:',
       '',
@@ -27225,7 +27481,7 @@ function createInitialNotes() {
       '- Rearrange or hide toolbar buttons to show only what you use',
       '- Give each note its own visual style — a poetry note could have wide margins and generous spacing, while a checklist note could be compact and monospace',
       '',
-      '## What makes Remember different?',
+      '#### What makes Remember different?',
       '',
       'Most note apps are built for the average user. Remember is built for everyone else — the person who needs larger text, the person who wants their notes to feel calm and personal rather than corporate and cluttered, the student who cannot afford a subscription, the senior who wants one button that reads the note aloud.',
       '',
