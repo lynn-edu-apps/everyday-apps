@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1485 -->
+<!-- Remember App - Version 0.1493 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1485
+  Version 0.1493
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -3894,6 +3894,45 @@ body:not(.dark) .note-item {
 }
 .settings-save-btn.dimmed:hover { background: var(--bg3); }
 
+/* ===== NOTE TEXTURE ===== */
+/* Texture: canvas-generated PNG tile applied as background-image on #note-content-area.
+   - PNG tiling has no GPU texture size limit (unlike ::before + SVG filter which
+     pixelates on Android at ~4096px and cuts off on Windows/Chrome at ~8192px).
+   - background-attachment:local scrolls the tile WITH the content (real paper feel).
+   - stitchTiles="stitch" in the SVG filters ensures seamless edge-to-edge tiling.
+   - Editor/viewer transparent so the background-image shows through. */
+body.note-tex-active #note-editor { background: transparent; }
+body.note-tex-active #note-viewer { background: transparent; }
+body.note-tex-active .note-inline-title-row { background: transparent; }
+.tex-picker-row {
+  display: flex; flex-direction: row; flex-wrap: wrap; gap: 10px;
+  padding: 4px 2px 8px;
+}
+.tex-swatch-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; flex-shrink: 0; cursor: pointer;
+}
+.tex-swatch {
+  width: 50px; height: 50px; border-radius: 6px;
+  border: 2px solid var(--border);
+  position: relative; overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tex-swatch.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+@media (hover: hover) {
+  .tex-swatch-wrap:hover .tex-swatch { border-color: var(--accent); }
+}
+.tex-swatch-none {
+  display: flex; align-items: center; justify-content: center; color: var(--fg3);
+}
+.tex-swatch-label {
+  font-family: var(--font-body); font-size: 0.68em;
+  color: var(--fg2); text-align: center; max-width: 54px; line-height: 1.2;
+}
+
 .settings-section {
   border-top: 1px solid var(--border);
 }
@@ -7047,6 +7086,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </div>
       </div>
 
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="settings-row-label">Note texture</div>
+        <div class="settings-row-desc">Subtle paper texture behind note content. Per-note themes can override.</div>
+        <div class="tex-picker-row" id="light-tex-picker"></div>
+      </div>
+
       <div class="settings-subsection-title">Dark Mode 🌙</div>
 
       <div id="dark-mode-preview" style="border-radius:10px;padding:10px 12px;margin-bottom:6px;background:#1e1c1a;">
@@ -7107,6 +7152,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <button class="custom-color-btn" id="ccp-btn-dark-preview-color-3" data-rowkey="dark-preview-color-3" title="Custom color slot 3">+</button>
           <span class="swatch-hex-label" id="hex-label-dark-preview-color" style="color:#f0ebe0;">#b8b0a0</span>
         </div>
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;border-bottom:none;">
+        <div class="settings-row-label" style="color:#f0ebe0;">Note texture</div>
+        <div class="settings-row-desc" style="color:#a8a090;">Lighter texture colors for dark backgrounds</div>
+        <div class="tex-picker-row" id="dark-tex-picker"></div>
       </div>
       </div>
 
@@ -8839,7 +8889,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1485';
+const APP_VERSION = '0.1493';
 
 
 
@@ -9797,6 +9847,8 @@ const DEFAULT_SETTINGS = {
   lightBgColor: '#f5f0e8',
   lightFgColor: '#2a2520',
   lightNotePreviewColor: '#6b6258',  // note preview text color in light mode (default = --fg2)
+  lightNoteTexture: '',            // note background texture id for light mode
+  darkNoteTexture: '',             // note background texture id for dark mode
   darkBgColor: '#1e1c1a',
   darkFgColor: '#f0ebe0',
   darkNotePreviewColor: '#b8b0a0',   // note preview text color in dark mode (default = dark --fg2)
@@ -9900,6 +9952,7 @@ const THEMEABLE_SETTINGS=[
 ['theme','Light/Dark/Auto mode',1],['lightBgColor','Light background',1],
 ['lightFgColor','Light text color',1],['darkBgColor','Dark background',1],
 ['darkFgColor','Dark text color',1],['accentColor','Accent color',1],
+['lightNoteTexture','Note texture (light)',1],['darkNoteTexture','Note texture (dark)',1],
 ['font','UI font face',1],['uiFontSize','UI text size',1],
 ['defaultViewMode','Open notes in R&R mode',1],
 ['voiceURI','Speech voice',1],['speechRate','Speech rate',1],
@@ -9930,6 +9983,57 @@ var selectMode = false;      // whether block-select mode is active
 var isAllSelected = false;   // whether select-all is currently active
 var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
 var updateViewOnlyBtns = function() {}; // replaced in init
+var _buildTexPickers = function() {}; // replaced in init — called from openSettings() which is module-level
+
+var _texDefs = [
+  {id:'cork',label:'Cork'},{id:'grit',label:'Fine Grit'},
+  {id:'watercolor',label:'Watercolor'},{id:'linen',label:'Linen'},
+  {id:'stipple',label:'Stipple'},{id:'kraft',label:'Kraft'},
+  {id:'concrete',label:'Concrete'},{id:'laid',label:'Laid Paper'},
+  {id:'sandstone',label:'Sandstone'}
+];
+
+// PNG tile cache — avoids regenerating on every applySettings() call.
+// Key: 'cork-light', 'cork-dark', etc. Value: data:image/png;base64,...
+var _texPngCache = {};
+
+// Render the named SVG filter to a 300×300 canvas and export as PNG data URL.
+// The PNG can then be used as a seamlessly-tiling CSS background-image.
+// Async because Image.onload is async (even for data URLs on some platforms).
+function _applyTexPng(noteArea, texId, mode) {
+  var key = texId + '-' + mode;
+  if (_texPngCache[key]) { _setTexBg(noteArea, _texPngCache[key]); return; }
+  var filterId = 'tex-' + texId + '-' + mode;
+  var fEl = document.getElementById(filterId);
+  if (!fEl) return;
+  // Build a self-contained 300x300 SVG with the filter applied to a rect.
+  // Must rename the filter id to something short to avoid conflicts.
+  var fXml = fEl.outerHTML.replace('id="' + filterId + '"', 'id="tf"');
+  var svgStr = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300">' +
+    '<defs>' + fXml + '</defs>' +
+    '<rect width="300" height="300" filter="url(#tf)"/></svg>';
+  var canvas = document.createElement('canvas');
+  canvas.width = 300; canvas.height = 300;
+  var _na = noteArea;
+  var img = new Image();
+  img.onload = function() {
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    var png;
+    try { png = canvas.toDataURL('image/png'); } catch(e) { png = null; }
+    _texPngCache[key] = png || '';
+    // Apply only if the texture is still active (user may have changed setting)
+    if (png && document.body.classList.contains('note-tex-active')) _setTexBg(_na, png);
+  };
+  img.onerror = function() { _texPngCache[key] = ''; };
+  img.src = 'data:image/svg+xml,' + encodeURIComponent(svgStr);
+}
+
+function _setTexBg(el, pngUrl) {
+  el.style.backgroundImage = "url('" + pngUrl + "')";
+  el.style.backgroundRepeat = 'repeat';
+  el.style.backgroundSize = '300px 300px';
+  el.style.backgroundAttachment = 'local'; // scrolls WITH content (real paper)
+}
 var isCheckboxRaw = function() { return false; }; // replaced in init
 var getDescendants = function() { return []; }; // replaced in init
 var getHeadingDescendants = function() { return []; }; // replaced in init
@@ -11096,6 +11200,22 @@ function applySettings() {
   // which meant dark mode never applied darkNotePreviewColor.)
   var _previewCol = useDark ? (settings.darkNotePreviewColor || '#b8b0a0') : (settings.lightNotePreviewColor || '#6b6258');
   body.style.setProperty('--note-preview-color', _previewCol);
+  (function() {
+    var _noteArea = document.getElementById('note-content-area');
+    if (!_noteArea) return;
+    var _texId = useDark ? (settings.darkNoteTexture || '') : (settings.lightNoteTexture || '');
+    var _txm = useDark ? 'dark' : 'light';
+    if (_texId) {
+      body.classList.add('note-tex-active');
+      _applyTexPng(_noteArea, _texId, _txm); // generates PNG tile if not cached
+    } else {
+      _noteArea.style.backgroundImage = '';
+      _noteArea.style.backgroundRepeat = '';
+      _noteArea.style.backgroundSize = '';
+      _noteArea.style.backgroundAttachment = '';
+      body.classList.remove('note-tex-active');
+    }
+  })();
   if (activeFg) {
     body.style.setProperty('--fg', activeFg);
   }
@@ -15563,6 +15683,7 @@ function updateSwatches() {
   markRow('accent-swatches', settings.accentColor || '#5b7c6e');
   markRow('highlight-color-swatches', settings.highlightColor || '#ffe066');
   markRow('checkbox-color-swatches', settings.checkboxColor || 'gray');
+  _buildTexPickers();
 }
 
 function settingsDirty() {
@@ -20580,6 +20701,49 @@ function makeImportFolderName(label) {
   wireSwatchRow('accent-swatches', 'accentColor');
   wireSwatchRow('highlight-color-swatches', 'highlightColor');
   wireSwatchRow('checkbox-color-swatches', 'checkboxColor');
+
+  // ===== NOTE TEXTURE PICKERS =====
+  _buildTexPickers = function() {
+    ['light','dark'].forEach(function(mode) {
+      var row = document.getElementById(mode+'-tex-picker');
+      if (!row) return;
+      var bgColor = mode==='dark' ? (settings.darkBgColor||'#1e1c1a') : (settings.lightBgColor||'#f5f0e8');
+      var curVal  = mode==='dark' ? (settings.darkNoteTexture||'')  : (settings.lightNoteTexture||'');
+      var xSvg = '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor"'+
+        ' stroke-width="1.5" style="pointer-events:none">'+
+        '<line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>';
+      var h = '<div class="tex-swatch-wrap" data-tex-id="">'+
+        '<div class="tex-swatch tex-swatch-none'+(curVal===''?' selected':'')+'"'+
+        ' style="background:'+bgColor+'">'+xSvg+'</div>'+
+        '<div class="tex-swatch-label">None</div></div>';
+      _texDefs.forEach(function(def) {
+        var fid = 'tex-'+def.id+'-'+mode;
+        h += '<div class="tex-swatch-wrap" data-tex-id="'+def.id+'">'+
+          '<div class="tex-swatch'+(curVal===def.id?' selected':'')+'">' +
+          '<div style="position:absolute;inset:0;background:'+bgColor+'"></div>'+
+          '<div style="position:absolute;inset:0;filter:url(#'+fid+')"></div>'+
+          '</div><div class="tex-swatch-label">'+def.label+'</div></div>';
+      });
+      row.innerHTML = h;
+    });
+  }; // semicolon required — next line starts with '[' which triggers ASI trap without it
+  ['light','dark'].forEach(function(mode) {
+    var row = document.getElementById(mode+'-tex-picker');
+    if (!row) return;
+    row.addEventListener('click', function(e) {
+      var wrap = e.target.closest('[data-tex-id]');
+      if (!wrap) return;
+      var val = wrap.dataset.texId;
+      var key = mode==='light' ? 'lightNoteTexture' : 'darkNoteTexture';
+      settings[key] = val;
+      row.querySelectorAll('[data-tex-id]').forEach(function(w) {
+        var s = w.querySelector('.tex-swatch');
+        if (s) s.classList.toggle('selected', w.dataset.texId === val);
+      });
+      applySettings();
+      updateSaveBtnState();
+    });
+  });
 
   // ===== CUSTOM COLOR PICKER =====
   (function() {
@@ -29878,5 +30042,27 @@ function showConfetti() {
 </script>
 <div id="tag-autocomplete" role="listbox" aria-label="Tag suggestions"></div>
 <canvas id="confetti-canvas" style="display:none;position:fixed;inset:0;width:100%;height:100%;z-index:9999;pointer-events:none"></canvas>
+
+<!-- 18 SVG texture filters (9×light/dark). filter:url(#id) works in iOS WebKit. -->
+<svg id="note-tex-filters" width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs>
+<filter id="tex-cork-light"><feTurbulence type="fractalNoise" baseFrequency="0.065" numOctaves="4" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 1.0 1.0"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.55 0 0 0 0 0.47 0 0 0 0 0.36 0 0 0 0.52 0"/></filter>
+<filter id="tex-cork-dark"><feTurbulence type="fractalNoise" baseFrequency="0.065" numOctaves="4" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 1.0 1.0"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.82 0 0 0 0 0.72 0 0 0 0 0.58 0 0 0 0.45 0"/></filter>
+<filter id="tex-grit-light"><feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="3" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0 0.75 0.75"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.25 0 0 0 0 0.22 0 0 0 0 0.16 0 0 0 0.40 0"/></filter>
+<filter id="tex-grit-dark"><feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="3" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0 0.75 0.75"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.78 0 0 0 0 0.72 0 0 0 0 0.65 0 0 0 0.40 0"/></filter>
+<filter id="tex-watercolor-light"><feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves="5" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0.15 0.25 0.35 0.45 0.35 0.25 0.15"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.45 0 0 0 0 0.40 0 0 0 0 0.32 0 0 0 0.50 0"/></filter>
+<filter id="tex-watercolor-dark"><feTurbulence type="fractalNoise" baseFrequency="0.011" numOctaves="5" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0.15 0.25 0.35 0.45 0.35 0.25 0.15"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.72 0 0 0 0 0.65 0 0 0 0 0.52 0 0 0 0.45 0"/></filter>
+<filter id="tex-linen-light"><feTurbulence type="turbulence" baseFrequency="0.018 0.08" numOctaves="2" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0.18 0.18 0.42 0.42 0.62"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.30 0 0 0 0 0.26 0 0 0 0 0.19 0 0 0 0.44 0"/></filter>
+<filter id="tex-linen-dark"><feTurbulence type="turbulence" baseFrequency="0.018 0.08" numOctaves="2" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0.18 0.18 0.42 0.42 0.62"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.72 0 0 0 0 0.64 0 0 0 0 0.52 0 0 0 0.38 0"/></filter>
+<filter id="tex-stipple-light"><feTurbulence type="fractalNoise" baseFrequency="0.135" numOctaves="1" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0 0 0.90 0.90"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.22 0 0 0 0 0.19 0 0 0 0 0.13 0 0 0 0.55 0"/></filter>
+<filter id="tex-stipple-dark"><feTurbulence type="fractalNoise" baseFrequency="0.135" numOctaves="1" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0 0 0.90 0.90"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.75 0 0 0 0 0.70 0 0 0 0 0.62 0 0 0 0.48 0"/></filter>
+<filter id="tex-kraft-light"><feTurbulence type="fractalNoise" baseFrequency="0.095 0.07" numOctaves="4" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0.65 0.65"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.38 0 0 0 0 0.23 0 0 0 0 0.09 0 0 0 0.58 0"/></filter>
+<filter id="tex-kraft-dark"><feTurbulence type="fractalNoise" baseFrequency="0.095 0.07" numOctaves="4" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0.65 0.65"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.72 0 0 0 0 0.58 0 0 0 0 0.40 0 0 0 0.50 0"/></filter>
+<filter id="tex-concrete-light"><feTurbulence type="turbulence" baseFrequency="0.055" numOctaves="3" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0.40 0.40 0.80 0.80"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.28 0 0 0 0 0.27 0 0 0 0 0.26 0 0 0 0.48 0"/></filter>
+<filter id="tex-concrete-dark"><feTurbulence type="turbulence" baseFrequency="0.055" numOctaves="3" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0.40 0.40 0.80 0.80"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.68 0 0 0 0 0.66 0 0 0 0 0.64 0 0 0 0.42 0"/></filter>
+<filter id="tex-laid-light"><feTurbulence type="turbulence" baseFrequency="0.007 0.145" numOctaves="2" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0.65 0.65"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.38 0 0 0 0 0.32 0 0 0 0 0.22 0 0 0 0.42 0"/></filter>
+<filter id="tex-laid-dark"><feTurbulence type="turbulence" baseFrequency="0.007 0.145" numOctaves="2" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0.65 0.65"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.70 0 0 0 0 0.62 0 0 0 0 0.48 0 0 0 0.38 0"/></filter>
+<filter id="tex-sandstone-light"><feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="2" seed="7" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0.80 0.80"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.46 0 0 0 0 0.34 0 0 0 0 0.18 0 0 0 0.40 0"/></filter>
+<filter id="tex-sandstone-dark"><feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="2" seed="7" stitchTiles="stitch" result="n"/><feComponentTransfer in="n" result="h"><feFuncA type="discrete" tableValues="0 0 0 0 0.80 0.80"/></feComponentTransfer><feColorMatrix in="h" type="matrix" values="0 0 0 0 0.76 0 0 0 0 0.64 0 0 0 0 0.46 0 0 0 0.36 0"/></filter>
+</defs></svg>
 </body>
 </html>
