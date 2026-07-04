@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1495 -->
+<!-- Remember App - Version 0.1496 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1495
+  Version 0.1496
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -8894,7 +8894,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1495';
+const APP_VERSION = '0.1496';
 
 
 
@@ -10613,6 +10613,64 @@ function logLineMarkerDiagnostics() {
   }
   logDebugAction('Line marker diagnostics: ' + describe(line, 'line') + ' ' +
     describe(marker, 'marker') + ' ' + describe(content, 'content'));
+}
+
+// ===== HORIZ-SCROLL-GUARD (iOS caret-drag horizontal scroll fix) =====
+// iOS WebKit's caret/selection-handle drag triggers an internal
+// "reveal caret" autoscroll that IGNORES touch-action and can scroll
+// even overflow:hidden containers (hidden elements remain
+// programmatically scrollable). The CSS-only attempt in v0.1495
+// (touch-action:pan-y + overflow-x:hidden) could not block it, so this
+// guard snaps scrollLeft back to 0 the moment any never-horizontal
+// container reports a nonzero value. Scroll events fire even for
+// WebKit-internal autoscrolls, so this catches the culprit regardless
+// of which container it turns out to be.
+// Deliberately NOT applied to .code-fence-scroll-wrapper (a legitimate
+// horizontal scroller) or .note-title-input (overflow-x:auto by design).
+var _hsgBurst = {};   // label -> max |scrollLeft| seen in current burst
+var _hsgTimer = null; // trailing timer: one debug-log line per burst
+function _hsgLogBurst() {
+  _hsgTimer = null;
+  var parts = [];
+  for (var k in _hsgBurst) parts.push(k + '=' + _hsgBurst[k].toFixed(1) + 'px');
+  _hsgBurst = {};
+  if (!parts.length || !settings.debugLoggingEnabled) return;
+  var vv = window.visualViewport;
+  var vvOff = vv ? vv.offsetLeft.toFixed(1) : 'n/a';
+  logDebugAction('HScrollGuard corrected: ' + parts.join(', ') +
+    ' (visualViewport.offsetLeft=' + vvOff + ')');
+}
+function _hsgNote(label, amount) {
+  // During a drag, scroll events fire many times per second — writing
+  // to the debug-log note (localStorage save) on each one would be far
+  // too heavy. Accumulate the max per element and log ONE line per
+  // burst, 1s after the events stop.
+  if (!(_hsgBurst[label] >= amount)) _hsgBurst[label] = amount;
+  if (_hsgTimer) clearTimeout(_hsgTimer);
+  _hsgTimer = setTimeout(_hsgLogBurst, 1000);
+}
+function initHorizScrollGuard() {
+  function guardEl(el, label) {
+    if (!el) return;
+    el.addEventListener('scroll', function() {
+      if (el.scrollLeft !== 0) {
+        _hsgNote(label, Math.abs(el.scrollLeft));
+        el.scrollLeft = 0;  // won't loop: next event sees scrollLeft===0
+      }
+    }, { passive: true });
+  }
+  guardEl(document.getElementById('note-screen'), 'note-screen');
+  guardEl(document.getElementById('note-content-area'), 'note-content-area');
+  guardEl(document.getElementById('note-editor'), 'note-editor');
+  guardEl(document.getElementById('note-viewer'), 'note-viewer');
+  // Root-element scrolls fire on window/document, not on the element
+  // itself, so the root is guarded via the window scroll event:
+  window.addEventListener('scroll', function() {
+    if (window.scrollX !== 0) {
+      _hsgNote('window', Math.abs(window.scrollX));
+      window.scrollTo(0, window.scrollY);
+    }
+  }, { passive: true });
 }
 
 // ===== APPLY SETTINGS =====
@@ -16653,6 +16711,7 @@ function init() {
   }
   loadState();
   applySettings();
+  initHorizScrollGuard();
 
   // System dark mode changes
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
