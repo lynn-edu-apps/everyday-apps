@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1501 -->
+<!-- Remember App - Version 0.1506 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1501
+  Version 0.1506
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,11 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1506 - Alpha diagnostics for missing-notes investigation: debug logging force-re-enables on any version change; startup storage census logged; note census written on every save so any notes missing at next load are detected and NAMED in the debug log; corrupt remember_notes is preserved to a backup key instead of being silently overwritten; saveNotes failures now warn loudly instead of being uncaught.
+  v0.1505 - Tag autocomplete popup no longer opens from programmatic text changes (only real typing of @) — fixes it appearing after inserting a tag via the Insert Tags dialog. Confirm dialogs now auto-scroll themselves into view when the keyboard has panned the page (best effort, helps most in webviews).
+  v0.1504 - Insert Tags dialog: preview auto-sizes up to 5 lines and truly scrolls to the insertion point (mirror-div measurement; old newline-count never worked on soft-wrapped paragraphs); middle tag section capped at ~3 rows with a 1-row minimum; Done row tightened. Tag insert now marks Edit Paragraph dialog dirty. Delete guard position also compensates for page layout scroll (deep-in-note keyboard pan).
+  v0.1503 - Insert Tags dialog: paragraph preview grew to ~6 lines; tags from other notes moved to their own bottom section capped at ~2 rows with vertical-only scrolling.
+  v0.1502 - Cut keeps Select-lines mode on for repeated cuts. Delete guard: clearer wording (go ahead / undo), stays visible when the keyboard has panned the page, and no longer false-alarms on Edit Paragraph save. Collapsed lower toolbar stays collapsed while typing.
   v0.1501 - Tag autocomplete popup: shows up to 16 tags (was 8, same height, scrolls) and gained an always-visible X close button. Added this changelog.
   v0.1500 - Safe-area insets for iPhone landscape: toolbars, note content, notes list, home header, and quiet FAB now clear the camera pill and rounded corners.
   v0.1499 - Consolidated note-item and folder-item long-press into one shared attachLongPress() helper (behavior unchanged).
@@ -2130,7 +2135,7 @@ body.tags-hidden .tag-order-line { display: none !important; }
   display: none; position: fixed; bottom: 0; left: 0; right: 0;
   z-index: 200; background: var(--bg2); border-top: 1px solid var(--border);
   border-radius: 16px 16px 0 0; flex-direction: column;
-  padding-bottom: calc(env(safe-area-inset-bottom, 34px) + 8px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 34px) + 4px);
   box-shadow: 0 -4px 24px rgba(0,0,0,0.18);
   max-height: 70vh;
 }
@@ -2141,7 +2146,10 @@ body.tags-hidden .tag-order-line { display: none !important; }
   background: var(--bg3); border: 1px solid var(--border);
   border-radius: 6px; resize: none; outline: none;
   width: 100%; box-sizing: border-box; padding: 6px 10px;
-  min-height: 3em; max-height: 6em;
+  /* Height is set by JS on open/update: grows with content up to 5
+     visible lines, never taller than the content needs. */
+  min-height: 2.4em;
+  overflow-y: auto; overflow-x: hidden;
   cursor: text;
 }
 #tag-filter-bar {
@@ -8195,9 +8203,13 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   <div style="padding:0 16px 8px;flex-shrink:0">
     <textarea id="tag-picker-preview" readonly rows="2" tabindex="-1"></textarea>
   </div>
-  <div id="tag-picker-chips" style="padding:4px 16px 8px;display:flex;flex-wrap:wrap;gap:8px;overflow-y:auto;flex:1;max-height:20em"></div>
-  <div style="padding:8px 16px 4px;display:flex;justify-content:flex-end;border-top:1px solid var(--border);flex-shrink:0">
-    <button id="tag-picker-done" style="font-family:var(--font-body);font-size:var(--font-ui);font-weight:600;padding:0;line-height:1;height:2em;padding-left:20px;padding-right:20px;border:none;border-radius:999px;background:var(--accent);color:#fff;cursor:pointer;touch-action:manipulation">Done</button>
+  <div id="tag-picker-chips" style="padding:4px 16px 8px;display:flex;flex-wrap:wrap;gap:8px;overflow-y:auto;overflow-x:hidden;max-height:7em;min-height:2.2em;align-content:flex-start"></div>
+  <div id="tag-picker-other-wrap" style="display:none;border-top:1px solid var(--border);padding:4px 16px 8px;flex-shrink:0">
+    <div style="color:var(--fg3);font-size:0.85em;padding:2px 0 6px;user-select:none;-webkit-user-select:none">From other notes</div>
+    <div id="tag-picker-other-chips" style="display:flex;flex-wrap:wrap;gap:8px;overflow-y:auto;overflow-x:hidden;max-height:5em;align-content:flex-start"></div>
+  </div>
+  <div style="padding:4px 16px 2px;display:flex;justify-content:flex-end;border-top:1px solid var(--border);flex-shrink:0">
+    <button id="tag-picker-done" style="font-family:var(--font-body);font-size:var(--font-ui);font-weight:600;padding:0;line-height:1;height:1.8em;padding-left:20px;padding-right:20px;border:none;border-radius:999px;background:var(--accent);color:#fff;cursor:pointer;touch-action:manipulation">Done</button>
   </div>
 </div>
 
@@ -8945,7 +8957,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1501';
+const APP_VERSION = '0.1506';
 
 
 
@@ -10219,10 +10231,22 @@ function loadState() {
     if (s) settings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(s));
   } catch(e) {}
   loadThemes();
+  var _notesRaw = null;
   try {
-    const n = localStorage.getItem('remember_notes');
-    if (n) notes = JSON.parse(n);
-  } catch(e) {}
+    _notesRaw = localStorage.getItem('remember_notes');
+    if (_notesRaw) notes = JSON.parse(_notesRaw);
+  } catch(e) {
+    // CRITICAL: never silently continue past a notes parse failure — the
+    // app would boot with zero notes and the next saveNotes() would
+    // permanently overwrite damaged-but-recoverable data. Preserve the
+    // raw string FIRST, then log loudly and warn the user.
+    try { localStorage.setItem('remember_notes_corrupt', _notesRaw || ''); } catch(e2) {}
+    logDebugAction('CRITICAL: remember_notes failed to parse (' + e + '). Raw data (' +
+      (_notesRaw ? _notesRaw.length : 0) + ' chars) preserved to key remember_notes_corrupt.');
+    setTimeout(function() {
+      if (typeof showToast === 'function') showToast('\u26a0\ufe0f Note data failed to load \u2014 a backup copy was preserved. Please report this.', true);
+    }, 1200);
+  }
   try {
     const f = localStorage.getItem('remember_folders');
     if (f) folders = JSON.parse(f);
@@ -10231,6 +10255,49 @@ function loadState() {
     const cur = localStorage.getItem('remember_current');
     if (cur && notes[cur]) currentNoteId = cur;
   } catch(e) {}
+
+  // ---- ALPHA DIAGNOSTICS (v0.1506, missing-notes investigation) ----
+  // (1) Version-change hook: during alpha, ANY version change seen by
+  // this storage (update, rollback, or a DIFFERENT deployment writing
+  // to this shared-origin storage) force-re-enables debug logging so
+  // there is never again a data incident with no log.
+  if (settings.lastRunVersion !== APP_VERSION) {
+    var _prevV = settings.lastRunVersion || '(none recorded)';
+    settings.debugLoggingEnabled = true;
+    settings.lastRunVersion = APP_VERSION;
+    try { saveSettings(); } catch(eV) {}
+    logDebugAction('APP VERSION CHANGE: ' + _prevV + ' -> ' + APP_VERSION +
+      ' at path ' + location.pathname + ' \u2014 debug logging force-enabled (alpha policy).');
+  }
+  // (2) Startup storage census: one loud line recording what actually
+  // exists in localStorage right now, and which deployment is running.
+  try {
+    var _censusParts = [];
+    ['remember_notes','remember_settings','remember_folders','remember_themes','remember_note_census','remember_notes_corrupt'].forEach(function(k) {
+      var v = localStorage.getItem(k);
+      if (v !== null) _censusParts.push(k + '=' + v.length + 'ch');
+    });
+    logDebugAction('STARTUP CENSUS: v' + APP_VERSION + ' path=' + location.pathname +
+      ' notes=' + Object.keys(notes).length + ' folders=' + Object.keys(folders).length +
+      ' [' + _censusParts.join(', ') + ']');
+  } catch(eC) {}
+  // (3) Loss detection: remember_note_census records what the LAST
+  // successful saveNotes wrote (writer version/path/time + every note
+  // id+name). If notes present then are gone now, NAME them — converts
+  // "some notes seem to be missing" into hard evidence.
+  try {
+    var _censusRaw = localStorage.getItem('remember_note_census');
+    if (_censusRaw) {
+      var _census = JSON.parse(_censusRaw);
+      var _lost = (_census.entries || []).filter(function(en) { return !notes[en.id]; });
+      if (_lost.length > 0) {
+        logDebugAction('NOTE LOSS DETECTED: ' + _lost.length + ' note(s) present at last save (v' +
+          _census.v + ' path=' + _census.path + ' at ' + new Date(_census.at).toISOString() +
+          ', count=' + _census.count + ') are MISSING now (count=' + Object.keys(notes).length + '): ' +
+          _lost.slice(0, 20).map(function(en) { return '"' + en.name + '"'; }).join(', '));
+      }
+    }
+  } catch(eL) {}
 
   // Sanitize sortBy — legacy values like 'viewedAt-desc' don't match data-sort attrs
   var _validSortKeys = ['viewedAt','editedAt','createdAt','name'];
@@ -10500,7 +10567,28 @@ function loadThemes() {
 function genThemeId() { return 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
 function saveNotes() {
-  localStorage.setItem('remember_notes', JSON.stringify(notes));
+  try {
+    localStorage.setItem('remember_notes', JSON.stringify(notes));
+  } catch(e) {
+    // A quota (or any) failure here was previously UNCAUGHT — edits
+    // silently stopped persisting and everything created after the
+    // failure vanished on reload. Fail LOUDLY instead.
+    try { console.error('saveNotes FAILED:', e); } catch(e2) {}
+    if (typeof showToast === 'function') showToast('\u26a0\ufe0f SAVE FAILED \u2014 storage may be full. Recent changes may be lost.', true);
+    return;
+  }
+  // Census: record what this save contained (id+name only — tiny) and
+  // who wrote it (version/path/time). Read back at next load to detect
+  // and name any notes that disappear between runs.
+  try {
+    var _entries = Object.keys(notes).map(function(id) {
+      return { id: id, name: String(notes[id].name || '').slice(0, 40) };
+    });
+    localStorage.setItem('remember_note_census', JSON.stringify({
+      v: APP_VERSION, path: location.pathname, at: Date.now(),
+      count: _entries.length, entries: _entries
+    }));
+  } catch(e3) {}
 }
 function saveFolders() {
   try { localStorage.setItem('remember_folders', JSON.stringify(folders)); } catch(e) {}
@@ -14920,13 +15008,40 @@ function scheduleSave() {
       oopsBtn.classList.add('highlight');
       editor._lastLength = editor.value.length;
       resizeEditor();
-      // Show confirm — "Keep deletion" on left, "Undo deletion" (Cancel) on right
+      // Position: normally near the top (centered class). But when typing
+      // with the virtual keyboard up, iOS pans the page to keep the caret
+      // visible (visualViewport.offsetTop > 0), which pushes a normally-
+      // positioned dialog's top above the visible area. Detect "insertion
+      // point + typing mode" (the app's keyboard heuristic) plus an actual
+      // pan, and place the dialog lower by exactly the pan amount so its
+      // top stays visible. NOTE: there is still no universal way to detect
+      // the virtual keyboard (the VirtualKeyboard API is Chromium-only,
+      // absent on iOS WebKit) — offsetTop > 0 is a reliable positive signal.
+      var _dgAnchor = editor.value.trim() === '';  // below title only when all text deleted
+      var _dgVV = window.visualViewport;
+      // Total keyboard pan = visual-viewport pan (vv.offsetTop) PLUS any
+      // layout scroll of the page (window.scrollY). The second term is
+      // needed because of two WebKit behaviors: with the keyboard open,
+      // position:fixed degrades to document-anchored (absolute-like), and
+      // focusing a caret inside an inner scroll container can make iOS pan
+      // the page proportionally to how far the user has scrolled within
+      // the note — so deep in a long note, dialogs landed far above the
+      // visible area (worst in webviews, where the viewport never shrinks
+      // and panning is iOS's only keyboard mechanism).
+      var _dgPan = (_dgVV ? _dgVV.offsetTop : 0) +
+                   (window.scrollY || (document.scrollingElement ? document.scrollingElement.scrollTop : 0) || 0);
+      if (!isViewMode && document.activeElement === currentEditor && _dgPan > 0) {
+        _dgAnchor = Math.round(_dgPan) + 12;  // numeric anchor: explicit top px
+      }
+      // Dialog asks: go ahead and delete, or undo the deletion.
+      // Wording deliberately avoids "keep the deletion" — testers found it
+      // oxymoron-like and had to stop and think which button meant what.
       showConfirm(
         'You deleted a lot of text',
-        'You just deleted ' + lost + ' characters. Do you want to keep that change or undo it?',
-        'Keep deletion',
+        'You just deleted ' + lost + ' characters. Do you want to go ahead and delete it, or undo the deletion?',
+        'Go ahead and delete',
         function() {
-          // Keep: just clear the highlight, already saved
+          // Go ahead: just clear the highlight, already saved
           oopsBtn.classList.remove('highlight');
         },
         false,
@@ -14941,7 +15056,7 @@ function scheduleSave() {
           }
           oopsBtn.classList.remove('highlight');
         },
-        editor.value.trim() === ''  // anchor below title only when all text deleted
+        _dgAnchor
       );
         saveTimeout = setTimeout(saveCurrentNote, 600);
         return;
@@ -15816,6 +15931,11 @@ function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cance
   overlay.style.paddingTop = '';
   if (anchorBelowTitle === 'centered' || !anchorBelowTitle) {
     overlay.classList.add('centered');
+  } else if (typeof anchorBelowTitle === 'number') {
+    // Numeric anchor: explicit top offset in px. Used by the delete guard
+    // to stay visible when the virtual keyboard has panned the page.
+    overlay.classList.add('top-anchored');
+    overlay.style.paddingTop = Math.round(anchorBelowTitle) + 'px';
   } else if (anchorBelowTitle === 'fixed-top') {
     overlay.classList.add('top-anchored');
     overlay.style.paddingTop = '10px';
@@ -15827,6 +15947,28 @@ function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cance
     overlay.style.paddingTop = topPx + 'px';
   }
   overlay.classList.add('open');
+  // Visibility nudge for keyboard-panned pages (worst in iOS webviews,
+  // where the viewport never shrinks and iOS pans the page instead —
+  // position:fixed degrades to document-anchored while the keyboard is
+  // open, so a well-placed dialog can sit above the visible area and the
+  // user doesn't realize they could scroll down to it). After layout —
+  // and again after the keyboard pan settles — if the dialog's top isn't
+  // inside the visible region, scroll it into view. Best effort: in the
+  // normal case the box is already visible and this does nothing.
+  function _nudgeConfirmVisible() {
+    if (!overlay.classList.contains('open')) return;
+    var box = overlay.querySelector('.confirm-box');
+    if (!box) return;
+    var r = box.getBoundingClientRect();
+    var vv = window.visualViewport;
+    var visTop = vv ? vv.offsetTop : 0;
+    var visBot = visTop + (vv ? vv.height : window.innerHeight);
+    if (r.top < visTop || r.top > visBot - 60) {
+      box.scrollIntoView({ block: 'center' });
+    }
+  }
+  setTimeout(_nudgeConfirmVisible, 120);
+  setTimeout(_nudgeConfirmVisible, 500);
 }
 
 function closeConfirm() {
@@ -16651,6 +16793,10 @@ function openTagPicker(callerContext) {
   }
   logDebugAction('Opened tag picker (' + callerContext + ')');
   chips.innerHTML = '';
+  var otherWrap = document.getElementById('tag-picker-other-wrap');
+  var otherChips = document.getElementById('tag-picker-other-chips');
+  if (otherChips) otherChips.innerHTML = '';
+  if (otherWrap) otherWrap.style.display = 'none';
 
   // Build initial buffer content and insertion point
   var _buf = '';
@@ -16681,17 +16827,44 @@ function openTagPicker(callerContext) {
     _ins = targetTA.selectionStart || targetTA.value.length;
   }
 
-  // Set preview content and scroll to insertion point
+  // Size the preview to its content: up to 5 visible lines, never taller
+  // than the content needs. (box-sizing is border-box, so +2 for borders.)
+  function sizePreview() {
+    var cs = getComputedStyle(preview);
+    var lineH = parseFloat(cs.lineHeight) || 20;
+    var padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    var maxH = lineH * 5 + padV + 2;
+    preview.style.height = 'auto';
+    preview.style.height = Math.min(preview.scrollHeight + 2, maxH) + 'px';
+  }
+  // Scroll the insertion point into view by measuring its true pixel Y
+  // with a mirror div (same width/font/wrap as the preview). The old
+  // approach counted literal newlines before the insertion point — but
+  // the paragraph being edited is usually ONE logical line that soft-
+  // wraps, so the count was always 0 and the preview never scrolled.
+  function scrollPreviewToIns() {
+    var cs = getComputedStyle(preview);
+    var mirror = document.createElement('div');
+    mirror.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;' +
+      'white-space:pre-wrap;word-wrap:break-word;overflow-wrap:break-word;border:0;' +
+      'box-sizing:border-box;width:' + preview.clientWidth + 'px;' +
+      'font-family:' + cs.fontFamily + ';font-size:' + cs.fontSize + ';' +
+      'line-height:' + cs.lineHeight + ';letter-spacing:' + cs.letterSpacing + ';' +
+      'padding:' + cs.padding + ';';
+    mirror.textContent = _buf.substring(0, _ins) || ' ';
+    document.body.appendChild(mirror);
+    var caretY = mirror.offsetHeight; // caret's bottom Y within the content
+    document.body.removeChild(mirror);
+    // Land the insertion point about 2/3 of the way down the visible area
+    preview.scrollTop = Math.max(0, caretY - preview.clientHeight * 0.66);
+  }
   preview.value = _buf;
   preview.setSelectionRange(_ins, _ins);
-  // Scroll preview to show insertion point
+  sizePreview();
   setTimeout(function() {
     preview.blur(); // keep readonly, no keyboard
-    // Scroll textarea to cursor
-    var tmp = preview.value.substring(0, _ins);
-    var lineCount = (tmp.match(/\n/g)||[]).length;
-    var lineH = parseFloat(getComputedStyle(preview).lineHeight) || 20;
-    preview.scrollTop = Math.max(0, (lineCount-1) * lineH);
+    sizePreview();       // re-measure after the sheet has laid out
+    scrollPreviewToIns();
   }, 50);
 
   // Collect tags
@@ -16739,10 +16912,8 @@ function openTagPicker(callerContext) {
   function updatePreview() {
     preview.value = _buf;
     preview.setSelectionRange(_ins, _ins);
-    var tmp = _buf.substring(0, _ins);
-    var lineCount = (tmp.match(/\n/g)||[]).length;
-    var lineH = parseFloat(getComputedStyle(preview).lineHeight) || 20;
-    preview.scrollTop = Math.max(0, (lineCount-1) * lineH);
+    sizePreview();
+    scrollPreviewToIns(); // scroll the just-inserted tag into view
   }
 
   function makeChip(tag, muted) {
@@ -16767,6 +16938,13 @@ function openTagPicker(callerContext) {
       targetTA.selectionStart = targetTA.selectionEnd = _ins;
       targetTA.focus();
       if (callerContext === 'typing') { resizeEditor(); scheduleSave(); }
+      else {
+        // quickadd/editblock: setting .value programmatically fires no
+        // 'input' event, so the dialog's dirty tracking (e.g. the Edit
+        // Paragraph Save button accent) never noticed the inserted tag.
+        // Dispatch one so the dialog reacts exactly as if the tag were typed.
+        targetTA.dispatchEvent(new Event('input', { bubbles: true }));
+      }
     } else if (callerContext === 'rrmode') {
       var ed2 = document.getElementById('note-editor');
       if (ed2) {
@@ -16783,7 +16961,10 @@ function openTagPicker(callerContext) {
   var doneBtn = document.getElementById('tag-picker-done');
   if (doneBtn) doneBtn.onclick = commitAndClose;
 
-  // Build chips
+  // Build chips — current note's tags in the middle section; tags from
+  // other notes go into their own bottom section, capped to about two
+  // chip rows and vertically scrollable (they can be numerous and were
+  // crowding out the paragraph preview).
   if (noteTags.length===0 && otherTags.length===0) {
     var empty=document.createElement('span');
     empty.style.cssText='color:var(--fg3);font-size:0.9em;padding:4px 0';
@@ -16791,12 +16972,15 @@ function openTagPicker(callerContext) {
     chips.appendChild(empty);
   } else {
     noteTags.forEach(function(t){chips.appendChild(makeChip(t,false));});
-    if (noteTags.length>0 && otherTags.length>0) {
-      var divEl=document.createElement('div');
-      divEl.style.cssText='width:100%;border-top:1px solid var(--border);margin:2px 0';
-      chips.appendChild(divEl);
+    if (otherTags.length > 0) {
+      if (otherChips) {
+        otherTags.forEach(function(t){otherChips.appendChild(makeChip(t,true));});
+        if (otherWrap) otherWrap.style.display = '';
+      } else {
+        // Fallback if the section is missing: old inline behavior
+        otherTags.forEach(function(t){chips.appendChild(makeChip(t,true));});
+      }
     }
-    otherTags.forEach(function(t){chips.appendChild(makeChip(t,true));});
   }
 
   bar.classList.add('visible');
@@ -20043,11 +20227,12 @@ function makeImportFolderName(label) {
     _typingSessionStartLen = (ed.value || '').length;
     logDebugAction('Entered typing mode');
     noteScreen.classList.add('keyboard-open');
-    // Auto-expand toolbar when keyboard opens
-    if (document.body.classList.contains('toolbar-collapsed')) {
-      document.body.classList.remove('toolbar-collapsed');
-      pinToolbars();
-    }
+    // Deliberately NOT auto-expanding a collapsed toolbar when the keyboard
+    // opens (changed by request — it used to auto-expand here): with a large
+    // font on a small screen, the collapsed toolbar's extra room matters
+    // most while typing. Dictate and Done typing remain reachable via the
+    // More menu's EMTIP section. The restore-on-close code in the blur
+    // handler is kept as a harmless consistency guard.
     // Entering EMTIP — exit select-blocks mode if active
     if (selectMode) {
       selectMode = false;
@@ -23650,7 +23835,15 @@ function makeImportFolderName(label) {
     // Re-render viewer
     var viewer = document.getElementById('note-viewer');
     var editor = document.getElementById('note-editor');
-    if (editor) editor.value = notes[currentNoteId].content;
+    if (editor) {
+      editor.value = notes[currentNoteId].content;
+      // Update the delete-guard baseline: this is a deliberate, saved edit,
+      // not an accidental mass deletion. Without this, deleting text inside
+      // the Edit Paragraph dialog and pressing Save tripped the guard —
+      // same one-line suppression already used by dedentLines and the tag
+      // picker commit path.
+      editor._lastLength = editor.value.length;
+    }
     if (viewer) viewer.innerHTML = urlsToLinks(notes[currentNoteId].content, true);
     scheduleSave();
     var _savedLineIdx = _editBlockLineIdx;
@@ -24455,7 +24648,9 @@ function makeImportFolderName(label) {
         document.getElementById('note-editor').value = notes[currentNoteId].content;
         saveNotes();
         clearSelectedBlocks();
-        selectMode = false;
+        // Deliberately KEEPING selectMode on after a cut (changed by request):
+        // people often cut many line groups in a row (e.g. cleaning up todo
+        // lists), and re-enabling Select lines before every cut was tedious.
         updateSelectModeBtn();
         document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
         updateViewOnlyBtns();
@@ -30146,7 +30341,16 @@ var _tagAC = (function() {
 
   function attach(ta) {
     if (!ta) return;
-    ta.addEventListener('input', function() { update(ta); });
+    ta.addEventListener('input', function(e) {
+      // Only respond to REAL typing. Programmatic value changes dispatch
+      // synthetic input events (isTrusted === false) — e.g. the tag
+      // picker's commitAndClose fires one so dialog dirty-tracking
+      // updates — and the freshly inserted @tag sits right before the
+      // caret, which made this popup open uninvited. The popup should
+      // appear only when the user actually types an @.
+      if (e && e.isTrusted === false) { hide(); return; }
+      update(ta);
+    });
     ta.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') { hide(); }
     });
