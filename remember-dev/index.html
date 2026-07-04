@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1500 -->
+<!-- Remember App - Version 0.1501 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1500
+  Version 0.1501
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -31,6 +31,17 @@
 
   For permissions beyond personal use: [license@remember-app.com]
 -->
+<!-- ===== BUILD CHANGELOG (newest first) =====
+  Every build MUST append its own one-line entry here, in the same script
+  write that makes the change. One or two sentences maximum per build.
+
+  v0.1501 - Tag autocomplete popup: shows up to 16 tags (was 8, same height, scrolls) and gained an always-visible X close button. Added this changelog.
+  v0.1500 - Safe-area insets for iPhone landscape: toolbars, note content, notes list, home header, and quiet FAB now clear the camera pill and rounded corners.
+  v0.1499 - Consolidated note-item and folder-item long-press into one shared attachLongPress() helper (behavior unchanged).
+  v0.1498 - Restored pinch-zoom in the note editor (touch-action pan-y -> pan-y pinch-zoom) and stopped two-finger holds from opening note/folder context menus on the home screen.
+  v0.1497 - Fixed pinch-zoom making the note editor toolbars fill the screen: pinToolbars() no longer glues toolbars to the visual viewport while zoomed (scale > 1).
+  v0.1496 - iOS horizontal-scroll fix: JS guard snaps scrollLeft back to 0 on note containers (WebKit caret-drag autoscroll ignores touch-action), with burst-style debug logging of the culprit container.
+===== END BUILD CHANGELOG ===== -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2032,6 +2043,29 @@ body.list-continuation-indent .viewer-line.list-cont-hyphen > .line-content {
   -webkit-overflow-scrolling: touch;
 }
 #tag-autocomplete.visible { display: block; }
+.tag-ac-close-row {
+  /* Sticky so the X stays visible while scrolling the (up to 16) tags.
+     Lives INSIDE the popup's existing max-height — adds no height. */
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  z-index: 1;
+}
+.tag-ac-close {
+  background: none;
+  border: none;
+  color: var(--fg2);
+  font-size: 1.2em;
+  line-height: 1;
+  padding: 4px 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
 .tag-ac-item {
   padding: 6px 16px;
   cursor: pointer;
@@ -8911,7 +8945,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1500';
+const APP_VERSION = '0.1501';
 
 
 
@@ -30002,7 +30036,7 @@ var _tagAC = (function() {
     });
     return all.filter(function(t) {
       return lc === '' || t.toLowerCase().indexOf(lc) === 0;
-    }).slice(0, 8);
+    }).slice(0, 16); /* popup height unchanged (max-height 220px) — extra tags reachable by scrolling */
   }
 
   // Insert completed tag into textarea at _atStart, replacing @partial
@@ -30025,6 +30059,21 @@ var _tagAC = (function() {
     var pop = _getPopup();
     if (!pop) return;
     pop.innerHTML = '';
+    // Always-visible close control: on virtual keyboards there is no
+    // Escape key, and outside-tap dismissal is deliberately limited
+    // (see the no-blur-hide comment in attach()), so the X is the one
+    // guaranteed way to cancel without picking a tag. Rebuilt each
+    // render because innerHTML is cleared above.
+    var closeRow = document.createElement('div');
+    closeRow.className = 'tag-ac-close-row';
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'tag-ac-close';
+    closeBtn.setAttribute('aria-label', 'Close tag suggestions');
+    closeBtn.textContent = '\u00D7';
+    closeBtn.addEventListener('mousedown', function(e) { e.preventDefault(); }); // don't steal focus from textarea
+    closeBtn.addEventListener('click', function() { hide(); });
+    closeRow.appendChild(closeBtn);
+    pop.appendChild(closeRow);
     suggestions.forEach(function(tag) {
       var item = document.createElement('div');
       item.className = 'tag-ac-item';
