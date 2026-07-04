@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1497 -->
+<!-- Remember App - Version 0.1498 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1497
+  Version 0.1498
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -3440,7 +3440,13 @@ body.wrap-note-names .note-inline-title {
   padding: 0 calc(16px + var(--note-margin-right)) 16px calc(22px + var(--note-margin-left));
   overflow-y: auto;
   overflow-x: hidden;
-  touch-action: pan-y; /* iOS: only allow vertical pan; blocks horizontal scroll from cursor drag */
+  /* pan-y pinch-zoom: allow vertical pan AND pinch zoom, still exclude
+     horizontal pan. WARNING (learned v0.1495->0.1497): touch-action is a
+     WHITELIST — bare pan-y silently disables pinch-zoom too, which killed
+     zooming for low-vision users. Horizontal cursor-drag scroll is NOT
+     prevented by this anyway (WebKit's caret autoscroll ignores
+     touch-action) — the JS HORIZ-SCROLL-GUARD is what actually blocks it. */
+  touch-action: pan-y pinch-zoom;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -3456,7 +3462,7 @@ body.wrap-note-names .note-inline-title {
 
 #note-editor {
   overflow-x: hidden;
-  touch-action: pan-y; /* iOS: prevent horizontal scroll from cursor/selection drag */
+  touch-action: pan-y pinch-zoom; /* NOT bare pan-y — that kills pinch zoom (see .note-content-area) */
   font-family: var(--font-note);
   font-size: var(--font-size-editor);
   font-weight: var(--font-weight-editor);
@@ -3485,7 +3491,7 @@ body.wrap-note-names .note-inline-title {
 /* Note viewer (read-only / view mode) */
 .note-viewer {
   overflow-x: hidden;
-  touch-action: pan-y; /* iOS: prevent horizontal scroll from selection drag */
+  touch-action: pan-y pinch-zoom; /* NOT bare pan-y — that kills pinch zoom (see .note-content-area) */
   font-family: var(--font-note);
   font-size: var(--font-size-editor);
   font-weight: var(--font-weight-editor);
@@ -8894,7 +8900,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1497';
+const APP_VERSION = '0.1498';
 
 
 
@@ -10685,6 +10691,18 @@ function initHorizScrollGuard() {
   }, { passive: true });
 }
 
+// ===== MULTI-TOUCH TRACKER =====
+// Number of fingers currently on the screen, document-wide. Long-press
+// context menus (notes and folders on the home screen) consult this so
+// a two-finger pinch-zoom hold never pops a context menu. A per-element
+// touchstart alone can't see this: the second finger may land on a
+// DIFFERENT element. Capture phase so the count is already updated
+// before any element-level handler runs.
+var _activeTouches = 0;
+document.addEventListener('touchstart', function(e) { _activeTouches = e.touches.length; }, { passive: true, capture: true });
+document.addEventListener('touchend', function(e) { _activeTouches = e.touches.length; }, { passive: true, capture: true });
+document.addEventListener('touchcancel', function(e) { _activeTouches = e.touches.length; }, { passive: true, capture: true });
+
 // ===== APPLY SETTINGS =====
 function lightenHex(hex, percent) {
   // Blends toward white by `percent` (0-100), rather than adding a flat
@@ -12233,16 +12251,25 @@ function wireNoteListEvents(list) {
     // Long-press for folder context menu
     var _folderLongTimer = null;
     el.addEventListener('touchstart', function(e) {
+      // Two-finger guard: see note-item long-press for rationale.
+      if (e.touches.length > 1) {
+        clearTimeout(_folderLongTimer); _folderLongTimer = null;
+        return;
+      }
       var fId = el.dataset.folderId;
+      var tx = e.touches[0].clientX, ty = e.touches[0].clientY;
       _folderLongTimer = setTimeout(function() {
         _folderLongTimer = null;
-        showFolderContextMenu(fId, e.touches[0].clientX, e.touches[0].clientY);
+        if (_activeTouches > 1) return; // second finger may be on another element
+        showFolderContextMenu(fId, tx, ty);
       }, 600);
     }, { passive: true });
     el.addEventListener('touchend', function() { clearTimeout(_folderLongTimer); }, { passive: true });
     el.addEventListener('touchmove', function() { clearTimeout(_folderLongTimer); }, { passive: true });
+    el.addEventListener('touchcancel', function() { clearTimeout(_folderLongTimer); }, { passive: true });
     el.addEventListener('contextmenu', function(e) {
       e.preventDefault();
+      if (_activeTouches > 1) return; // two fingers down = pinch, not a menu request
       showFolderContextMenu(el.dataset.folderId, e.clientX, e.clientY);
     });
   });
@@ -12280,6 +12307,7 @@ function wireNoteListEvents(list) {
   list.querySelectorAll('.note-item').forEach(function(el) {
     el.addEventListener('contextmenu', function(e) {
       e.preventDefault();
+      if (_activeTouches > 1) return; // two fingers down = pinch, not a menu request
       showNoteContextMenu(el.dataset.id, e.clientX, e.clientY);
     });
   });
@@ -12292,14 +12320,31 @@ function wireNoteListEvents(list) {
     var longPressFired = false;
 
     el.addEventListener('touchstart', function(e) {
+      // Two-finger guard: a second finger means pinch-zoom, never a
+      // long-press. Cancel any pending timer and don't arm a new one.
+      if (e.touches.length > 1) {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        return;
+      }
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
       swipeDir = null;
       longPressFired = false;
       longPressTimer = setTimeout(function() {
+        longPressTimer = null;
+        // Re-check at fire time via the document-wide tracker: the
+        // second finger may have landed on a different element, so this
+        // element's own touchstart never saw it.
+        if (_activeTouches > 1) return;
         longPressFired = true;
         showNoteContextMenu(el.dataset.id, touchStartX, touchStartY);
       }, 500);
+    }, { passive: true });
+
+    el.addEventListener('touchcancel', function() {
+      // Browser claimed the gesture (e.g. pinch-zoom took over) — never
+      // fire the menu from a stale timer.
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     }, { passive: true });
 
     el.addEventListener('touchmove', function(e) {
