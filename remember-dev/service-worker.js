@@ -1,7 +1,7 @@
 // Remember App - Version 0.1063
 // Service Worker for remember-dev — separate cache from stable and main deployments
 
-const CACHE_VERSION = 'remember-dev-v0.1498';
+const CACHE_VERSION = 'remember-dev-v0.1500';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
