@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1508 -->
+<!-- Remember App - Version 0.1509 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1508
+  Version 0.1509
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1509 - Fixed sample notes failing to install on fresh storage: the hidden debug-log note (created by loadState's own diagnostics) counted as an existing note and blocked createInitialNotes — the gate now counts only real notes, plus treats an absent notes key at load start as a fresh install. Census logs now show real vs total note counts.
   v0.1508 - Storage safety: per-deployment localStorage namespacing (stable/dev isolated; main path keeps existing data); always-on 300-entry system log surviving the debug setting; daily quota-aware notes+folders backup (skipped when loss detected); JSON export now includes folders and import rebuilds folder structure.
   v0.1507 - Delete guard now dismisses the keyboard before showing (ends the offscreen-untappable-dialog trap). Select lines button no longer stays lit after backgrounding the app (duplicate visibilitychange handlers consolidated). Skipping or tapping outside a Help-launched tour returns to Help; finishing it still exits.
   v0.1506 - Alpha diagnostics for missing-notes investigation: debug logging force-re-enables on any version change; startup storage census logged; note census written on every save so any notes missing at next load are detected and NAMED in the debug log; corrupt remember_notes is preserved to a backup key instead of being silently overwritten; saveNotes failures now warn loudly instead of being uncaught.
@@ -8959,7 +8960,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1508';
+const APP_VERSION = '0.1509';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -10274,9 +10275,10 @@ function loadState() {
   } catch(e) {}
   loadThemes();
   var _notesRaw = null;
+  var _hadNotesKey = false;  // true iff remember_notes existed when this load STARTED
   try {
     _notesRaw = localStorage.getItem(storeKey('remember_notes'));
-    if (_notesRaw) notes = JSON.parse(_notesRaw);
+    if (_notesRaw) { _hadNotesKey = true; notes = JSON.parse(_notesRaw); }
   } catch(e) {
     // CRITICAL: never silently continue past a notes parse failure — the
     // app would boot with zero notes and the next saveNotes() would
@@ -10319,8 +10321,10 @@ function loadState() {
       var v = localStorage.getItem(storeKey(k));
       if (v !== null) _censusParts.push(k + '=' + v.length + 'ch');
     });
+    var _cnTotal = Object.keys(notes).length;
+    var _cnReal = Object.keys(notes).filter(function(id) { return !notes[id].isDebugLog; }).length;
     logSys('STARTUP CENSUS: v' + APP_VERSION + ' path=' + location.pathname +
-      ' notes=' + Object.keys(notes).length + ' folders=' + Object.keys(folders).length +
+      ' notes=' + _cnTotal + '(real ' + _cnReal + ') folders=' + Object.keys(folders).length +
       ' [' + _censusParts.join(', ') + ']');
   } catch(eC) {}
   // (3) Loss detection: remember_note_census records what the LAST
@@ -10534,8 +10538,21 @@ function loadState() {
     }
   } catch(eBK) { logSys('Daily backup FAILED: ' + eBK); }
 
-  // First-time use: call createInitialNotes if no notes exist
-  if (Object.keys(notes).length === 0) {
+  // First-time use: install sample notes when the user has no REAL notes.
+  // CRITICAL LESSON (v0.1509, found via the system log on a fresh dev
+  // deployment): the gate used to be Object.keys(notes).length === 0 —
+  // but the loadState diagnostics above log via logSys/logDebugAction,
+  // and the debug-log note IS a note, so merely logging during a fresh
+  // load created one hidden note and permanently blocked sample
+  // installation (leaving 1 visible note: the Features Guide, added by
+  // its own separate migration below — the exact wreckage seen on both
+  // the Android device and the fresh dev PWA). The debug-log note must
+  // NEVER count as "the user has notes." Also treat a completely absent
+  // notes key at load start as a fresh install regardless of anything
+  // diagnostics created since.
+  var _realNoteCount = Object.keys(notes).filter(function(id) { return !notes[id].isDebugLog; }).length;
+  if (!_hadNotesKey || _realNoteCount === 0) {
+    logSys('Installing sample notes (hadNotesKey=' + _hadNotesKey + ', realNotes=' + _realNoteCount + ')');
     createInitialNotes();
   }
 
