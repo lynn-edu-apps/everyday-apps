@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1510 -->
+<!-- Remember App - Version 0.1513 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1510
+  Version 0.1513
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,9 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1513 - Added "View system log" to Settings > Debugging: shows the always-on ring log (newest first, scrollable) with a Copy button — completing the loop so critical events are readable on-device even when normal debug logging was off.
+  v0.1512 - Scratch pad gained session-only per-page undo/redo (two FABs next to Copy; one undo per typing burst). Long-press (or right-click) the highlight toolbar button to pick from the Settings highlight palette; quick taps then bake that color into each new highlight (==#hex:==) so multiple priority colors coexist — "D" swatch returns to the default plain highlight.
+  v0.1511 - Fixed scratch pad showing stale (pre-import) text and the page-curl then overwriting freshly imported content — the "page 3 didn't import" bug. Fixed intermittent dead up/down arrows in toolbar reorder: movement now swaps visual rows (shared getToolbarVisualUnits), never raw order entries that render no row; also scroll-over-arrow no longer triggers a move, and each arrow tap is debug-logged.
   v0.1510 - Debug log gains date header lines on day change / session start (entries were time-only and undatable). Scratch pad's three pages now included in JSON export and restored on import (only into empty local pages). saveSettings/saveThemes now fail loudly like saveNotes.
   v0.1509 - Fixed sample notes failing to install on fresh storage: the hidden debug-log note (created by loadState's own diagnostics) counted as an existing note and blocked createInitialNotes — the gate now counts only real notes, plus treats an absent notes key at load start as a fresh install. Census logs now show real vs total note counts.
   v0.1508 - Storage safety: per-deployment localStorage namespacing (stable/dev isolated; main path keeps existing data); always-on 300-entry system log surviving the debug setting; daily quota-aware notes+folders backup (skipped when loss detected); JSON export now includes folders and import rebuilds folder structure.
@@ -4690,7 +4693,7 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   word-wrap: break-word;
   overflow-y: auto;
 }
-#scratch-copy-fab {
+#scratch-copy-fab, #scratch-undo-fab, #scratch-redo-fab {
   position: absolute;
   bottom: 8px;
   left: 6px;
@@ -4710,9 +4713,38 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   padding: 0;
 }
 @media (hover: hover) {
-  #scratch-copy-fab:hover { background: rgba(0,0,0,0.15); }
+  #scratch-copy-fab:hover, #scratch-undo-fab:hover, #scratch-redo-fab:hover { background: rgba(0,0,0,0.15); }
 }
-#scratch-copy-fab:active { transform: scale(0.9); }
+#scratch-copy-fab:active, #scratch-undo-fab:active, #scratch-redo-fab:active { transform: scale(0.9); }
+#scratch-undo-fab { left: 42px; }
+#scratch-redo-fab { left: 78px; }
+/* Dimmed when that direction's stack is empty (session-only stacks) */
+#scratch-undo-fab.sp-empty, #scratch-redo-fab.sp-empty { opacity: 0.3; }
+
+/* ===== HL-QUICK-PALETTE (long-press on highlight toolbar button) ===== */
+#hl-quick-palette {
+  position: fixed;
+  z-index: 10020;
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+}
+.hl-qp-swatch {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0; line-height: 1;
+  font-family: var(--font-body);
+  font-size: 0.75em; font-weight: 700; color: rgba(0,0,0,0.55);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.hl-qp-swatch.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #scratch-page-curl {
   position: absolute;
   bottom: 0;
@@ -6700,6 +6732,18 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <path d="M4 14V3.5A1.5 1.5 0 0 1 5.5 2H13"/>
     </svg>
   </button>
+  <button id="scratch-undo-fab" class="sp-empty" aria-label="Undo scratch pad edit" title="Undo">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;pointer-events:none;">
+      <polyline points="8 5 4 9 8 13"/>
+      <path d="M4 9h8a4 4 0 0 1 0 8h-2"/>
+    </svg>
+  </button>
+  <button id="scratch-redo-fab" class="sp-empty" aria-label="Redo scratch pad edit" title="Redo">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;pointer-events:none;">
+      <polyline points="12 5 16 9 12 13"/>
+      <path d="M16 9H8a4 4 0 0 0 0 8h2"/>
+    </svg>
+  </button>
   <button id="scratch-page-curl" aria-label="Switch scratch pad page">
     <span id="scratch-page-num">1</span>
   </button>
@@ -8141,6 +8185,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             user-select:none;
             -webkit-user-select:none;
           ">Clear debug log</button>
+          <button id="view-syslog-row" style="
+            background:none;
+            border:1px solid var(--border);
+            border-radius:var(--radius-sm);
+            color:var(--fg2);
+            font-family:var(--font-body);
+            font-size:0.85em;
+            padding:6px 14px;
+            cursor:pointer;
+            touch-action:manipulation;
+            user-select:none;
+            -webkit-user-select:none;
+          ">View system log</button>
         </div>
       </div>
     </div>
@@ -8961,7 +9018,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1510';
+const APP_VERSION = '0.1513';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -10031,6 +10088,7 @@ const DEFAULT_SETTINGS = {
   viewIndentWidth: 1.7,        // em per indent level in view mode (visual only)
   headingIndent: false,          // indent headings by level in R&R mode (uses viewIndentWidth)
   highlightColor: '#ffe066',    // color used for ==highlight== rendering
+  activeHighlightHex: '',       // long-press quick palette choice; '' = default plain ==highlight==
   checkboxColor: 'gray',        // default checkbox color (named palette key)
   customColor: '#9b59b6',       // user-defined custom color for {custom} tag
   customColor2: '#e67e22',      // user-defined custom color for {custom2} tag
@@ -10225,6 +10283,7 @@ var applyTagPresenceFilter = function() {}; // replaced in init
 var updateHideCompletedIndicator = function() {}; // replaced in init
 var updateHideCompletedMenuLabel = function() {}; // replaced in init
 var updateSelectModeBtn = function() {}; // replaced in init
+var refreshScratchPad = function() {}; // replaced in init (scratch pad section)
 let settingsSnapshot = null; // copy of settings when dialog was opened
 
 // ===== STORAGE =====
@@ -15512,7 +15571,7 @@ function importNotes(file) {
                 _spSkipped++;
               }
             });
-            if (_spRestored > 0) saveSettings();
+            if (_spRestored > 0) { saveSettings(); refreshScratchPad(); }
           }
           var _spMsg = '';
           if (_spRestored > 0) _spMsg += ' Scratch pad: ' + _spRestored + ' page' + (_spRestored !== 1 ? 's' : '') + ' restored.';
@@ -18580,6 +18639,10 @@ function makeImportFolderName(label) {
     if (pageNum) pageNum.textContent = (_curPage + 1);
 
     function openScratchPad() {
+      // Refresh from settings when there's no unsaved typing pending —
+      // covers content changed underneath us (e.g. a JSON import
+      // restoring scratch pad pages), so the pad never shows stale text.
+      if (!_scratchSaveTimer) ta.value = settings[PAGE_KEYS[_curPage]] || '';
       panel.classList.add('open');
     }
     function closeScratchPad() {
@@ -18595,11 +18658,104 @@ function makeImportFolderName(label) {
       if (_scratchSaveTimer) { clearTimeout(_scratchSaveTimer); _scratchSaveTimer = null; }
       settings[PAGE_KEYS[_curPage]] = ta.value;
       saveSettings();
+      if (_spBurst) _spSettleBurst();
     }
     ta.addEventListener('input', function() {
+      // Undo grouping: the first input after a settled state pushes that
+      // state onto the undo stack and opens a "burst"; the burst settles
+      // when the debounced save fires — so one undo reverts a whole run
+      // of typing, not one character.
+      _spCommitBase();
+      if (!_spBurst && ta.value !== _spCommitted[_curPage]) {
+        _spUndo[_curPage].push(_spCommitted[_curPage]);
+        if (_spUndo[_curPage].length > SP_STACK_CAP) _spUndo[_curPage].shift();
+        _spRedo[_curPage] = [];
+        _spBurst = true;
+        _spUpdateFabs();
+      }
       if (_scratchSaveTimer) clearTimeout(_scratchSaveTimer);
       _scratchSaveTimer = setTimeout(_saveCurrentPageNow, 400);
     });
+
+    // Module-level hook (declared at top of script): lets external code
+    // (the JSON import's scratch pad restore) refresh the pad's textarea
+    // after changing scratch pad settings underneath it. Without this,
+    // the pad displayed stale pre-import text for the current page, and
+    // the page-curl's flush-before-turn then wrote that stale text back
+    // OVER the freshly imported content — the "page 3 didn't import" bug
+    // (page 3 because checking all pages naturally ends there).
+    refreshScratchPad = function() {
+      if (_scratchSaveTimer) { clearTimeout(_scratchSaveTimer); _scratchSaveTimer = null; }
+      _curPage = Math.min(3, Math.max(1, settings.scratchPadPage || 1)) - 1;
+      ta.value = settings[PAGE_KEYS[_curPage]] || '';
+      if (pageNum) pageNum.textContent = (_curPage + 1);
+      // External change (e.g. JSON import): make it undoable like an edit
+      if (_spCommitted[_curPage] !== null && _spCommitted[_curPage] !== ta.value) {
+        _spUndo[_curPage].push(_spCommitted[_curPage]);
+        if (_spUndo[_curPage].length > SP_STACK_CAP) _spUndo[_curPage].shift();
+        _spRedo[_curPage] = [];
+      }
+      _spCommitted[_curPage] = ta.value;
+      _spUpdateFabs();
+    };
+
+    // ----- Session-only undo/redo (per page) -----
+    // Snapshot stacks live only in memory (deliberate: a scratch pad
+    // doesn't warrant persisted history, and this keeps quota untouched).
+    // Grouping: one stack entry per typing burst (settled by the 400ms
+    // save debounce), so undo feels like "undo that thought."
+    var undoFab = document.getElementById('scratch-undo-fab');
+    var redoFab = document.getElementById('scratch-redo-fab');
+    var _spUndo = [[], [], []];
+    var _spRedo = [[], [], []];
+    var _spCommitted = [null, null, null]; // last settled text per page
+    var _spBurst = false;                  // a typing burst is open
+    var SP_STACK_CAP = 100;
+    function _spCommitBase() {
+      if (_spCommitted[_curPage] === null) _spCommitted[_curPage] = settings[PAGE_KEYS[_curPage]] || '';
+    }
+    function _spSettleBurst() {
+      _spBurst = false;
+      _spCommitted[_curPage] = ta.value;
+      _spUpdateFabs();
+    }
+    function _spUpdateFabs() {
+      if (undoFab) undoFab.classList.toggle('sp-empty', _spUndo[_curPage].length === 0);
+      if (redoFab) redoFab.classList.toggle('sp-empty', _spRedo[_curPage].length === 0);
+    }
+    function _spApply(v) {
+      ta.value = v;
+      _spCommitted[_curPage] = v;
+      if (_scratchSaveTimer) { clearTimeout(_scratchSaveTimer); _scratchSaveTimer = null; }
+      settings[PAGE_KEYS[_curPage]] = v;
+      saveSettings();
+      _spUpdateFabs();
+    }
+    function spUndoTap() {
+      if (_scratchSaveTimer) _saveCurrentPageNow(); // flush + settle any open burst first
+      var st = _spUndo[_curPage];
+      if (!st.length) return;
+      _spRedo[_curPage].push(ta.value);
+      if (_spRedo[_curPage].length > SP_STACK_CAP) _spRedo[_curPage].shift();
+      _spApply(st.pop());
+    }
+    function spRedoTap() {
+      if (_scratchSaveTimer) _saveCurrentPageNow();
+      var st = _spRedo[_curPage];
+      if (!st.length) return;
+      _spUndo[_curPage].push(ta.value);
+      if (_spUndo[_curPage].length > SP_STACK_CAP) _spUndo[_curPage].shift();
+      _spApply(st.pop());
+    }
+    if (undoFab) {
+      undoFab.addEventListener('mousedown', function(e) { e.preventDefault(); }); // keep textarea focus
+      undoFab.addEventListener('click', spUndoTap);
+    }
+    if (redoFab) {
+      redoFab.addEventListener('mousedown', function(e) { e.preventDefault(); });
+      redoFab.addEventListener('click', spRedoTap);
+    }
+    _spUpdateFabs();
 
     if (curl) {
       curl.addEventListener('click', function() {
@@ -18609,6 +18765,7 @@ function makeImportFolderName(label) {
         ta.value = settings[PAGE_KEYS[_curPage]] || '';
         if (pageNum) pageNum.textContent = (_curPage + 1);
         saveSettings();
+        _spUpdateFabs(); // stacks are per-page — reflect the new page's state
       });
     }
 
@@ -19123,56 +19280,64 @@ function makeImportFolderName(label) {
     }, 2000);
   }
 
-  // Move button at fromIdx to toIdx in the order array
-  function moveToolbarButton(btnId, direction) {
+  // ONE shared definition of the settings list's visual row units — each
+  // unit is the array of button ids one visible row represents ([id] or
+  // a combined pair). Skips ids that render no row (e.g. quick-add).
+  // Used by BOTH buildToolbarVisibilityRows (first/last arrow state) and
+  // moveToolbarUnit, so movement and display can never disagree.
+  // ROOT CAUSE of the intermittent "arrow does nothing" bug: the old
+  // move functions stepped ±1 through the RAW order array, which
+  // contains entries that render no row — crossing one produced a real
+  // reorder with ZERO visible change (a "dead" tap), most often during
+  // long-distance moves, while neighboring rows (whose ±1 crossed no
+  // hidden entry) kept working. Movement now swaps adjacent VISUAL units.
+  function getToolbarVisualUnits(order) {
+    var units = [], seen = {};
+    order.forEach(function(id) {
+      if (seen[id]) return;
+      var b = HIDEABLE_BUTTONS.filter(function(x) { return x.id === id; })[0];
+      if (!b) return; // renders no row
+      var pair = getSettingsRowPair(id);
+      if (pair && pair[1] === id) return; // second half — belongs to the first's unit
+      var u = pair ? pair.slice() : [id];
+      u.forEach(function(x) { seen[x] = true; });
+      units.push(u);
+    });
+    return units;
+  }
+
+  // Swap the row's unit with its visual neighbor, then rebuild the order
+  // array: row-rendering ids are refilled in the new visual order while
+  // non-row ids keep their absolute slots. Pair members always come out
+  // adjacent (the old pair-scatter bug stays fixed by construction).
+  function moveToolbarUnit(rowIds, direction) {
     var order = getEffectiveOrder();
-    var idx = order.indexOf(btnId);
-    if (idx === -1) return;
-    var newIdx = idx + direction;
-    if (newIdx < 0 || newIdx >= order.length) return;
-    order.splice(idx, 1);
-    order.splice(newIdx, 0, btnId);
-    settings.toolbarOrder = order;
+    var units = getToolbarVisualUnits(order);
+    var ui = -1;
+    units.forEach(function(u, i) { if (u[0] === rowIds[0]) ui = i; });
+    if (ui === -1) return;
+    var ti = ui + direction;
+    if (ti < 0 || ti >= units.length) return;
+    var tmp = units[ui]; units[ui] = units[ti]; units[ti] = tmp;
+    var flat = [];
+    units.forEach(function(u) { u.forEach(function(id) { flat.push(id); }); });
+    var vi = 0;
+    var newOrder = order.map(function(id) {
+      var b = HIDEABLE_BUTTONS.filter(function(x) { return x.id === id; })[0];
+      if (!b) return id;                            // non-row id keeps its slot
+      return vi < flat.length ? flat[vi++] : id;    // row slots refilled in new visual order
+    });
+    settings.toolbarOrder = newOrder;
     applyToolbarOrder();
     buildToolbarVisibilityRows();
     updateSaveBtnState();
     if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
     // Highlight the moved row after rebuild so the new DOM row exists
-    setTimeout(function() { highlightMovedRow(btnId); }, 0);
+    setTimeout(function() { highlightMovedRow(rowIds[0]); }, 0);
   }
 
-  // Move a pair of ids (see SETTINGS_ROW_PAIRS) one step up/down together,
-  // ALWAYS leaving them adjacent afterward — regardless of whether they
-  // were adjacent before. The previous version assumed the two ids were
-  // already next to each other and spliced out the index RANGE between
-  // them, which silently deleted/relocated any other buttons that
-  // happened to sit between undo and redo if they weren't adjacent —
-  // exactly the "items got scattered" bug. This version removes each id
-  // individually by id (never by a positional range) and always
-  // reinserts both together, so the pair is guaranteed adjacent on exit
-  // no matter what state the order array was in on entry.
-  function moveToolbarButtonPair(ids, direction) {
-    var order = getEffectiveOrder();
-    // Anchor position: treat the pair as currently "at" its lower index,
-    // for the purpose of computing where it should land after the move.
-    var idx0 = order.indexOf(ids[0]);
-    var idx1 = order.indexOf(ids[1]);
-    if (idx0 === -1 || idx1 === -1) return;
-    var lo = Math.min(idx0, idx1);
-    // Remove both ids individually wherever they actually are
-    order = order.filter(function(id) { return id !== ids[0] && id !== ids[1]; });
-    // Clamp target insertion index into the now-shorter array
-    var newLo = lo + direction;
-    if (newLo < 0) newLo = 0;
-    if (newLo > order.length) newLo = order.length;
-    order.splice(newLo, 0, ids[0], ids[1]); // reinsert as an adjacent unit, canonical order preserved
-    settings.toolbarOrder = order;
-    applyToolbarOrder();
-    buildToolbarVisibilityRows();
-    updateSaveBtnState();
-    if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
-    setTimeout(function() { highlightMovedRow(ids[0]); }, 0);
-  }
+  // (moveToolbarButtonPair removed in v0.1511 — pair movement and its
+  // always-adjacent guarantee now live in moveToolbarUnit above.)
 
   // Apply hidden state: hide toolbar buttons and rebuild More menu items
   function applyToolbarVisibility() {
@@ -19457,6 +19622,12 @@ function makeImportFolderName(label) {
     var hidden = settings.toolbarHidden || [];
     var order  = getEffectiveOrder();
     container.innerHTML = '';
+    // First/last must be judged in VISUAL units (see getToolbarVisualUnits),
+    // not raw order indexes — a hidden entry at either end used to leave an
+    // edge row with a live-looking arrow whose tap changed nothing.
+    var _units = getToolbarVisualUnits(order);
+    var _firstRowId = _units.length ? _units[0][0] : null;
+    var _lastRowId  = _units.length ? _units[_units.length - 1][0] : null;
 
     // Show buttons in current toolbar order
     order.forEach(function(btnId, idx) {
@@ -19474,8 +19645,8 @@ function makeImportFolderName(label) {
                            : b.label;
 
       var isHidden  = hidden.indexOf(rowIds[0]) !== -1; // pair members always share hidden state
-      var isFirst   = idx === 0;
-      var isLast    = idx === order.length - 1;
+      var isFirst   = rowIds[0] === _firstRowId;
+      var isLast    = rowIds[0] === _lastRowId;
       var isLocked  = false;
 
       var row = document.createElement('div');
@@ -19496,27 +19667,33 @@ function makeImportFolderName(label) {
       downSpan.setAttribute('aria-label', 'Move ' + rowLabel + ' down');
       downSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none" width="var(--icon-size)" height="var(--icon-size)"><polyline points="6 9 12 15 18 9"/></svg>';
 
-      // touchHandled flag per arrow to prevent double-firing on iOS
+      // touchHandled flag per arrow prevents double-firing on iOS; the
+      // touchmove guard stops a SCROLL that happens to start on an arrow
+      // from being treated as a tap (touchend used to fire the move
+      // unconditionally, so scrolling over an arrow could reorder).
       var touchHandledUp = false, touchHandledDown = false;
+      var touchMovedUp = false, touchMovedDown = false;
       var doMove = function(direction) {
-        if (pair) moveToolbarButtonPair(rowIds, direction);
-        else moveToolbarButton(rowIds[0], direction);
+        logDebugAction('Toolbar reorder: ' + rowIds.join('+') + ' dir=' + direction);
+        moveToolbarUnit(rowIds, direction);
       };
 
-      upSpan.addEventListener('touchstart', function() { touchHandledUp = true; }, { passive: true });
+      upSpan.addEventListener('touchstart', function() { touchHandledUp = true; touchMovedUp = false; }, { passive: true });
+      upSpan.addEventListener('touchmove', function() { touchMovedUp = true; }, { passive: true });
       upSpan.addEventListener('touchend', function(e) {
         e.preventDefault();
-        if (!isFirst) doMove(-1);
+        if (!touchMovedUp && !isFirst) doMove(-1);
       }, { passive: false });
       upSpan.addEventListener('click', function() {
         if (touchHandledUp) { touchHandledUp = false; return; }
         if (!isFirst) doMove(-1);
       });
 
-      downSpan.addEventListener('touchstart', function() { touchHandledDown = true; }, { passive: true });
+      downSpan.addEventListener('touchstart', function() { touchHandledDown = true; touchMovedDown = false; }, { passive: true });
+      downSpan.addEventListener('touchmove', function() { touchMovedDown = true; }, { passive: true });
       downSpan.addEventListener('touchend', function(e) {
         e.preventDefault();
-        if (!isLast) doMove(1);
+        if (!touchMovedDown && !isLast) doMove(1);
       }, { passive: false });
       downSpan.addEventListener('click', function() {
         if (touchHandledDown) { touchHandledDown = false; return; }
@@ -21958,6 +22135,32 @@ function makeImportFolderName(label) {
       showConfirm('Clear Debug Log', 'Erase all recorded log entries? This cannot be undone.', 'Clear',
         function() { clearDebugLog(); showToast('Debug log cleared', false); },
         false, 'Cancel', null);
+    });
+    // View system log: the always-on ring log (remember_syslog) — critical
+    // events that survive the debug-logging setting being off and the
+    // debug-log note being cleared/deleted. Shown newest-first in the
+    // confirm dialog (whose message area scrolls); Copy puts the full
+    // chronological log on the clipboard for pasting into a bug report.
+    var _viewSysRow = document.getElementById('view-syslog-row');
+    if (_viewSysRow) _viewSysRow.addEventListener('click', function() {
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem(SYSLOG_KEY) || '[]'); } catch(e) {}
+      if (!arr.length) {
+        showConfirm('System Log', 'No system log entries recorded yet.', 'Close', function() {}, false, null, null);
+        return;
+      }
+      var newestFirst = arr.slice().reverse().join('\n\n');
+      var chronological = arr.join('\n');
+      showConfirm('System Log (' + arr.length + ' entries, newest first)', newestFirst, 'Close',
+        function() {},
+        false, 'Copy',
+        function() {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(chronological).then(function() {
+              showToast('System log copied', false);
+            }).catch(function() { showToast('Copy failed', false); });
+          } else { showToast('Copy not available', false); }
+        });
     });
     var _tsi = document.getElementById('today-suffix-input');
     if (_tsi) _tsi.addEventListener('input', function() { settings.todaySuffix = this.value; updateSaveBtnState(); });
@@ -26267,11 +26470,89 @@ function makeImportFolderName(label) {
     applyFormattingToBlocks('italic');
   });
 
-  // ── Highlight: one-shot on selected blocks ───────────────────────────────
-  document.getElementById('highlight-mode-btn').addEventListener('click', function() {
-    if (!isViewMode || selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
-    applyFormattingToBlocks('highlight');
+  // ── Highlight: one-shot on selected blocks; long-press = quick palette ──
+  // Long-pressing (or right-clicking) the highlight button opens a small
+  // palette of the highlight colors defined in Settings. Choosing one
+  // makes subsequent quick taps apply that color EXPLICITLY per highlight
+  // (==#hex:text==) so multiple priority colors coexist in one note —
+  // deliberately NOT by changing settings.highlightColor, which would
+  // retroactively recolor every existing plain ==highlight==. The
+  // "D" (Default) swatch returns to the plain wrapper behavior.
+  var _hlBtnEl = document.getElementById('highlight-mode-btn');
+  var _hlPalPop = null;
+  function _hlPalOutside(e) {
+    if (_hlPalPop && !_hlPalPop.contains(e.target)) _closeHlQuickPalette();
+  }
+  function _closeHlQuickPalette() {
+    if (_hlPalPop) {
+      _hlPalPop.remove();
+      _hlPalPop = null;
+      document.removeEventListener('pointerdown', _hlPalOutside, true);
+    }
+  }
+  function _updateHlBtnTint() {
+    // Small color bar under the icon so the active choice is visible
+    var hex = settings.activeHighlightHex || '';
+    _hlBtnEl.style.boxShadow = hex ? ('inset 0 -3px 0 0 ' + hex) : '';
+  }
+  function openHlQuickPalette() {
+    _closeHlQuickPalette();
+    var pop = document.createElement('div');
+    pop.id = 'hl-quick-palette';
+    // Swatch hexes are read LIVE from the Settings row — one source of truth
+    var hexes = [];
+    document.querySelectorAll('#highlight-color-swatches .settings-color-swatch').forEach(function(sw) {
+      var v = sw.getAttribute('data-value');
+      if (v && hexes.indexOf(v) === -1) hexes.push(v);
+    });
+    var act = (settings.activeHighlightHex || '').toLowerCase();
+    function mkSwatch(hex, isDefault) {
+      var b = document.createElement('button');
+      b.className = 'hl-qp-swatch';
+      b.style.background = isDefault ? (settings.highlightColor || '#ffe066') : hex;
+      b.title = isDefault ? 'Default highlight color' : hex;
+      if (isDefault ? act === '' : act === hex.toLowerCase()) b.classList.add('active');
+      if (isDefault) b.textContent = 'D';
+      b.addEventListener('mousedown', function(e) { e.preventDefault(); });
+      b.addEventListener('click', function(e) {
+        e.stopPropagation();
+        settings.activeHighlightHex = isDefault ? '' : hex;
+        saveSettings();
+        _updateHlBtnTint();
+        _closeHlQuickPalette();
+        showToast(isDefault ? 'Using default highlight color' : 'Highlight color set', false);
+        logDebugAction('Quick highlight color: ' + (isDefault ? '(default)' : hex));
+      });
+      return b;
+    }
+    pop.appendChild(mkSwatch('', true));
+    hexes.forEach(function(h) { pop.appendChild(mkSwatch(h, false)); });
+    document.body.appendChild(pop);
+    var r = _hlBtnEl.getBoundingClientRect();
+    pop.style.left = Math.max(6, Math.min(window.innerWidth - pop.offsetWidth - 6, r.left + r.width / 2 - pop.offsetWidth / 2)) + 'px';
+    pop.style.top = Math.max(6, r.top - pop.offsetHeight - 8) + 'px';
+    _hlPalPop = pop;
+    // Delay the outside-tap closer so the opening gesture's own events
+    // don't immediately dismiss it
+    setTimeout(function() { document.addEventListener('pointerdown', _hlPalOutside, true); }, 50);
+  }
+  var _hlLp = attachLongPress(_hlBtnEl, {
+    delay: 500,
+    moveThreshold: 10,
+    onFire: function() { openHlQuickPalette(); }
   });
+  _hlBtnEl.addEventListener('contextmenu', function(e) {
+    e.preventDefault(); // desktop right-click parity for the palette
+    openHlQuickPalette();
+  });
+  _hlBtnEl.addEventListener('click', function() {
+    if (_hlLp.fired) return; // long-press opened the palette; swallow this tap
+    if (!isViewMode || selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
+    var _active = settings.activeHighlightHex || '';
+    if (_active) applyFormattingToBlocks('highlight-color', _active);
+    else applyFormattingToBlocks('highlight');
+  });
+  _updateHlBtnTint();
 
   // ── Strikethrough: one-shot on selected blocks ────────────────────────────
   document.getElementById('crossout-mode-btn').addEventListener('click', function() {
