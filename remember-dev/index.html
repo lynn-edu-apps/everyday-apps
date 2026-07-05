@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1506 -->
+<!-- Remember App - Version 0.1508 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1506
+  Version 0.1508
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1508 - Storage safety: per-deployment localStorage namespacing (stable/dev isolated; main path keeps existing data); always-on 300-entry system log surviving the debug setting; daily quota-aware notes+folders backup (skipped when loss detected); JSON export now includes folders and import rebuilds folder structure.
+  v0.1507 - Delete guard now dismisses the keyboard before showing (ends the offscreen-untappable-dialog trap). Select lines button no longer stays lit after backgrounding the app (duplicate visibilitychange handlers consolidated). Skipping or tapping outside a Help-launched tour returns to Help; finishing it still exits.
   v0.1506 - Alpha diagnostics for missing-notes investigation: debug logging force-re-enables on any version change; startup storage census logged; note census written on every save so any notes missing at next load are detected and NAMED in the debug log; corrupt remember_notes is preserved to a backup key instead of being silently overwritten; saveNotes failures now warn loudly instead of being uncaught.
   v0.1505 - Tag autocomplete popup no longer opens from programmatic text changes (only real typing of @) — fixes it appearing after inserting a tag via the Insert Tags dialog. Confirm dialogs now auto-scroll themselves into view when the keyboard has panned the page (best effort, helps most in webviews).
   v0.1504 - Insert Tags dialog: preview auto-sizes up to 5 lines and truly scrolls to the insertion point (mirror-div measurement; old newline-count never worked on soft-wrapped paragraphs); middle tag section capped at ~3 rows with a 1-row minimum; Done row tightened. Tag insert now marks Edit Paragraph dialog dirty. Delete guard position also compensates for page layout scroll (deep-in-note keyboard pan).
@@ -8957,7 +8959,47 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1506';
+const APP_VERSION = '0.1508';
+
+// ===== STORAGE NAMESPACE (v0.1508) =====
+// All three deployments (remember/, remember-stable/, remember-dev/)
+// live on ONE origin, and localStorage is origin-scoped — previously
+// they all read/wrote the SAME keys, so an older deployment or a stale
+// frozen window could clobber the main app's data (missing-notes
+// investigation, finding F3). Keys are now prefixed per deployment
+// path. The main path stays UNPREFIXED, so existing user data there is
+// untouched; stable and dev each get fresh, fully isolated storage.
+var STORE_PREFIX = (function() {
+  var p = location.pathname || '';
+  if (p.indexOf('/remember-stable/') !== -1) return 'stable:';
+  if (p.indexOf('/remember-dev/') !== -1) return 'dev:';
+  return '';
+})();
+function storeKey(k) { return STORE_PREFIX + k; }
+
+// ===== ALWAYS-ON SYSTEM LOG (v0.1508) =====
+// Ring buffer of the last 300 critical events in its own localStorage
+// key — survives the debug-logging setting being off, the debug-log
+// note being deleted, and (tiny + capped) quota pressure. Used for:
+// version changes, startup census, note-loss detection, save failures,
+// parse failures. A reader UI in the Debugging settings section is a
+// planned follow-up; until then the census line reports its size and
+// entries mirror into the debug-log note when that is enabled.
+var SYSLOG_KEY = storeKey('remember_syslog');
+var _noteLossDetectedThisLoad = false; // set by census check; blocks daily backup of a bad state
+function logSys(msg, skipMirror) {
+  try {
+    var arr = [];
+    try { arr = JSON.parse(localStorage.getItem(SYSLOG_KEY) || '[]'); } catch(e0) {}
+    arr.push(new Date().toISOString() + ' [v' + APP_VERSION + '] ' + String(msg).slice(0, 500));
+    if (arr.length > 300) arr = arr.slice(arr.length - 300);
+    localStorage.setItem(SYSLOG_KEY, JSON.stringify(arr));
+  } catch(e) {}
+  // Mirror into the visible debug-log note (when enabled) so everything
+  // reads in one place. skipMirror=true avoids recursion when called
+  // from inside saveNotes' own failure path (logDebugAction saves notes).
+  if (!skipMirror) { try { logDebugAction('[SYS] ' + msg); } catch(e2) {} }
+}
 
 
 
@@ -10198,7 +10240,7 @@ let settingsSnapshot = null; // copy of settings when dialog was opened
 // same browser storage, so a true storage-wide wipe would take this
 // down too — but it meaningfully improves the common case where only
 // one key's data is affected.
-var FOLDER_BACKUP_KEY = 'remember_folders_backup';
+var FOLDER_BACKUP_KEY = storeKey('remember_folders_backup');
 
 function backupFolderStructureIfGood(currentFolders, currentNotes) {
   try {
@@ -10227,32 +10269,32 @@ function restoreFoldersFromBackupIfPossible() {
 
 function loadState() {
   try {
-    const s = localStorage.getItem('remember_settings');
+    const s = localStorage.getItem(storeKey('remember_settings'));
     if (s) settings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(s));
   } catch(e) {}
   loadThemes();
   var _notesRaw = null;
   try {
-    _notesRaw = localStorage.getItem('remember_notes');
+    _notesRaw = localStorage.getItem(storeKey('remember_notes'));
     if (_notesRaw) notes = JSON.parse(_notesRaw);
   } catch(e) {
     // CRITICAL: never silently continue past a notes parse failure — the
     // app would boot with zero notes and the next saveNotes() would
     // permanently overwrite damaged-but-recoverable data. Preserve the
     // raw string FIRST, then log loudly and warn the user.
-    try { localStorage.setItem('remember_notes_corrupt', _notesRaw || ''); } catch(e2) {}
-    logDebugAction('CRITICAL: remember_notes failed to parse (' + e + '). Raw data (' +
+    try { localStorage.setItem(storeKey('remember_notes_corrupt'), _notesRaw || ''); } catch(e2) {}
+    logSys('CRITICAL: remember_notes failed to parse (' + e + '). Raw data (' +
       (_notesRaw ? _notesRaw.length : 0) + ' chars) preserved to key remember_notes_corrupt.');
     setTimeout(function() {
       if (typeof showToast === 'function') showToast('\u26a0\ufe0f Note data failed to load \u2014 a backup copy was preserved. Please report this.', true);
     }, 1200);
   }
   try {
-    const f = localStorage.getItem('remember_folders');
+    const f = localStorage.getItem(storeKey('remember_folders'));
     if (f) folders = JSON.parse(f);
   } catch(e) {}
   try {
-    const cur = localStorage.getItem('remember_current');
+    const cur = localStorage.getItem(storeKey('remember_current'));
     if (cur && notes[cur]) currentNoteId = cur;
   } catch(e) {}
 
@@ -10266,18 +10308,18 @@ function loadState() {
     settings.debugLoggingEnabled = true;
     settings.lastRunVersion = APP_VERSION;
     try { saveSettings(); } catch(eV) {}
-    logDebugAction('APP VERSION CHANGE: ' + _prevV + ' -> ' + APP_VERSION +
+    logSys('APP VERSION CHANGE: ' + _prevV + ' -> ' + APP_VERSION +
       ' at path ' + location.pathname + ' \u2014 debug logging force-enabled (alpha policy).');
   }
   // (2) Startup storage census: one loud line recording what actually
   // exists in localStorage right now, and which deployment is running.
   try {
     var _censusParts = [];
-    ['remember_notes','remember_settings','remember_folders','remember_themes','remember_note_census','remember_notes_corrupt'].forEach(function(k) {
-      var v = localStorage.getItem(k);
+    ['remember_notes','remember_settings','remember_folders','remember_themes','remember_note_census','remember_notes_corrupt','remember_syslog','remember_notes_backup'].forEach(function(k) {
+      var v = localStorage.getItem(storeKey(k));
       if (v !== null) _censusParts.push(k + '=' + v.length + 'ch');
     });
-    logDebugAction('STARTUP CENSUS: v' + APP_VERSION + ' path=' + location.pathname +
+    logSys('STARTUP CENSUS: v' + APP_VERSION + ' path=' + location.pathname +
       ' notes=' + Object.keys(notes).length + ' folders=' + Object.keys(folders).length +
       ' [' + _censusParts.join(', ') + ']');
   } catch(eC) {}
@@ -10286,12 +10328,13 @@ function loadState() {
   // id+name). If notes present then are gone now, NAME them — converts
   // "some notes seem to be missing" into hard evidence.
   try {
-    var _censusRaw = localStorage.getItem('remember_note_census');
+    var _censusRaw = localStorage.getItem(storeKey('remember_note_census'));
     if (_censusRaw) {
       var _census = JSON.parse(_censusRaw);
       var _lost = (_census.entries || []).filter(function(en) { return !notes[en.id]; });
       if (_lost.length > 0) {
-        logDebugAction('NOTE LOSS DETECTED: ' + _lost.length + ' note(s) present at last save (v' +
+        _noteLossDetectedThisLoad = true; // block today's backup — don't snapshot a bad state
+        logSys('NOTE LOSS DETECTED: ' + _lost.length + ' note(s) present at last save (v' +
           _census.v + ' path=' + _census.path + ' at ' + new Date(_census.at).toISOString() +
           ', count=' + _census.count + ') are MISSING now (count=' + Object.keys(notes).length + '): ' +
           _lost.slice(0, 20).map(function(en) { return '"' + en.name + '"'; }).join(', '));
@@ -10466,6 +10509,31 @@ function loadState() {
   // names instead of the generic fallback.
   backupFolderStructureIfGood(folders, notes);
 
+  // Daily notes+folders backup (v0.1508): one generation, written at
+  // most every 20h, quota-aware (skipped with a logged warning above
+  // 2MB), and SKIPPED entirely when this load detected note loss — the
+  // one thing worse than no backup is overwriting a good backup with
+  // the post-incident state.
+  try {
+    var _bkKey = storeKey('remember_notes_backup');
+    var _bkAt = 0;
+    var _bkRaw = localStorage.getItem(_bkKey);
+    if (_bkRaw) { try { _bkAt = (JSON.parse(_bkRaw).at || 0); } catch(eB1) {} }
+    if (!_noteLossDetectedThisLoad && Object.keys(notes).length > 0 &&
+        Date.now() - _bkAt > 20 * 3600 * 1000) {
+      var _bkPayload = JSON.stringify({ at: Date.now(), v: APP_VERSION, notes: notes, folders: folders });
+      if (_bkPayload.length < 2000000) {
+        localStorage.setItem(_bkKey, _bkPayload);
+        logSys('Daily backup written: ' + Object.keys(notes).length + ' notes, ' +
+          Object.keys(folders).length + ' folders, ' + _bkPayload.length + ' chars');
+      } else {
+        logSys('Daily backup SKIPPED: payload ' + _bkPayload.length + ' chars exceeds 2MB safety cap');
+      }
+    } else if (_noteLossDetectedThisLoad) {
+      logSys('Daily backup SKIPPED this load: note loss detected — preserving previous backup');
+    }
+  } catch(eBK) { logSys('Daily backup FAILED: ' + eBK); }
+
   // First-time use: call createInitialNotes if no notes exist
   if (Object.keys(notes).length === 0) {
     createInitialNotes();
@@ -10558,22 +10626,23 @@ function saveSettings() {
   if (_noteThemeSnapshot && settings.sectionStates) {
     toSave = Object.assign({}, toSave, { sectionStates: settings.sectionStates });
   }
-  localStorage.setItem('remember_settings', JSON.stringify(toSave));
+  localStorage.setItem(storeKey('remember_settings'), JSON.stringify(toSave));
 }
-function saveThemes() { localStorage.setItem('remember_themes', JSON.stringify(themes)); }
+function saveThemes() { localStorage.setItem(storeKey('remember_themes'), JSON.stringify(themes)); }
 function loadThemes() {
-  try { var t = localStorage.getItem('remember_themes'); if (t) themes = JSON.parse(t); } catch(e) { themes = {}; }
+  try { var t = localStorage.getItem(storeKey('remember_themes')); if (t) themes = JSON.parse(t); } catch(e) { themes = {}; }
 }
 function genThemeId() { return 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
 function saveNotes() {
   try {
-    localStorage.setItem('remember_notes', JSON.stringify(notes));
+    localStorage.setItem(storeKey('remember_notes'), JSON.stringify(notes));
   } catch(e) {
     // A quota (or any) failure here was previously UNCAUGHT — edits
     // silently stopped persisting and everything created after the
     // failure vanished on reload. Fail LOUDLY instead.
     try { console.error('saveNotes FAILED:', e); } catch(e2) {}
+    logSys('saveNotes FAILED: ' + e + ' (notes in memory: ' + Object.keys(notes).length + ')', true);
     if (typeof showToast === 'function') showToast('\u26a0\ufe0f SAVE FAILED \u2014 storage may be full. Recent changes may be lost.', true);
     return;
   }
@@ -10584,14 +10653,14 @@ function saveNotes() {
     var _entries = Object.keys(notes).map(function(id) {
       return { id: id, name: String(notes[id].name || '').slice(0, 40) };
     });
-    localStorage.setItem('remember_note_census', JSON.stringify({
+    localStorage.setItem(storeKey('remember_note_census'), JSON.stringify({
       v: APP_VERSION, path: location.pathname, at: Date.now(),
       count: _entries.length, entries: _entries
     }));
   } catch(e3) {}
 }
 function saveFolders() {
-  try { localStorage.setItem('remember_folders', JSON.stringify(folders)); } catch(e) {}
+  try { localStorage.setItem(storeKey('remember_folders'), JSON.stringify(folders)); } catch(e) {}
   // Refresh the backup during normal use too (folder created/renamed/
   // deleted), not just at app load — deliberately delayed rather than
   // synchronous with the line above, so this write happens at a
@@ -10602,8 +10671,8 @@ function saveFolders() {
 }
 
 function saveCurrentRef() {
-  if (currentNoteId) localStorage.setItem('remember_current', currentNoteId);
-  else localStorage.removeItem('remember_current');
+  if (currentNoteId) localStorage.setItem(storeKey('remember_current'), currentNoteId);
+  else localStorage.removeItem(storeKey('remember_current'));
 }
 
 // ===== DATE HELPERS =====
@@ -15008,56 +15077,52 @@ function scheduleSave() {
       oopsBtn.classList.add('highlight');
       editor._lastLength = editor.value.length;
       resizeEditor();
-      // Position: normally near the top (centered class). But when typing
-      // with the virtual keyboard up, iOS pans the page to keep the caret
-      // visible (visualViewport.offsetTop > 0), which pushes a normally-
-      // positioned dialog's top above the visible area. Detect "insertion
-      // point + typing mode" (the app's keyboard heuristic) plus an actual
-      // pan, and place the dialog lower by exactly the pan amount so its
-      // top stays visible. NOTE: there is still no universal way to detect
-      // the virtual keyboard (the VirtualKeyboard API is Chromium-only,
-      // absent on iOS WebKit) — offsetTop > 0 is a reliable positive signal.
-      var _dgAnchor = editor.value.trim() === '';  // below title only when all text deleted
-      var _dgVV = window.visualViewport;
-      // Total keyboard pan = visual-viewport pan (vv.offsetTop) PLUS any
-      // layout scroll of the page (window.scrollY). The second term is
-      // needed because of two WebKit behaviors: with the keyboard open,
-      // position:fixed degrades to document-anchored (absolute-like), and
-      // focusing a caret inside an inner scroll container can make iOS pan
-      // the page proportionally to how far the user has scrolled within
-      // the note — so deep in a long note, dialogs landed far above the
-      // visible area (worst in webviews, where the viewport never shrinks
-      // and panning is iOS's only keyboard mechanism).
-      var _dgPan = (_dgVV ? _dgVV.offsetTop : 0) +
-                   (window.scrollY || (document.scrollingElement ? document.scrollingElement.scrollTop : 0) || 0);
-      if (!isViewMode && document.activeElement === currentEditor && _dgPan > 0) {
-        _dgAnchor = Math.round(_dgPan) + 12;  // numeric anchor: explicit top px
-      }
+      // POSITIONING STRATEGY (v0.1507): dismiss the keyboard FIRST, then
+      // show the dialog normally. Two builds of compensating for iOS's
+      // keyboard pan (vv.offsetTop, window.scrollY, scrollIntoView nudge)
+      // still left cases where the dialog opened entirely offscreen with
+      // an untappable modal overlay (iOS PWA, scrolled deep in a long
+      // note) — the pan amount can CHANGE after positioning, and a pure
+      // visual-viewport pan can't be corrected from JS at all. Removing
+      // the keyboard removes the pan itself: with no keyboard there is no
+      // pan, position:fixed behaves, and the dialog lands where every
+      // other dialog lands. Cost: the person re-taps into the note after
+      // answering — acceptable for a deliberate "you deleted a lot of
+      // text" interruption, vs. a dialog that can't be seen or dismissed.
       // Dialog asks: go ahead and delete, or undo the deletion.
       // Wording deliberately avoids "keep the deletion" — testers found it
       // oxymoron-like and had to stop and think which button meant what.
-      showConfirm(
-        'You deleted a lot of text',
-        'You just deleted ' + lost + ' characters. Do you want to go ahead and delete it, or undo the deletion?',
-        'Go ahead and delete',
-        function() {
-          // Go ahead: just clear the highlight, already saved
-          oopsBtn.classList.remove('highlight');
-        },
-        false,
-        'Undo deletion',
-        function() {
-          // Undo: restore pre-deletion content
-          if (preDeleteContent !== undefined) {
-            editor.value = preDeleteContent;
-            editor._lastLength = editor.value.length;
-            resizeEditor();
-            saveCurrentNote();
-          }
-          oopsBtn.classList.remove('highlight');
-        },
-        _dgAnchor
-      );
+      var _kbLikely = !isViewMode && document.activeElement === currentEditor;
+      var _showGuardDialog = function() {
+        showConfirm(
+          'You deleted a lot of text',
+          'You just deleted ' + lost + ' characters. Do you want to go ahead and delete it, or undo the deletion?',
+          'Go ahead and delete',
+          function() {
+            // Go ahead: just clear the highlight, already saved
+            oopsBtn.classList.remove('highlight');
+          },
+          false,
+          'Undo deletion',
+          function() {
+            // Undo: restore pre-deletion content
+            if (preDeleteContent !== undefined) {
+              editor.value = preDeleteContent;
+              editor._lastLength = editor.value.length;
+              resizeEditor();
+              saveCurrentNote();
+            }
+            oopsBtn.classList.remove('highlight');
+          },
+          editor.value.trim() === ''  // below title only when all text deleted
+        );
+      };
+      if (_kbLikely) {
+        currentEditor.blur();               // dismiss keyboard → pan collapses
+        setTimeout(_showGuardDialog, 280);  // let the viewport settle first
+      } else {
+        _showGuardDialog();
+      }
         saveTimeout = setTimeout(saveCurrentNote, 600);
         return;
       }
@@ -15314,7 +15379,7 @@ function exportAllNotes() {
   var dateStr = d.getFullYear() + '-' +
     String(d.getMonth()+1).padStart(2,'0') + '-' +
     String(d.getDate()).padStart(2,'0');
-  downloadJSON({ version: APP_VERSION, exportDate: d.toISOString(), notes: exportableNotes }, 'remember-notes-' + dateStr + '.json');
+  downloadJSON({ version: APP_VERSION, exportDate: d.toISOString(), notes: exportableNotes, folders: folders }, 'remember-notes-' + dateStr + '.json');
 }
 
 function exportCurrentNote() {
@@ -15356,11 +15421,35 @@ function importNotes(file) {
         'Import',
         function() {
           try {
-          // Create import folder then merge notes into it
+          // Create import folder then merge notes into it. Exports from
+          // v0.1508+ include the folders object — rebuild that structure
+          // INSIDE the import folder (new ids, remapped parent chains).
+          // Older exports without folder data fall back to the old flat
+          // behavior: everything directly in the import folder.
           var folder = createImportFolder('JSON Import');
+          var _fMap = {};  // old folder id -> new folder id
+          if (data.folders && typeof data.folders === 'object' && !Array.isArray(data.folders)) {
+            var _fSeq = 0;
+            Object.keys(data.folders).forEach(function(ofid) {
+              var of = data.folders[ofid];
+              if (!of || !of.name) return;
+              _fSeq++;
+              var nfid = 'folder-imp-' + Date.now() + '-' + _fSeq + '-' + Math.floor(Math.random() * 10000);
+              _fMap[ofid] = nfid;
+              folders[nfid] = { id: nfid, name: of.name, parentId: of.parentId || null, createdAt: of.createdAt || Date.now() };
+            });
+            // Remap parent chains; a parent not present in the export
+            // becomes the import folder itself.
+            Object.keys(_fMap).forEach(function(ofid) {
+              var nf = folders[_fMap[ofid]];
+              nf.parentId = (nf.parentId && _fMap[nf.parentId]) ? _fMap[nf.parentId] : folder.id;
+            });
+            saveFolders();
+          }
           Object.values(importedNotes).forEach(function(n) {
             var newId = makeId();
-            notes[newId] = Object.assign({}, n, { id: newId, folderId: folder.id });
+            var _nfid = (n.folderId && _fMap[n.folderId]) ? _fMap[n.folderId] : folder.id;
+            notes[newId] = Object.assign({}, n, { id: newId, folderId: _nfid });
           });
           saveNotes();
           renderNotesList();
@@ -16561,7 +16650,7 @@ function cancelSettings() {
   logDebugAction(settingsDirty() ? 'Cancelled Settings (discarded changes)' : 'Cancelled Settings (no changes)');
   settingsSnapshot = null;
   try {
-    const s = localStorage.getItem('remember_settings');
+    const s = localStorage.getItem(storeKey('remember_settings'));
     if (s) settings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(s));
     else settings = Object.assign({}, DEFAULT_SETTINGS);
   } catch(e) {
@@ -18282,30 +18371,42 @@ function makeImportFolderName(label) {
     _tourRender();
   }
 
-  function closeTour() {
-    logDebugAction('Closed Tour (slide ' + (_tourIdx + 1) + ' of ' + _tourSlides.length + ')');
+  var _tourFromHelp = false; // true when the tour was opened from Help
+  function closeTour(finished) {
+    logDebugAction('Closed Tour (slide ' + (_tourIdx + 1) + ' of ' + _tourSlides.length + ')' +
+      (finished ? ' [finished]' : ''));
     document.getElementById('tour-overlay').classList.remove('open');
-    localStorage.setItem('remember_tour_seen', '1');
+    localStorage.setItem(storeKey('remember_tour_seen'), '1');
+    // Skip / tap-outside from a Help-launched tour returns to Help —
+    // being dumped all the way out of Help felt broken. FINISHING the
+    // tour (Get Started on the last slide) still exits fully, since
+    // "Get Started" is an intentional "take me to the app".
+    if (_tourFromHelp && !finished) {
+      document.getElementById('help-overlay').classList.add('open');
+      document.getElementById('help-sheet').classList.add('open');
+    }
+    _tourFromHelp = false;
   }
 
   document.getElementById('tour-next-btn').addEventListener('click', function() {
     if (_tourIdx < _tourSlides.length - 1) {
       _tourGoTo(_tourIdx + 1);
     } else {
-      closeTour();
+      closeTour(true);
     }
   });
   document.getElementById('tour-back-btn').addEventListener('click', function() {
     if (_tourIdx > 0) _tourGoTo(_tourIdx - 1);
   });
-  document.getElementById('tour-skip-btn').addEventListener('click', closeTour);
+  document.getElementById('tour-skip-btn').addEventListener('click', function() { closeTour(false); });
   document.getElementById('tour-overlay').addEventListener('click', function(e) {
-    if (e.target === this) closeTour();
+    if (e.target === this) closeTour(false);
   });
   document.getElementById('tour-btn').addEventListener('click', function() {
     document.getElementById('help-overlay').classList.remove('open');
     document.getElementById('help-sheet').classList.remove('open');
     clearHelpSearch();
+    _tourFromHelp = true;
     openTour();
   });
 
@@ -18516,7 +18617,7 @@ function makeImportFolderName(label) {
   })();
 
   // Show on first launch
-  if (!localStorage.getItem('remember_tour_seen') && !localStorage.getItem('remember_notes')) {
+  if (!localStorage.getItem(storeKey('remember_tour_seen')) && !localStorage.getItem(storeKey('remember_notes'))) {
     setTimeout(openTour, 800);
   }
 
@@ -19775,7 +19876,7 @@ function makeImportFolderName(label) {
     });
   }
   // Persist cleaned settings immediately so stale data doesn't survive a reload
-  try { localStorage.setItem('remember_settings', JSON.stringify(settings)); } catch(e) {}
+  try { localStorage.setItem(storeKey('remember_settings'), JSON.stringify(settings)); } catch(e) {}
 
   // Apply on init
   applyToolbarOrder();
@@ -30183,23 +30284,18 @@ if ('serviceWorker' in navigator) {
 
 // Stop speaking if the tab/app is hidden or closed
 // Clear block selections and stop speaking when app is hidden/closed
+// Consolidated from two duplicate visibilitychange handlers that had
+// drifted (reuse-don't-duplicate rule) — and NEITHER updated the Select
+// lines button, so after backgrounding on iOS the mode was exited but
+// the button stayed lit, fooling the user into thinking it was active.
 document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'hidden') {
-    selectMode = false;
-    clearSelectedBlocks();
-    // Stop speaking so the Stop button doesn't stay lit after backgrounding
-    if (isSpeaking) stopSpeaking();
-  }
-});
-
-document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'hidden') {
-    selectMode = false;
-    clearSelectedBlocks();
-  }
-  if (document.visibilityState === 'hidden' && window.speechSynthesis) {
-    window.speechSynthesis.cancel();
-  }
+  if (document.visibilityState !== 'hidden') return;
+  selectMode = false;
+  clearSelectedBlocks();
+  updateSelectModeBtn();  // un-light the button to match the real state
+  // Stop speaking so the Stop button doesn't stay lit after backgrounding
+  if (isSpeaking) stopSpeaking();
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
 });
 window.addEventListener('beforeunload', function() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
