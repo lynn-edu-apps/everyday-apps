@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1509 -->
+<!-- Remember App - Version 0.1510 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1509
+  Version 0.1510
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1510 - Debug log gains date header lines on day change / session start (entries were time-only and undatable). Scratch pad's three pages now included in JSON export and restored on import (only into empty local pages). saveSettings/saveThemes now fail loudly like saveNotes.
   v0.1509 - Fixed sample notes failing to install on fresh storage: the hidden debug-log note (created by loadState's own diagnostics) counted as an existing note and blocked createInitialNotes — the gate now counts only real notes, plus treats an absent notes key at load start as a fresh install. Census logs now show real vs total note counts.
   v0.1508 - Storage safety: per-deployment localStorage namespacing (stable/dev isolated; main path keeps existing data); always-on 300-entry system log surviving the debug setting; daily quota-aware notes+folders backup (skipped when loss detected); JSON export now includes folders and import rebuilds folder structure.
   v0.1507 - Delete guard now dismisses the keyboard before showing (ends the offscreen-untappable-dialog trap). Select lines button no longer stays lit after backgrounding the app (duplicate visibilitychange handlers consolidated). Skipping or tapping outside a Help-launched tour returns to Help; finishing it still exits.
@@ -8960,7 +8961,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1509';
+const APP_VERSION = '0.1510';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -10643,9 +10644,21 @@ function saveSettings() {
   if (_noteThemeSnapshot && settings.sectionStates) {
     toSave = Object.assign({}, toSave, { sectionStates: settings.sectionStates });
   }
-  localStorage.setItem(storeKey('remember_settings'), JSON.stringify(toSave));
+  try {
+    localStorage.setItem(storeKey('remember_settings'), JSON.stringify(toSave));
+  } catch(e) {
+    logSys('saveSettings FAILED: ' + e, true);
+    try { if (typeof showToast === 'function') showToast('\u26a0\ufe0f Settings save failed \u2014 storage may be full.', true); } catch(eT) {}
+  }
 }
-function saveThemes() { localStorage.setItem(storeKey('remember_themes'), JSON.stringify(themes)); }
+function saveThemes() {
+  try {
+    localStorage.setItem(storeKey('remember_themes'), JSON.stringify(themes));
+  } catch(e) {
+    logSys('saveThemes FAILED: ' + e, true);
+    try { if (typeof showToast === 'function') showToast('\u26a0\ufe0f Theme save failed \u2014 storage may be full.', true); } catch(eT) {}
+  }
+}
 function loadThemes() {
   try { var t = localStorage.getItem(storeKey('remember_themes')); if (t) themes = JSON.parse(t); } catch(e) { themes = {}; }
 }
@@ -10744,6 +10757,7 @@ function makeId() {
 // Module-level (not inside init()) so it can be called from anywhere,
 // including openNote()/goHome() which are also module-level.
 var DEBUG_LOG_MAX_LINES = 1000;
+var _debugLogLastDate = null; // day-change tracker; resets per session so each launch gets a date header
 var _debugLogNoteId = null; // cached once found/created, so we don't search every call
 var _lastConfirmTitle = '';  // set by showConfirm(), read when OK/Cancel resolves it
 
@@ -10776,6 +10790,17 @@ function logDebugAction(message) {
     String(d.getMilliseconds()).padStart(3, '0');
   var line = '- [' + ts + '] ' + message;
   var lines = (note.content || '').split('\n').filter(function(l) { return l.trim() !== ''; });
+  // Date header when the day changes — entries themselves carry only a
+  // time-of-day, which made old entries impossible to date (a real
+  // problem during the missing-notes investigation). Also fires once per
+  // app session (the tracker is in-memory), so every launch re-anchors
+  // the date even if an older header was trimmed away by the line cap.
+  var _dToday = d.toISOString().slice(0, 10) + ' (' +
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ')';
+  if (_debugLogLastDate !== _dToday) {
+    _debugLogLastDate = _dToday;
+    lines.push('- ===== ' + _dToday + ' =====');
+  }
   lines.push(line);
   if (lines.length > DEBUG_LOG_MAX_LINES) {
     lines = lines.slice(lines.length - DEBUG_LOG_MAX_LINES);
@@ -15396,7 +15421,7 @@ function exportAllNotes() {
   var dateStr = d.getFullYear() + '-' +
     String(d.getMonth()+1).padStart(2,'0') + '-' +
     String(d.getDate()).padStart(2,'0');
-  downloadJSON({ version: APP_VERSION, exportDate: d.toISOString(), notes: exportableNotes, folders: folders }, 'remember-notes-' + dateStr + '.json');
+  downloadJSON({ version: APP_VERSION, exportDate: d.toISOString(), notes: exportableNotes, folders: folders, scratchPad: { p1: settings.scratchPadText || '', p2: settings.scratchPadText2 || '', p3: settings.scratchPadText3 || '' } }, 'remember-notes-' + dateStr + '.json');
 }
 
 function exportCurrentNote() {
@@ -15470,7 +15495,29 @@ function importNotes(file) {
           });
           saveNotes();
           renderNotesList();
-          showConfirm('Import Complete', count + ' note' + (count !== 1 ? 's' : '') + ' imported into “' + folder.name + '”.', 'OK', function() {}, false, null, null);
+          // Scratch pad restore (exports from v0.1510+ carry the three
+          // pages). Only fills pages that are locally EMPTY — never
+          // silently overwrites differing local scratch content; skipped
+          // pages are reported in the completion message instead.
+          var _spRestored = 0, _spSkipped = 0;
+          if (data.scratchPad && typeof data.scratchPad === 'object') {
+            [['p1','scratchPadText'],['p2','scratchPadText2'],['p3','scratchPadText3']].forEach(function(pair) {
+              var incoming = data.scratchPad[pair[0]];
+              if (typeof incoming !== 'string' || incoming.trim() === '') return;
+              var local = settings[pair[1]] || '';
+              if (local.trim() === '' || local === incoming) {
+                if (local !== incoming) { settings[pair[1]] = incoming; }
+                _spRestored++;
+              } else {
+                _spSkipped++;
+              }
+            });
+            if (_spRestored > 0) saveSettings();
+          }
+          var _spMsg = '';
+          if (_spRestored > 0) _spMsg += ' Scratch pad: ' + _spRestored + ' page' + (_spRestored !== 1 ? 's' : '') + ' restored.';
+          if (_spSkipped > 0) _spMsg += ' ' + _spSkipped + ' scratch pad page' + (_spSkipped !== 1 ? 's' : '') + ' skipped (this device already has different content there).';
+          showConfirm('Import Complete', count + ' note' + (count !== 1 ? 's' : '') + ' imported into “' + folder.name + '”.' + _spMsg, 'OK', function() {}, false, null, null);
           } catch(importErr) { showToast('Import error: ' + (importErr.message || String(importErr)), true); }
         },
         false,
