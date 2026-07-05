@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1513 -->
+<!-- Remember App - Version 0.1516 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1513
+  Version 0.1516
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,9 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1516 - CRITICAL data-loss fix: Move lines could silently rewrite the whole note from rendered text (stripping ==highlights==, # headings, bold, etc.) whenever line stamps were missing; the commit now aborts loudly instead and never touches rendered text. Stamping consolidated into shared stampRawLinesFromContent(); move commits and single-note export format choices are now debug-logged.
+  v0.1515 - Export all as ZIP: notes become .md/.txt files with folders as directories and Remember-only syntax stripped to portable markdown (hex highlight prefixes, {color} tags, checkbox :color extensions, app button tokens); non-empty scratch pad pages included under scratch-pad/; debug log excluded. Dependency-free stored-entry ZIP writer.
+  v0.1514 - Highlight color prefixes (==#hex:text==) no longer leak into note-list previews, auto-generated note titles, or plain-text copy/share/speech output — three drifting copies of highlight-unwrapping consolidated into one shared unwrapHighlightsInline() helper.
   v0.1513 - Added "View system log" to Settings > Debugging: shows the always-on ring log (newest first, scrollable) with a Copy button — completing the loop so critical events are readable on-device even when normal debug logging was off.
   v0.1512 - Scratch pad gained session-only per-page undo/redo (two FABs next to Copy; one undo per typing burst). Long-press (or right-click) the highlight toolbar button to pick from the Settings highlight palette; quick taps then bake that color into each new highlight (==#hex:==) so multiple priority colors coexist — "D" swatch returns to the default plain highlight.
   v0.1511 - Fixed scratch pad showing stale (pre-import) text and the page-curl then overwriting freshly imported content — the "page 3 didn't import" bug. Fixed intermittent dead up/down arrows in toolbar reorder: movement now swaps visual rows (shared getToolbarVisualUnits), never raw order entries that render no row; also scroll-over-arrow no longer triggers a move, and each arrow tap is debug-logged.
@@ -8309,6 +8312,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </div>
 
   <div class="ie-section" style="border-top:1px solid var(--border);margin-top:0">
+    <div class="ie-row">
+      <div>
+        <div class="ie-label">Export all as ZIP</div>
+        <div class="ie-desc">Download a ZIP of your notes as Markdown/text files. Folders become directories; Remember-only formatting is removed so the files read cleanly in any app. Includes scratch pad pages.</div>
+      </div>
+      <button class="btn btn-ghost" id="export-zip-btn">Export ZIP</button>
+    </div>
+  </div>
+
+  <div class="ie-section" style="border-top:1px solid var(--border);margin-top:0">
     <div class="ie-label" style="padding:10px 0 4px;font-weight:600;color:var(--fg2)">Import from other apps</div>
     <div class="ie-row">
       <div>
@@ -9018,7 +9031,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1513';
+const APP_VERSION = '0.1516';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -11724,7 +11737,7 @@ function notePreview(content) {
     line = line.replace(/\*\*([^*]*)\*\*/g, '$1');
     line = line.replace(/\*([^*\n]*)\*/g, '$1');
     line = line.replace(/~~([^~]*)~~/g, '$1');
-    line = line.replace(/==([^=]*)==/g, '$1');
+    line = unwrapHighlightsInline(line);
     line = line.replace(new RegExp('\\{(?:' + _colorNames + ')\\}([^{]*)\\{\\/?(?:' + _colorNames + ')\\}', 'g'), '$1');
     line = line.replace(/@[a-zA-Z0-9_-]+/g, '');
     line = line.replace(/\[last modified\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[share note\]/gi, '').replace(/\[cal [^\]]*\]/gi, '');
@@ -14497,6 +14510,7 @@ function nameFromContent(content) {
     line = line.replace(/^#{1,6}\s+/, '');
     // Strip markdown formatting characters so they don't appear in title
     line = line.replace(/~~([^~]+)~~/g, '$1');  // strikethrough
+    line = unwrapHighlightsInline(line);  // ==highlights== incl. #hex: prefixes (was missing entirely)
     line = line.replace(/\*\*([^*]+)\*\*/g, '$1');  // bold
     line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/g, '$1'); // color
     line = line.trim();
@@ -15284,9 +15298,8 @@ function scheduleSave() {
 }
 
 // ===== EXPORT / IMPORT =====
-function downloadJSON(data, filename) {
-  var json = JSON.stringify(data, null, 2);
-  var blob = new Blob([json], { type: 'application/json' });
+// Shared blob download used by every exporter (JSON, OPML, ZIP)
+function downloadBlob(blob, filename) {
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
@@ -15297,6 +15310,184 @@ function downloadJSON(data, filename) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 100);
+}
+
+function downloadJSON(data, filename) {
+  var json = JSON.stringify(data, null, 2);
+  downloadBlob(new Blob([json], { type: 'application/json' }), filename);
+}
+
+// ===== ZIP EXPORT (v0.1515) =====
+// Design decisions (agreed): the ZIP is the "my notes stay mine" escape
+// hatch for reading notes OUTSIDE Remember — so files keep standard /
+// widely-supported markdown (headings, bold/italic/strike, - [ ] task
+// boxes, plain ==highlights==, @tags, code, images) and strip only
+// Remember-private syntax. There is deliberately NO zip import: JSON is
+// the lossless round-trip format. Debug log excluded; scratch pad's
+// non-empty pages included under scratch-pad/.
+
+// Convert note content to portable markdown: strips ONLY Remember-only
+// extensions, keeps everything standard. This is the exporter's canonical
+// transform — reuse it for any future "portable text" surface.
+function toPortableMarkdown(content) {
+  var lines = String(content || '').split('\n');
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    // [tag order] lines are pure app structure — drop the whole line
+    if (/^\s*\[tag order\]/i.test(line)) continue;
+    // App button/metadata tokens — strip inline
+    line = line.replace(/\[share note\]/gi, '')
+               .replace(/\[copy for speech\]/gi, '')
+               .replace(/\[last modified\]/gi, '')
+               .replace(/\[cal [^\]]*\]/gi, '');
+    // ==#hex:text== / ==#hexA|#hexB:text==  ->  ==text== (keep the highlight)
+    line = line.replace(/==#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:/g, '==');
+    // {color}text{/color} -> text (all named + custom colors)
+    line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/gi, '$1');
+    // [x:color] / [ :color] -> [x] / [ ]  (checkbox color extension)
+    line = line.replace(/\[( ?|x|X):[a-z0-9]+\]/g, function(m, st) {
+      return st.trim() ? '[x]' : '[ ]';
+    });
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+// Filename-safe version of a note/folder name (Windows-strict superset)
+function zipSafeName(name) {
+  var s = String(name || '').replace(/[\u0000-\u001f\\\/:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  if (s.length > 80) s = s.slice(0, 80).trim();
+  s = s.replace(/[. ]+$/, '');
+  return s || 'Untitled';
+}
+
+// Extension heuristic on the PORTABLE (already transformed) text
+function looksLikeMarkdown(t) {
+  return /(^|\n)\s*#{1,6}\s/.test(t) || /(^|\n)\s*[-*+] \[[ xX]\]/.test(t) ||
+    /\*\*[^*]+\*\*/.test(t) || /~~[^~]+~~/.test(t) || /==[^=]+==/.test(t) ||
+    /(^|\n)\s*```/.test(t) || /!\[[^\]]*\]\([^)]+\)/.test(t) || /`[^`\n]+`/.test(t);
+}
+
+// Minimal ZIP writer — "stored" (uncompressed) entries only, which every
+// unzip tool reads. Deliberately dependency-free (single-file app rule):
+// local headers + central directory + end record + CRC-32. Notes are tiny
+// text, so skipping compression costs essentially nothing.
+var _crcTable = null;
+function _crc32(bytes) {
+  if (!_crcTable) {
+    _crcTable = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      _crcTable[n] = c >>> 0;
+    }
+  }
+  var crc = 0xFFFFFFFF;
+  for (var i = 0; i < bytes.length; i++) crc = _crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function _dosDateTime(d) {
+  d = d || new Date();
+  var time = ((d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2)) & 0xFFFF;
+  var date = ((((d.getFullYear() - 1980) & 0x7F) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+  return { time: time, date: date };
+}
+// entries: [{ path: 'a/b.md', text: '...', date: Date }] -> Uint8Array
+function buildZipStored(entries) {
+  var enc = new TextEncoder();
+  var parts = [], central = [], offset = 0;
+  function u16(v) { return new Uint8Array([v & 255, (v >>> 8) & 255]); }
+  function u32(v) { return new Uint8Array([v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]); }
+  entries.forEach(function(e) {
+    var nameB = enc.encode(e.path);
+    var dataB = enc.encode(e.text);
+    var crc = _crc32(dataB);
+    var dt = _dosDateTime(e.date);
+    var local = [u32(0x04034b50), u16(20), u16(0x0800) /* UTF-8 names */, u16(0) /* stored */,
+      u16(dt.time), u16(dt.date), u32(crc), u32(dataB.length), u32(dataB.length),
+      u16(nameB.length), u16(0), nameB, dataB];
+    central.push({ nameB: nameB, crc: crc, size: dataB.length, dt: dt, offset: offset });
+    local.forEach(function(p) { parts.push(p); offset += p.length; });
+  });
+  var cdStart = offset, cdSize = 0;
+  central.forEach(function(c) {
+    var rec = [u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0),
+      u16(c.dt.time), u16(c.dt.date), u32(c.crc), u32(c.size), u32(c.size),
+      u16(c.nameB.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(c.offset), c.nameB];
+    rec.forEach(function(p) { parts.push(p); cdSize += p.length; });
+  });
+  parts.push(u32(0x06054b50), u16(0), u16(0), u16(central.length), u16(central.length),
+    u32(cdSize), u32(cdStart), u16(0));
+  var total = 0;
+  parts.forEach(function(p) { total += p.length; });
+  var outBytes = new Uint8Array(total);
+  var pos = 0;
+  parts.forEach(function(p) { outBytes.set(p, pos); pos += p.length; });
+  return outBytes;
+}
+
+function exportAllNotesZip() {
+  var d = new Date();
+  var dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+  var root = 'Remember Notes ' + dateStr + '/';
+  // Folder id -> nested path (cycle-guarded; missing parent = root)
+  var pathCache = {};
+  function folderPath(fid) {
+    if (!fid || !folders[fid]) return '';
+    if (pathCache[fid] !== undefined) return pathCache[fid];
+    var segs = [], cur = fid, depth = 0;
+    while (cur && folders[cur] && depth < 20) {
+      segs.unshift(zipSafeName(folders[cur].name));
+      cur = folders[cur].parentId;
+      depth++;
+    }
+    var p = segs.join('/') + '/';
+    pathCache[fid] = p;
+    return p;
+  }
+  // Per-directory duplicate-name handling
+  var used = {};
+  function uniquePath(dir, base, ext) {
+    var key = (dir + base + ext).toLowerCase();
+    var n = 1, candidate = base;
+    while (used[(dir + candidate + ext).toLowerCase()]) {
+      n++;
+      candidate = base + ' (' + n + ')';
+    }
+    used[(dir + candidate + ext).toLowerCase()] = true;
+    return dir + candidate + ext;
+  }
+  var entries = [];
+  Object.keys(notes).forEach(function(id) {
+    var n = notes[id];
+    if (!n || n.isDebugLog) return; // never export the debug log
+    var text = toPortableMarkdown(n.content || '');
+    var ext = looksLikeMarkdown(text) ? '.md' : '.txt';
+    var dir = root + folderPath(n.folderId);
+    entries.push({
+      path: uniquePath(dir, zipSafeName(n.name), ext),
+      text: text,
+      date: new Date(n.editedAt || Date.now())
+    });
+  });
+  // Scratch pad: only pages with real content
+  [['scratchPadText', 1], ['scratchPadText2', 2], ['scratchPadText3', 3]].forEach(function(pair) {
+    var raw = settings[pair[0]] || '';
+    if (raw.trim() === '') return;
+    var text = toPortableMarkdown(raw);
+    var ext = looksLikeMarkdown(text) ? '.md' : '.txt';
+    entries.push({ path: root + 'scratch-pad/page-' + pair[1] + ext, text: text, date: d });
+  });
+  if (entries.length === 0) {
+    showToast('Nothing to export', false);
+    return;
+  }
+  var bytes = buildZipStored(entries);
+  downloadBlob(new Blob([bytes], { type: 'application/zip' }), 'remember-notes-' + dateStr + '.zip');
+  logDebugAction('Exported ZIP: ' + entries.length + ' file(s), ' + bytes.length + ' bytes');
 }
 
 function downloadText(text, filename, mimeType) {
@@ -15333,6 +15524,7 @@ function stripLeadingWhitespaceBeforeHeadingsForExport(content) {
 
 function exportCurrentNoteMarkdown() {
   if (!currentNoteId || !notes[currentNoteId]) return;
+  logDebugAction('Export note as Markdown');
   saveCurrentNote();
   var n = notes[currentNoteId];
   var safeName = n.name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 40);
@@ -15345,6 +15537,7 @@ function exportCurrentNoteMarkdown() {
 
 function exportCurrentNoteTxt() {
   if (!currentNoteId || !notes[currentNoteId]) return;
+  logDebugAction('Export note as Text');
   saveCurrentNote();
   var n = notes[currentNoteId];
   var safeName = n.name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 40);
@@ -15485,6 +15678,7 @@ function exportAllNotes() {
 
 function exportCurrentNote() {
   if (!currentNoteId || !notes[currentNoteId]) return;
+  logDebugAction('Export note as JSON');
   saveCurrentNote();
   var n = notes[currentNoteId];
   var safeName = n.name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 40);
@@ -15770,8 +15964,8 @@ function stripMarkdownToPlainText(line) {
     line = line.replace(/^(\s*)[-*+]\s+/, '$1');
     // Remove common bullet characters at start of line
     line = line.replace(/^\s*[\u2022\u2023\u25E6\u00B7\u2043]\s*/, '');
-    // Remove highlight markers ==...==
-    line = line.replace(/==[^=]*==/g, function(m) { return m.replace(/==/g, ''); });
+    // Remove highlight markers ==...== (incl. #hex: color prefixes)
+    line = unwrapHighlightsInline(line);
   } else {
     // Speak checkboxes explicitly
     line = line.replace(/\[x:[a-z]+\]/gi, 'checked');
@@ -18354,6 +18548,12 @@ function makeImportFolderName(label) {
     document.getElementById('importexport-overlay').classList.remove('open');
     document.getElementById('importexport-sheet').classList.remove('open');
     exportAllNotesOPML();
+  });
+  document.getElementById('export-zip-btn').addEventListener('click', function() {
+    logDebugAction('Closed Import/Export (chose Export ZIP)');
+    document.getElementById('importexport-overlay').classList.remove('open');
+    document.getElementById('importexport-sheet').classList.remove('open');
+    exportAllNotesZip();
   });
   document.getElementById('import-btn').addEventListener('click', function() {
     document.getElementById('import-file-input').value = '';
@@ -28823,16 +29023,28 @@ function noteHasStrikethroughs() {
 }
 
 // ===== RENDER VIEWER WITH RAW LINE DATA =====
-function renderViewer(content) {
+// ONE place that stamps each .viewer-line's raw source line onto the
+// element (dataset.rawLine), keyed by its data-line index. Move mode's
+// commit depends on these stamps as the ONLY carrier of line identity —
+// see _writeMoveContentBack. Shared by renderViewer() and move-mode
+// entry, which re-stamps defensively because ~27 render paths still
+// bypass renderViewer with direct viewer.innerHTML = urlsToLinks(...)
+// calls (converting those call sites is tracked follow-up work).
+function stampRawLinesFromContent(content) {
   var viewer = document.getElementById('note-viewer');
   if (!viewer) return;
-  viewer.innerHTML = urlsToLinks(content, true);
-  // Store raw line content on each .viewer-line for move-mode write-back
-  var rawLines = content.split('\n');
+  var rawLines = String(content || '').split('\n');
   viewer.querySelectorAll('.viewer-line').forEach(function(el) {
     var idx = parseInt(el.dataset.line, 10);
     if (!isNaN(idx) && idx < rawLines.length) el.dataset.rawLine = rawLines[idx];
   });
+}
+
+function renderViewer(content) {
+  var viewer = document.getElementById('note-viewer');
+  if (!viewer) return;
+  viewer.innerHTML = urlsToLinks(content, true);
+  stampRawLinesFromContent(content);
 }
 
 // ===== MOVE MODE =====
@@ -28904,12 +29116,37 @@ function _scrollToMoveSelected() {
 function _writeMoveContentBack() {
   if (!currentNoteId || !notes[currentNoteId]) return;
   _refreshMoveBlocks();
+  // REWRITTEN (v0.1516) after real data loss on 2026-07-05: this used to
+  // fall back to el.textContent for any block missing dataset.rawLine —
+  // but textContent is the RENDERED line, with ==highlights==, # heading
+  // markers, **bold** etc. already rendered away, and this function
+  // rebuilds the WHOLE note, so one commit with missing stamps silently
+  // rewrote the entire note as stripped plain text (~808 characters of
+  // formatting destroyed in one move, discovered via the startup census).
+  // Stamps can go missing because ~27 render paths bypass renderViewer's
+  // stamping, and elements can be replaced mid-session by observer-driven
+  // re-renders. RULE: never reconstruct raw content from rendered DOM
+  // text. If any block lacks its stamp, ABORT loudly and change nothing —
+  // a failed move is recoverable; a stripped note is not.
+  var missing = 0;
   var lines = _moveBlocks.map(function(el) {
-    return el.dataset.rawLine !== undefined ? el.dataset.rawLine : (el.textContent || '');
+    if (el.dataset.rawLine === undefined) missing++;
+    return el.dataset.rawLine;
   });
+  if (missing > 0) {
+    logSys('Move lines COMMIT ABORTED: ' + missing + ' of ' + _moveBlocks.length +
+      ' blocks missing rawLine stamp \u2014 note left unchanged.');
+    showToast('\u26a0\ufe0f Move could not be saved safely \u2014 nothing was changed. Exit and re-enter Move lines.', true);
+    return;
+  }
   notes[currentNoteId].content = lines.join('\n');
   notes[currentNoteId].editedAt = Date.now();
-  document.getElementById('note-editor').value = notes[currentNoteId].content;
+  var _mvEd = document.getElementById('note-editor');
+  _mvEd.value = notes[currentNoteId].content;
+  _mvEd._lastLength = _mvEd.value.length; // deliberate edit — don't trip the delete guard
+  // Restamp so consecutive moves in the same session stay authoritative
+  _moveBlocks.forEach(function(el, i) { el.dataset.rawLine = lines[i]; });
+  logDebugAction('Move lines: committed reorder of ' + lines.length + ' lines');
   saveNotes();
 }
 
@@ -29368,10 +29605,7 @@ function enterMoveMode() {
     return;
   }
   _refreshMoveBlocks();
-  var rawLines = (notes[currentNoteId].content || '').split('\n');
-  _moveBlocks.forEach(function(b, i) {
-    b.dataset.rawLine = rawLines[i] || '';
-  });
+  stampRawLinesFromContent(notes[currentNoteId].content || '');
 
   moveMode = true;
   document.body.classList.add('move-mode');
@@ -29425,8 +29659,10 @@ function _resyncAfterMove() {
   _refreshMoveBlocks();
   _moveBlocks.forEach(function(el, i) {
     el.dataset.line = i;
-    // Also update rawLine since content order changed
-    // rawLine is re-set by _writeMoveContentBack via renderViewer — handled there
+    // rawLine is NOT touched here: its values are order-independent line
+    // content and stay correct through DOM reorders. (An old comment here
+    // claimed _writeMoveContentBack re-stamped via renderViewer — that
+    // call no longer exists; the commit itself restamps after writing.)
   });
   // Rebuild selectedBlocks to match the new positions of move-selected elements
   selectedBlocks.clear();
@@ -29750,6 +29986,19 @@ function stripWrapperFormattingOnly(s) {
 
 function stripFormattingForDetect(s) {
   return stripWrapperFormattingOnly(s).replace(/^#{1,6}\s+/, '').trim();
+}
+
+// ONE place that unwraps INLINE highlight syntax to plain text — all of:
+// ==text==, ==#hex:text==, ==#hexA|#hexB:text== (hex prefixes 3-6 digits,
+// matching the canonical edge-anchored stripper above, which handles only
+// string-edge wrappers and is NOT suitable for mid-line occurrences).
+// Used by notePreview(), nameFromContent(), and stripMarkdownToPlainText(),
+// which previously each had their own drifting copy; two of the three kept
+// the '#hex:' prefix in output — showing raw '#ffb8d0:' in the notes-list
+// preview, and leaking it into plain-text copy/share/speech, where
+// tag-based apps (e.g. Bear) then treat '#ffb8d0' as a tag.
+function unwrapHighlightsInline(line) {
+  return line.replace(/==(?:#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:)?([^=]*)==/g, '$1');
 }
 
 // getIndentLevelFromWhitespace(rawLine) — the single, canonical way to turn
