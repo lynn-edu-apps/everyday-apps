@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1518 -->
+<!-- Remember App - Version 0.1520 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1518
+  Version 0.1520
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1520 - All 27 note-viewer render sites consolidated onto renderViewer() (stamps now attached on every render path). Audit identified the 2026-07-05 data-loss trigger: the smart-spacing fixup re-rendered mid-move via a bypass path, wiping the stamps the next move commit needed — closed structurally by this consolidation, on top of v0.1516's abort guard.
+  v0.1519 - Note snapshot safety net: content is snapshotted (per-note ring of 5, quota-capped) before Move lines, Cut, Uncheck all, Edit Paragraph save, Paste, and recursive check/uncheck of sub-items; new More menu item "Restore note backup" restores the latest snapshot (reversibly — the current state is snapshotted first).
   v0.1518 - REAL fix for "Color-code lines by tag": the bars render 5px left of each line and v0.1495's overflow-x:hidden on .note-viewer had been clipping them invisible; the viewer's clip box now extends 8px left (padding/negative-margin pair, text position unchanged). Corrects v0.1517: its "restored missing toggles" diagnosis was wrong (they already existed); its duplicate toggle lines are removed. Do not deploy v0.1517.
   v0.1517 - Restored "Color-code lines by tag" and "Color-code tag pills by tag" (their body-class toggles had vanished from applySettings while the CSS survived). Applying a text color inside a hex-colored highlight now nests correctly after the #hex: prefix; toggling a colored highlight off no longer leaves the orphaned #hex: as visible text.
   v0.1516 - CRITICAL data-loss fix: Move lines could silently rewrite the whole note from rendered text (stripping ==highlights==, # headings, bold, etc.) whenever line stamps were missing; the commit now aborts loudly instead and never touches rendered text. Stamping consolidated into shared stampRawLinesFromContent(); move commits and single-note export format choices are now debug-logged.
@@ -6558,6 +6560,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><circle cx="18" cy="6" r="2.6" fill="currentColor" stroke="none" opacity="0.4"/><line x1="13.8" y1="7.4" x2="16.2" y2="6" opacity="0.4"/></svg>
     <span class="more-label" id="more-share-for-speech-label" style="pointer-events:none;flex:1">Share for speech</span>
   </button>
+  <button id="more-restore-snap-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/><polyline points="12 7 12 12 16 14"/></svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Restore note backup</span>
+  </button>
   <button id="more-copy-plain-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><text x="15.5" y="20" font-size="10" font-weight="900" fill="currentColor" stroke="currentColor" stroke-width="0.6" paint-order="stroke fill" font-family="serif" text-anchor="middle" style="pointer-events:none">T</text></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Copy as plain text</span>
@@ -9042,7 +9048,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1518';
+const APP_VERSION = '0.1520';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -9082,6 +9088,53 @@ function logSys(msg, skipMirror) {
   // reads in one place. skipMirror=true avoids recursion when called
   // from inside saveNotes' own failure path (logDebugAction saves notes).
   if (!skipMirror) { try { logDebugAction('[SYS] ' + msg); } catch(e2) {} }
+}
+
+// ===== NOTE SNAPSHOT SAFETY NET (v0.1519) =====
+// Motivated by the 2026-07-05 Move-lines data loss: before any operation
+// that can rewrite many lines at once, the note's current content is
+// snapshotted to its own localStorage key (per-note ring of the last
+// SNAP_PER_NOTE states, global size cap with oldest-first eviction).
+// One-tap recovery: More menu -> "Restore note backup" restores the most
+// recent snapshot, after first snapshotting the current state — so a
+// restore is itself reversible by restoring again.
+var SNAP_KEY = storeKey('remember_note_snapshots');
+var SNAP_PER_NOTE = 5;
+var SNAP_TOTAL_CAP = 300000; // chars of stored JSON, quota-safe
+function _snapReadAll() {
+  try { return JSON.parse(localStorage.getItem(SNAP_KEY) || '{}'); } catch(e) { return {}; }
+}
+function snapshotNoteBeforeOp(noteId, opName) {
+  try {
+    if (!noteId || !notes[noteId]) return;
+    var content = notes[noteId].content || '';
+    var all = _snapReadAll();
+    var arr = all[noteId] || [];
+    if (arr.length && arr[arr.length - 1].content === content) return; // nothing new to protect
+    arr.push({ at: Date.now(), op: opName, content: content });
+    while (arr.length > SNAP_PER_NOTE) arr.shift();
+    all[noteId] = arr;
+    var payload = JSON.stringify(all);
+    var guard = 0;
+    while (payload.length > SNAP_TOTAL_CAP && guard < 200) {
+      guard++;
+      var oldestId = null, oldestAt = Infinity;
+      Object.keys(all).forEach(function(id) {
+        if (all[id].length && all[id][0].at < oldestAt) { oldestAt = all[id][0].at; oldestId = id; }
+      });
+      if (!oldestId) break;
+      all[oldestId].shift();
+      if (!all[oldestId].length) delete all[oldestId];
+      payload = JSON.stringify(all);
+    }
+    localStorage.setItem(SNAP_KEY, payload);
+    logSys('Snapshot before ' + opName + ': "' + String(notes[noteId].name || '').slice(0, 30) +
+      '" (' + content.length + ' ch)');
+  } catch(e) { try { logSys('Snapshot FAILED (' + opName + '): ' + e, true); } catch(e2) {} }
+}
+function getLatestSnapshot(noteId) {
+  var arr = _snapReadAll()[noteId] || [];
+  return arr.length ? arr[arr.length - 1] : null;
 }
 
 
@@ -10401,7 +10454,7 @@ function loadState() {
   // exists in localStorage right now, and which deployment is running.
   try {
     var _censusParts = [];
-    ['remember_notes','remember_settings','remember_folders','remember_themes','remember_note_census','remember_notes_corrupt','remember_syslog','remember_notes_backup'].forEach(function(k) {
+    ['remember_notes','remember_settings','remember_folders','remember_themes','remember_note_census','remember_notes_corrupt','remember_syslog','remember_notes_backup','remember_note_snapshots'].forEach(function(k) {
       var v = localStorage.getItem(storeKey(k));
       if (v !== null) _censusParts.push(k + '=' + v.length + 'ch');
     });
@@ -11716,7 +11769,7 @@ function applySettings() {
   if (isViewMode && currentNoteId && notes[currentNoteId]) {
     var _nvForRefresh = document.getElementById('note-viewer');
     if (_nvForRefresh) {
-      _nvForRefresh.innerHTML = urlsToLinks(notes[currentNoteId].content || '', true);
+      renderViewer(notes[currentNoteId].content || '');
     }
   }
 }
@@ -13940,7 +13993,7 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
 
   if (on) {
     if (saveTimeout) { clearTimeout(saveTimeout); saveCurrentNote(); }
-    viewer.innerHTML = urlsToLinks(editor.value, true);
+    renderViewer(editor.value);
     renderBlockSelections();
     editor.style.display = 'none';
     viewer.style.display = 'block';
@@ -14424,7 +14477,7 @@ function _fixupMoveBlankLines(pairs) {
     var newLines = lines.slice(0, aboveIdx + 1).concat(['']).concat(lines.slice(belowIdx));
     notes[currentNoteId].content = newLines.join('\n');
     changedAny = true;
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    renderViewer(notes[currentNoteId].content);
     renderBlockSelections();
     _refreshMoveBlocks();
     _resyncAfterMove();
@@ -14890,7 +14943,7 @@ function applyCodeFenceToBlocks() {
   notes[currentNoteId].content = lines.join('\n');
   document.getElementById('note-editor').value = notes[currentNoteId].content;
   saveNotes();
-  document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+  renderViewer(notes[currentNoteId].content);
   selectedBlocks.clear(); // line indices have shifted; stale selection would be wrong
   renderBlockSelections();
   updateViewOnlyBtns();
@@ -14911,7 +14964,7 @@ function applyFormattingToBlocks(type, color) {
   notes[currentNoteId].content = lines.join('\n');
   document.getElementById('note-editor').value = notes[currentNoteId].content;
   saveNotes();
-  document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+  renderViewer(notes[currentNoteId].content);
   renderBlockSelections();
   updateViewOnlyBtns();
 }
@@ -15008,7 +15061,7 @@ function applyIndentToSelectedBlocks(isIndent) {
   // Re-render viewer and restore selections
   var viewer = document.getElementById('note-viewer');
   if (viewer) {
-    viewer.innerHTML = urlsToLinks(n.content, true);
+    renderViewer(n.content);
     renderBlockSelections();
     renderBlockSelections();
   }
@@ -20273,6 +20326,33 @@ function makeImportFolderName(label) {
     unCheckAll();
   });
 
+  document.getElementById('more-restore-snap-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-restore-snap-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    if (!currentNoteId || !notes[currentNoteId]) return;
+    var snap = getLatestSnapshot(currentNoteId);
+    if (!snap) { showToast('No backups recorded for this note yet', false); return; }
+    showConfirm('Restore note backup',
+      'Restore this note to how it was before \u201c' + snap.op + '\u201d (' +
+      new Date(snap.at).toLocaleString() + ', ' + snap.content.length + ' characters)?\n\n' +
+      'The current content will be backed up first, so restoring is itself reversible.',
+      'Restore',
+      function() {
+        snapshotNoteBeforeOp(currentNoteId, 'Restore backup'); // preserve current state
+        notes[currentNoteId].content = snap.content;
+        notes[currentNoteId].editedAt = Date.now();
+        var _rsEd = document.getElementById('note-editor');
+        _rsEd.value = snap.content;
+        _rsEd._lastLength = snap.content.length;
+        renderViewer(snap.content);
+        saveNotes();
+        try { resizeEditor(); } catch(eR) {}
+        logDebugAction('Restored note backup from before \u201c' + snap.op + '\u201d');
+        showToast('Note restored', false);
+      },
+      false, 'Cancel', null);
+  });
+
   document.getElementById('more-share-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('more-reading-mode-btn').addEventListener('click', function() {
     closeMoreMenu();
@@ -23463,6 +23543,7 @@ function makeImportFolderName(label) {
   }
   function checkUncheckChildren(parentIdx, checkState) {
     if (!currentNoteId || !notes[currentNoteId]) return;
+    snapshotNoteBeforeOp(currentNoteId, checkState ? 'Check all sub-items' : 'Uncheck all sub-items');
     var lines = (notes[currentNoteId].content || '').split('\n');
     var desc = getParentDescendants(lines, parentIdx);
     pushUndo();
@@ -23593,7 +23674,7 @@ function makeImportFolderName(label) {
         notes[currentNoteId].content = _calLines.join('\n');
         document.getElementById('note-editor').value = notes[currentNoteId].content;
         scheduleSave();
-        document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+        renderViewer(notes[currentNoteId].content);
         if (typeof applyOutlineMode === 'function') applyOutlineMode();
         if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
         if (_hideCompleted) applyHideCompleted();
@@ -23623,7 +23704,7 @@ function makeImportFolderName(label) {
       updateHideCompletedIndicator();
       updateHideCompletedMenuLabel();
       // Re-render first so button label updates, then re-apply filter and count
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+      renderViewer(notes[currentNoteId].content);
       applyHideCompleted();
       if (typeof applyOutlineMode === 'function') applyOutlineMode();
       if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
@@ -23670,7 +23751,7 @@ function makeImportFolderName(label) {
     _note.content = _newContent;
     document.getElementById('note-editor').value = _newContent;
     saveNotes();
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(_newContent, true);
+    renderViewer(_newContent);
     renderBlockSelections();
     updateViewOnlyBtns();
     if (typeof applyOutlineMode === 'function') applyOutlineMode();
@@ -23939,7 +24020,7 @@ function makeImportFolderName(label) {
     var ed = document.getElementById('note-editor');
     var viewer = document.getElementById('note-viewer');
     if (isViewMode && ed && viewer) {
-      viewer.innerHTML = urlsToLinks(ed.value, true);
+      renderViewer(ed.value);
       if (typeof applyOutlineMode === 'function') applyOutlineMode();
       if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
       if (_hideCompleted) applyHideCompleted();
@@ -24420,6 +24501,7 @@ function makeImportFolderName(label) {
     var origCount = lines.length;
     if (_editBlockLineIdx < 0 || _editBlockLineIdx >= lines.length) return;
     pushUndo();
+    snapshotNoteBeforeOp(currentNoteId, 'Edit Paragraph');
     lines[_editBlockLineIdx] = newText;
     // Safety check: line count must be unchanged
     if (lines.length !== origCount) { showToast('Error: line count mismatch — edit not saved', false); return; }
@@ -24438,7 +24520,7 @@ function makeImportFolderName(label) {
       // picker commit path.
       editor._lastLength = editor.value.length;
     }
-    if (viewer) viewer.innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    if (viewer) renderViewer(notes[currentNoteId].content);
     scheduleSave();
     var _savedLineIdx = _editBlockLineIdx;
     closeEditBlockDialog();
@@ -24757,7 +24839,7 @@ function makeImportFolderName(label) {
     if (!currentNoteId || !notes[currentNoteId]) return;
     var ed = document.getElementById('note-editor');
     var viewer = document.getElementById('note-viewer');
-    if (ed && viewer) viewer.innerHTML = urlsToLinks(ed.value, true);
+    if (ed && viewer) renderViewer(ed.value);
   }
   document.querySelectorAll('#tag-scope-seg input[type="radio"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
@@ -25150,7 +25232,7 @@ function makeImportFolderName(label) {
     var _deletingLine = deletingLine;
     var _wasUnchecked = !isChecked;
     requestAnimationFrame(function() {
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(_reRenderContent, true);
+      renderViewer(_reRenderContent);
       document.getElementById('note-viewer').classList.toggle('crossout-mode', _deletingLine);
       updateViewOnlyBtns();
 
@@ -25225,6 +25307,7 @@ function makeImportFolderName(label) {
       'Cut',
       function() {
         if (!currentNoteId || !notes[currentNoteId]) return;
+        snapshotNoteBeforeOp(currentNoteId, 'Cut lines');
         pushUndo();
         var lines = (notes[currentNoteId].content || '').split('\n');
         // Collect selected lines in order (preserving formatting characters)
@@ -25246,7 +25329,7 @@ function makeImportFolderName(label) {
         // people often cut many line groups in a row (e.g. cleaning up todo
         // lists), and re-enabling Select lines before every cut was tedious.
         updateSelectModeBtn();
-        document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+        renderViewer(notes[currentNoteId].content);
         updateViewOnlyBtns();
         showToast(label + ' cut to clipboard', false);
       },
@@ -25567,7 +25650,7 @@ function makeImportFolderName(label) {
     resizeEditor();
     closeQuickAdd();
     if (isViewMode) {
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(newContent, true);
+      renderViewer(newContent);
       updateViewOnlyBtns();
       // Homogeneous checklist insertion: leave the inserted lines
       // selected (selectedBlocks) so Indent/Dedent can act on them
@@ -26337,7 +26420,7 @@ function makeImportFolderName(label) {
     notes[currentNoteId].content = lines.join('\n');
     document.getElementById('note-editor').value = notes[currentNoteId].content;
     saveNotes();
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    renderViewer(notes[currentNoteId].content);
     renderBlockSelections();
   });
 
@@ -26400,7 +26483,7 @@ function makeImportFolderName(label) {
       notes[currentNoteId].content = lines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+      renderViewer(notes[currentNoteId].content);
       renderBlockSelections();
 
       // ── Move completed to bottom (hyphen items) ───────────────────────
@@ -26930,7 +27013,7 @@ function makeImportFolderName(label) {
         notes[currentNoteId].content = notes[currentNoteId].content.replace(/~~([^~\n]*)~~/g, '$1');
         document.getElementById('note-editor').value = notes[currentNoteId].content;
         saveNotes();
-        document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+        renderViewer(notes[currentNoteId].content);
         renderBlockSelections(); // preserve block selection highlights after re-render
         updateViewOnlyBtns();
       },
@@ -28773,7 +28856,7 @@ function _applyUndoRedoContent(content) {
   var viewer = document.getElementById('note-viewer');
   if (ed) ed.value = content;
   if (viewer && isViewMode) {
-    viewer.innerHTML = urlsToLinks(content, true);
+    renderViewer(content);
     renderBlockSelections();
   }
   saveNotes();
@@ -28832,7 +28915,7 @@ function closeFind() {
   // typing mode has no rendered <mark> elements to clean up, just a
   // text selection that already goes away on its own.
   if (isViewMode && currentNoteId && notes[currentNoteId]) {
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    renderViewer(notes[currentNoteId].content);
     renderBlockSelections();
   }
   pinToolbars();
@@ -28851,7 +28934,7 @@ function runFind(skipJump) {
   if (!_findQuery.trim()) {
     if (isViewMode) {
       // No query — re-render plain viewer
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
+      renderViewer(content);
       renderBlockSelections();
     }
     updateFindUI();
@@ -28871,7 +28954,7 @@ function runFind(skipJump) {
 
   if (matchPositions.length === 0) {
     if (isViewMode) {
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(content, true);
+      renderViewer(content);
       renderBlockSelections();
     }
     updateFindUI();
@@ -29053,9 +29136,12 @@ function noteHasStrikethroughs() {
 // element (dataset.rawLine), keyed by its data-line index. Move mode's
 // commit depends on these stamps as the ONLY carrier of line identity —
 // see _writeMoveContentBack. Shared by renderViewer() and move-mode
-// entry, which re-stamps defensively because ~27 render paths still
-// bypass renderViewer with direct viewer.innerHTML = urlsToLinks(...)
-// calls (converting those call sites is tracked follow-up work).
+// entry (defensive re-stamp). As of v0.1520 every note-viewer render
+// goes through renderViewer() — the only intentional direct
+// urlsToLinks-into-innerHTML left is the Settings sample PREVIEW
+// element, which is not the viewer. Historical note: the 2026-07-05
+// data loss trigger was _fixupMoveBlankLines re-rendering mid-move via
+// a bypass path, wiping all stamps before the next commit.
 function stampRawLinesFromContent(content) {
   var viewer = document.getElementById('note-viewer');
   if (!viewer) return;
@@ -29632,6 +29718,7 @@ function enterMoveMode() {
   }
   _refreshMoveBlocks();
   stampRawLinesFromContent(notes[currentNoteId].content || '');
+  snapshotNoteBeforeOp(currentNoteId, 'Move lines'); // once per move session
 
   moveMode = true;
   document.body.classList.add('move-mode');
@@ -29860,7 +29947,7 @@ function toggleCheckboxOnBlocks() {
   notes[currentNoteId].content = lines.join('\n');
   document.getElementById('note-editor').value = notes[currentNoteId].content;
   saveNotes();
-  document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+  renderViewer(notes[currentNoteId].content);
   renderBlockSelections();
   updateViewOnlyBtns();
 }
@@ -29904,7 +29991,7 @@ function toggleCheckStateOnSelection() {
       notes[currentNoteId].content = lines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+      renderViewer(notes[currentNoteId].content);
       renderBlockSelections();
     }
   });
@@ -30158,7 +30245,7 @@ function doMoveCompletedToBottom(lineIdx) {
   notes[currentNoteId].content = newLines.join('\n');
   document.getElementById('note-editor').value = notes[currentNoteId].content;
   scheduleSave();
-  document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+  renderViewer(notes[currentNoteId].content);
   updateViewOnlyBtns();
   if (typeof applyOutlineMode === 'function') applyOutlineMode();
   if (typeof applyTagFilter === 'function' && _tagFilterActive) applyTagFilter();
@@ -30258,6 +30345,7 @@ function uncheckAllLines(lines) {
 
 function unCheckAll() {
   if (!currentNoteId || !notes[currentNoteId]) return;
+  snapshotNoteBeforeOp(currentNoteId, 'Uncheck all');
   var content = notes[currentNoteId].content || '';
   var lines = content.split('\n');
 
@@ -30285,7 +30373,7 @@ function unCheckAll() {
       notes[currentNoteId].content = newLines.join('\n');
       document.getElementById('note-editor').value = notes[currentNoteId].content;
       saveNotes();
-      document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+      renderViewer(notes[currentNoteId].content);
       renderBlockSelections();
       updateViewOnlyBtns();
       showToast('Cleared ' + changed + (changed === 1 ? ' item' : ' items'), false);
@@ -30375,6 +30463,7 @@ function doPaste(before) {
   navigator.clipboard.readText().then(function(text) {
     if (!text || !text.trim()) { showToast('Nothing to paste', false); return; }
     _markClipAsked(text); // user just pasted this — don't auto-prompt for same content again
+    snapshotNoteBeforeOp(currentNoteId, 'Paste');
     pushUndo();
     var lines = (notes[currentNoteId].content || '').split('\n');
     // Split pasted text into lines
@@ -30405,7 +30494,7 @@ function doPaste(before) {
     notes[currentNoteId].editedAt = Date.now();
     document.getElementById('note-editor').value = notes[currentNoteId].content;
     saveNotes();
-    document.getElementById('note-viewer').innerHTML = urlsToLinks(notes[currentNoteId].content, true);
+    renderViewer(notes[currentNoteId].content);
     renderBlockSelections();
     updateViewOnlyBtns();
     showToast('Pasted ' + pastedLines.length + (pastedLines.length === 1 ? ' line' : ' lines'), false);
