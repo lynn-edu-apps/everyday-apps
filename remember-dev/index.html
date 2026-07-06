@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1520 -->
+<!-- Remember App - Version 0.1522 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1520
+  Version 0.1522
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1522 - Check note's malformed-checkbox rule rewritten as self-contained syntax validation (the previous rule leaned on isCheckboxRaw, which is a marker-line classifier assigned late — it flagged valid checkboxes before a note opened and could never flag invalid ones after); also validates checkbox color-suffix names. Corrected isCheckboxRaw's stale "replaced in init" comment. Deploy this instead of v0.1521.
+  v0.1521 - New defined color {white} (#FFFFFF) added to every color list, render map, checkbox palette, CSS variables, and the color picker. New "Check note" in the More menu: lints the note for unclosed highlights/bold/strikethrough, unknown or unbalanced {color} tags, malformed or orphaned #hex: highlight colors, malformed checkbox markers, and unclosed code fences.
   v0.1520 - All 27 note-viewer render sites consolidated onto renderViewer() (stamps now attached on every render path). Audit identified the 2026-07-05 data-loss trigger: the smart-spacing fixup re-rendered mid-move via a bypass path, wiping the stamps the next move commit needed — closed structurally by this consolidation, on top of v0.1516's abort guard.
   v0.1519 - Note snapshot safety net: content is snapshotted (per-note ring of 5, quota-capped) before Move lines, Cut, Uncheck all, Edit Paragraph save, Paste, and recursive check/uncheck of sub-items; new More menu item "Restore note backup" restores the latest snapshot (reversibly — the current state is snapshotted first).
   v0.1518 - REAL fix for "Color-code lines by tag": the bars render 5px left of each line and v0.1495's overflow-x:hidden on .note-viewer had been clipping them invisible; the viewer's clip box now extends 8px left (padding/negative-margin pair, text position unchanged). Corrects v0.1517: its "restored missing toggles" diagnosis was wrong (they already existed); its duplicate toggle lines are removed. Do not deploy v0.1517.
@@ -117,6 +119,7 @@
   --color-violet: #A600A6;
   --color-black: #1a1a1a;
   --color-gray: #4b5563;
+  --color-white: #FFFFFF;
   --line-height: 1.7;
 
   --bg: #f5f0e8;
@@ -171,6 +174,7 @@ body.dark {
   --color-violet: #FB00F2;
   --color-black: #cccccc;
   --color-gray: #aaaaaa;
+  --color-white: #FFFFFF;
 }
 
 /* UI Size: large */
@@ -6376,6 +6380,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <button class="color-picker-swatch" data-color="violet"  style="background:var(--color-violet)"  title="Violet"></button>
       <button class="color-picker-swatch" data-color="black"   style="background:var(--color-black)"   title="Off-black/Light gray"></button>
       <button class="color-picker-swatch" data-color="gray"    style="background:var(--color-gray)"    title="Gray"></button>
+      <button class="color-picker-swatch" data-color="white"   style="background:var(--color-white);border:1px solid var(--border)" title="White"></button>
       <button class="color-picker-swatch" data-color="custom"  style="background:var(--custom-color)"  title="Custom color 1"></button>
       <button class="color-picker-swatch" data-color="custom2" style="background:var(--custom-color-2)" title="Custom color 2"></button>
       <button class="color-picker-swatch" data-color="custom3" style="background:var(--custom-color-3)" title="Custom color 3"></button>
@@ -6563,6 +6568,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   <button id="more-restore-snap-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/><polyline points="12 7 12 12 16 14"/></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Restore note backup</span>
+  </button>
+  <button id="more-check-note-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 14 11 16 15 12"/></svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Check note</span>
   </button>
   <button id="more-copy-plain-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/><text x="15.5" y="20" font-size="10" font-weight="900" fill="currentColor" stroke="currentColor" stroke-width="0.6" paint-order="stroke fill" font-family="serif" text-anchor="middle" style="pointer-events:none">T</text></svg>
@@ -9048,7 +9057,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1520';
+const APP_VERSION = '0.1522';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -10293,7 +10302,12 @@ function _setTexBg(el, pngUrl) {
   el.style.backgroundSize = '300px 300px';
   el.style.backgroundAttachment = 'local'; // scrolls WITH content (real paper)
 }
-var isCheckboxRaw = function() { return false; }; // replaced in init
+var isCheckboxRaw = function() { return false; }; // NOT replaced in init:
+// the real implementation is assigned in the Collapsible Outline section,
+// which runs when the note screen initializes — so early callers (e.g.
+// urlsToLinks rendering home-screen previews) hit this stub. Its real
+// semantics are "is this a marker line (bullet OR checkbox)" — a
+// collapsible-parent test, NOT a strict checkbox-syntax validator.
 var getDescendants = function() { return []; }; // replaced in init
 var getHeadingDescendants = function() { return []; }; // replaced in init
 var isHeadingRaw = function() { return false; }; // replaced in init
@@ -11786,7 +11800,7 @@ function notePreview(content) {
   if (!content) return null;
   var lines = content.split('\n');
   var _specialLineRe = /^\[(?:tag order|last modified|share note|copy for speech)\]/i;
-  var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3';
+  var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3';
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
     if (line.length === 0) continue;
@@ -11893,7 +11907,7 @@ function stripMarkdownForSearch(text) {
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/~~([^~]+)~~/g, '$1')
     .replace(/==([^=]+)==/g, '$1')
-    .replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom)\}([^{]*)\{\/[^}]+\}/g, '$1')
+    .replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom)\}([^{]*)\{\/[^}]+\}/g, '$1')
     .replace(/\[([ x])(:[a-z]+)?\]/gi, '[ ]'); // normalize checkboxes
 }
 
@@ -13032,7 +13046,7 @@ function checkboxSVG(checked, overrideColor) {
     gold:'var(--color-gold)',yellow:'var(--color-gold)',green:'var(--color-green)',
     blue:'var(--color-blue)',purple:'var(--color-purple)',magenta:'var(--color-magenta)',
     pink:'var(--color-pink)',rose:'var(--color-rose)',violet:'var(--color-violet)',
-    black:'var(--color-black)',gray:'var(--color-gray)',custom:'var(--custom-color)'};
+    black:'var(--color-black)',gray:'var(--color-gray)',white:'var(--color-white)',custom:'var(--custom-color)'};
   // overrideColor from [ :red] syntax takes priority over global setting
   var cbColor = (overrideColor && _cbPalette[overrideColor])
     ? _cbPalette[overrideColor]
@@ -13130,8 +13144,8 @@ function urlsToLinks(text, addLineWrappers) {
     var icm = {red:'var(--color-red)',orange:'var(--color-orange)',gold:'var(--color-gold)',
       yellow:'var(--color-gold)',green:'var(--color-green)',blue:'var(--color-blue)',
       purple:'var(--color-purple)',magenta:'var(--color-magenta)',pink:'var(--color-pink)',
-      rose:'var(--color-rose)',violet:'var(--color-violet)',black:'var(--color-black)',gray:'var(--color-gray)'};
-    content = content.replace(/\{(red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray)\}([^{]*)\{\/\1\}/g,
+      rose:'var(--color-rose)',violet:'var(--color-violet)',black:'var(--color-black)',gray:'var(--color-gray)',white:'var(--color-white)'};
+    content = content.replace(/\{(red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white)\}([^{]*)\{\/\1\}/g,
       function(m2,c,t){ return '<span style="color:'+(icm[c]||c)+'">'+t+'</span>'; });
     return '<span style="background:'+hex+';color:#1a1a1a;border-radius:3px;padding:0 4px">'+content+'</span>';
   });
@@ -13152,11 +13166,12 @@ function urlsToLinks(text, addLineWrappers) {
     violet: 'var(--color-violet)',
     black: 'var(--color-black)',
     gray: 'var(--color-gray)',
+    white: 'var(--color-white)',
     custom:  (settings && settings.customColor  ? settings.customColor  : 'var(--custom-color)'),
     custom2: (settings && settings.customColor2 ? settings.customColor2 : 'var(--custom-color-2)'),
     custom3: (settings && settings.customColor3 ? settings.customColor3 : 'var(--custom-color-3)')
   };
-  escaped = escaped.replace(/\{(red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/\1\}/g, function(m, color, content) {
+  escaped = escaped.replace(/\{(red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}([^{]*)\{\/\1\}/g, function(m, color, content) {
     return '<span style="color:' + (colorMap[color] || color) + '">' + content + '</span>';
   });
   // Render @tags as muted pills — color by tag identity when tagColorPills is on
@@ -13193,7 +13208,7 @@ function urlsToLinks(text, addLineWrappers) {
   // leading whitespace (indentation) is preserved. This only affects the
   // rendered HTML; the raw stored text and typing-mode display still show
   // the marker exactly as typed.
-  var _cbColorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom';
+  var _cbColorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom';
   escaped = escaped.replace(new RegExp('^([ \\t]*)[-*+] \\[x:(' + _cbColorNames + ')\\]', 'gim'), function(m, ws, c) { return ws + checkboxSVG(true, c); });
   escaped = escaped.replace(new RegExp('^([ \\t]*)[-*+] \\[ :(' + _cbColorNames + ')\\]', 'gim'), function(m, ws, c) { return ws + checkboxSVG(false, c); });
   // Render plain [ ]/[]  and [x] (use global settings color), same marker requirement
@@ -14576,7 +14591,7 @@ function nameFromContent(content) {
     line = line.replace(/~~([^~]+)~~/g, '$1');  // strikethrough
     line = unwrapHighlightsInline(line);  // ==highlights== incl. #hex: prefixes (was missing entirely)
     line = line.replace(/\*\*([^*]+)\*\*/g, '$1');  // bold
-    line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/g, '$1'); // color
+    line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}/g, '$1'); // color
     line = line.trim();
     if (line.length > 0) {
       return line.length > 50 ? line.slice(0, 50).trim() + '…' : line;
@@ -14758,7 +14773,7 @@ function toggleLineFormatting(line, type, color) {
       var _clHp = _clInner.match(/^#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:/);
       if (_clHp) { _clHexPrefix = _clHp[0]; _clInner = _clInner.slice(_clHexPrefix.length); }
     }
-    var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3';
+    var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3';
     var stripped = _clInner.replace(new RegExp('\\{(?:' + _colorNames + ')\\}([^{]*)\\{\\/?(?:' + _colorNames + ')\\}', 'g'), '$1');
     var result;
     if (color === 'none') {
@@ -14769,7 +14784,7 @@ function toggleLineFormatting(line, type, color) {
     }
     return _clInd + _clSplit.prefix + (_hlMatch ? '==' + _clHexPrefix + result + '==' : result);
   } else if (type === 'cbcolor') {
-    var _cbColorRe = /\[([ x]):(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom)\]/gi;
+    var _cbColorRe = /\[([ x]):(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom)\]/gi;
     var _cbPlainRe = /\[([ x])\]/gi;
     if (color === 'none') {
       return line.replace(_cbColorRe, '[$1]');
@@ -14984,7 +14999,7 @@ function stripForShare(content) {
     // Strip heading markers
     line = line.replace(/^#{1,6}\s+/, '');
     // Color markers {red}...{/red} etc. — unwrap content
-    line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/g, '$1');
+    line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}/g, '$1');
     // Bold **...**
     line = line.replace(/\*\*([^*]*)\*\*/g, '$1');
     // Italic *...* (after bold)
@@ -15423,7 +15438,7 @@ function toPortableMarkdown(content) {
     // ==#hex:text== / ==#hexA|#hexB:text==  ->  ==text== (keep the highlight)
     line = line.replace(/==#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:/g, '==');
     // {color}text{/color} -> text (all named + custom colors)
-    line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/gi, '$1');
+    line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}/gi, '$1');
     // [x:color] / [ :color] -> [x] / [ ]  (checkbox color extension)
     line = line.replace(/\[( ?|x|X):[a-z0-9]+\]/g, function(m, st) {
       return st.trim() ? '[x]' : '[ ]';
@@ -16021,7 +16036,7 @@ function stripMarkdownToPlainText(line) {
   // Strip heading markers # through ###### (Android TTS reads # as 'hash')
   line = line.replace(/^#{1,6}\s+/, '');
   // Remove color markers {red}...{/red} etc.
-  line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3)\}/g, '$1');
+  line = line.replace(/\{(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}([^{]*)\{\/(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3)\}/g, '$1');
   // Remove bold **...**
   line = line.replace(/\*\*([^*]*)\*\*/g, '$1');
   // Remove italic *...* (after bold)
@@ -20324,6 +20339,17 @@ function makeImportFolderName(label) {
   document.getElementById('uncheck-all-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('uncheck-all-btn').addEventListener('click', function() {
     unCheckAll();
+  });
+
+  document.getElementById('more-check-note-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-check-note-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    if (!currentNoteId || !notes[currentNoteId]) return;
+    var issues = lintNoteContent(notes[currentNoteId].content || '');
+    logDebugAction('Check note: ' + issues.length + ' issue(s) found');
+    if (!issues.length) { showToast('No formatting problems found \u2713', false); return; }
+    showConfirm('Check note \u2014 ' + issues.length + ' issue' + (issues.length === 1 ? '' : 's'),
+      issues.join('\n\n'), 'Close', function() {}, false, null, null);
   });
 
   document.getElementById('more-restore-snap-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
@@ -30112,6 +30138,76 @@ function stripFormattingForDetect(s) {
 // tag-based apps (e.g. Bear) then treat '#ffb8d0' as a tag.
 function unwrapHighlightsInline(line) {
   return line.replace(/==(?:#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:)?([^=]*)==/g, '$1');
+}
+
+// ===== CHECK NOTE LINTER (v0.1521) =====
+// Pure function: scans raw note content for Remember-syntax problems and
+// returns human-readable issue strings ("Line 12: Unclosed highlight (==)").
+// Skips fenced code blocks and inline code spans. Checkbox validation
+// defers to the canonical stripFormattingForDetect()/isCheckboxRaw() —
+// never a second local marker regex (reuse rule).
+var LINT_COLOR_NAMES = ['red','orange','gold','yellow','green','blue','purple','magenta',
+  'pink','rose','violet','black','gray','white','custom','custom2','custom3'];
+function lintNoteContent(content) {
+  var issues = [];
+  var lines = String(content || '').split('\n');
+  var inFence = false;
+  var add = null;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var ln = i + 1;
+    if (/^\s*```/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    add = (function(lnNum) {
+      return function(msg) { if (issues.length < 60) issues.push('Line ' + lnNum + ': ' + msg); };
+    })(ln);
+    var scan = line.replace(/`[^`\n]*`/g, ''); // ignore inline code spans
+    if (((scan.match(/==/g) || []).length) % 2 === 1) add('Unclosed highlight (==)');
+    if (((scan.match(/\*\*/g) || []).length) % 2 === 1) add('Unclosed bold (**)');
+    if (((scan.match(/~~/g) || []).length) % 2 === 1) add('Unclosed strikethrough (~~)');
+    // {color} tags: unknown names, stray closers, unclosed openers
+    var opens = {}, m, tagRe = /\{(\/?)([a-zA-Z0-9]+)\}/g;
+    while ((m = tagRe.exec(scan)) !== null) {
+      var closing = m[1] === '/';
+      var name = m[2].toLowerCase();
+      if (LINT_COLOR_NAMES.indexOf(name) === -1) {
+        add('Unknown color name {' + (closing ? '/' : '') + name + '}');
+        continue;
+      }
+      opens[name] = (opens[name] || 0) + (closing ? -1 : 1);
+      if (opens[name] < 0) { add('Stray {/' + name + '} without an opening {' + name + '}'); opens[name] = 0; }
+    }
+    Object.keys(opens).forEach(function(nm) {
+      if (opens[nm] > 0) add('Unclosed {' + nm + '} tag');
+    });
+    // Highlight hex prefix must be #rgb or #rrggbb followed by : or |
+    var hp = scan.match(/==#([0-9a-fA-F]*)([^=\n]?)/);
+    if (hp && !((/^[0-9a-fA-F]{3}$/.test(hp[1]) || /^[0-9a-fA-F]{6}$/.test(hp[1])) && (hp[2] === ':' || hp[2] === '|'))) {
+      add('Malformed highlight color after == (expected like ==#rrggbb: )');
+    }
+    // Color code not attached to a highlight — the leftover-strip symptom
+    if (/(^|[^=#|])#[0-9a-fA-F]{6}:/.test(scan)) add('Color code outside a highlight (#hex: without ==)');
+    // Malformed checkbox marker. Deliberately NOT isCheckboxRaw(): that
+    // function classifies "is this a marker line" (true for plain
+    // bullets AND any [..] variant — it's the collapsible-outline parent
+    // test, and it's also only assigned once the outline section runs).
+    // The linter's job is different: validate the SYNTAX of an attempted
+    // checkbox state token, which needs its own strict rule.
+    var det = stripFormattingForDetect(line);
+    var cbm = det.match(/^\s*[-*+] \[([^\]]*)\]/);
+    if (cbm) {
+      var inner = cbm[1];
+      var stateOk = /^[ xX](?::[a-z0-9]+)?$/.test(inner);
+      var colorPart = (inner.match(/^[ xX]:([a-z0-9]+)$/) || [])[1];
+      if (!stateOk) {
+        add('Malformed checkbox marker [' + inner + '] (expected like "- [ ]", "- [x]", or "- [x:green]")');
+      } else if (colorPart && LINT_COLOR_NAMES.indexOf(colorPart) === -1) {
+        add('Unknown checkbox color name [:' + colorPart + ']');
+      }
+    }
+  }
+  if (inFence) issues.push('Unclosed code fence (```) — everything after it is treated as code');
+  return issues;
 }
 
 // getIndentLevelFromWhitespace(rawLine) — the single, canonical way to turn
