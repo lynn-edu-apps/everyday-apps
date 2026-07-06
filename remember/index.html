@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1516 -->
+<!-- Remember App - Version 0.1518 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1516
+  Version 0.1518
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1518 - REAL fix for "Color-code lines by tag": the bars render 5px left of each line and v0.1495's overflow-x:hidden on .note-viewer had been clipping them invisible; the viewer's clip box now extends 8px left (padding/negative-margin pair, text position unchanged). Corrects v0.1517: its "restored missing toggles" diagnosis was wrong (they already existed); its duplicate toggle lines are removed. Do not deploy v0.1517.
+  v0.1517 - Restored "Color-code lines by tag" and "Color-code tag pills by tag" (their body-class toggles had vanished from applySettings while the CSS survived). Applying a text color inside a hex-colored highlight now nests correctly after the #hex: prefix; toggling a colored highlight off no longer leaves the orphaned #hex: as visible text.
   v0.1516 - CRITICAL data-loss fix: Move lines could silently rewrite the whole note from rendered text (stripping ==highlights==, # headings, bold, etc.) whenever line stamps were missing; the commit now aborts loudly instead and never touches rendered text. Stamping consolidated into shared stampRawLinesFromContent(); move commits and single-note export format choices are now debug-logged.
   v0.1515 - Export all as ZIP: notes become .md/.txt files with folders as directories and Remember-only syntax stripped to portable markdown (hex highlight prefixes, {color} tags, checkbox :color extensions, app button tokens); non-empty scratch pad pages included under scratch-pad/; debug log excluded. Dependency-free stored-entry ZIP writer.
   v0.1514 - Highlight color prefixes (==#hex:text==) no longer leak into note-list previews, auto-generated note titles, or plain-text copy/share/speech output — three drifting copies of highlight-unwrapping consolidated into one shared unwrapHighlightsInline() helper.
@@ -3554,6 +3556,15 @@ body.wrap-note-names .note-inline-title {
 /* Note viewer (read-only / view mode) */
 .note-viewer {
   overflow-x: hidden;
+  /* padding-left/margin-left pair: the tag-color bars (.tag-border::before)
+     sit at left:-5px, OUTSIDE the line box. When overflow-x:hidden was
+     added here (v0.1495, horizontal-scroll fix), it silently clipped them
+     invisible — "Color-code lines by tag" appeared completely dead while
+     every class and rule was actually working (found v0.1518). Extending
+     the box 8px leftward, compensated by the negative margin, keeps the
+     text position identical while bringing the bars inside the clip. */
+  padding-left: 8px;
+  margin-left: -8px;
   touch-action: pan-y pinch-zoom; /* NOT bare pan-y — that kills pinch zoom (see .note-content-area) */
   font-family: var(--font-note);
   font-size: var(--font-size-editor);
@@ -9031,7 +9042,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1516';
+const APP_VERSION = '0.1518';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -14668,6 +14679,10 @@ function toggleLineFormatting(line, type, color) {
     var _hlResult;
     if (_hlBody.startsWith('==') && _hlBody.endsWith('==') && _hlBody.length > 4) {
       _hlResult = _hlBody.slice(2, -2);
+      // Colored highlights carry a '#hex:' / '#hexA|#hexB:' prefix glued
+      // to the opening == — toggling the highlight OFF must remove it
+      // too, or it is left behind as visible text.
+      _hlResult = _hlResult.replace(/^#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:/, '');
     } else {
       _hlResult = '==' + _hlBody.replace(/==/g, '') + '==';
     }
@@ -14679,6 +14694,17 @@ function toggleLineFormatting(line, type, color) {
     var _clBody = _clSplit.rest;
     var _hlMatch = _clBody.match(/^==(.*)==$/);
     var _clInner = _hlMatch ? _hlMatch[1] : _clBody;
+    // The highlight's optional '#hex:' color prefix belongs to the ==
+    // wrapper, NOT to the text — peel it off before wrapping the text in
+    // {color} tags and re-attach it when rebuilding. Without this,
+    // applying a text color to an already-hex-highlighted line produced
+    // =={purple}#hex:text{/purple}== — the hex stopped being parsed as a
+    // highlight color and showed up as literal text.
+    var _clHexPrefix = '';
+    if (_hlMatch) {
+      var _clHp = _clInner.match(/^#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:/);
+      if (_clHp) { _clHexPrefix = _clHp[0]; _clInner = _clInner.slice(_clHexPrefix.length); }
+    }
     var _colorNames = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom|custom2|custom3';
     var stripped = _clInner.replace(new RegExp('\\{(?:' + _colorNames + ')\\}([^{]*)\\{\\/?(?:' + _colorNames + ')\\}', 'g'), '$1');
     var result;
@@ -14688,7 +14714,7 @@ function toggleLineFormatting(line, type, color) {
       var colorRe = new RegExp('^\\{' + color + '\\}(.*)\\{\\/' + color + '\\}$');
       result = colorRe.test(_clInner) ? stripped : '{' + color + '}' + stripped + '{/' + color + '}';
     }
-    return _clInd + _clSplit.prefix + (_hlMatch ? '==' + result + '==' : result);
+    return _clInd + _clSplit.prefix + (_hlMatch ? '==' + _clHexPrefix + result + '==' : result);
   } else if (type === 'cbcolor') {
     var _cbColorRe = /\[([ x]):(?:red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|custom)\]/gi;
     var _cbPlainRe = /\[([ x])\]/gi;
