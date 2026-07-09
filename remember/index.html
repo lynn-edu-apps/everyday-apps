@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1522 -->
+<!-- Remember App - Version 0.1527 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1522
+  Version 0.1527
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,11 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1527 - Actually fixed the line-numbers scroll problem (v0.1526's reflow nudge was the wrong cause and made it need two taps — reverted). Real cause: the gutter was per-line PADDING, so a touch in it counted as a caret/selection on that line and swallowed the first scroll. The gutter is now a left MARGIN (outside the line box), with the number in it and pointer-events:none, so touches fall through to scrolling immediately.
+  v0.1526 - Fixed the remaining line-numbers scroll problem: on first entry (or right after turning them on) the note would scroll a little and bounce back until you tapped it. The note scroll container now gets a reflow nudge after the layout change, so scrolling works immediately without a priming tap.
+  v0.1525 - Fixed a major bug where turning on line numbers blocked vertical scrolling of the note (R&R mode). Cause: the gutter was added as padding on .note-viewer, whose content then overflowed its overflow-x:hidden box and trapped touch scrolling on iOS. The gutter is now indented per-line inside the existing box, so scrolling works normally.
+  v0.1524 - Check note's "Show line numbers" button now also offered from Typing mode (when R&R is an allowed mode for the note): a comment above the button explains numbers show in R&R, and the button switches to R&R and turns numbers on in one tap. If R&R is disallowed entirely for the note, no button is shown.
+  v0.1523 - New "Show line numbers" (More menu, R&R mode; \u2713 pattern): numbers each raw line in a left gutter via a CSS counter across .viewer-line (no JS bookkeeping needed \u2014 one div per raw line already). Check note's results dialog gains a one-tap "Show line numbers" button when they're off, so the path from an issue's line number to finding it on screen is one tap.
   v0.1522 - Check note's malformed-checkbox rule rewritten as self-contained syntax validation (the previous rule leaned on isCheckboxRaw, which is a marker-line classifier assigned late — it flagged valid checkboxes before a note opened and could never flag invalid ones after); also validates checkbox color-suffix names. Corrected isCheckboxRaw's stale "replaced in init" comment. Deploy this instead of v0.1521.
   v0.1521 - New defined color {white} (#FFFFFF) added to every color list, render map, checkbox palette, CSS variables, and the color picker. New "Check note" in the More menu: lints the note for unclosed highlights/bold/strikethrough, unknown or unbalanced {color} tags, malformed or orphaned #hex: highlight colors, malformed checkbox markers, and unclosed code fences.
   v0.1520 - All 27 note-viewer render sites consolidated onto renderViewer() (stamps now attached on every render path). Audit identified the 2026-07-05 data-loss trigger: the smart-spacing fixup re-rendered mid-move via a bypass path, wiping the stamps the next move commit needed — closed structurally by this consolidation, on top of v0.1516's abort guard.
@@ -1766,6 +1771,57 @@ body.reading-mode #note-bottom-bar { display: none !important; }
    bar fills full block height minus the line-gap at top and bottom.
    --line-height is set by applySettings. Gap = (lineHeight - 0.75) / 2 each side.
    Using calc with CSS custom property for dynamic line-height support. */
+/* ===== LINE NUMBERS (v0.1523) ===== */
+/* Every raw content line renders exactly one .viewer-line div, in document
+   order, regardless of nesting (code-fence wrapper, heading sub-divs) or
+   type (blank/checkbox/heading/code) — stampRawLinesFromContent's contract
+   guarantees this 1:1 mapping. That makes a plain CSS counter across
+   .viewer-line reliable: it always equals the 1-based raw line number,
+   with zero JS bookkeeping. Uses ::after (not ::before) because
+   .tag-border already owns ::before for its color bar. */
+body.show-line-numbers .note-viewer { counter-reset: line-num 0; }
+body.show-line-numbers .viewer-line { counter-increment: line-num; }
+/* Make room for the gutter WITHOUT widening .note-viewer's own box.
+   .note-viewer has overflow-x:hidden; giving it extra padding-left made
+   its content box wider than the scroll container, and on iOS WebKit an
+   element whose content overflows horizontally under overflow-x:hidden
+   becomes a gesture trap that swallows VERTICAL touch scrolling (the
+   v0.1524 "can't scroll with line numbers on" bug). Fix: leave
+   .note-viewer's width untouched; indent the TEXT of each line with a
+   padding-left on the line itself (inside the existing box), and place
+   the number in that padding using left:0 (not a negative offset that
+   pokes outside the box). Net: same visual gutter, no box widening, no
+   scroll trap. */
+body.show-line-numbers .viewer-line {
+  /* margin, not padding: padding is INSIDE the line's own box, so a touch
+     that lands in the 34px gutter is still "inside the line" and iOS reads
+     it as a caret/selection intent on that line — which eats the first
+     scroll gesture (a priming tap resolved it; that was the real cause,
+     not scroll-height measurement). A left MARGIN puts the gutter OUTSIDE
+     the line box entirely, so gutter touches aren't on any selectable line
+     and fall straight through to the scroll container. */
+  margin-left: 34px;
+}
+body.show-line-numbers .viewer-line::after {
+  content: counter(line-num);
+  position: absolute;
+  left: -34px;              /* back into the margin gutter (outside the line box) */
+  top: 0.05em;
+  width: 26px;
+  text-align: right;
+  color: var(--fg3, #888);
+  font-size: 0.72em;
+  font-variant-numeric: tabular-nums;
+  line-height: inherit;
+  pointer-events: none;     /* never a touch target */
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Blank lines have no text but should still show their number */
+body.show-line-numbers .viewer-line.blank-viewer-line { margin-left: 34px; }
+/* The margin shifts lines right by 34px; the viewer's box is unchanged
+   (no overflow, no width growth), so horizontal scroll/trap is not
+   reintroduced. The 8px tag-bar clip room already present is preserved. */
 .tag-border { position: relative; }
 .tag-border::before {
   content: "";
@@ -6648,6 +6704,18 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <span class="more-label" id="more-show-tags-label" style="pointer-events:none;flex:1">Show @tags</span>
     <span id="more-show-tags-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
   </button>
+  <button id="more-line-numbers-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <line x1="10" y1="6" x2="21" y2="6" style="pointer-events:none"/>
+      <line x1="10" y1="12" x2="21" y2="12" style="pointer-events:none"/>
+      <line x1="10" y1="18" x2="21" y2="18" style="pointer-events:none"/>
+      <path d="M4 6h1v4" style="pointer-events:none"/>
+      <path d="M4 10h2" style="pointer-events:none"/>
+      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" id="more-line-numbers-label" style="pointer-events:none;flex:1">Show line numbers</span>
+    <span id="more-line-numbers-check" style="pointer-events:none;display:none;color:var(--accent);font-weight:700;font-size:1.1em">✓</span>
+  </button>
   <button id="more-insert-tag-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Insert tag</span>
@@ -9057,7 +9125,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1522';
+const APP_VERSION = '0.1527';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -10159,6 +10227,7 @@ const DEFAULT_SETTINGS = {
   retainQuietMode: false,       // keep quiet mode on when navigating between notes
   rulerEnabled: true,           // show reading ruler toggle in More menu
   showTagsInViewer: true,       // render @tags as pills in view mode
+  showLineNumbers: false,       // R&R mode: number each raw line in a left gutter (temporary reading/reference aid; not persisted per-note)
   rulerVisible: false,          // ruler currently on (sticky)
   rulerColor: '#808080',        // hex color
   rulerOpacity: 60,             // 0-100
@@ -11495,6 +11564,7 @@ function applySettings() {
   document.body.classList.toggle('hide-note-preview', settings.showNotePreview === false);
   document.body.classList.toggle('tag-color-borders', !!settings.tagColorBorders);
   document.body.classList.toggle('tag-color-pills', !!settings.tagColorPills);
+  document.body.classList.toggle('show-line-numbers', !!settings.showLineNumbers);
   document.body.classList.toggle('toolbar-collapsed', !!settings.toolbarCollapsed);
   document.body.classList.toggle('hide-toolbar-collapse-tab', !settings.showToolbarCollapseTab);
   document.body.classList.toggle('speak-in-quiet', !!settings.speakInQuiet);
@@ -20132,6 +20202,7 @@ function makeImportFolderName(label) {
     { id: 'more-hide-completed-btn',  show: function(s) { return s.rrMode && s.hasCbs && s.hasChecked; } },
     // ── R&R mode + note has @tags ───────────────────────────────────────────
     { id: 'more-show-tags-btn',       show: function(s) { return s.rrMode && s.hasTags; } },
+    { id: 'more-line-numbers-btn',    show: function(s) { return s.rrMode; } },
     { id: 'more-tag-filter-btn',      show: function(s) { return s.rrMode && s.hasTags; } },
     // ── Edit / typing mode (not quiet, not view-only) ───────────────────────
     { id: 'more-insert-tag-btn',      show: function(s) { return !s.quietMode && !s.viewOnly; } },
@@ -20236,6 +20307,8 @@ function makeImportFolderName(label) {
     // show-tags checkmark: sync independently of visibility
     var showTagsChk = document.getElementById('more-show-tags-check');
     if (showTagsChk) showTagsChk.style.display = (settings.showTagsInViewer !== false) ? '' : 'none';
+    var lineNumChk = document.getElementById('more-line-numbers-check');
+    if (lineNumChk) lineNumChk.style.display = settings.showLineNumbers ? '' : 'none';
     // Tag order label text: update dynamically (visibility handled by table)
     var tagOrderLbl = document.getElementById('more-tag-order-label');
     if (tagOrderLbl && currentNoteId && notes[currentNoteId]) {
@@ -20348,8 +20421,30 @@ function makeImportFolderName(label) {
     var issues = lintNoteContent(notes[currentNoteId].content || '');
     logDebugAction('Check note: ' + issues.length + ' issue(s) found');
     if (!issues.length) { showToast('No formatting problems found \u2713', false); return; }
+    // Line numbers are an R&R-mode-only feature. Three cases:
+    //  1. Already in R&R with numbers on  -> no button needed (as before).
+    //  2. In R&R (numbers off) OR in Typing mode with R&R still an allowed
+    //     mode -> offer the button; from Typing it also switches to R&R.
+    //  3. Typing mode with R&R disallowed entirely (noteEditingMode
+    //     === 'typing') -> line numbers can never show for this note;
+    //     no button, per Lynn's instruction.
+    var _rrAllowed = settings.noteEditingMode !== 'typing';
+    var _needsModeSwitch = !isViewMode; // currently in Typing mode
+    var _offerLineNumBtn = _rrAllowed && (!settings.showLineNumbers || _needsModeSwitch);
+    var _checkMsg = issues.join('\n\n');
+    if (_offerLineNumBtn && _needsModeSwitch) {
+      // Comment goes above everything else in the dialog body — the
+      // widget has one message area above the buttons, so prepending it
+      // here is "above the Show line numbers button" as requested.
+      _checkMsg = 'Line numbers show in Read & Revise mode.\n\n' + _checkMsg;
+    }
     showConfirm('Check note \u2014 ' + issues.length + ' issue' + (issues.length === 1 ? '' : 's'),
-      issues.join('\n\n'), 'Close', function() {}, false, null, null);
+      _checkMsg, 'Close', function() {}, false,
+      _offerLineNumBtn ? 'Show line numbers' : null,
+      _offerLineNumBtn ? function() {
+        if (_needsModeSwitch) setViewMode(true);
+        setShowLineNumbers(true);
+      } : null);
   });
 
   document.getElementById('more-restore-snap-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
@@ -23836,6 +23931,12 @@ function makeImportFolderName(label) {
   });
 
   // ── Show @tags — shared toggle logic ──────────────────────────────────
+  function setShowLineNumbers(val) {
+    settings.showLineNumbers = val;
+    document.body.classList.toggle('show-line-numbers', val);
+    saveSettings();
+    logDebugAction('Line numbers: ' + (val ? 'on' : 'off'));
+  }
   function setShowTags(val) {
     settings.showTagsInViewer = val;
     document.body.classList.toggle('tags-hidden', !val);
@@ -23927,6 +24028,11 @@ function makeImportFolderName(label) {
 
   document.getElementById('more-show-tags-btn').addEventListener('click', function() {
     setShowTags(!settings.showTagsInViewer); closeMoreMenu();
+  });
+  document.getElementById('more-line-numbers-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-line-numbers-btn').addEventListener('click', function() {
+    setShowLineNumbers(!settings.showLineNumbers);
+    closeMoreMenu();
   });
   // Sync show-tags toggle when filter sheet opens
   var _origBuildTagChips = buildTagChips;
