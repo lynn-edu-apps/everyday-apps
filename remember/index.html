@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1527 -->
+<!-- Remember App - Version 0.1530 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1527
+  Version 0.1530
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,9 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1530 - Diagnostic-only build: added debug logging (system log + persistent tap-to-copy toast) to the native paste handler's link-detection branch, to capture the raw clipboard HTML and any <a href> values when an iOS popup-menu paste is suspected of introducing percent-encoded (%20-style) text. No behavior change.
+  v0.1529 - Reverted v0.1528's ineffective selection change and instead added overscroll-behavior:contain to the note scroll container to stop the iOS boundary scroll-sticking (first swipe at very top/bottom being eaten by the page rubber-band). Check note now copies its issue list to the clipboard (paste it anywhere to work through the fixes) and flags a checkbox written without its "- " marker.
+  v0.1528 - Line numbers: fixed code-block shading bleeding into the number gutter (the code scroll-wrapper background now starts after the gutter). Also addressed the iOS-Safari-only first-tap-before-scroll issue (never occurred in PWA or on Android): text selection is disabled in the viewer while line numbers are on, which removes the iOS selection-anchor that was eating the first scroll touch — turn numbers off to select text.
   v0.1527 - Actually fixed the line-numbers scroll problem (v0.1526's reflow nudge was the wrong cause and made it need two taps — reverted). Real cause: the gutter was per-line PADDING, so a touch in it counted as a caret/selection on that line and swallowed the first scroll. The gutter is now a left MARGIN (outside the line box), with the number in it and pointer-events:none, so touches fall through to scrolling immediately.
   v0.1526 - Fixed the remaining line-numbers scroll problem: on first entry (or right after turning them on) the note would scroll a little and bounce back until you tapped it. The note scroll container now gets a reflow nudge after the layout change, so scrolling works immediately without a priming tap.
   v0.1525 - Fixed a major bug where turning on line numbers blocked vertical scrolling of the note (R&R mode). Cause: the gutter was added as padding on .note-viewer, whose content then overflowed its overflow-x:hidden box and trapped touch scrolling on iOS. The gutter is now indented per-line inside the existing box, so scrolling works normally.
@@ -1793,15 +1796,16 @@ body.show-line-numbers .viewer-line { counter-increment: line-num; }
    pokes outside the box). Net: same visual gutter, no box widening, no
    scroll trap. */
 body.show-line-numbers .viewer-line {
-  /* margin, not padding: padding is INSIDE the line's own box, so a touch
-     that lands in the 34px gutter is still "inside the line" and iOS reads
-     it as a caret/selection intent on that line — which eats the first
-     scroll gesture (a priming tap resolved it; that was the real cause,
-     not scroll-height measurement). A left MARGIN puts the gutter OUTSIDE
-     the line box entirely, so gutter touches aren't on any selectable line
-     and fall straight through to the scroll container. */
+  /* Left MARGIN (not padding) puts the number gutter OUTSIDE the line box,
+     so it adds no width to the overflow-x:hidden viewer (no horizontal
+     scroll trap) and the number isn't inside a selectable line. */
   margin-left: 34px;
 }
+/* (v0.1528's user-select:none experiment removed in v0.1529 — it did not
+   fix the scroll issue and cost text selection. The boundary-only
+   "sticks at very top/bottom, middle scrolls fine" symptom is iOS
+   scroll-chaining/rubber-band at the container edge; the real lever is
+   overscroll-behavior on the scroll container — see .note-content-area.) */
 body.show-line-numbers .viewer-line::after {
   content: counter(line-num);
   position: absolute;
@@ -1822,6 +1826,15 @@ body.show-line-numbers .viewer-line.blank-viewer-line { margin-left: 34px; }
 /* The margin shifts lines right by 34px; the viewer's box is unchanged
    (no overflow, no width growth), so horizontal scroll/trap is not
    reintroduced. The 8px tag-bar clip room already present is preserved. */
+/* Code blocks: the fenced code LINES live inside .code-fence-scroll-wrapper,
+   which is NOT a .viewer-line, so its shaded background would span into the
+   number gutter while its child code lines carry the 34px margin. Shift the
+   wrapper's background right by the gutter width and drop the child margin
+   (its number still shows via the wrapper offset), so the shading starts
+   after the numbers instead of bleeding under them. */
+body.show-line-numbers .code-fence-scroll-wrapper { margin-left: 34px; }
+body.show-line-numbers .code-fence-scroll-wrapper .viewer-line { margin-left: 0; }
+body.show-line-numbers .code-fence-scroll-wrapper .viewer-line::after { left: -34px; }
 .tag-border { position: relative; }
 .tag-border::before {
   content: "";
@@ -3574,6 +3587,13 @@ body.wrap-note-names .note-inline-title {
      prevented by this anyway (WebKit's caret autoscroll ignores
      touch-action) — the JS HORIZ-SCROLL-GUARD is what actually blocks it. */
   touch-action: pan-y pinch-zoom;
+  /* Stop iOS scroll-chaining: at the very top/bottom the first swipe was
+     being consumed by the page-level rubber-band bounce instead of this
+     container, so scrolling "stuck" at the boundaries until a second try
+     (most visible with line numbers on, which nudged the content height to
+     sit right at the boundary). 'contain' keeps the overscroll within this
+     element so the first swipe scrolls it. */
+  overscroll-behavior-y: contain;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -9125,7 +9145,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1527';
+const APP_VERSION = '0.1530';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -20432,6 +20452,19 @@ function makeImportFolderName(label) {
     var _needsModeSwitch = !isViewMode; // currently in Typing mode
     var _offerLineNumBtn = _rrAllowed && (!settings.showLineNumbers || _needsModeSwitch);
     var _checkMsg = issues.join('\n\n');
+    // Copy the issues to the clipboard so the user can paste them somewhere
+    // (a scratch pad page, Notes, etc.) and work through them with the note
+    // open, instead of memorizing line numbers before closing this dialog.
+    var _clipText = 'Check note \u2014 ' + issues.length + ' issue' +
+      (issues.length === 1 ? '' : 's') + ':\n' + issues.join('\n');
+    var _copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(_clipText);
+        _copied = true;
+      }
+    } catch (e) { _copied = false; }
+    if (_copied) _checkMsg = '(Copied to clipboard \u2014 paste anywhere to check them off.)\n\n' + _checkMsg;
     if (_offerLineNumBtn && _needsModeSwitch) {
       // Comment goes above everything else in the dialog body — the
       // widget has one message area above the buttons, so prepending it
@@ -21543,6 +21576,47 @@ function makeImportFolderName(label) {
 
     // Check if clipboard has HTML content with links
     var html = e.clipboardData && e.clipboardData.getData('text/html');
+    // ── DIAGNOSTIC (v0.1530) ────────────────────────────────────────────
+    // Investigating: iOS's native popup "Paste" menu sometimes inserts
+    // percent-encoded text (%20 for spaces, %0A for newlines) even though
+    // Remember's own Copy/Paste toolbar buttons never do. Our own toolbar
+    // Paste button uses navigator.clipboard.readText() (plain text only)
+    // and never reaches this handler's link branch — so if this IS the
+    // culprit, it must be the OS synthesizing an HTML clipboard flavor
+    // (with an auto-detected link) for what was copied as plain text.
+    // This block only OBSERVES and logs; it changes no behavior.
+    try {
+      var plainTextDiag = e.clipboardData && e.clipboardData.getData('text/plain');
+      logSys('PASTE DIAG: hasHTML=' + (!!html) + ' plainTextLen=' +
+        (plainTextDiag ? plainTextDiag.length : 0) + ' plainTextSample="' +
+        (plainTextDiag ? plainTextDiag.slice(0, 80).replace(/\n/g, '\\n') : '') + '"');
+      if (html) {
+        var _diagTmp = document.createElement('div');
+        _diagTmp.innerHTML = html;
+        var _diagLinks = _diagTmp.querySelectorAll('a[href]');
+        if (_diagLinks.length > 0) {
+          var _diagLines = [];
+          _diagLinks.forEach(function(a, i) {
+            var _href = a.getAttribute('href') || '';
+            var _text = a.textContent || '';
+            var _decoded = '(decode failed)';
+            try { _decoded = decodeURIComponent(_href); } catch(eDecode) {}
+            _diagLines.push('  [' + i + '] href="' + _href.slice(0, 200) +
+              '" text="' + _text.slice(0, 80).replace(/\n/g, '\\n') +
+              '" decodedHref="' + _decoded.slice(0, 200) + '"');
+          });
+          var _diagMsg = 'PASTE DIAG: ' + _diagLinks.length + ' link(s) found in pasted HTML:\n' +
+            _diagLines.join('\n');
+          logSys(_diagMsg);
+          // Persistent, tap-to-copy toast so this is visible immediately,
+          // not just in the log — per request, for real-time inspection.
+          showToast(_diagMsg, true);
+        }
+      }
+    } catch (eDiag) {
+      logSys('PASTE DIAG: logging itself threw: ' + eDiag);
+    }
+    // ── END DIAGNOSTIC ──────────────────────────────────────────────────
     if (!html) {
       // Plain text paste — convert tabs to spaces
       var plainText = e.clipboardData && e.clipboardData.getData('text/plain');
@@ -30293,13 +30367,23 @@ function lintNoteContent(content) {
     }
     // Color code not attached to a highlight — the leftover-strip symptom
     if (/(^|[^=#|])#[0-9a-fA-F]{6}:/.test(scan)) add('Color code outside a highlight (#hex: without ==)');
+    var det = stripFormattingForDetect(line); // shared by the two checkbox rules below
+    // Bare checkbox token with no list marker: "[ ] buy milk" or "[x] done"
+    // at line start (after optional whitespace) almost always means a
+    // checkbox was intended but the leading "- " is missing, so it renders
+    // as plain text instead of a checkbox. Flag it. (Only when it looks
+    // like a state token — [ ], [x], [X], or a colored variant — not any
+    // bracketed text like "[note]".)
+    var bareCb = det.match(/^\s*\[([ xX](?::[a-z0-9]+)?)\]/);
+    if (bareCb && !/^\s*[-*+] /.test(det)) {
+      add('Checkbox is missing its "- " marker (write "- [' + bareCb[1] + ']" to make it a checkbox)');
+    }
     // Malformed checkbox marker. Deliberately NOT isCheckboxRaw(): that
     // function classifies "is this a marker line" (true for plain
     // bullets AND any [..] variant — it's the collapsible-outline parent
     // test, and it's also only assigned once the outline section runs).
     // The linter's job is different: validate the SYNTAX of an attempted
     // checkbox state token, which needs its own strict rule.
-    var det = stripFormattingForDetect(line);
     var cbm = det.match(/^\s*[-*+] \[([^\]]*)\]/);
     if (cbm) {
       var inner = cbm[1];
