@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1530 -->
+<!-- Remember App - Version 0.1531 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1530
+  Version 0.1531
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1531 - Diagnostic-only build (continues v0.1530's %20-encoding investigation): copyNoteAsPlainText() and copyNoteForSpeech() now log a checksum/length/head-tail sample of exactly what is written to the clipboard; the paste handler's plain-text branch logs the same for what it reads back. No behavior change. Confirmed via v0.1530 logging that the %20 corruption is NOT caused by encodeURIComponent, the href/link paste branch, or Apple Notes round-tripping — it reproduced with hasHTML=false and clean-looking sample text, so this build adds copy-side logging to compare what was sent vs. what came back.
   v0.1530 - Diagnostic-only build: added debug logging (system log + persistent tap-to-copy toast) to the native paste handler's link-detection branch, to capture the raw clipboard HTML and any <a href> values when an iOS popup-menu paste is suspected of introducing percent-encoded (%20-style) text. No behavior change.
   v0.1529 - Reverted v0.1528's ineffective selection change and instead added overscroll-behavior:contain to the note scroll container to stop the iOS boundary scroll-sticking (first swipe at very top/bottom being eaten by the page rubber-band). Check note now copies its issue list to the clipboard (paste it anywhere to work through the fixes) and flags a checkbox written without its "- " marker.
   v0.1528 - Line numbers: fixed code-block shading bleeding into the number gutter (the code scroll-wrapper background now starts after the gutter). Also addressed the iOS-Safari-only first-tap-before-scroll issue (never occurred in PWA or on Android): text selection is disabled in the viewer while line numbers are on, which removes the iOS selection-anchor that was eating the first scroll touch — turn numbers off to select text.
@@ -9145,7 +9146,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1530';
+const APP_VERSION = '0.1531';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -9186,6 +9187,30 @@ function logSys(msg, skipMirror) {
   // from inside saveNotes' own failure path (logDebugAction saves notes).
   if (!skipMirror) { try { logDebugAction('[SYS] ' + msg); } catch(e2) {} }
 }
+
+// ── DIAGNOSTIC (v0.1531) ───────────────────────────────────────────────
+// Shared helper for the copy/paste %20-corruption investigation (see
+// BUILD CHANGELOG v0.1530/v0.1531). Produces a cheap, stable checksum plus
+// a head/tail text sample so we can log "what went out" at copy time and
+// "what came back" at paste time without dumping full (often 10K+ char)
+// note contents into the system log on every action. Not cryptographic —
+// just needs to reliably differ when the text differs. One shared
+// implementation; do not write a second copy of this logic elsewhere.
+function _diagChecksum(s) {
+  s = String(s || '');
+  var h = 0;
+  for (var i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return 'len=' + s.length + ' sum=' + h;
+}
+function _diagSample(s) {
+  s = String(s || '');
+  var head = s.slice(0, 60).replace(/\n/g, '\\n');
+  var tail = s.length > 60 ? s.slice(-60).replace(/\n/g, '\\n') : '';
+  return 'head="' + head + '"' + (tail ? ' tail="' + tail + '"' : '');
+}
+// END DIAGNOSTIC helpers
 
 // ===== NOTE SNAPSHOT SAFETY NET (v0.1519) =====
 // Motivated by the 2026-07-05 Move-lines data loss: before any operation
@@ -16207,6 +16232,10 @@ function copyNoteForSpeech() {
   if (!currentNoteId || !notes[currentNoteId]) return;
   var text = buildSpeechStrippedNoteText(notes[currentNoteId].content);
   if (!text) { showToast('Nothing to copy', false); return; }
+  // DIAGNOSTIC (v0.1531): same logging as copyNoteAsPlainText, see there.
+  try {
+    logSys('COPY-SPEECH DIAG @ ' + Date.now() + ': ' + _diagChecksum(text) + ' ' + _diagSample(text));
+  } catch (eDiag) { logSys('COPY-SPEECH DIAG: logging threw: ' + eDiag); }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function() {
       showToast('Copied for speech', false);
@@ -21587,9 +21616,10 @@ function makeImportFolderName(label) {
     // This block only OBSERVES and logs; it changes no behavior.
     try {
       var plainTextDiag = e.clipboardData && e.clipboardData.getData('text/plain');
-      logSys('PASTE DIAG: hasHTML=' + (!!html) + ' plainTextLen=' +
-        (plainTextDiag ? plainTextDiag.length : 0) + ' plainTextSample="' +
-        (plainTextDiag ? plainTextDiag.slice(0, 80).replace(/\n/g, '\\n') : '') + '"');
+      // DIAGNOSTIC (v0.1531): checksum form, directly comparable to the
+      // COPY-PLAIN/COPY-SPEECH DIAG lines logged at copy time.
+      logSys('PASTE DIAG @ ' + Date.now() + ': hasHTML=' + (!!html) + ' ' +
+        (plainTextDiag ? _diagChecksum(plainTextDiag) + ' ' + _diagSample(plainTextDiag) : '(empty)'));
       if (html) {
         var _diagTmp = document.createElement('div');
         _diagTmp.innerHTML = html;
@@ -30830,6 +30860,11 @@ function copyNoteAsPlainText() {
   if (!currentNoteId || !notes[currentNoteId]) return;
   var text = stripForShare(notes[currentNoteId].content);
   if (!text) { showToast('This note has no content to copy', false); return; }
+  // DIAGNOSTIC (v0.1531): record exactly what we are about to send to the
+  // clipboard, so a later paste-time log can be compared against this.
+  try {
+    logSys('COPY-PLAIN DIAG @ ' + Date.now() + ': ' + _diagChecksum(text) + ' ' + _diagSample(text));
+  } catch (eDiag) { logSys('COPY-PLAIN DIAG: logging threw: ' + eDiag); }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function() {
       showToast('Copied as plain text', false);
