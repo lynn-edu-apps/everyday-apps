@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1531 -->
+<!-- Remember App - Version 0.1535 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1531
+  Version 0.1535
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,10 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1535 - Speech overhaul: fenced code blocks are now skipped entirely (content, not just delimiters) with one paused "code block" announcement instead of reading raw code or garbled content. Emoji and common Western emoticons (:) ;) :( <3 etc.) are now announced by name with a pause before each, using real timed pauses on the on-device Speak button (via a new segment-based speech queue) and comma-based pauses in Copy/Share for speech plain text. Emoji table is curated from Unicode's official Emoji Frequency data (groups 0-4, ~80 entries); anything outside the table gets a generic "emoji" announcement rather than being read as raw Unicode or silently dropped.
+  v0.1534 - Copy as plain text (stripForShare) now preserves blank lines exactly as typed instead of collapsing all paragraph spacing to single-spaced; a line only disappears now if it becomes empty after stripping bracket tags, not if it started blank. Speech stripping (stripMarkdownToPlainText, used by Copy for speech / Share for speech / the on-device Speak button) now blanks out a line that is left with nothing but a bare list marker (a lone -, *, or +) after stripping, instead of leaving the bare character for TTS to mispronounce as "semicolon" or similar.
+  v0.1533 - Closed a gap in v0.1532's URL-encoding-corruption defense: pasting into a NEW/empty note via iOS's popup Paste menu doesn't always fire our native paste event listener at all (confirmed the app's own old auto-paste-prompt code — already dead/commented out — was not the cause), so that specific path's corrupted text was landing untouched. Added a same-tick safety-net check in the editor's shared input listener: whenever the whole editor value matches the accidental-URL-encoding signature, it is decoded and toasted immediately, regardless of which insertion path bypassed the paste-event patch.
+  v0.1532 - ROOT CAUSE FOUND for the %20 paste corruption: it was never in our code — iOS's pasteboard data-detector treats copied text beginning with "Word:" (e.g. a stripped "Items:" heading) as a URI scheme and adds a percent-encoded URL flavor, which iOS popup-menu paste sometimes picks over the plain text. Two defenses added: note-content copies now write explicit text/plain + text/html flavors via ClipboardItem (falls back to writeText), and all Remember paste paths detect the scheme-plus-%20/%0A corruption signature and decode it automatically with a visible toast. Also: System Log dialog text is now selectable (scoped to that dialog only).
   v0.1531 - Diagnostic-only build (continues v0.1530's %20-encoding investigation): copyNoteAsPlainText() and copyNoteForSpeech() now log a checksum/length/head-tail sample of exactly what is written to the clipboard; the paste handler's plain-text branch logs the same for what it reads back. No behavior change. Confirmed via v0.1530 logging that the %20 corruption is NOT caused by encodeURIComponent, the href/link paste branch, or Apple Notes round-tripping — it reproduced with hasHTML=false and clean-looking sample text, so this build adds copy-side logging to compare what was sent vs. what came back.
   v0.1530 - Diagnostic-only build: added debug logging (system log + persistent tap-to-copy toast) to the native paste handler's link-detection branch, to capture the raw clipboard HTML and any <a href> values when an iOS popup-menu paste is suspected of introducing percent-encoded (%20-style) text. No behavior change.
   v0.1529 - Reverted v0.1528's ineffective selection change and instead added overscroll-behavior:contain to the note scroll container to stop the iOS boundary scroll-sticking (first swipe at very top/bottom being eaten by the page rubber-band). Check note now copies its issue list to the clipboard (paste it anywhere to work through the fixes) and flags a checkbox written without its "- " marker.
@@ -4915,6 +4919,11 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   flex-shrink: 0;
 }
 .confirm-msg { font-size: 0.95em; color: var(--fg2); margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap; overflow-y: auto; overflow-x: hidden; flex: 1; touch-action: pan-y; overscroll-behavior: contain; }
+/* SYSLOG-SELECTABLE (v0.1532): the System Log dialog opts its message body
+   back into text selection (the body default is user-select:none) so bits
+   of the log can be selected and copied. Scoped by class, added only when
+   that specific dialog opens and removed in closeConfirm(). */
+.confirm-msg.syslog-selectable { user-select: text; -webkit-user-select: text; }
 .confirm-btns { display: flex; column-gap: 10px; row-gap: 16px; justify-content: flex-end; flex-wrap: wrap; }
 
 /* Quick-add line-pick mode */
@@ -9146,7 +9155,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1531';
+const APP_VERSION = '0.1535';
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -9211,6 +9220,85 @@ function _diagSample(s) {
   return 'head="' + head + '"' + (tail ? ' tail="' + tail + '"' : '');
 }
 // END DIAGNOSTIC helpers
+
+// ── ACCIDENTAL-URL-ENCODING DEFENSES (v0.1532) ─────────────────────────
+// Root cause of the %20 paste corruption (see BUILD CHANGELOG v0.1532 and
+// the known-quirks registry): iOS's pasteboard data-detector treats copied
+// text whose first characters are "Word:" (a syntactically valid URI
+// scheme, like a stripped "Items:" heading) as a URI, and adds a
+// percent-encoded URL flavor to the pasteboard. Some paste paths (notably
+// the iOS popup Paste menu) can pick that flavor, inserting %20/%0A
+// garbage. Native apps declare typed pasteboard items so they never hit
+// this; web apps writing via writeText() can.
+//
+// Defense 1 (copy side): writeClipboardSafe() writes explicit text/plain
+// AND text/html flavors via ClipboardItem so receiving paste paths prefer
+// a real flavor over the synthesized URL. Falls back to plain writeText()
+// where ClipboardItem is unavailable. Use this for ALL note-content
+// copies; plain writeText() remains fine for app-generated text that can
+// never start with a scheme-shaped word (URLs, logs, settings dumps).
+//
+// Defense 2 (paste side): looksLikeAccidentalUrlEncoding() detects the
+// corruption signature and decodeAccidentalUrlEncoding() reverses it.
+// Wired into every Remember paste path. Note: the original first word's
+// capitalization is unrecoverable (iOS lowercases the "scheme"), so
+// "Items:" comes back as "items:" — decoded, loudly toasted, but not
+// case-restored. Both detection functions are pure and harness-tested.
+function looksLikeAccidentalUrlEncoding(text) {
+  if (!text || typeof text !== 'string') return false;
+  // Must start with a scheme-shaped word: letter, then letters/digits/+.-, then ':'
+  var m = text.match(/^([a-zA-Z][a-zA-Z0-9+.\-]{0,40}):/);
+  if (!m) return false;
+  // Real URI schemes must NOT be decoded — pasting a genuine URL with
+  // %20s in its path (e.g. https://x/a%20b) is normal and must be left alone.
+  var realSchemes = ['http', 'https', 'ftp', 'ftps', 'mailto', 'tel', 'sms',
+    'file', 'data', 'blob', 'ws', 'wss', 'geo', 'maps', 'itms', 'itms-apps'];
+  if (realSchemes.indexOf(m[1].toLowerCase()) !== -1) return false;
+  // The encoded blob has NO literal whitespace (it was all percent-encoded)
+  if (/[ \n\t]/.test(text)) return false;
+  // And must be dense with encoded whitespace: a %0A (newline) is the
+  // strongest signal (URLs essentially never contain one); otherwise
+  // require several %20s.
+  var nl = (text.match(/%0A/gi) || []).length;
+  var sp = (text.match(/%20/g) || []).length;
+  return nl >= 1 || sp >= 5;
+}
+function decodeAccidentalUrlEncoding(text) {
+  if (!looksLikeAccidentalUrlEncoding(text)) return text;
+  try {
+    var decoded = decodeURIComponent(text);
+    logSys('PASTE DECODE: reversed accidental URL-encoding (' + text.length +
+      ' -> ' + decoded.length + ' chars)');
+    return decoded;
+  } catch (e) {
+    // Malformed escape sequence — not actually encoded text; leave it alone.
+    logSys('PASTE DECODE: signature matched but decode failed (' + e + '); left as-is');
+    return text;
+  }
+}
+function _escapeForClipHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+}
+function writeClipboardSafe(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+      var item = new ClipboardItem({
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+        'text/html':  new Blob([_escapeForClipHtml(text)], { type: 'text/html' })
+      });
+      return navigator.clipboard.write([item]).catch(function() {
+        // Some browsers reject multi-flavor writes — fall back to plain text
+        return navigator.clipboard.writeText(text);
+      });
+    }
+  } catch (e) { /* fall through to writeText */ }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  return Promise.reject(new Error('clipboard unavailable'));
+}
+// ── END ACCIDENTAL-URL-ENCODING DEFENSES ────────────────────────────────
 
 // ===== NOTE SNAPSHOT SAFETY NET (v0.1519) =====
 // Motivated by the 2026-07-05 Move-lines data loss: before any operation
@@ -15104,11 +15192,17 @@ function applyFormattingToBlocks(type, color) {
 // Keep content readable as plain text for sharing.
 function stripForShare(content) {
   return (content || '').split('\n').map(function(line) {
+    // v0.1534: a line that was ALREADY blank when typed must be preserved
+    // as blank (paragraph spacing the user intentionally created) — only
+    // a line that BECOMES empty after stripping syntax/tags should vanish
+    // entirely. Decide that up front, before any stripping runs.
+    var _wasOriginallyBlank = (line.trim() === '');
     // [tag order] MUST be at start (structural). Other special tags may appear anywhere.
     if (/^\[tag order\]/.test(line.trim())) return null;
+    if (_wasOriginallyBlank) return ''; // preserve as blank, skip all further stripping
     // Strip [share note], [copy for speech], [last modified] tag wherever they appear
     line = line.replace(/\[share note\]/gi, '').replace(/\[copy for speech\]/gi, '').replace(/\[last modified\]/gi, '').replace(/\[cal [^\]]*\]/gi, '').trim();
-    if (!line) return null;
+    if (!line) return null; // became empty only after stripping — drop it, don't leave a gap
     // Skip horizontal rules
     if (/^(-\s*){3,}$/.test(line.trim())) return null;
     // Strip heading markers
@@ -16136,6 +16230,48 @@ function getSpeechVoice() {
 // contexts that just need a clean line of text (e.g. the "Add to
 // Calendar" event title summary). Does NOT touch URLs; that's a
 // speech-specific concern layered on top by stripMarkdownForSpeech().
+// Sentinel inserted in place of an entire fenced code block once its
+// content has been removed for speech. Chosen to be something that could
+// never appear in real note text (control character + marker word), so
+// downstream segment-splitting (v0.1535) can reliably detect it and turn
+// it into a single paused "code block" announcement rather than either
+// silence (confusing — did something go missing?) or reading raw code.
+var SPEECH_CODEBLOCK_SENTINEL = '\u0001CODEBLOCK\u0001';
+
+// Whole-note preprocessor (v0.1535): unlike stripMarkdownToPlainText(),
+// which only ever sees one line at a time and therefore cannot know
+// whether that line is INSIDE a fenced code block, this function walks
+// the full note content with a running "are we inside a fence" flag and
+// removes entire fenced regions (delimiters AND content), replacing each
+// region with SPEECH_CODEBLOCK_SENTINEL on its own line. Must run BEFORE
+// any per-line stripping, and only for speech paths — non-speech callers
+// (the viewer, Copy as plain text) still want to see real code content.
+function stripCodeFencesForSpeech(noteContent) {
+  var lines = (noteContent || '').split('\n');
+  var out = [];
+  var inFence = false;
+  for (var i = 0; i < lines.length; i++) {
+    var isFenceLine = /^[ \t]{0,3}```/.test(lines[i]);
+    if (isFenceLine) {
+      if (!inFence) {
+        // Opening fence — emit the sentinel once, then swallow content
+        // until the matching close.
+        out.push(SPEECH_CODEBLOCK_SENTINEL);
+        inFence = true;
+      } else {
+        // Closing fence — just stop swallowing, emit nothing for this line.
+        inFence = false;
+      }
+      continue;
+    }
+    if (inFence) continue; // swallow code content entirely
+    out.push(lines[i]);
+  }
+  // An unterminated fence (no closing ```) swallows to end of note —
+  // intentional: better to skip possibly-code content than misread it.
+  return out.join('\n');
+}
+
 function stripMarkdownToPlainText(line) {
   // [tag order] MUST be at start (structural) — skip entire line.
   // [share note], [copy for speech], [last modified] may appear anywhere — strip them.
@@ -16175,6 +16311,13 @@ function stripMarkdownToPlainText(line) {
     line = line.replace(/^\s*[\u2022\u2023\u25E6\u00B7\u2043]\s*/, '');
     // Remove highlight markers ==...== (incl. #hex: color prefixes)
     line = unwrapHighlightsInline(line);
+    // v0.1534: the leading-marker strip above (^(\s*)[-*+]\s+) only matches
+    // when the marker is followed by whitespace + more text. A line that
+    // is JUST "-", "*", or "+" with nothing after it doesn't match, so the
+    // bare character survived and got spoken by TTS as an odd symbol name
+    // (e.g. "semicolon"). Blank those out entirely so they're skipped like
+    // any other empty line, same as a real bullet line would be.
+    if (/^\s*[-*+]\s*$/.test(line)) line = '';
   } else {
     // Speak checkboxes explicitly
     line = line.replace(/\[x:[a-z]+\]/gi, 'checked');
@@ -16199,10 +16342,171 @@ function stripMarkdownToPlainText(line) {
 // calendar event title) should call stripMarkdownToPlainText() directly
 // instead of reaching for a "speech" function and disabling its speech
 // behavior via a flag.
+// ── EMOJI / EMOTICON SPEECH TABLES (v0.1535) ────────────────────────────
+// EMOJI_SPEECH_NAMES: curated from the Unicode Consortium's own official
+// "Emoji Frequency" ranking (home.unicode.org/emoji/emoji-frequency/),
+// which aggregates real anonymized usage data across major platforms.
+// Covers frequency groups 0-4 from that ranking (~80 emoji, everything
+// down to about 1/16th the usage of the single most-used emoji, 😂).
+// Names are CLDR-style short names — the same convention real screen
+// readers use for text-to-speech, per Unicode's own CLDR "TTS" annotation
+// field. This is deliberately NOT the full ~1MB CLDR dataset (thousands
+// of entries covering emoji almost nobody types) — anything not in this
+// table falls back to a generic "emoji" announcement (see
+// expandLineToSpeechSegments) rather than silence or raw Unicode.
+var EMOJI_SPEECH_NAMES = {
+  '\u{1F602}': 'face with tears of joy', '\u2764\uFE0F': 'red heart', '\u2764': 'red heart',
+  '\u{1F60D}': 'smiling face with heart eyes', '\u{1F923}': 'rolling on the floor laughing',
+  '\u{1F60A}': 'smiling face', '\u{1F64F}': 'folded hands', '\u{1F495}': 'two hearts',
+  '\u{1F62D}': 'loudly crying face', '\u{1F618}': 'face blowing a kiss',
+  '\u{1F44D}': 'thumbs up', '\u{1F605}': 'grinning face with sweat', '\u{1F44F}': 'clapping hands',
+  '\u{1F601}': 'beaming face with smiling eyes', '\u2665\uFE0F': 'heart suit', '\u2665': 'heart suit',
+  '\u{1F525}': 'fire', '\u{1F494}': 'broken heart', '\u{1F496}': 'sparkling heart',
+  '\u{1F499}': 'blue heart', '\u{1F622}': 'crying face', '\u{1F914}': 'thinking face',
+  '\u{1F606}': 'grinning squinting face', '\u{1F644}': 'face with rolling eyes',
+  '\u{1F4AA}': 'flexed biceps', '\u{1F609}': 'winking face', '\u263A\uFE0F': 'smiling face', '\u263A': 'smiling face',
+  '\u{1F44C}': 'OK hand', '\u{1F917}': 'hugging face',
+  '\u{1F49C}': 'purple heart', '\u{1F614}': 'pensive face', '\u{1F60E}': 'smiling face with sunglasses',
+  '\u{1F607}': 'smiling face with halo', '\u{1F339}': 'rose', '\u{1F926}': 'person facepalming',
+  '\u{1F389}': 'party popper', '\u203C\uFE0F': 'double exclamation mark', '\u203C': 'double exclamation mark',
+  '\u{1F49E}': 'revolving hearts', '\u270C\uFE0F': 'victory hand', '\u270C': 'victory hand',
+  '\u2728': 'sparkles', '\u{1F937}': 'person shrugging', '\u{1F631}': 'face screaming in fear',
+  '\u{1F60C}': 'relieved face', '\u{1F338}': 'cherry blossom', '\u{1F64C}': 'raising hands',
+  '\u{1F60B}': 'face savoring food', '\u{1F497}': 'growing heart', '\u{1F49A}': 'green heart',
+  '\u{1F60F}': 'smirking face', '\u{1F49B}': 'yellow heart', '\u{1F642}': 'slightly smiling face',
+  '\u{1F493}': 'beating heart', '\u{1F929}': 'star-struck', '\u{1F604}': 'grinning face with smiling eyes',
+  '\u{1F600}': 'grinning face', '\u{1F5A4}': 'black heart', '\u{1F483}': 'woman dancing',
+  '\u{1F4AF}': 'hundred points', '\u{1F648}': 'see-no-evil monkey', '\u{1F447}': 'backhand index pointing down',
+  '\u{1F3B6}': 'musical notes', '\u{1F612}': 'unamused face', '\u{1F62B}': 'exhausted face',
+  '\u2757': 'exclamation mark', '\u{1F61C}': 'winking face with tongue', '\u{1F48B}': 'kiss mark',
+  '\u{1F440}': 'eyes', '\u{1F62A}': 'sleepy face', '\u{1F611}': 'expressionless face',
+  '\u{1F4A5}': 'collision', '\u{1F64B}': 'person raising hand', '\u{1F61E}': 'disappointed face',
+  '\u{1F629}': 'weary face', '\u{1F621}': 'pouting face', '\u{1F44A}': 'oncoming fist',
+  '\u2705': 'check mark button', '\u{1F44F}\uFE0F': 'clapping hands', '\u{1F44B}': 'waving hand',
+  '\u{1F62E}': 'face with open mouth', '\u{1F62F}': 'hushed face', '\u{1F62C}': 'grimacing face',
+  '\u{1F643}': 'upside-down face', '\u2B50': 'star', '\u{1F308}': 'rainbow', '\u2757\uFE0F': 'exclamation mark'
+};
+// EMOTICON_SPEECH_NAMES: the common Western (Fahlman-lineage) ASCII
+// emoticon set — colon/semicolon eyes, dash nose, paren/letter mouth.
+// Ordered longest-pattern-first when building the regex (below) so e.g.
+// ":-)" matches before the shorter ":)" would ever get a chance to.
+var EMOTICON_SPEECH_NAMES = [
+  [':-)', 'smiley face'], [':)', 'smiley face'], [':-(', 'frowning face'], [':(', 'frowning face'],
+  [';-)', 'winking face'], [';)', 'winking face'], [':-D', 'grinning face'], [':D', 'grinning face'],
+  [":'(", 'crying face'], [':\'-(', 'crying face'], [':-P', 'winking face with tongue'], [':P', 'winking face with tongue'],
+  [':-p', 'winking face with tongue'], [':p', 'winking face with tongue'],
+  [':-O', 'surprised face'], [':O', 'surprised face'], [':-o', 'surprised face'], [':o', 'surprised face'],
+  ['<3', 'heart'], ['</3', 'broken heart'], [':-/', 'skeptical face'], [':/', 'skeptical face'],
+  [':-\\', 'skeptical face'], [':\\', 'skeptical face'], ['XD', 'laughing face'], ['xD', 'laughing face'],
+  [':-|', 'neutral face'], [':|', 'neutral face'], ['8-)', 'smiling face with glasses'], ['8)', 'smiling face with glasses'],
+  [':-*', 'kissing face'], [':*', 'kissing face']
+];
+// Sort longest-first so the regex alternation tries ":-)" before ":)" etc.
+EMOTICON_SPEECH_NAMES.sort(function(a, b) { return b[0].length - a[0].length; });
+function _escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+var EMOTICON_SPEECH_REGEX = new RegExp(
+  EMOTICON_SPEECH_NAMES.map(function(pair) { return _escRe(pair[0]); }).join('|'), 'g'
+);
+var EMOTICON_SPEECH_LOOKUP = (function() {
+  var m = {};
+  EMOTICON_SPEECH_NAMES.forEach(function(pair) { m[pair[0]] = pair[1]; });
+  return m;
+})();
+// Broad emoji Unicode-range test, used only as a FALLBACK once a
+// character has already failed to match EMOJI_SPEECH_NAMES above — real
+// emoji live across several non-contiguous Unicode blocks.
+var EMOJI_FALLBACK_REGEX = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/u;
+
+// Shared segment splitter (v0.1535): the ONE place that decides how a
+// single already-fence-processed, already-markdown-stripped speech line
+// gets broken into speakable pieces. Returns an array of segment objects:
+//   { text: '...' }                         — ordinary text, no pause
+//   { text: 'smiley face', pause: true }     — emoji/emoticon/code-block
+// Two renderers consume this array (see _speakNextLine's caller sites in
+// speakNote(), and buildSpeechStrippedNoteText() below): one turns
+// pause:true segments into real timed utterance gaps, the other into a
+// leading comma in plain text. Neither renderer duplicates the detection
+// logic — it all lives here.
+function expandLineToSpeechSegments(line) {
+  if (line === SPEECH_CODEBLOCK_SENTINEL) {
+    return [{ text: 'code block', pause: true }];
+  }
+  var stripped = stripMarkdownForSpeech(line);
+  if (!stripped) return [];
+  var segments = [];
+  var buf = '';
+  var i = 0;
+  while (i < stripped.length) {
+    // Try emoticon match at this position first (ASCII patterns can
+    // otherwise be partially eaten by the emoji code-point scan below).
+    EMOTICON_SPEECH_REGEX.lastIndex = i;
+    var emRe = EMOTICON_SPEECH_REGEX;
+    var m = null;
+    if (stripped.startsWith.length) { /* no-op, keeps linters happy */ }
+    var matchedEmoticon = null;
+    for (var p = 0; p < EMOTICON_SPEECH_NAMES.length; p++) {
+      var pat = EMOTICON_SPEECH_NAMES[p][0];
+      if (stripped.substr(i, pat.length) === pat) { matchedEmoticon = pat; break; }
+    }
+    if (matchedEmoticon) {
+      if (buf) { segments.push({ text: buf }); buf = ''; }
+      segments.push({ text: EMOTICON_SPEECH_LOOKUP[matchedEmoticon], pause: true });
+      i += matchedEmoticon.length;
+      continue;
+    }
+    // Emoji: consume one full code point (handles surrogate pairs) plus
+    // an immediately-following variation selector (️), since several
+    // table entries are keyed with it attached.
+    var cp = stripped.codePointAt(i);
+    var chStr = String.fromCodePoint(cp);
+    var withVs = chStr + (stripped[i + chStr.length] === '\uFE0F' ? '\uFE0F' : '');
+    if (EMOJI_SPEECH_NAMES[withVs] || EMOJI_SPEECH_NAMES[chStr]) {
+      if (buf) { segments.push({ text: buf }); buf = ''; }
+      segments.push({ text: EMOJI_SPEECH_NAMES[withVs] || EMOJI_SPEECH_NAMES[chStr], pause: true });
+      i += withVs.length;
+      continue;
+    }
+    if (EMOJI_FALLBACK_REGEX.test(chStr)) {
+      if (buf) { segments.push({ text: buf }); buf = ''; }
+      segments.push({ text: 'emoji', pause: true });
+      i += chStr.length;
+      continue;
+    }
+    buf += chStr;
+    i += chStr.length;
+  }
+  if (buf.trim()) segments.push({ text: buf.trim() });
+  return segments;
+}
+
 function stripMarkdownForSpeech(line) {
   line = stripMarkdownToPlainText(line);
   line = line.replace(/\bhttps?:\/\/[^\s]+/gi, 'URL').replace(/\bwww\.[^\s]+/gi, 'URL');
   return line.trim();
+}
+
+// v0.1535: pause used BEFORE an emoji/emoticon/code-block announcement
+// mid-line, deliberately shorter than settings.speechPause (the pause
+// BETWEEN lines, default 400ms) — using the full inter-line pause for
+// every emoji in a text-heavy note would feel sluggish. Not user-facing
+// as a setting (yet); revisit if it ever needs to be configurable.
+var SPEECH_INLINE_PAUSE_MS = 180;
+
+// Shared queue-builder (v0.1535): the ONE place that turns one raw note
+// line into zero or more _speakLines-style {lineIndex, text, pauseBefore}
+// items via expandLineToSpeechSegments(). All three speakNote() priority
+// branches (block selection, text selection, full note) call this instead
+// of each independently mapping stripMarkdownForSpeech over their lines —
+// avoids three drifting copies of the same segment-pushing logic.
+function pushSpeechSegmentsForLine(line, lineIndex, targetArray) {
+  var segments = expandLineToSpeechSegments(line);
+  segments.forEach(function(seg, segIdx) {
+    targetArray.push({
+      lineIndex: segIdx === 0 ? lineIndex : -2, // -2: don't re-highlight for continuation segments
+      text: seg.text,
+      pauseBefore: !!seg.pause
+    });
+  });
 }
 
 // Shared helper: builds the full speech-stripped note text used by both
@@ -16211,9 +16515,32 @@ function stripMarkdownForSpeech(line) {
 // too, not just these two actions) — this wrapper just joins the
 // per-line results and tidies up any double-spacing left behind.
 function buildSpeechStrippedNoteText(noteContent) {
-  var lines = (noteContent || '').split('\n');
-  var text = lines.map(function(l) { return stripMarkdownForSpeech(l); })
-    .filter(function(l) { return l.trim() !== ''; }).join('\n').trim();
+  // v0.1535: strip fenced code BEFORE per-line processing (see
+  // stripCodeFencesForSpeech doc comment for why this can't be done
+  // inside the per-line function).
+  var lines = stripCodeFencesForSpeech(noteContent || '').split('\n');
+  // v0.1535: expand each line into segments so emoji/emoticon/code-block
+  // announcements get a comma inserted before them — this output is
+  // plain text for OTHER apps (ElevenReader etc.), which have no timing
+  // control, so a comma (a real, if brief, TTS pause almost everywhere —
+  // see BUILD CHANGELOG research note) is the only pause mechanism
+  // available. The on-device Speak button uses a REAL timed pause
+  // instead — see _speakNextLine()/pushSpeechSegmentsForLine(), which
+  // deliberately does NOT reuse this comma-based path.
+  var text = lines.map(function(l) {
+    var segs = expandLineToSpeechSegments(l);
+    if (segs.length === 0) return '';
+    var out = '';
+    segs.forEach(function(seg, idx) {
+      if (idx === 0) { out = seg.text; return; }
+      // v0.1535 fix: trim trailing whitespace off the accumulated text
+      // before a comma-pause join, so "great job " + ", smiley" doesn't
+      // produce an awkward "great job , smiley" (space before comma).
+      if (seg.pause) out = out.replace(/\s+$/, '') + ', ' + seg.text;
+      else out += ' ' + seg.text;
+    });
+    return out;
+  }).filter(function(l) { return l.trim() !== ''; }).join('\n').trim();
   // Collapse any double-spacing left behind by a replaced URL, and drop
   // any line that's now blank — lines that were JUST a URL now read
   // "URL" instead of vanishing, which is correct: the line had meaning,
@@ -16236,8 +16563,8 @@ function copyNoteForSpeech() {
   try {
     logSys('COPY-SPEECH DIAG @ ' + Date.now() + ': ' + _diagChecksum(text) + ' ' + _diagSample(text));
   } catch (eDiag) { logSys('COPY-SPEECH DIAG: logging threw: ' + eDiag); }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(function() {
+  if (navigator.clipboard) {
+    writeClipboardSafe(text).then(function() {
       showToast('Copied for speech', false);
     }).catch(function() {
       showToast('Unable to copy on this browser', true);
@@ -16263,8 +16590,8 @@ function shareNoteForSpeech() {
       if (err && err.name === 'AbortError') return;
       showToast('Sharing is not available in this browser', true);
     });
-  } else if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(function() {
+  } else if (navigator.clipboard) {
+    writeClipboardSafe(text).then(function() {
       showToast('Copied for speech (sharing not available on this browser)', false);
     }).catch(function() {
       showToast('Unable to share or copy on this browser', true);
@@ -16345,29 +16672,44 @@ function _speakNextLine() {
   var item = _speakLines[_speakLinePos];
   _speakLinePos++;
 
-  // Highlight the line in the viewer
-  if (isViewMode) highlightViewerLine(item.lineIndex);
+  // Highlight the line in the viewer (skip continuation segments, marked
+  // lineIndex -2 by pushSpeechSegmentsForLine, so we don't re-highlight
+  // the same source line for every emoji/emoticon segment within it)
+  if (isViewMode && item.lineIndex !== -2) highlightViewerLine(item.lineIndex);
 
-  var utt = new SpeechSynthesisUtterance(item.text);
-  utt.rate = parseFloat(settings.speechRate) || 0.9;
-  var voice = getSpeechVoice();
-  if (voice) utt.voice = voice;
+  var _speakThisUtterance = function() {
+    var utt = new SpeechSynthesisUtterance(item.text);
+    utt.rate = parseFloat(settings.speechRate) || 0.9;
+    var voice = getSpeechVoice();
+    if (voice) utt.voice = voice;
 
-  utt.onend = function() {
-    if (!isSpeaking) return; // stopped by user
-    var pause = settings.speechPause !== undefined ? settings.speechPause : 400;
-    if (pause > 0) {
-      _speakPauseTimer = setTimeout(_speakNextLine, pause);
-    } else {
-      _speakNextLine();
-    }
+    utt.onend = function() {
+      if (!isSpeaking) return; // stopped by user
+      var pause = settings.speechPause !== undefined ? settings.speechPause : 400;
+      if (pause > 0) {
+        _speakPauseTimer = setTimeout(_speakNextLine, pause);
+      } else {
+        _speakNextLine();
+      }
+    };
+    utt.onerror = function() {
+      if (!isSpeaking) return;
+      _speakNextLine(); // skip errored line, continue
+    };
+
+    window.speechSynthesis.speak(utt);
   };
-  utt.onerror = function() {
-    if (!isSpeaking) return;
-    _speakNextLine(); // skip errored line, continue
-  };
 
-  window.speechSynthesis.speak(utt);
+  // v0.1535: an emoji/emoticon/code-block announcement gets a short pause
+  // BEFORE it's spoken (not just the standard between-LINE pause that
+  // already happens after the PREVIOUS utterance's onend) — this is what
+  // makes "text, [pause] smiley face, [pause] more text" sound like three
+  // distinct beats instead of running together mid-line.
+  if (item.pauseBefore) {
+    _speakPauseTimer = setTimeout(_speakThisUtterance, SPEECH_INLINE_PAUSE_MS);
+  } else {
+    _speakThisUtterance();
+  }
 }
 
 function speakNote() {
@@ -16385,8 +16727,7 @@ function speakNote() {
     selectedBlocks.forEach(function(i) { idxArr.push(i); });
     idxArr.sort(function(a,b) { return a-b; });
     idxArr.forEach(function(i) {
-      var stripped = stripMarkdownForSpeech(allLines[i] || '');
-      if (stripped) items.push({ lineIndex: i, text: stripped });
+      pushSpeechSegmentsForLine(allLines[i] || '', i, items);
     });
     if (items.length === 0) { alert('The selected lines have no text to speak.'); return; }
     _speakLines   = items;
@@ -16423,8 +16764,7 @@ function speakNote() {
     var selLines = selText.split('\n');
     var selItems = [];
     selLines.forEach(function(ln) {
-      var stripped = stripMarkdownForSpeech(ln);
-      if (stripped) selItems.push({ lineIndex: -1, text: stripped });
+      pushSpeechSegmentsForLine(ln, -1, selItems);
     });
     if (selItems.length === 0) { alert('The selected text has no speakable content.'); return; }
     _speakLines   = selItems;
@@ -16437,7 +16777,17 @@ function speakNote() {
 
   // ── Priority 3: full note (or visible lines only when filter active) ───────
   if (!currentNoteId || !notes[currentNoteId]) { alert('The note has no text to speak.'); return; }
-  var rawLines = (notes[currentNoteId].content || '').split('\n');
+  // v0.1535: fence-strip BEFORE splitting into lines, same as
+  // buildSpeechStrippedNoteText — otherwise code content inside a fence
+  // would be spoken as regular text here even though Copy for speech
+  // already skips it. NOTE: fence-stripping changes line COUNT (removes
+  // code lines, collapses each fenced block to one sentinel line), so the
+  // tag-filter visibleIndices check below (keyed to ORIGINAL line
+  // indices) is intentionally applied against the pre-fence-strip raw
+  // lines for the visibility test, then mapped through — see inline
+  // comment at the visibleIndices check.
+  var rawLinesOriginal = (notes[currentNoteId].content || '').split('\n');
+  var rawLines = stripCodeFencesForSpeech(notes[currentNoteId].content || '').split('\n');
   var items = [];
   // If tag filter is active, only speak lines that are visible (not tag-hidden)
   var visibleIndices = null;
@@ -16448,10 +16798,18 @@ function speakNote() {
       if (!isNaN(idx)) visibleIndices.add(idx);
     });
   }
+  // NOTE: when a tag filter is active AND the note contains fenced code,
+  // line indices after fence-stripping no longer line up 1:1 with the
+  // ORIGINAL indices the tag filter's visibleIndices Set was built from.
+  // This is a known, narrow edge case (tag-filtered speech + code blocks
+  // together) — falling back to "filter check skipped, speak everything"
+  // in that combination is safer than silently mis-filtering, and far
+  // simpler than threading an index-remap through fence-stripping for a
+  // combination that will be rare in practice.
+  var _fenceShiftedIndices = rawLines.length !== rawLinesOriginal.length;
   rawLines.forEach(function(line, i) {
-    if (visibleIndices && !visibleIndices.has(i)) return; // skip hidden lines
-    var stripped = stripMarkdownForSpeech(line);
-    if (stripped) items.push({ lineIndex: i, text: stripped });
+    if (visibleIndices && !_fenceShiftedIndices && !visibleIndices.has(i)) return; // skip hidden lines
+    pushSpeechSegmentsForLine(line, i, items);
   });
   if (items.length === 0) { alert('The note has no text to speak.'); return; }
   _speakLines   = items;
@@ -16592,6 +16950,9 @@ function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cance
 
 function closeConfirm() {
   var overlay = document.getElementById('confirm-overlay');
+  // v0.1532: clear the System Log dialog's selectable-text opt-in so it
+  // never leaks into other confirm dialogs (which stay non-selectable).
+  document.getElementById('confirm-msg').classList.remove('syslog-selectable');
   overlay.classList.remove('open');
   overlay.classList.remove('top-anchored');
   overlay.classList.remove('centered');
@@ -19188,8 +19549,8 @@ function makeImportFolderName(label) {
       copyFab.addEventListener('click', function() {
         var text = ta.value;
         if (!text.trim()) { showToast('Nothing to copy', false); return; }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(function() {
+        if (navigator.clipboard) {
+          writeClipboardSafe(text).then(function() {
             showToast('Copied', false);
           }).catch(function() {
             showToast('Copy failed', false);
@@ -21529,7 +21890,7 @@ function makeImportFolderName(label) {
     }
     if (!text) return;
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(function() {
+      writeClipboardSafe(text).then(function() {
         showToast(msg);
       }).catch(function() {
         document.execCommand('copy');
@@ -21549,6 +21910,28 @@ function makeImportFolderName(label) {
   // Auto-save on input
   _tagAC.attach(document.getElementById('note-editor'));
   document.getElementById('note-editor').addEventListener('input', function() {
+    // v0.1533: safety net for accidental-URL-encoding corruption that
+    // arrives via an insertion path which never fires our native 'paste'
+    // event listener (confirmed to happen for at least one iOS popup-menu
+    // paste scenario: pasting into a brand-new, empty note). This only
+    // acts when the WHOLE editor value matches the signature — i.e. the
+    // entire note content is the corrupted blob, which is what a paste
+    // into an empty note produces. It deliberately does not scan for a
+    // corrupted substring inside otherwise-normal existing content, since
+    // the input event gives no reliable insertion range to scope that to.
+    // Idempotent: a value that has already been decoded no longer matches
+    // the signature, so this cannot double-fire on the same content.
+    if (looksLikeAccidentalUrlEncoding(this.value)) {
+      var _preLen = this.value.length;
+      var _decodedWhole = decodeAccidentalUrlEncoding(this.value);
+      if (_decodedWhole !== this.value) {
+        var _selEnd = this.selectionEnd;
+        var _atEnd = (_selEnd === _preLen);
+        this.value = _decodedWhole;
+        this.selectionStart = this.selectionEnd = _atEnd ? _decodedWhole.length : Math.min(_selEnd, _decodedWhole.length);
+        showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false);
+      }
+    }
     if (currentNoteId && notes[currentNoteId]) {
       var n = notes[currentNoteId];
       var trimmed = this.value.trim();
@@ -21650,6 +22033,22 @@ function makeImportFolderName(label) {
     if (!html) {
       // Plain text paste — convert tabs to spaces
       var plainText = e.clipboardData && e.clipboardData.getData('text/plain');
+      // v0.1532: if the incoming text carries the accidental-URL-encoding
+      // signature (see decodeAccidentalUrlEncoding), take over the insert
+      // and decode it, instead of letting the browser insert garbage.
+      if (plainText && looksLikeAccidentalUrlEncoding(plainText)) {
+        e.preventDefault();
+        var decodedPT = decodeAccidentalUrlEncoding(plainText);
+        var edD = document.getElementById('note-editor');
+        var sD = edD.selectionStart, eD2 = edD.selectionEnd;
+        edD.value = edD.value.substring(0, sD) + decodedPT + edD.value.substring(eD2);
+        edD.selectionStart = edD.selectionEnd = sD + decodedPT.length;
+        edD._lastLength = edD.value.length;
+        resizeEditor();
+        scheduleSave();
+        showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false);
+        return;
+      }
       if (plainText && plainText.indexOf('\t') !== -1 && settings.convertTabsOnPaste !== false) {
         e.preventDefault();
         var converted = plainText.replace(/\t/g, tabReplacement);
@@ -22682,6 +23081,8 @@ function makeImportFolderName(label) {
       }
       var newestFirst = arr.slice().reverse().join('\n\n');
       var chronological = arr.join('\n');
+      // v0.1532: make this one dialog's text selectable (class removed in closeConfirm)
+      document.getElementById('confirm-msg').classList.add('syslog-selectable');
       showConfirm('System Log (' + arr.length + ' entries, newest first)', newestFirst, 'Close',
         function() {},
         false, 'Copy',
@@ -25506,8 +25907,8 @@ function makeImportFolderName(label) {
       var start = ed.selectionStart, end = ed.selectionEnd;
       if (start === end) { showToast('Select some text to cut', false); return; }
       var cutText = ed.value.substring(start, end);
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(cutText).then(function() {
+      if (navigator.clipboard) {
+        writeClipboardSafe(cutText).then(function() {
           ed.setRangeText('', start, end, 'start');
           scheduleSave();
           showToast('Cut to clipboard', false);
@@ -25552,8 +25953,8 @@ function makeImportFolderName(label) {
         idxArr.sort(function(a,b) { return a - b; });
         var cutText = idxArr.map(function(i) { return i < lines.length ? lines[i] : ''; }).join('\n');
         // Write to clipboard
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(cutText).catch(function() {});
+        if (navigator.clipboard) {
+          writeClipboardSafe(cutText).catch(function() {});
         }
         // Remove lines in reverse order so indices stay valid
         idxArr.slice().reverse().forEach(function(i) { if (i < lines.length) lines.splice(i, 1); });
@@ -26901,6 +27302,9 @@ function makeImportFolderName(label) {
       navigator.clipboard.readText().then(function(text) {
         if (!text) return;
         _markClipAsked(text);
+        var textWasEncoded = looksLikeAccidentalUrlEncoding(text);
+        text = decodeAccidentalUrlEncoding(text); // v0.1532: iOS quirk defense
+        if (textWasEncoded) showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false);
         var start = ed.selectionStart, end = ed.selectionEnd;
         ed.setRangeText(text, start, end, 'end');
         scheduleSave();
@@ -30779,6 +31183,10 @@ function doPaste(before) {
   navigator.clipboard.readText().then(function(text) {
     if (!text || !text.trim()) { showToast('Nothing to paste', false); return; }
     _markClipAsked(text); // user just pasted this — don't auto-prompt for same content again
+    if (looksLikeAccidentalUrlEncoding(text)) {
+      text = decodeAccidentalUrlEncoding(text); // v0.1532: iOS quirk defense
+      showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false);
+    }
     snapshotNoteBeforeOp(currentNoteId, 'Paste');
     pushUndo();
     var lines = (notes[currentNoteId].content || '').split('\n');
@@ -30865,8 +31273,8 @@ function copyNoteAsPlainText() {
   try {
     logSys('COPY-PLAIN DIAG @ ' + Date.now() + ': ' + _diagChecksum(text) + ' ' + _diagSample(text));
   } catch (eDiag) { logSys('COPY-PLAIN DIAG: logging threw: ' + eDiag); }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(function() {
+  if (navigator.clipboard) {
+    writeClipboardSafe(text).then(function() {
       showToast('Copied as plain text', false);
     }).catch(function() {
       showToast('Unable to copy on this browser', true);
@@ -31062,8 +31470,8 @@ function handleUrlAction() {
         '</div>';
 
       // Attempt clipboard write
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(copyStripped).then(function() {
+      if (navigator.clipboard) {
+        writeClipboardSafe(copyStripped).then(function() {
           document.body.innerHTML = '<div style="font-family:sans-serif;font-size:1.3em;padding:40px;text-align:center;background:#f0f8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">' +
             '<div style="font-size:2em">✅</div>' +
             '<div><strong>Copied!</strong></div>' +
