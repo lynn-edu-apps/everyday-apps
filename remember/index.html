@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1573 -->
+<!-- Remember App - Version 0.1574 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1573
+  Version 0.1574
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1574 - Vertical space: home-screen header padding trimmed (18/16 -> 10/8). Lower toolbar height now tracks the icon size instead of being effectively constant: the injected button min-height was Math.max(36, iconPx) + 10, so small (22px) and medium (28px) icons both produced a 46px button (identical bar height at small/medium/large, growing only at extra-large) -- it is now Math.max(28, iconPx + 10), keeping a real floor (needed: a blanket min-width:0 previously collapsed other toolbar buttons) but one that can never sit above the intended size. The toolbar scroll arrows' hardcoded min-height:44px, which would have silently become the new height floor, now tracks the icon size too. Safe by construction: every consumer of header/toolbar height measures it at runtime (offsetHeight / getBoundingClientRect) -- no pixel height is hardcoded in any calculation.
   v0.1573 - New Note Behavior setting newItemDefaultTags ('Default tags for new items', e.g. '@inbox @prioUnset'): auto-appended to any newly added checkbox-ish item (checkbox OR plain bullet, detected through the standard formatting strippers) that has item text and no @tag yet. Applied on Enter at the end of a line in the editor, per-line in Add Text to Note (after its hyphen/checkbox toggles), and to ?action=new / share-target content; new optional URL parameter tags= overrides the setting per action (present-but-empty suppresses; commas and missing @ signs accepted everywhere and normalized). New top-level pure functions isMarkerLineRaw (the outline's isCheckboxRaw real implementation now delegates to it, one source of truth usable before the note screen exists), normalizeTagListSetting, appendDefaultTagsToLine/appendDefaultTagsToText. TODO #19 done: _tokenAtCaret promoted to top level for harness access. New test files: cases v13, goldens v13.
   v0.1572 - Tag-autocomplete data-loss fix: tapping a suggestion spliced from the '@' that ORIGINALLY opened the popup to the current caret, so a stale popup plus a caret tap elsewhere silently deleted everything in between (the 'delete 3000 characters?' guard hits). The @token is now re-derived at the caret at tap time via a new shared _tokenAtCaret() (also used by update(), replacing its duplicate scan); a tap with the caret not in an @tag changes nothing and just closes the popup (debug-logged). Caret movement (tap, arrow keys) now re-runs the anchor logic while the popup is open, re-filtering to the tag under the caret or closing. Removed the confirmed v0.1570/1571 position diagnostics.
   v0.1571 - iOS tag-autocomplete popup positioning FIX (root cause confirmed by v0.1570 deployed diagnostics): position:fixed is relative to the layout viewport, which iOS pans upward by visualViewport.offsetTop (observed up to 240px) when the keyboard opens, so the constant header-based top rendered the popup that far above the visible screen. The popup top now adds the pan offset, is clamped inside the visible viewport, and re-positions live on visualViewport scroll/resize while open (fixes it scooting upward when the keyboard reopens with the popup left up). Diagnostics kept for one confirmation build. Also commented out the applyRuledLines() debug-log line that was flooding the log.
@@ -351,7 +352,12 @@ body.in-iframe #home-screen {
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
   /* landscape notch/corner clearance — see .note-header */
-  padding: 18px calc(20px + env(safe-area-inset-right, 0px)) 16px calc(20px + env(safe-area-inset-left, 0px));
+  /* v0.1574: vertical padding trimmed 18/16 -> 10/8 to reclaim ~16px for
+     the notes list. Safe to change: every consumer of this header's height
+     MEASURES it at runtime (pinToolbars' offsetHeight, the sticky-offset
+     and search-bar getBoundingClientRect calls) — no pixel value is
+     hardcoded anywhere. */
+  padding: 10px calc(20px + env(safe-area-inset-right, 0px)) 8px calc(20px + env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -3350,7 +3356,11 @@ body.has-mouse .toolbar-drag-handle.dragging {
   width: calc(var(--icon-size) + 8px);
   min-width: calc(var(--icon-size) + 8px);
   height: 100%;
-  min-height: 44px;
+  /* v0.1574: was a FIXED min-height:44px, which silently became the
+     lower toolbar's real height floor at small/medium icon sizes and
+     would have cancelled out the button min-height fix below. Now
+     tracks the icon size, same as every other toolbar control. */
+  min-height: calc(var(--icon-size) + 10px);
   /* v0.1538 fix: same class of bug as #toolbar-collapse-tab above — this
      button hardcoded var(--bg2) directly instead of the Note Toolbar
      override chain. */
@@ -9596,7 +9606,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1573';
+const APP_VERSION = '0.1574';
 
 // v0.1570: iOS auto-zooms the page whenever a text field with a font size
 // under 16px receives focus (this is what made double-tap-to-type zoom in
@@ -18771,7 +18781,20 @@ function applyToolbarIconSizes() {
   // for most OTHER toolbar buttons (they collapsed to zero width and
   // disappeared) — keeping a real, size-tracking minimum here avoids
   // that regression while still letting width grow past 36px.
-  var _iconBtnMin = Math.max(36, _iconPx) + 10; // +10 for the button's own padding (5px each side)
+  // v0.1574: this floor used to be Math.max(36, _iconPx) + 10. The 36
+  // clamp meant small (22px) and medium (28px) icons BOTH produced a
+  // 46px button — which is why the lower toolbar looked the same height
+  // at small/medium/large and only grew at extra-large, and why small
+  // icons sat in a toolbar far taller than they needed.
+  //
+  // The floor itself must stay (documented lesson: a blanket min-width:0
+  // broke flex-shrink and collapsed every other toolbar button to zero
+  // width) — but it must TRACK the icon size instead of being a constant
+  // that can sit ABOVE the intended size. Padding is now proportional:
+  // _iconPx + 10, with a low absolute safety floor of 28px total that
+  // only ever engages far below any real icon size (smallest is 22 ->
+  // 32px), so it can never again cap a larger icon's button.
+  var _iconBtnMin = Math.max(28, _iconPx + 10);
   _iconSizeStyleEl.textContent =
     '#note-bottom-bar .icon-btn svg, #toolbar-scroll .icon-btn svg {' +
     '  width: ' + _iconPx + 'px !important;' +
