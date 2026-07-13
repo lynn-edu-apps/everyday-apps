@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1569 -->
+<!-- Remember App - Version 0.1570 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1569
+  Version 0.1570
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1570 - Diagnostics for the iOS tag-autocomplete popup appearing too high: every popup render now debug-logs visualViewport offsetTop/height, window scroll, pinned header height, the computed top, and the popup's actual on-screen rect, so the real fix is written from deployed data. Also suppresses iOS's automatic zoom on focusing text fields with font sizes under 16px by setting viewport maximum-scale to 1 on iOS ONLY at startup (iOS ignores it for manual pinch, so pinch-zoom still works; Android keeps the original viewport untouched since Android Chrome would honor the cap and lose pinch-zoom).
   v0.1569 - CRITICAL FIX: v0.1568's own changelog entry broke the entire app. It described an HTML comment by writing out the actual comment-open and comment-close markers as literal text -- but HTML has no concept of nested comments, so that inner closing marker prematurely ended the outer BUILD CHANGELOG comment block itself, and everything from that point until the next real comment start rendered as raw, visible page text instead of being hidden. Fixed by rephrasing the description in plain words instead of literal comment syntax. Verified far more rigorously than a normal build this time: scanned the entire file simulating real browser comment-parsing (every comment open is closed by the very next close marker found, no exceptions) and confirmed zero premature closures anywhere in the file, not just the one found; loaded the file in a real DOM environment and confirmed no stray text nodes leaked directly into the page body; confirmed openSettings/applySettings still run cleanly. Lesson for all future changelog/comment writing in this file: never describe HTML comment syntax by writing the literal open/close markers -- describe it in words only.
   v0.1568 - Profiles & Note Styles Phase B, step 3i (last individual-section migration): View Only Notes (small, single-bucket General, moved as one unit) and Checklists (15 rows, mixed row-by-row like Note Display -- 4 General rows: today/last suffix, time format sitting in the MIDDLE of otherwise-behavior settings; 4 Note Appearance rows: list-item/checkbox-section rules, hyphen bullets, multi-level bullets at the END; 7 Note Behavior rows: confetti, move-completed, strikethrough, check sound, smart-indent). Caught and fixed a real extraction bug during this build: Checklists' section closes with an HTML comment marker reading "end settings-section-body" instead of the plain "</div>\n    </div>" pattern every other section used, so my generic end-boundary search returned -1 (not found) -- which Python's string slicing silently treats as "one character short" rather than erroring, producing a truncated, unbalanced Note Appearance group (16 opens/17 closes) that I caught via the balance-verification step before it ever touched the live file. Redid the extraction with the correct boundary before proceeding. Both old sections and their jump-nav entries removed -- this completes the individual-section migration; only Debugging (untouched by design) and the old Themes section (retired in a later step once the new Note Style UI exists) remain outside the three zones.
   v0.1567 - Profiles & Note Styles Phase B: fully retired the old "Note Display" grab-bag section (per Lynn's reminder it was still outstanding) -- the most finely-mixed section yet, 23 individual settings interleaved across all three buckets with almost no subsection structure. Split row-by-row (not by subsection): 12 rows -> App Theme (editing mode, tabs-on-paste, edge-swipe, toolbar-collapse-button, both wrap-name/preview settings, show-note-preview, deletion-warning, oops-button, double-tap-to-edit, retain-quiet-mode, floating-plus-button); 5 rows -> Note Appearance (tag-color-borders, tag-color-pills, wrap-note-title, show-tags, paragraph-rules); 6 rows -> Note Behavior (tag-scope, default-view-mode, plus-position, outline-mode, outline-collapse-on-open, indent-spaces). Old section and jump-nav entry removed. All 23 row boundaries located precisely, 3 combined groups verified balanced before reassembly, all three destination zones re-verified, full settings-sheet depth-walked clean -- every one of the 23 affected element ids confirmed present exactly once.
@@ -9582,7 +9583,28 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1569';
+const APP_VERSION = '0.1570';
+
+// v0.1570: iOS auto-zooms the page whenever a text field with a font size
+// under 16px receives focus (this is what made double-tap-to-type zoom in
+// at note font sizes of 15px and below -- it was never the double-tap
+// gesture itself). Setting viewport maximum-scale=1 suppresses that focus
+// auto-zoom; since iOS 10, Safari deliberately IGNORES maximum-scale for
+// user-initiated pinch gestures, so manual pinch-zoom keeps working.
+// Applied on iOS ONLY: Android Chrome genuinely honors the cap and would
+// lose pinch-zoom, so Android keeps the original meta tag untouched.
+(function() {
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!isIOS) return;
+  var vp = document.querySelector('meta[name="viewport"]');
+  if (!vp) {
+    if (typeof logSys === 'function') logSys('iOS viewport fix: meta tag not found');
+    return;
+  }
+  vp.setAttribute('content',
+    'width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover');
+})();
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -33022,6 +33044,25 @@ var _tagAC = (function() {
       topOffset = (_pinnedHeaderH || 60) + 4;
     }
     pop.style.top = topOffset + 'px';
+    // v0.1570 DIAGNOSTIC (iOS popup-too-high bug): log every quantity that
+    // feeds or could correct this position. Fires on each render (each
+    // keystroke of a tag) -- debug log handles repeats fine, unlike toasts.
+    // Remove once the positioning fix is confirmed on deployed iOS.
+    try {
+      var _vv = window.visualViewport;
+      var _pr = pop.getBoundingClientRect();
+      logDebugAction('tagAC pos: ta=' + (_activeTA ? _activeTA.id : 'none') +
+        ' top=' + Math.round(topOffset) +
+        ' vvOffTop=' + (_vv ? Math.round(_vv.offsetTop) : 'n/a') +
+        ' vvPageTop=' + (_vv ? Math.round(_vv.pageTop) : 'n/a') +
+        ' vvH=' + (_vv ? Math.round(_vv.height) : 'n/a') +
+        ' winH=' + window.innerHeight +
+        ' scrollY=' + Math.round(window.pageYOffset || 0) +
+        ' hdrH=' + Math.round(_pinnedHeaderH || 0) +
+        ' rect=' + Math.round(_pr.top) + '..' + Math.round(_pr.bottom));
+    } catch (e) {
+      logDebugAction('tagAC pos diagnostic failed: ' + (e && e.message));
+    }
   }
 
   function update(ta) {
