@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1570 -->
+<!-- Remember App - Version 0.1571 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1570
+  Version 0.1571
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1571 - iOS tag-autocomplete popup positioning FIX (root cause confirmed by v0.1570 deployed diagnostics): position:fixed is relative to the layout viewport, which iOS pans upward by visualViewport.offsetTop (observed up to 240px) when the keyboard opens, so the constant header-based top rendered the popup that far above the visible screen. The popup top now adds the pan offset, is clamped inside the visible viewport, and re-positions live on visualViewport scroll/resize while open (fixes it scooting upward when the keyboard reopens with the popup left up). Diagnostics kept for one confirmation build. Also commented out the applyRuledLines() debug-log line that was flooding the log.
   v0.1570 - Diagnostics for the iOS tag-autocomplete popup appearing too high: every popup render now debug-logs visualViewport offsetTop/height, window scroll, pinned header height, the computed top, and the popup's actual on-screen rect, so the real fix is written from deployed data. Also suppresses iOS's automatic zoom on focusing text fields with font sizes under 16px by setting viewport maximum-scale to 1 on iOS ONLY at startup (iOS ignores it for manual pinch, so pinch-zoom still works; Android keeps the original viewport untouched since Android Chrome would honor the cap and lose pinch-zoom).
   v0.1569 - CRITICAL FIX: v0.1568's own changelog entry broke the entire app. It described an HTML comment by writing out the actual comment-open and comment-close markers as literal text -- but HTML has no concept of nested comments, so that inner closing marker prematurely ended the outer BUILD CHANGELOG comment block itself, and everything from that point until the next real comment start rendered as raw, visible page text instead of being hidden. Fixed by rephrasing the description in plain words instead of literal comment syntax. Verified far more rigorously than a normal build this time: scanned the entire file simulating real browser comment-parsing (every comment open is closed by the very next close marker found, no exceptions) and confirmed zero premature closures anywhere in the file, not just the one found; loaded the file in a real DOM environment and confirmed no stray text nodes leaked directly into the page body; confirmed openSettings/applySettings still run cleanly. Lesson for all future changelog/comment writing in this file: never describe HTML comment syntax by writing the literal open/close markers -- describe it in words only.
   v0.1568 - Profiles & Note Styles Phase B, step 3i (last individual-section migration): View Only Notes (small, single-bucket General, moved as one unit) and Checklists (15 rows, mixed row-by-row like Note Display -- 4 General rows: today/last suffix, time format sitting in the MIDDLE of otherwise-behavior settings; 4 Note Appearance rows: list-item/checkbox-section rules, hyphen bullets, multi-level bullets at the END; 7 Note Behavior rows: confetti, move-completed, strikethrough, check sound, smart-indent). Caught and fixed a real extraction bug during this build: Checklists' section closes with an HTML comment marker reading "end settings-section-body" instead of the plain "</div>\n    </div>" pattern every other section used, so my generic end-boundary search returned -1 (not found) -- which Python's string slicing silently treats as "one character short" rather than erroring, producing a truncated, unbalanced Note Appearance group (16 opens/17 closes) that I caught via the balance-verification step before it ever touched the live file. Redid the extraction with the correct boundary before proceeding. Both old sections and their jump-nav entries removed -- this completes the individual-section migration; only Debugging (untouched by design) and the old Themes section (retired in a later step once the new Note Style UI exists) remain outside the three zones.
@@ -9583,7 +9584,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1570';
+const APP_VERSION = '0.1571';
 
 // v0.1570: iOS auto-zooms the page whenever a text field with a font size
 // under 16px receives focus (this is what made double-tap-to-type zoom in
@@ -9992,7 +9993,9 @@ function updateRuledLinesOverlayHeight() {
 // call frequently (e.g. every pinToolbars()). Recalibrates once on
 // first call if nothing has cached a calibration yet.
 function applyRuledLines() {
-  if (settings.debugLoggingEnabled) logDebugAction('applyRuledLines() called, style=' + (settings.ruledLineStyle || 'none'));
+  // v0.1571: commented out -- flooded the debug log (hundreds of entries
+  // per scroll/typing session), drowning out useful entries.
+  // if (settings.debugLoggingEnabled) logDebugAction('applyRuledLines() called, style=' + (settings.ruledLineStyle || 'none'));
   try {
     _applyRuledLinesImpl();
   } catch (e) {
@@ -33019,50 +33022,76 @@ var _tagAC = (function() {
     // element has no layout, so scrollHeight would read 0 regardless of
     // content if measured first.
     pop.classList.add('visible');
-    // Position: anchor to the actual textarea that triggered this, not a
-    // single fixed offset tuned for the main note editor. The main
-    // editor sits right below the fixed top toolbar, so the old
-    // "just below the toolbar" offset worked there — but Quick Add and
-    // Edit Paragraph are smaller dialogs centered lower on the screen,
-    // where that same fixed offset placed the popup well above the
-    // dialog's own textarea, cutting off the top suggestions.
+    _positionPopup(pop);
+  }
+
+  // v0.1571: positioning extracted into its own function so it can re-run
+  // whenever iOS pans/resizes the visual viewport while the popup is open.
+  // ROOT CAUSE (confirmed by v0.1570 deployed diagnostics): position:fixed
+  // on iOS is relative to the LAYOUT viewport, but when the keyboard opens
+  // WebKit pans that viewport upward (visualViewport.offsetTop -- observed
+  // up to 240px deep in a long note). A constant top of headerH+4 in layout
+  // coordinates therefore rendered that far ABOVE the visible screen: in
+  // every logged sample, visible rect.top was exactly top - offsetTop.
+  // The dialog branch (Quick Add / Edit Paragraph) already self-corrected,
+  // because getBoundingClientRect() coordinates live in that same panned
+  // layout space -- only the constant-offset branches needed the pan added.
+  function _positionPopup(pop) {
+    var vv = window.visualViewport;
+    var panY = vv ? vv.offsetTop : (window.pageYOffset || 0);
+    var visH = vv ? vv.height : window.innerHeight;
     var topOffset;
     if (_activeTA && _activeTA.id === 'note-editor') {
-      topOffset = (_pinnedHeaderH || 60) + 4;
+      topOffset = (_pinnedHeaderH || 60) + 4 + panY;
     } else if (_activeTA) {
       var taRect = _activeTA.getBoundingClientRect();
-      // Just below the textarea itself; if there isn't room below
-      // (textarea near the bottom of the screen), show it above instead.
+      // Just below the textarea itself; if there isn't room below within
+      // the VISIBLE area (bottom = panY + visH in layout coordinates --
+      // window.innerHeight ignores the keyboard pan), show it above.
       var estimatedPopupH = Math.min(220, pop.scrollHeight || 220);
-      var spaceBelow = window.innerHeight - taRect.bottom;
-      if (spaceBelow >= estimatedPopupH + 8 || taRect.bottom + 8 + estimatedPopupH <= window.innerHeight) {
+      if (taRect.bottom + 8 + estimatedPopupH <= panY + visH) {
         topOffset = taRect.bottom + 4;
       } else {
-        topOffset = Math.max(8, taRect.top - estimatedPopupH - 4);
+        topOffset = taRect.top - estimatedPopupH - 4;
       }
     } else {
-      topOffset = (_pinnedHeaderH || 60) + 4;
+      topOffset = (_pinnedHeaderH || 60) + 4 + panY;
     }
+    // Clamp the top edge inside the visible viewport, whatever branch
+    // produced it. This is what makes "left the popup open, keyboard
+    // panned further" safe: the sticky X close row can never end up
+    // above the visible screen again.
+    var minTop = panY + 4;
+    var maxTop = panY + visH - 44; // keep at least the close row on screen
+    topOffset = Math.max(minTop, Math.min(topOffset, maxTop));
     pop.style.top = topOffset + 'px';
-    // v0.1570 DIAGNOSTIC (iOS popup-too-high bug): log every quantity that
-    // feeds or could correct this position. Fires on each render (each
-    // keystroke of a tag) -- debug log handles repeats fine, unlike toasts.
-    // Remove once the positioning fix is confirmed on deployed iOS.
+    // v0.1571 DIAGNOSTIC (kept one more build to confirm the fix on
+    // deployed iOS, then remove): rect should now start at/below panY+4.
     try {
-      var _vv = window.visualViewport;
+      var _vv2 = window.visualViewport;
       var _pr = pop.getBoundingClientRect();
       logDebugAction('tagAC pos: ta=' + (_activeTA ? _activeTA.id : 'none') +
         ' top=' + Math.round(topOffset) +
-        ' vvOffTop=' + (_vv ? Math.round(_vv.offsetTop) : 'n/a') +
-        ' vvPageTop=' + (_vv ? Math.round(_vv.pageTop) : 'n/a') +
-        ' vvH=' + (_vv ? Math.round(_vv.height) : 'n/a') +
+        ' panY=' + Math.round(panY) +
+        ' vvH=' + Math.round(visH) +
         ' winH=' + window.innerHeight +
-        ' scrollY=' + Math.round(window.pageYOffset || 0) +
         ' hdrH=' + Math.round(_pinnedHeaderH || 0) +
         ' rect=' + Math.round(_pr.top) + '..' + Math.round(_pr.bottom));
     } catch (e) {
       logDebugAction('tagAC pos diagnostic failed: ' + (e && e.message));
     }
+  }
+
+  // v0.1571: while the popup is open, track iOS keyboard pans/resizes so
+  // the popup follows the visible viewport instead of "scooting upward"
+  // when the keyboard is dismissed and re-opened with the popup left up.
+  if (window.visualViewport) {
+    var _vvReposition = function() {
+      var p = _getPopup();
+      if (p && p.classList.contains('visible')) _positionPopup(p);
+    };
+    window.visualViewport.addEventListener('resize', _vvReposition);
+    window.visualViewport.addEventListener('scroll', _vvReposition);
   }
 
   function update(ta) {
