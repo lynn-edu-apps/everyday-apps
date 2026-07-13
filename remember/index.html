@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1572 -->
+<!-- Remember App - Version 0.1573 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1572
+  Version 0.1573
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1573 - New Note Behavior setting newItemDefaultTags ('Default tags for new items', e.g. '@inbox @prioUnset'): auto-appended to any newly added checkbox-ish item (checkbox OR plain bullet, detected through the standard formatting strippers) that has item text and no @tag yet. Applied on Enter at the end of a line in the editor, per-line in Add Text to Note (after its hyphen/checkbox toggles), and to ?action=new / share-target content; new optional URL parameter tags= overrides the setting per action (present-but-empty suppresses; commas and missing @ signs accepted everywhere and normalized). New top-level pure functions isMarkerLineRaw (the outline's isCheckboxRaw real implementation now delegates to it, one source of truth usable before the note screen exists), normalizeTagListSetting, appendDefaultTagsToLine/appendDefaultTagsToText. TODO #19 done: _tokenAtCaret promoted to top level for harness access. New test files: cases v13, goldens v13.
   v0.1572 - Tag-autocomplete data-loss fix: tapping a suggestion spliced from the '@' that ORIGINALLY opened the popup to the current caret, so a stale popup plus a caret tap elsewhere silently deleted everything in between (the 'delete 3000 characters?' guard hits). The @token is now re-derived at the caret at tap time via a new shared _tokenAtCaret() (also used by update(), replacing its duplicate scan); a tap with the caret not in an @tag changes nothing and just closes the popup (debug-logged). Caret movement (tap, arrow keys) now re-runs the anchor logic while the popup is open, re-filtering to the tag under the caret or closing. Removed the confirmed v0.1570/1571 position diagnostics.
   v0.1571 - iOS tag-autocomplete popup positioning FIX (root cause confirmed by v0.1570 deployed diagnostics): position:fixed is relative to the layout viewport, which iOS pans upward by visualViewport.offsetTop (observed up to 240px) when the keyboard opens, so the constant header-based top rendered the popup that far above the visible screen. The popup top now adds the pan offset, is clamped inside the visible viewport, and re-positions live on visualViewport scroll/resize while open (fixes it scooting upward when the keyboard reopens with the popup left up). Diagnostics kept for one confirmation build. Also commented out the applyRuledLines() debug-log line that was flooding the log.
   v0.1570 - Diagnostics for the iOS tag-autocomplete popup appearing too high: every popup render now debug-logs visualViewport offsetTop/height, window scroll, pinned header height, the computed top, and the popup's actual on-screen rect, so the real fix is written from deployed data. Also suppresses iOS's automatic zoom on focusing text fields with font sizes under 16px by setting viewport maximum-scale to 1 on iOS ONLY at startup (iOS ignores it for manual pinch, so pinch-zoom still works; Android keeps the original viewport untouched since Android Chrome would honor the cap and lose pinch-zoom).
@@ -8493,6 +8494,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       </div>
 
         
+<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div>
+          <div class="settings-row-label">Default tags for new items</div>
+          <div class="settings-row-desc">Added automatically to the end of each newly added checkbox or bullet item that doesn't already have a tag. Example: @inbox @prioUnset. Leave blank for none.</div>
+        </div>
+        <input type="text" id="new-item-default-tags-input" placeholder="@tag1 @tag2" autocapitalize="none" autocorrect="off" spellcheck="false"
+          style="font-size:1em;padding:6px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg)">
+      </div>
+
 <div class="settings-subsection-title" style="margin-top:10px">Note Behavior</div>
 <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;">
         <div>
@@ -9546,6 +9556,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
             <code>…/remember/?action=new</code><br>
             <code>…/remember/?action=new&amp;content=Your+text+here</code><br>
             <code>…/remember/?action=new&amp;name=Note+Title&amp;content=Your+text+here</code><br>
+            <code>…/remember/?action=new&amp;content=Buy+milk&amp;tags=inbox,prioUnset</code><br>
             When both <code>name</code> and <code>content</code> are provided, both are required (neither can be blank) and the note name is permanently set — it will not change when you edit the content.</p>
             <p><strong>Open a note:</strong><br>
             <code>…/remember/?action=open&amp;name=Shopping+List</code></p>
@@ -9585,7 +9596,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1572';
+const APP_VERSION = '0.1573';
 
 // v0.1570: iOS auto-zooms the page whenever a text field with a font size
 // under 16px receives focus (this is what made double-tap-to-type zoom in
@@ -10855,6 +10866,7 @@ const DEFAULT_SETTINGS = {
   sectionStates: {},         // collapsed/expanded state for each settings section
   helpSectionStates: {},     // collapsed/expanded state for each Help dialog section, keyed by its stable HTML id
   indentSpaces: 4,             // spaces per indent/dedent action
+  newItemDefaultTags: '',      // '@tag @tag2' auto-appended to new checkbox-ish items without tags (Note Behavior)
   defaultCheckboxIndent: 0,    // default indent levels for new checkbox/hyphen items
   toolbarHidden: [],           // array of button IDs hidden from bottom toolbar
   toolbarOrder: [],            // ordered array of button IDs (empty = use default order)
@@ -10986,7 +10998,7 @@ const SETTING_BUCKETS = {
   // ---- NOTE_BEHAVIOR (31) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
   confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
-  moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR,
   quietMode: SETTING_BUCKETS_NOTE_BEHAVIOR, showSpeakBtn: SETTING_BUCKETS_NOTE_BEHAVIOR, skipListMarkers: SETTING_BUCKETS_NOTE_BEHAVIOR, smartIndentBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColor: SETTING_BUCKETS_NOTE_BEHAVIOR,
   speakBtnIconOnly: SETTING_BUCKETS_NOTE_BEHAVIOR, speakInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speechPause: SETTING_BUCKETS_NOTE_BEHAVIOR, speechRate: SETTING_BUCKETS_NOTE_BEHAVIOR, tagScope: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -11153,7 +11165,7 @@ const THEMEABLE_SETTINGS=[
 ['wordSpacing','Word spacing',0],['disableLigatures','Disable ligatures',0],
 ['fontVariantNumeric','Numeric style',0],['viewIndentWidth','Indent width (view)',0],
 ['headingIndent','Indent headings by level (R&R)',0],
-['indentSpaces','Spaces per indent',0],['checkStrikethrough','Strikethrough when checked',0],['checkSoundEnabled','Sound when checking off an item',0],['checkSound','Check-off sound',0],
+['indentSpaces','Spaces per indent',0],['newItemDefaultTags','Default tags for new items',0],['checkStrikethrough','Strikethrough when checked',0],['checkSoundEnabled','Sound when checking off an item',0],['checkSound','Check-off sound',0],
 ['showParagraphRules','Paragraph rules',0],['showBlockRules','List item rules',0],
 ['showBlockRulesTop','Rule above checkbox sections',0],
 ['ruledLineTone','Ruled line color (auto/light/dark)',0],
@@ -18302,6 +18314,7 @@ function openSettings() {
   if (tripleTapToggleEl) tripleTapToggleEl.checked = settings.tripleTapToEdit !== false;
   document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
   document.getElementById('indent-spaces-input').value = settings.indentSpaces !== undefined ? settings.indentSpaces : 4;
+  document.getElementById('new-item-default-tags-input').value = settings.newItemDefaultTags || '';
   var _dciEl = document.getElementById('default-checkbox-indent-input'); if (_dciEl) _dciEl.value = settings.defaultCheckboxIndent || 0;
 
   // Snapshot current settings so we can detect changes
@@ -18772,6 +18785,83 @@ function applyToolbarIconSizes() {
     '  min-width: ' + _iconBtnMin + 'px !important;' +
     '  min-height: ' + _iconBtnMin + 'px !important;' +
     '}';
+}
+
+// ===== DEFAULT TAGS FOR NEW CHECKBOX-ISH ITEMS (v0.1573) =====
+// True top-level marker-line classifier -- the ONE home of the real logic
+// behind the Collapsible Outline's late-assigned isCheckboxRaw (whose real
+// implementation now delegates here). Top-level so paths that run BEFORE
+// the note screen initializes (URL actions at startup, Quick Add) get the
+// real answer, never the always-false stub. True for any list-marker line:
+// plain bullet or any checkbox variant.
+function isMarkerLineRaw(rawLine) {
+  var core = String(rawLine == null ? '' : rawLine).replace(/^\s*/, '');
+  return /^[-*+] /.test(core);
+}
+
+// Normalize/validate a tag-list string (setting newItemDefaultTags, URL
+// tags= parameter). Forgiving on input: commas and/or whitespace separate
+// tags, leading '@' optional. Returns the canonical space-separated '@tag'
+// form ('' for blank input), or null when any token has characters outside
+// the tag alphabet [a-zA-Z0-9_-] (the same alphabet _getNoteTags and the
+// renderer use -- no new tag definition invented here).
+function normalizeTagListSetting(str) {
+  var s = String(str == null ? '' : str).replace(/,/g, ' ').trim();
+  if (s === '') return '';
+  var toks = s.split(/\s+/), out = [];
+  for (var i = 0; i < toks.length; i++) {
+    var t = toks[i];
+    if (t.charAt(0) === '@') t = t.slice(1);
+    if (t === '' || !/^[a-zA-Z0-9_-]+$/.test(t)) return null;
+    out.push('@' + t);
+  }
+  return out.join(' ');
+}
+
+// Append tagList to ONE line if and only if: the line is checkbox-ish
+// (marker detected through the standard strippers -- stripFormattingForDetect
+// -- so highlighting/colors/markdown around the line don't hide the marker),
+// it has actual item text after the marker (and any [ ]/[x]/[x:color] state
+// token), and it contains no @tag already (checked with the existing
+// _getNoteTags scanner). Everything else passes through unchanged.
+function appendDefaultTagsToLine(line, tagList) {
+  if (!tagList) return line;
+  var core = stripFormattingForDetect(line);
+  if (!isMarkerLineRaw(core)) return line;
+  var body = core.replace(/^[-*+] /, '').replace(/^\[[^\]]*\]\s*/, '');
+  if (body.trim() === '') return line;
+  if (_getNoteTags(line).length > 0) return line;
+  return line.replace(/\s+$/, '') + ' ' + tagList;
+}
+
+// Per-line application over a whole block (Add Text to Note, ?action=new /
+// share-target content) -- each qualifying line gets the tags; lines that
+// already have any tag, or aren't checkbox-ish, are left alone.
+function appendDefaultTagsToText(text, tagList) {
+  if (!tagList) return text;
+  return String(text == null ? '' : text).split('\n').map(function(l) {
+    return appendDefaultTagsToLine(l, tagList);
+  }).join('\n');
+}
+
+// Shared @token scanner for tag autocomplete (used by _tagAC's update()
+// AND _insertTag()): returns the @tag token surrounding the textarea's
+// caret as { start, end, partial } -- start = index of the '@', end =
+// one past the last token character (scanning FORWARD past the caret
+// too, so a caret in the middle of a tag identifies the whole tag),
+// partial = text between the '@' and the caret (what filtering uses).
+// Returns null when the caret is not inside an @tag token.
+// v0.1573: promoted from private inside the _tagAC closure to top level
+// so the Layer-1 harness can exercise it directly (TODO #19).
+function _tokenAtCaret(ta) {
+  var val = ta.value;
+  var pos = ta.selectionStart;
+  var i = pos - 1;
+  while (i >= 0 && /[a-zA-Z0-9_-]/.test(val[i])) i--;
+  if (i < 0 || val[i] !== '@') return null;
+  var end = pos;
+  while (end < val.length && /[a-zA-Z0-9_-]/.test(val[end])) end++;
+  return { start: i, end: end, partial: val.slice(i + 1, pos) };
 }
 
 function _getNoteTags(content) {
@@ -22538,6 +22628,41 @@ function makeImportFolderName(label) {
     */
   });
 
+  // v0.1573: default tags for new checkbox-ish items. When Enter is
+  // pressed at the END of a checkbox/bullet line (not splitting one), the
+  // just-completed line gets the configured default tags appended -- only
+  // if it has real item text and no @tag already. Runs on a 0ms timeout so
+  // the browser has inserted the newline (and any smart indent) first; the
+  // caret then shifts by exactly the appended length. Known accepted edge:
+  // Enter at the end of an EXISTING untagged item also appends (a textarea
+  // can't reliably distinguish new lines from old ones).
+  noteEditor.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    var _tagList = normalizeTagListSetting(settings.newItemDefaultTags) || '';
+    if (!_tagList) return;
+    setTimeout(function() {
+      var val = noteEditor.value;
+      var pos = noteEditor.selectionStart;
+      var nextNl = val.indexOf('\n', pos);
+      // Enter must have been at the end of its line: nothing may sit
+      // between the caret and the end of the caret's (new) line.
+      if (val.slice(pos, nextNl === -1 ? val.length : nextNl) !== '') return;
+      var nlBefore = val.lastIndexOf('\n', pos - 1);
+      if (nlBefore === -1) return; // no newline actually landed
+      var prevStart = val.lastIndexOf('\n', nlBefore - 1) + 1;
+      var prevLine = val.slice(prevStart, nlBefore);
+      var newLine = appendDefaultTagsToLine(prevLine, _tagList);
+      if (newLine === prevLine) return;
+      noteEditor.value = val.slice(0, prevStart) + newLine + val.slice(nlBefore);
+      var delta = newLine.length - prevLine.length;
+      noteEditor.setSelectionRange(pos + delta, pos + delta);
+      // Standard pipeline (scheduleSave, dirty-flag, resize) via a
+      // synthetic input event -- same pattern as _insertTag.
+      noteEditor.dispatchEvent(new Event('input', { bubbles: true }));
+      logDebugAction('Default tags appended to new item (Enter)');
+    }, 0);
+  });
+
   // Exit EMTIP when editor loses focus (keyboard closes)
   noteEditor.addEventListener('blur', function() {
     kbBlurTimer = setTimeout(function() {
@@ -25069,10 +25194,10 @@ function makeImportFolderName(label) {
     var m = rawLine.match(/^(\s*)/);
     return m ? m[1].length : 0;
   }
-  isCheckboxRaw = function(rawLine) {
-    var core = rawLine.replace(/^\s*/, '');
-    return /^[-*+] /.test(core); // marker line (plain bullet, or with [ ]/[x]/[x:color] checkbox) — collapsible parent
-  }
+  // v0.1573: real logic now lives in the top-level isMarkerLineRaw()
+  // (identical behavior) so startup paths can use it too; this late
+  // assignment keeps the Collapsible Outline wiring unchanged.
+  isCheckboxRaw = isMarkerLineRaw;
   getDescendants = function(lines, parentIdx) {
     var parentIndent = getLineIndent(lines[parentIdx]);
     var descendants = [];
@@ -26908,6 +27033,23 @@ function makeImportFolderName(label) {
     else { this.value = val; settings.indentSpaces = val; }
     updateSaveBtnState();
   });
+  document.getElementById('new-item-default-tags-input').addEventListener('input', function() {
+    settings.newItemDefaultTags = this.value; // raw while typing; blur canonicalizes
+    updateSaveBtnState();
+  });
+  document.getElementById('new-item-default-tags-input').addEventListener('blur', function() {
+    var norm = normalizeTagListSetting(this.value);
+    if (norm === null) {
+      // Fail loudly, don't silently strip: keep the typed value visible so
+      // it can be corrected. Every point of USE re-normalizes and treats an
+      // invalid stored value as '' (no tags), so nothing downstream breaks.
+      showToast('Default tags: only letters, numbers, dash and underscore are allowed in a tag', true);
+      return;
+    }
+    this.value = norm;
+    settings.newItemDefaultTags = norm;
+    updateSaveBtnState();
+  });
   document.getElementById('view-mode-btn').addEventListener('click', function() {
     var newMode = !isViewMode;
     settings.lastViewMode = newMode;
@@ -27398,6 +27540,15 @@ function makeImportFolderName(label) {
         if (addHyphen)   return '- '   + lTrimmed;
         return lTrimmed;
       });
+      // v0.1573: default tags for new checkbox-ish items -- applied AFTER
+      // the marker toggles above so lines that only BECOME checkboxes via
+      // the toggle qualify too. Per-line rule: multiple items in one Quick
+      // Add are each tagged individually; lines already containing any
+      // @tag (and non-list lines) are left alone.
+      var _qaDefTags = normalizeTagListSetting(settings.newItemDefaultTags) || '';
+      if (_qaDefTags) {
+        rawBlock = rawBlock.map(function(l) { return appendDefaultTagsToLine(l, _qaDefTags); });
+      }
     }
 
     // ── Splice position + content ── unified across every mode (top,
@@ -32510,6 +32661,23 @@ function handleUrlAction() {
     var title   = params.get('title') || '';
     var url     = params.get('url') || '';
     var nameParam = params.get('name') || '';  // explicit note name parameter
+    // v0.1573: optional tags= parameter overrides the newItemDefaultTags
+    // setting for this one action ('@' optional, commas OK, e.g.
+    // tags=inbox,prioUnset). tags= present-but-empty explicitly suppresses
+    // default tags; absent means "use the setting". Invalid values fail
+    // loudly and fall back to the setting.
+    var _tagsParam = params.get('tags');
+    var _urlEffTags;
+    if (_tagsParam === null) {
+      _urlEffTags = normalizeTagListSetting(settings.newItemDefaultTags) || '';
+    } else {
+      _urlEffTags = normalizeTagListSetting(_tagsParam);
+      if (_urlEffTags === null) {
+        showToast('Invalid tags parameter ignored', true);
+        logDebugAction('URL action: invalid tags parameter "' + _tagsParam + '" -- fell back to the setting');
+        _urlEffTags = normalizeTagListSetting(settings.newItemDefaultTags) || '';
+      }
+    }
 
     // ── action=new with explicit name parameter ───────────────────────────
     // When 'name' is provided, both name and content are mandatory.
@@ -32527,7 +32695,7 @@ function handleUrlAction() {
       notes[id] = {
         id: id,
         name: nameParam.trim(),
-        content: content.trim(),
+        content: appendDefaultTagsToText(content.trim(), _urlEffTags),
         autoNamed: false,  // explicitly named — title won't change when content is edited
         createdAt: Date.now(), editedAt: Date.now(), viewedAt: Date.now()
       };
@@ -32547,6 +32715,9 @@ function handleUrlAction() {
     var name = content
       ? (content.split('\n')[0].trim().substring(0, 40) || uniqueNoteName())
       : uniqueNoteName();
+    // v0.1573: apply default tags AFTER deriving the name, so tags never
+    // leak into the auto-generated note title.
+    content = appendDefaultTagsToText(content, _urlEffTags);
 
     notes[id] = {
       id: id, name: name, content: content, autoNamed: !title,
@@ -32970,23 +33141,9 @@ var _tagAC = (function() {
     }).slice(0, 16); /* popup height unchanged (max-height 220px) — extra tags reachable by scrolling */
   }
 
-  // Shared @token scanner (reuse-don't-duplicate: used by update() AND
-  // _insertTag()): returns the @tag token surrounding the textarea's
-  // caret as { start, end, partial } -- start = index of the '@', end =
-  // one past the last token character (scanning FORWARD past the caret
-  // too, so a caret in the middle of a tag identifies the whole tag),
-  // partial = text between the '@' and the caret (what filtering uses).
-  // Returns null when the caret is not inside an @tag token.
-  function _tokenAtCaret(ta) {
-    var val = ta.value;
-    var pos = ta.selectionStart;
-    var i = pos - 1;
-    while (i >= 0 && /[a-zA-Z0-9_-]/.test(val[i])) i--;
-    if (i < 0 || val[i] !== '@') return null;
-    var end = pos;
-    while (end < val.length && /[a-zA-Z0-9_-]/.test(val[end])) end++;
-    return { start: i, end: end, partial: val.slice(i + 1, pos) };
-  }
+  // _tokenAtCaret was promoted to a true top-level function in v0.1573
+  // (defined near _getNoteTags) so the Layer-1 harness can reach it
+  // (TODO #19). Both update() and _insertTag() below still call it.
 
   // Insert completed tag at the @token the caret is in RIGHT NOW.
   // v0.1572 FIX: previously this spliced from _atStart (the '@' that
