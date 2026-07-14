@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1581 -->
+<!-- Remember App - Version 0.1586 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1581
+  Version 0.1586
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,11 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1586 - FIX for TODO #20, from v0.1585's deployed diagnostics: during an iOS trackpad-mode drag toward the top edge, WebKit's autoscroll-to-caret only scrolls the focused textarea's OWN scrollTop (a no-op -- the wrapper note-content-area is the real scroller), then snaps the selection to index 0 far above the visible window, losing the OS-drawn I-beam permanently (captured: caretY 2538->2238 with areaScroll frozen at 2123, then sel=0/caretY=168). The app now follows the caret with the WRAPPER's scroll, only while a touch is active (trackpad drags always have one): caret outside the usable band (pinned header+toolbar overlay respected at top) scrolls note-content-area to bring it back with a margin -- giving real edge-autoscroll and making any residual sel=0 snap self-healing. Programmatic caret moves are immune by construction (no active touch); taps are already-visible no-ops; arrow keys deliberately not covered yet. 'tpad:'/'tpad-follow:' logging kept one more build for on-device verification.
+  v0.1585 - DIAGNOSTIC build for TODO #20 (iOS trackpad-mode caret drag loses the I-beam off the top): logs 'tpad:' lines on caret-only selection movement (selection changed with no input event -- trackpad drags/taps/arrows; typing filtered out), throttled to 200ms, capturing selectionStart, caret Y in the scroller's content space, note-content-area scrollTop/clientHeight, note-editor's own scrollTop and rect top, and visualViewport offset/height. Hypothesis under test: the textarea never scrolls itself (the wrapper scrolls), so iOS's built-in autoscroll-to-caret has nothing to scroll. No behavior change; instrumentation only, removed after the fix is confirmed.
+  v0.1584 - Replaced the v0.1583 placement segmented control with a custom dropdown (button + popup list), per Lynn's request for something more compact -- deliberately NOT a native <select>, per the documented iOS font-size bug, so it honors the app's UI font size like every other Settings control. At most one dropdown can be open at a time (module-level singleton with a shared closer), fixing a real leak found while building it: removing a stale popup's DOM node on row-rebuild didn't remove its document-level outside-click listener, since each row's close logic was a closure with no way to reach it again afterward.
+  v0.1583 - Toolbar/More-menu button PLACEMENT redesign (per Lynn's request): replaced the binary toolbarHidden array with a sparse toolbarPlacement map (btnId -> 'toolbar'|'more'|'both'|'neither'), and the per-row on/off toggle in Lower Toolbar Buttons with a 4-option segmented control (options vary by category: toolbar-only buttons get Toolbar/Neither; dual-mode buttons -- which already have a static More row -- get all four; everyone else gets Toolbar/More/Neither). 'Neither' (fully hidden) is new and available on nearly everything, including the + button, which is now hideable and paired with note-fab (confirmed both open the identical Quick Add dialog) via the existing SETTINGS_ROW_PAIRS mechanism. Dual-mode static More-menu rows previously had NO tie to visibility at all (always shown); added an explicit, hand-verified id map (DUAL_MODE_STATIC_ROW_IDS) and a force-hide-only sweep so 'neither' actually suppresses them without disturbing their existing mode-based logic. Nothing in this system is exempt from 'neither' -- Settings and swipe-to-delete both live on the home screen, entirely outside this toolbar/menu system, so full note-editor decluttering can never strand anyone. One-time migration converts any saved toolbarHidden. (Design note, not yet built: a savable named profile -- e.g. for Lynn's father -- is deliberately deferred to when the Note Style/App Theme engine has real storage; this build is just the plain data/UI change, unrelated to that timing.)
+  v0.1582 - FIX: Lower Toolbar Buttons reorder/visibility rows ("mostly missing" -- Lynn's report) had two real bugs. (1) toggleSection()'s rebuild hook checked header.parentElement.querySelector('#toolbar-visibility-rows'), which only works while that container's nearest collapsible ancestor is a top-level zone section -- fragile today and would silently break once subsections become independently collapsible (planned next). (2) A SEPARATE, independent click listener on settings-btn also called buildToolbarVisibilityRows(), alongside a dead unused _origOpenSettings variable -- redundant wiring that depended on listener registration order to run after openSettings() populated the dialog. Fix: removed both, and call buildToolbarVisibilityRows() directly inside openSettings() itself (same place Voice's list is populated), so the rows are always built exactly once, correctly, regardless of how Settings was opened or what section state it starts in. CAUGHT BY THE REQUIRED jsdom SMOKE CHECK: wiring the new openSettings() call first exposed that buildToolbarVisibilityRows() itself was declared with `function` INSIDE init() -- invisible to openSettings() at module level, the exact rule this project already documents. Promoted to the standard var-stub-plus-init-assignment pattern (same as applyOutlineMode etc.) in this same build, before delivery.
   v0.1581 - Check-off animation (demo option F, exact timing): new Note Behavior setting checkAnimation ('none' | 'draw' [default] | 'confetti' | 'both'), radio row in Checklist Behavior. Draw animates the optimistic tap-swap checkmark polyline (0.4s); confetti spawns six plain-span dots (0.22s delay + 0.6s flight -- spans, not injected SVG, per the WebKit lesson). On animated checks the full re-render defers until the animation ends (data/undo/save still immediate); the animation is force-skipped whenever the item will auto-move to bottom, keeping that path byte-identical to before (stale-line-index hazard). Honors prefers-reduced-motion. Also per Lynn's request: doMoveCompletedToBottom now takes a pre-operation note snapshot like every other multi-line-rewriting operation.
   v0.1580 - FIX pinch-zoom regression from v0.1570: the permanent iOS maximum-scale=1 relied on "iOS ignores the cap for user pinches," which is only true in the Safari browser -- standalone PWA mode ENFORCES it, killing pinch there. The cap is now dynamic: normal state keeps the original maximum-scale=5 (pinch works in browser and PWA); the cap applies only while a text field is focused (set on touchstart before focus so it precedes the iOS auto-zoom decision, plus focusin for programmatic/tab focus; restored ~350ms after focusout unless focus moved to another text field). Small-font focus auto-zoom stays suppressed; accepted trade-off: no pinch while the keyboard is up. iOS only, as before.
   v0.1579 - Rounded highlight corners, "subtle" option per Lynn's pick from the demo: plain ==highlight== radius 2px -> 3px (it already had 2px + padding; the REAL missing piece found while implementing was box-decoration-break:clone, without which wrapped highlights get square line-break edges -- the squareness actually being seen). clone added to all three highlight variants (plain, ==#hex:, ==#bg|#fg:); the two hex variants already had 3px radius and keep their existing 4px side padding unchanged. Scratch pad Copy/Undo/Redo button gaps widened 6px -> 14px.
@@ -4609,6 +4614,39 @@ body.note-tex-active .note-inline-title-row { background: transparent; }
   display: block;
 }
 
+/* v0.1584: custom dropdown (button + popup list) replacing the v0.1583
+   segmented control, per Lynn's request for something more compact.
+   Deliberately NOT a native <select> -- iOS Safari ignores font-size CSS
+   on native <select> even with -webkit-appearance:none (documented
+   project lesson) -- everything here is built from plain elements so it
+   honors the app's UI font size like every other Settings control.
+   Popup is position:absolute relative to the settings-row (NOT fixed),
+   since it must scroll along with the Settings sheet rather than needing
+   its own scroll-tracking, the way the note-editor's fixed-position
+   popups (tag autocomplete, highlight quick-palette) do. */
+.toolbar-placement-dd { position: relative; flex-shrink: 0; }
+.toolbar-placement-dd-btn {
+  font-family: var(--font-body); font-size: 0.8em; font-weight: var(--font-weight-ui);
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg2); color: var(--fg); cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.toolbar-placement-dd-btn svg { width: 12px; height: 12px; flex-shrink: 0; pointer-events: none; }
+.toolbar-placement-dd-list {
+  position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 30;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25); min-width: 100%; overflow: hidden;
+}
+.toolbar-placement-dd-item {
+  display: block; width: 100%; padding: 8px 12px; border: none; background: none;
+  color: var(--fg); font-family: var(--font-body); font-size: 0.85em; text-align: left;
+  cursor: pointer; white-space: nowrap; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .toolbar-placement-dd-item:hover { background: var(--bg2); } }
+.toolbar-placement-dd-item.active { color: var(--note-accent, var(--accent)); font-weight: 700; }
+
 .settings-subsection-title {
   font-family: var(--font-body);
   font-size: 0.82em;
@@ -7626,8 +7664,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 <div class="settings-subsection-title" style="margin-top:10px">Lower Toolbar Buttons</div>
 
         <div class="settings-row-desc" style="padding:4px 0 10px">
-          Hidden buttons move to the ⋯ More menu. The + button is always visible in the lower toolbar (the More button now lives in the top toolbar).
-          Items marked <sup style="font-weight:700;color:var(--fg3)">T</sup> are toolbar-only — hiding one removes it entirely instead of moving it to the More menu, since it needs a second tap on a note line right after to do anything (e.g. Check State).
+          Choose where each action appears: the lower toolbar, the ⋯ More menu, both, or neither (fully hidden — useful for a simplified setup). Items marked <sup style="font-weight:700;color:var(--fg3)">T</sup> only offer Toolbar or Neither, since they need a second tap on a note line right after to do anything (e.g. Check State) and don't translate well to a menu.
         </div>
         <div id="toolbar-visibility-rows">
           <!-- Rows generated by JS -->
@@ -9686,7 +9723,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1581';
+const APP_VERSION = '0.1586';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11007,7 +11044,12 @@ const DEFAULT_SETTINGS = {
   newItemDefaultTags: '',      // '@tag @tag2' auto-appended to new checkbox-ish items without tags (Note Behavior)
   checkAnimation: 'draw',      // check-off animation: 'none' | 'draw' | 'confetti' | 'both'
   defaultCheckboxIndent: 0,    // default indent levels for new checkbox/hyphen items
-  toolbarHidden: [],           // array of button IDs hidden from bottom toolbar
+  // v0.1583: replaces the old binary toolbarHidden array. Sparse map of
+  // btnId -> 'toolbar' | 'more' | 'both' | 'neither'. Absent key means the
+  // button's own category default (see TOOLBAR_DEFAULT_PLACEMENT below) --
+  // 'toolbar' for a plain hideable button, 'both' for DUAL_MODE_BUTTON_IDS,
+  // 'toolbar' for TOOLBAR_ONLY_BUTTON_IDS (which never offers 'more').
+  toolbarPlacement: {},
   toolbarOrder: [],            // ordered array of button IDs (empty = use default order)
   sortBy: 'viewedAt',           // sort key: viewedAt/editedAt/createdAt/name
   showNoteFab: true,            // show floating + button in note editor
@@ -11120,7 +11162,7 @@ const SETTING_BUCKETS = {
   notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
   rulerEnabled: SETTING_BUCKETS_GENERAL, showLineNumbers: SETTING_BUCKETS_GENERAL, showNoteFab: SETTING_BUCKETS_GENERAL, showNotePreview: SETTING_BUCKETS_GENERAL, showOopsBtn: SETTING_BUCKETS_GENERAL,
   showThemeIndicator: SETTING_BUCKETS_GENERAL, showToolbarCollapseTab: SETTING_BUCKETS_GENERAL, sortBy: SETTING_BUCKETS_GENERAL, sortDesc: SETTING_BUCKETS_GENERAL, sortGroupByDate: SETTING_BUCKETS_GENERAL,
-  theme: SETTING_BUCKETS_GENERAL, timeFormat: SETTING_BUCKETS_GENERAL, todaySuffix: SETTING_BUCKETS_GENERAL, toolbarHidden: SETTING_BUCKETS_GENERAL, toolbarOrder: SETTING_BUCKETS_GENERAL,
+  theme: SETTING_BUCKETS_GENERAL, timeFormat: SETTING_BUCKETS_GENERAL, todaySuffix: SETTING_BUCKETS_GENERAL, toolbarPlacement: SETTING_BUCKETS_GENERAL, toolbarOrder: SETTING_BUCKETS_GENERAL,
   tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL,
   uiLineHeight: SETTING_BUCKETS_GENERAL, uiBlankLineHeight: SETTING_BUCKETS_GENERAL,
   // ---- NOTE_APPEARANCE (50) ----
@@ -11412,6 +11454,13 @@ var isHeadingRaw = function() { return false; }; // replaced in init
 var getHeadingLevel = function() { return 0; }; // replaced in init
 var getParentDescendants = function() { return []; }; // replaced in init
 var applyOutlineMode = function() {};
+// v0.1582 FIX: buildToolbarVisibilityRows() was declared with the
+// `function` keyword INSIDE init() -- invisible to openSettings(), which
+// is itself module-level. Caught by jsdom smoke-calling openSettings()
+// after wiring its call there in this same build (the project's own
+// "module-level scope" rule, applied here after nearly repeating the
+// mistake it warns about). Promoted to the standard stub pattern.
+var buildToolbarVisibilityRows = function() {};
 var checkTopBarOverflow = function() {}; // defined inside init() // replaced in init
 var _updateRuledLineRowVisibility = function() {}; // defined inside init(); called from openSettings() too — must be module-level
 var closeAllBars = function() {}; // replaced in init
@@ -18374,6 +18423,7 @@ function openSettings() {
   updateSwatches();
 
   populateVoices();
+  buildToolbarVisibilityRows(); // v0.1582: moved here from a separate, order-dependent settings-btn listener -- see that removal's comment above
 
   var srr = document.getElementById('speech-rate-range');
   srr.value = settings.speechRate;
@@ -19536,7 +19586,13 @@ function init() {
       settings.sectionStates[getDialogSectionKey(section)] = isOpen;
       saveSettings();
       if (isOpen && section.querySelector('#voice-select')) populateVoices();
-      if (isOpen && section.querySelector('#toolbar-visibility-rows')) buildToolbarVisibilityRows();
+      // v0.1582: removed the toolbar-visibility-rows rebuild from here --
+      // it assumed the toggled section (header.parentElement) is always
+      // the correct ancestor to check, which silently stops being true
+      // once subsections become independently collapsible (a future
+      // build). Rebuilding is now owned entirely by openSettings() (see
+      // that function) and the reset/move handlers that already existed;
+      // see the v0.1582 changelog entry for the full story.
     }
 
     header.addEventListener('touchstart', function(e) {
@@ -21174,6 +21230,10 @@ function makeImportFolderName(label) {
   var SETTINGS_ROW_PAIRS = [
     ['undo-btn', 'redo-btn'],
     ['indent-btn', 'dedent-btn'],
+    // v0.1583: quick-add-btn (toolbar icon) and note-fab (floating +) open
+    // the identical Quick Add dialog -- confirmed by reading both click
+    // handlers -- so one settings row controls both, same as the others.
+    ['quick-add-btn', 'note-fab'],
   ];
   // Look up a pair by either member id; returns null if btnId isn't paired.
   function getSettingsRowPair(btnId) {
@@ -21204,7 +21264,95 @@ function makeImportFolderName(label) {
   // again, rather than relocating it into the More menu.
   var TOOLBAR_ONLY_BUTTON_IDS = ['tap-to-edit-btn', 'check-mode-btn', 'add-blank-line-btn', 'toolbar-help-btn'];
 
+  // v0.1583: per-category default placement, and which placements each
+  // category is even ALLOWED to choose in the segmented control. Every
+  // category now also permits 'neither' (hide entirely) -- Lynn's
+  // explicit request that nearly everything, including quick-add/+,
+  // be fully hideable for a heavily simplified profile (e.g. for his
+  // father). Nothing in this app is protected from 'neither': the real
+  // Settings entry and swipe-to-delete both live on the HOME SCREEN,
+  // entirely outside HIDEABLE_BUTTONS/this toolbar system, so hiding
+  // everything in a note's toolbar+menu can never strand someone --
+  // confirmed by locating settings-btn (home header) and the note-item
+  // swipe-delete wrapper (home screen) before this build.
+  var TOOLBAR_PLACEMENT_OPTIONS = {
+    toolbarOnly: ['toolbar', 'neither'],                    // TOOLBAR_ONLY_BUTTON_IDS: no menu fallback exists
+    dualMode:    ['toolbar', 'more', 'both', 'neither'],     // DUAL_MODE_BUTTON_IDS: has its own static More row
+    normal:      ['toolbar', 'more', 'neither'],             // everyone else: dynamic-only More fallback, no simultaneous "both" row to build
+  };
+  function toolbarPlacementCategory(btnId) {
+    if (TOOLBAR_ONLY_BUTTON_IDS.indexOf(btnId) !== -1) return 'toolbarOnly';
+    if (DUAL_MODE_BUTTON_IDS.indexOf(btnId) !== -1) return 'dualMode';
+    return 'normal';
+  }
+  function toolbarPlacementDefault(btnId) {
+    return toolbarPlacementCategory(btnId) === 'dualMode' ? 'both' : 'toolbar';
+  }
+  // v0.1583: static More-menu row id for each DUAL_MODE_BUTTON_IDS entry.
+  // These rows previously had NO visibility tie to toolbarHidden at all --
+  // this is the missing piece that makes 'neither' actually work for a
+  // dual-mode button (today they're unconditionally shown whenever the
+  // note screen's own mode logic allows them).
+  var DUAL_MODE_STATIC_ROW_IDS = {
+    'print-btn': 'more-print-btn', 'find-btn': 'more-find-btn',
+    'font-size-btn': 'more-font-size-btn', 'delete-note-btn': 'more-delete-note-btn',
+    'dictate-btn': 'more-dictate-btn', 'dismiss-keyboard-btn': 'more-done-typing-btn',
+    'select-all-btn': 'more-select-all-btn', 'ruler-btn': 'more-ruler-btn',
+    'theme-btn': 'more-note-theme-btn', 'jump-to-btn': 'more-jump-to-btn',
+    'outline-mode-btn': 'more-outline-btn', 'show-tags-btn': 'more-show-tags-btn',
+    'insert-tag-btn': 'more-insert-tag-btn', 'tag-filter-btn': 'more-tag-filter-btn',
+    'settings-btn-toolbar': 'more-settings-btn', 'copy-for-speech-btn': 'more-copy-for-speech-btn',
+    'share-note-btn': 'more-share-btn', 'share-for-speech-btn': 'more-share-for-speech-btn',
+    'uncheck-all-btn': 'more-uncheck-all-btn', 'hide-completed-btn': 'more-hide-completed-btn',
+    'scroll-top-btn': 'more-scroll-top-btn', 'scroll-bottom-btn': 'more-scroll-bottom-btn',
+    'tag-presence-btn': 'more-tag-presence-btn', 'jump-next-section-btn': 'more-jump-next-section-btn',
+  };
+  // Only ever FORCE-HIDE for 'neither'; never force-show -- exactly the
+  // same discipline as MODE_GATED_BUTTON_IDS above, so this can never
+  // fight a row's own mode-based visibility logic (kb-open, view-only,
+  // etc.), which continues to run separately and unmodified.
+  function applyDualModeNeitherOverrides() {
+    DUAL_MODE_BUTTON_IDS.forEach(function(btnId) {
+      var rowId = DUAL_MODE_STATIC_ROW_IDS[btnId];
+      if (!rowId) return;
+      var el = document.getElementById(rowId);
+      if (!el) return;
+      if (getToolbarPlacement(btnId) === 'neither') el.style.display = 'none';
+    });
+  }
+  // Effective placement for one button id: explicit override, else its
+  // category default. rowIds[0] is always used for a pair (see callers).
+  function getToolbarPlacement(btnId) {
+    var p = settings.toolbarPlacement || {};
+    return p[btnId] || toolbarPlacementDefault(btnId);
+  }
+  // Shared predicate: is btnId's TOOLBAR copy hidden? True for 'more' and
+  // 'neither' alike, false for 'toolbar'/'both'. This is the SAME check
+  // several call sites across the file need (dictate visibility, jump-to/
+  // outline/tag/uncheck-all buttons, tap-to-edit, the toolbar-help preview)
+  // -- promoted to one shared function instead of re-deriving it locally
+  // in each, per the project's reuse-don't-duplicate rule.
+  function isToolbarPlacementHidden(btnId) {
+    var p = getToolbarPlacement(btnId);
+    return !(p === 'toolbar' || p === 'both');
+  }
+
   var HIDEABLE_BUTTONS = [
+    // v0.1583: quick-add-btn/note-fab were deliberately excluded before
+    // (see the old comment this replaces, previously a few lines below:
+    // "skip buttons not in HIDEABLE_BUTTONS (e.g. quick-add)"). Per
+    // Lynn's explicit request the + button is now hideable too, paired
+    // with note-fab via SETTINGS_ROW_PAIRS above.
+    { id: 'quick-add-btn',           label: 'Add text (+)' },
+    // v0.1583 FIX: note-fab must ALSO be a real HIDEABLE_BUTTONS entry --
+    // caught by the jsdom smoke test (buildToolbarVisibilityRows threw
+    // reading .label of undefined). The pair label lookup does
+    // HIDEABLE_BUTTONS.filter(x=>x.id===pair[0/1])[0].label for BOTH
+    // members, so a pair member missing from this list breaks the row
+    // for the whole pair, not just its own half. note-fab's own row is
+    // never actually built (getSettingsRowPair skips the second half),
+    // but it still needs a real entry here for the label lookup to work.
+    { id: 'note-fab',                label: 'Add text (+)' },
     { id: 'toolbar-help-btn',        label: 'Toolbar help' },
     { id: 'tap-to-edit-btn',        label: 'Tap to edit' },
     { id: 'undo-btn',               label: 'Undo' },
@@ -21249,7 +21397,7 @@ function makeImportFolderName(label) {
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'quick-add-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['quick-add-btn', 'tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -21451,17 +21599,27 @@ function makeImportFolderName(label) {
 
   // Apply hidden state: hide toolbar buttons and rebuild More menu items
   function applyToolbarVisibility() {
-    var hidden = settings.toolbarHidden || [];
+    // v0.1583: a button's TOOLBAR copy is hidden whenever its placement
+    // is anything other than 'toolbar' or 'both' -- i.e. hidden for
+    // 'more' AND for 'neither' alike. dataset.toolbarHidden keeps its
+    // old name/meaning ("hide the toolbar copy") since every downstream
+    // reader of it (MODE_GATED_BUTTON_IDS logic, etc.) only ever cared
+    // about the toolbar's own visibility, never about placement as a
+    // whole -- that finer distinction is resolved separately, in
+    // rebuildMoreMenuItems(), which is the only place 'neither' vs
+    // 'more' actually matters.
     HIDEABLE_BUTTONS.forEach(function(b) {
       var el = document.getElementById(b.id);
       if (!el) return;
-      if (hidden.indexOf(b.id) !== -1) {
-        el.dataset.toolbarHidden = '1';
-      } else {
+      var placement = getToolbarPlacement(b.id);
+      if (placement === 'toolbar' || placement === 'both') {
         delete el.dataset.toolbarHidden;
+      } else {
+        el.dataset.toolbarHidden = '1';
       }
     });
     applyToolbarHiddenOverrides();
+    applyDualModeNeitherOverrides();
     rebuildMoreMenuItems();
     if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
   }
@@ -21497,17 +21655,18 @@ function makeImportFolderName(label) {
     'uncheck-all-btn', 'hide-completed-btn', 'tag-presence-btn', 'jump-next-section-btn'];
 
   function applyToolbarHiddenOverrides() {
-    var hidden = settings.toolbarHidden || [];
+    // v0.1583: 'toolbar'/'both' -> shown, anything else ('more'/'neither')
+    // -> hidden -- via the shared isToolbarPlacementHidden() above.
     HIDEABLE_BUTTONS.forEach(function(b) {
       var el = document.getElementById(b.id);
       if (!el) return;
       if (MODE_GATED_BUTTON_IDS.indexOf(b.id) !== -1) {
         // Only ever force-hide; never force-show. Showing is decided by
         // this button's own mode logic, called separately and later.
-        if (hidden.indexOf(b.id) !== -1) el.style.display = 'none';
+        if (isToolbarPlacementHidden(b.id)) el.style.display = 'none';
         return;
       }
-      el.style.display = (hidden.indexOf(b.id) !== -1) ? 'none' : '';
+      el.style.display = isToolbarPlacementHidden(b.id) ? 'none' : '';
     });
     // crossout-group: hide/show the entire group div together.
     // Must be 'flex', not '' — crossout-group is a <div> with no CSS class
@@ -21517,7 +21676,7 @@ function makeImportFolderName(label) {
     // button inline-block issue, but for a div instead of a button).
     var crossoutGroup = document.getElementById('crossout-group');
     if (crossoutGroup) {
-      crossoutGroup.style.display = (hidden.indexOf('crossout-group') !== -1) ? 'none' : 'flex';
+      crossoutGroup.style.display = isToolbarPlacementHidden('crossout-group') ? 'none' : 'flex';
       // actual show/hide of children handled by updateViewOnlyBtns
     }
   }
@@ -21533,14 +21692,15 @@ function makeImportFolderName(label) {
     // rebuildMoreMenuItems() is guaranteed to have just run this.
     updateViewOnlyBtns();
     container.innerHTML = '';
-    var hidden = settings.toolbarHidden || [];
     var kbOpen = document.getElementById('note-screen').classList.contains('keyboard-open');
 
-    // Sort hidden items to match toolbar order
+    // v0.1583: a DYNAMIC row is built only for placement === 'more'.
+    // 'neither' must NOT reach this list -- there is no dynamic row for
+    // it to build here in the first place (nothing here has ever built
+    // a "hidden entirely" row); dual-mode 'neither' is instead handled
+    // by applyDualModeNeitherOverrides() hiding that button's STATIC row.
     var _order = getEffectiveOrder();
-    var _sortedHidden = _order.filter(function(id) { return hidden.indexOf(id) !== -1; });
-    // Add any hidden items not in order (safety)
-    hidden.forEach(function(id) { if (_sortedHidden.indexOf(id) === -1) _sortedHidden.push(id); });
+    var _sortedHidden = _order.filter(function(id) { return getToolbarPlacement(id) === 'more'; });
 
     // Select all used to be built dynamically here every time the menu
     // opened; it's now a real static HTML entry (more-select-all-btn,
@@ -21552,8 +21712,13 @@ function makeImportFolderName(label) {
       var info = HIDEABLE_BUTTONS.filter(function(b) { return b.id === btnId; })[0];
       if (!info) return;
       // Dual-mode buttons (print, find, text size, delete note, dictate)
-      // already have their own permanent static row elsewhere in this
-      // menu — skip building a duplicate dynamic row for them here.
+      // have their own STATIC row elsewhere in this menu, never a dynamic
+      // one -- their placement is enforced by applyDualModeNeitherOverrides
+      // instead. (In practice this filter never even matches a dual-mode
+      // id anymore, since _sortedHidden above only contains 'more'-placed
+      // ids, and dual-mode buttons default to 'both' -- but this guard is
+      // kept as defense-in-depth in case a dual-mode button is ever
+      // explicitly set to 'more' rather than 'both'.)
       if (DUAL_MODE_BUTTON_IDS.indexOf(btnId) !== -1) return;
       // Tap items (Tap to Edit, Check State) never get a dynamic row
       // either — see TOOLBAR_ONLY_BUTTON_IDS comment above.
@@ -21726,11 +21891,27 @@ function makeImportFolderName(label) {
   }
 
   // Build the toolbar visibility + order Settings rows
-  function buildToolbarVisibilityRows() {
+  // v0.1584: single shared reference for "the currently open placement
+  // dropdown, if any" -- avoids a real leak where each row's own
+  // closeDd/onOutsideDd closures became unreachable after a rebuild
+  // (removing the popup's DOM node did not remove its document-level
+  // pointerdown listener). One shared closer also means opening a second
+  // dropdown correctly closes the first, rather than allowing two open
+  // at once.
+  var _openPlacementDd = null; // { list, btn, outsideHandler } or null
+  function closeOpenPlacementDd() {
+    if (!_openPlacementDd) return;
+    _openPlacementDd.list.remove();
+    _openPlacementDd.btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', _openPlacementDd.outsideHandler, true);
+    _openPlacementDd = null;
+  }
+
+  buildToolbarVisibilityRows = function() {
     var container = document.getElementById('toolbar-visibility-rows');
     if (!container) return;
-    var hidden = settings.toolbarHidden || [];
-    var order  = getEffectiveOrder();
+    var order  = getEffectiveOrder(); // v0.1583: placement now read per-row via getToolbarPlacement()
+    closeOpenPlacementDd(); // v0.1584: tear down before rebuilding, not just remove its DOM node
     container.innerHTML = '';
     // First/last must be judged in VISUAL units (see getToolbarVisualUnits),
     // not raw order indexes — a hidden entry at either end used to leave an
@@ -21742,7 +21923,7 @@ function makeImportFolderName(label) {
     // Show buttons in current toolbar order
     order.forEach(function(btnId, idx) {
       var b = HIDEABLE_BUTTONS.filter(function(x) { return x.id === btnId; })[0];
-      if (!b) return; // skip buttons not in HIDEABLE_BUTTONS (e.g. quick-add)
+      if (!b) return; // skip buttons not in HIDEABLE_BUTTONS
 
       // Combined-pair handling (see SETTINGS_ROW_PAIRS): the second member
       // of a pair gets no row of its own; the first member's row represents
@@ -21754,14 +21935,16 @@ function makeImportFolderName(label) {
                               ' / ' + HIDEABLE_BUTTONS.filter(function(x){return x.id===pair[1];})[0].label)
                            : b.label;
 
-      var isHidden  = hidden.indexOf(rowIds[0]) !== -1; // pair members always share hidden state
+      var placement = getToolbarPlacement(rowIds[0]); // pair members always share placement
+      var placementCategory = toolbarPlacementCategory(rowIds[0]);
+      var placementOptions = TOOLBAR_PLACEMENT_OPTIONS[placementCategory];
       var isFirst   = rowIds[0] === _firstRowId;
       var isLast    = rowIds[0] === _lastRowId;
       var isLocked  = false;
 
       var row = document.createElement('div');
       row.className = 'settings-row';
-      row.style.cssText = 'padding-top:4px;padding-bottom:4px;gap:6px;align-items:center';
+      row.style.cssText = 'padding-top:4px;padding-bottom:4px;gap:6px;align-items:center;position:relative';
 
       // ▲ arrow span
       var upSpan = document.createElement('span');
@@ -21819,33 +22002,84 @@ function makeImportFolderName(label) {
       labelDiv.style.flex = '1';
       labelDiv.innerHTML = '<div class="settings-row-label">' + rowLabel + _toolbarOnlyMark + '</div>';
 
-      // Visibility toggle
-      var toggleLabel = document.createElement('label');
-      toggleLabel.className = 'toggle-switch';
-      toggleLabel.setAttribute('aria-label', 'Show ' + rowLabel);
-      toggleLabel.innerHTML =
-        '<input type="checkbox"' + (!isHidden ? ' checked' : '') + '>' +
-        '<span class="toggle-track"><span class="toggle-thumb"></span></span>';
-      toggleLabel.querySelector('input').addEventListener('change', function() {
-        var hiddenArr = (settings.toolbarHidden || []).slice();
-        if (this.checked) {
-          hiddenArr = hiddenArr.filter(function(id) { return rowIds.indexOf(id) === -1; });
-        } else {
-          rowIds.forEach(function(id) {
-            if (hiddenArr.indexOf(id) === -1) hiddenArr.push(id);
-          });
-        }
-        settings.toolbarHidden = hiddenArr;
-        // Tap to edit: exit the active edit-block mode if its button is
-        // being hidden while in use (preserves behavior from the old
-        // standalone showTapToEditBtn toggle this row replaced).
-        if (rowIds.indexOf('tap-to-edit-btn') !== -1 && !this.checked && _editBlockMode) {
+      // v0.1584: custom dropdown (button + popup list), replacing the
+      // v0.1583 segmented control -- more compact per Lynn's request, and
+      // avoids the native <select> iOS font-size bug (see CSS comment
+      // above). Options are per-category (see TOOLBAR_PLACEMENT_OPTIONS):
+      // toolbar-only buttons get Toolbar/Neither; dual-mode buttons get
+      // all four; everyone else gets Toolbar/More/Neither (no simultaneous
+      // "Both" row exists to build for a plain hideable button).
+      var PLACEMENT_LABELS = { toolbar: 'Toolbar', more: 'Menu', both: 'Both', neither: 'Neither' };
+      var ddWrap = document.createElement('div');
+      ddWrap.className = 'toolbar-placement-dd';
+      var ddBtn = document.createElement('button');
+      ddBtn.type = 'button';
+      ddBtn.className = 'toolbar-placement-dd-btn';
+      ddBtn.setAttribute('aria-haspopup', 'listbox');
+      ddBtn.setAttribute('aria-expanded', 'false');
+      ddBtn.setAttribute('aria-label', rowLabel + ' placement: ' + PLACEMENT_LABELS[placement]);
+      var ddBtnLabel = document.createElement('span');
+      ddBtnLabel.textContent = PLACEMENT_LABELS[placement];
+      ddBtn.appendChild(ddBtnLabel);
+      ddBtn.insertAdjacentHTML('beforeend',
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>');
+      function onOutsideDd(e) {
+        if (_openPlacementDd && !ddWrap.contains(e.target)) closeOpenPlacementDd();
+      }
+      function selectPlacement(opt) {
+        var map = settings.toolbarPlacement ? Object.assign({}, settings.toolbarPlacement) : {};
+        // Sparse: storing the category default is redundant, but harmless
+        // and simpler than special-casing "equals default -> delete key"
+        // on every change; validateSettingBuckets-style drift isn't a
+        // concern here since this is a plain object, not DEFAULT_SETTINGS.
+        rowIds.forEach(function(id) { map[id] = opt; });
+        settings.toolbarPlacement = map;
+        // Tap to edit: exit the active edit-block mode if its toolbar
+        // presence is being removed while in use (preserves behavior
+        // from the old standalone showTapToEditBtn toggle this row
+        // replaced).
+        if (rowIds.indexOf('tap-to-edit-btn') !== -1 && opt !== 'toolbar' && opt !== 'both' && _editBlockMode) {
           exitEditBlockMode();
         }
+        placement = opt;
+        ddBtnLabel.textContent = PLACEMENT_LABELS[opt];
+        ddBtn.setAttribute('aria-label', rowLabel + ' placement: ' + PLACEMENT_LABELS[opt]);
         applyToolbarVisibility();
         updateViewOnlyBtns();
         updateSaveBtnState();
+      }
+      ddBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var wasOpenForThisRow = _openPlacementDd && _openPlacementDd.btn === ddBtn;
+        closeOpenPlacementDd(); // closes ANY other row's open dropdown too
+        if (wasOpenForThisRow) return; // click was just toggling this one closed
+        var ddList = document.createElement('div');
+        ddList.className = 'toolbar-placement-dd-list';
+        ddList.setAttribute('role', 'listbox');
+        placementOptions.forEach(function(opt) {
+          var item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'toolbar-placement-dd-item' + (placement === opt ? ' active' : '');
+          item.setAttribute('role', 'option');
+          item.setAttribute('aria-selected', placement === opt ? 'true' : 'false');
+          item.textContent = PLACEMENT_LABELS[opt];
+          item.addEventListener('click', function(e2) {
+            e2.stopPropagation();
+            selectPlacement(opt);
+            closeOpenPlacementDd();
+          });
+          ddList.appendChild(item);
+        });
+        ddWrap.appendChild(ddList);
+        ddBtn.setAttribute('aria-expanded', 'true');
+        _openPlacementDd = { list: ddList, btn: ddBtn, outsideHandler: onOutsideDd };
+        // Deferred so THIS click doesn't immediately close the popup it
+        // just opened (the listener is capture-phase and fires on the
+        // bubble back up from this same click otherwise).
+        setTimeout(function() { document.addEventListener('pointerdown', onOutsideDd, true); }, 0);
       });
+      ddWrap.appendChild(ddBtn);
+      var toggleLabel = ddWrap; // keep the existing append-order variable name below
 
       // Layout: label | toggle | ▲ ▼  (arrows at far right for right-handed use)
       // Layout: label (flex:1) | ▲ | ▼ | toggle | right-padding
@@ -22264,11 +22498,16 @@ function makeImportFolderName(label) {
 
 
 
-  // Load toolbar visibility settings when Settings opens
-  var _origOpenSettings = document.getElementById('settings-btn').onclick;
-  document.getElementById('settings-btn').addEventListener('click', function() {
-    buildToolbarVisibilityRows();
-  });
+  // v0.1582: removed a second, independent click listener on settings-btn
+  // that called buildToolbarVisibilityRows() (plus its dead _origOpenSettings
+  // var, which nothing ever called -- looked like a wrap-openSettings
+  // attempt that was never finished). It ran in a SEPARATE listener from
+  // openSettings() itself, so it depended on browser event-listener
+  // registration order to fire after openSettings() populated the dialog
+  // -- fragile, and it only ever fired on this ONE specific button, not on
+  // Settings becoming visible via any other path. buildToolbarVisibilityRows()
+  // is now called directly inside openSettings() (see that function) --
+  // one place, always correct regardless of how Settings was opened.
 
   // Migration: remove retired buttons from saved order, add new ones
   // Retired = moved out of toolbar to More menu or removed entirely
@@ -22282,8 +22521,26 @@ function makeImportFolderName(label) {
   // be checked BEFORE insertMissingIdsAtDefaultPosition runs below, since
   // that function adds missing ids to the order — after which "was this
   // id missing" would no longer mean "has the user never seen this yet".
-  var _hiddenArr = settings.toolbarHidden || [];
-  settings.toolbarHidden = _hiddenArr;
+  // v0.1583: one-time migration from the old binary toolbarHidden array
+  // to the new 4-state toolbarPlacement map. hidden -> 'more' normally,
+  // but 'neither' for TOOLBAR_ONLY_BUTTON_IDS (which never had a menu
+  // fallback to move into -- hiding one of those always meant "gone",
+  // same meaning 'neither' has now). Not-hidden needs no entry: absence
+  // already means "category default" (== 'both' for dual-mode, 'toolbar'
+  // otherwise), which is exactly what not-hidden meant before. Runs only
+  // when the OLD key is actually present, so this is a true one-time
+  // conversion, not a per-load re-derivation.
+  if (settings.toolbarHidden && !settings._toolbarPlacementMigrated) {
+    var _migratedMap = settings.toolbarPlacement ? Object.assign({}, settings.toolbarPlacement) : {};
+    settings.toolbarHidden.forEach(function(id) {
+      _migratedMap[id] = (TOOLBAR_ONLY_BUTTON_IDS.indexOf(id) !== -1) ? 'neither' : 'more';
+    });
+    settings.toolbarPlacement = _migratedMap;
+    settings._toolbarPlacementMigrated = true;
+    logDebugAction('Migrated toolbarHidden -> toolbarPlacement (' + settings.toolbarHidden.length + ' entries)');
+  }
+  delete settings.toolbarHidden;
+  if (!settings.toolbarPlacement) settings.toolbarPlacement = {};
   // Insert any id that's in DEFAULT_TOOLBAR_ORDER but missing from the
   // user's saved order (e.g. a newly-added button like tap-to-edit-btn)
   // at its correct default-relative position — not just appended to the
@@ -22296,11 +22553,12 @@ function makeImportFolderName(label) {
   // only correcting it transiently every time getEffectiveOrder() runs.
   _savedOrder = normalizePairAdjacency(_savedOrder);
   settings.toolbarOrder = _savedOrder;
-  // Also strip retired buttons from toolbarHidden
-  if (settings.toolbarHidden) {
-    settings.toolbarHidden = settings.toolbarHidden.filter(function(id) {
-      return _retiredBtns.indexOf(id) === -1;
-    });
+  // v0.1583: this used to strip retired buttons from toolbarHidden here --
+  // now dead code, since the migration above already deletes that key
+  // before this point ever runs. Replaced with the equivalent cleanup on
+  // toolbarPlacement, the map that actually exists now.
+  if (settings.toolbarPlacement) {
+    _retiredBtns.forEach(function(id) { delete settings.toolbarPlacement[id]; });
   }
   // Persist cleaned settings immediately so stale data doesn't survive a reload
   try { localStorage.setItem(storeKey('remember_settings'), JSON.stringify(settings)); } catch(e) {}
@@ -22849,6 +23107,99 @@ function makeImportFolderName(label) {
     }, 0);
   });
 
+  // v0.1585 DIAGNOSTIC (TODO #20, iOS trackpad-mode I-beam lost off the
+  // top): log the full scroll/caret picture on CARET-ONLY movement --
+  // selection changes with no input event in between, which is exactly
+  // what trackpad drags, taps, and arrow keys produce; ordinary typing
+  // (which also fires selectionchange) is filtered out so the debug log
+  // isn't flooded (the applyRuledLines lesson). Throttled to 200ms.
+  // Architecture context for whoever reads the numbers: note-editor is a
+  // full-height textarea that never scrolls ITSELF -- the wrapper
+  // note-content-area is the real scroller. Hypothesis under test: iOS's
+  // trackpad autoscroll-to-caret only scrolls the focused textarea's own
+  // scrollTop (a no-op here), never the ancestor div, so dragging above
+  // the visible top moves the caret with nothing following it. If so,
+  // expect: caretY shrinking below area.scrollTop (caret above the
+  // visible window) while area.scrollTop stays FROZEN and ed.scrollTop
+  // stays 0 throughout. Remove after the fix is confirmed on device.
+  // v0.1586 FIX (TODO #20), built on the v0.1585 diagnostics, whose
+  // deployed capture showed the precise failure: during a trackpad drag
+  // toward the top edge, the caret walked smoothly (caretY 2538->2238)
+  // with note-content-area's scrollTop FROZEN and the textarea's own
+  // scrollTop at 0 (it never overflows -- the wrapper is the real
+  // scroller), then WebKit snapped the selection to index 0 (caretY 168,
+  // ~1950px above the visible window), where the OS I-beam -- drawn at
+  // the caret -- became invisible and stayed lost. Root cause: iOS's
+  // autoscroll-to-caret only knows how to scroll the focused textarea
+  // itself, which is a no-op here; it never scrolls the ancestor div.
+  //
+  // Fix: the app follows the caret with the WRAPPER's scroll, but ONLY
+  // while a finger is actually down (trackpad drags always have an
+  // active touch). This both provides real edge-autoscroll and makes the
+  // sel=0 snap self-healing (caret at 0 -> scroll to top -> I-beam
+  // visible again). Programmatic selection moves (mode-switch scroll
+  // preservation parks the caret at 0,0 deliberately) are immune BY
+  // CONSTRUCTION: no touch is active when they run. Taps are naturally
+  // unaffected (a tapped caret is already visible -> no-op). Arrow keys
+  // deliberately not covered in this first pass (no touch active).
+  // The 'tpad:' diagnostic logging is kept for one more build to verify
+  // the fix with numbers on device; remove after confirmation.
+  var _tpadInputSinceSel = false;
+  var _tpadLastLog = 0;
+  var _tpadLastFollow = 0;
+  var _tpadTouchCount = 0;
+  document.addEventListener('touchstart',  function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
+  document.addEventListener('touchend',    function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
+  document.addEventListener('touchcancel', function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
+  noteEditor.addEventListener('input', function() { _tpadInputSinceSel = true; });
+  document.addEventListener('selectionchange', function() {
+    if (document.activeElement !== noteEditor) return;
+    if (_tpadInputSinceSel) { _tpadInputSinceSel = false; return; } // typing, not a caret-only move
+    var now = Date.now();
+    var doFollow = _tpadTouchCount > 0 && (now - _tpadLastFollow >= 80);
+    var doLog = (now - _tpadLastLog >= 200);
+    if (!doFollow && !doLog) return;
+    try {
+      var area = document.getElementById('note-content-area');
+      var vv = window.visualViewport;
+      var caretY = getCursorY(noteEditor); // Y within area's content space
+      if (doFollow) {
+        _tpadLastFollow = now;
+        // Usable viewport within the area: the pinned header + toolbar
+        // overlay the top of the box (content scrolls underneath them),
+        // so the caret only truly shows below that overlay.
+        var topClear = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + 12;
+        var bottomClear = 40; // caret line height + breathing room
+        var viewTop = area.scrollTop + topClear;
+        var viewBottom = area.scrollTop + area.clientHeight - bottomClear;
+        var newScroll = null;
+        if (caretY < viewTop) newScroll = Math.max(0, caretY - topClear);
+        else if (caretY > viewBottom) newScroll = caretY - area.clientHeight + bottomClear;
+        if (newScroll !== null && Math.round(newScroll) !== Math.round(area.scrollTop)) {
+          var oldScroll = area.scrollTop;
+          area.scrollTop = newScroll;
+          logDebugAction('tpad-follow: caretY=' + Math.round(caretY) +
+            ' scroll ' + Math.round(oldScroll) + '->' + Math.round(area.scrollTop));
+        }
+      }
+      if (doLog) {
+        _tpadLastLog = now;
+        var edRect = noteEditor.getBoundingClientRect();
+        logDebugAction('tpad: sel=' + noteEditor.selectionStart +
+          ' caretY=' + Math.round(caretY) +
+          ' areaScroll=' + Math.round(area.scrollTop) +
+          ' areaH=' + Math.round(area.clientHeight) +
+          ' edScroll=' + Math.round(noteEditor.scrollTop) +
+          ' edTop=' + Math.round(edRect.top) +
+          ' touch=' + _tpadTouchCount +
+          ' vvOff=' + (vv ? Math.round(vv.offsetTop) : 'n/a') +
+          ' vvH=' + (vv ? Math.round(vv.height) : 'n/a'));
+      }
+    } catch (e) {
+      logDebugAction('tpad diagnostic/follow failed: ' + (e && e.message));
+    }
+  });
+
   // Exit EMTIP when editor loses focus (keyboard closes)
   noteEditor.addEventListener('blur', function() {
     kbBlurTimer = setTimeout(function() {
@@ -22997,7 +23348,7 @@ function makeImportFolderName(label) {
     // function runs on every keyboard open/close and was previously the
     // one place that could re-show dictate-btn without checking it,
     // silently overriding the user's setting each time the keyboard opened.
-    var hiddenByUser = (settings.toolbarHidden || []).indexOf('dictate-btn') !== -1;
+    var hiddenByUser = isToolbarPlacementHidden('dictate-btn');
     if (SpeechRecognition && navigator.onLine && inEMTIP && !hiddenByUser) {
       dictateBtn.style.display = '';
     } else {
@@ -26529,7 +26880,7 @@ function makeImportFolderName(label) {
     var _currentOrder = (settings.toolbarOrder && settings.toolbarOrder.length)
       ? settings.toolbarOrder : DEFAULT_TOOLBAR_ORDER;
     var _hiddenSet = {};
-    (settings.toolbarHidden || []).forEach(function(id) { _hiddenSet[id] = true; });
+    HIDEABLE_BUTTONS.forEach(function(b) { if (isToolbarPlacementHidden(b.id)) _hiddenSet[b.id] = true; });
     var _lowerMap = {};
     _TOOLBAR_HELP_LOWER.forEach(function(b) { _lowerMap[b.id] = b; });
 
@@ -27174,8 +27525,8 @@ function makeImportFolderName(label) {
   });
   document.getElementById('reset-toolbar-order-btn').addEventListener('click', function() {
     // Reset order and hidden to defaults — keep other settings untouched
-    settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
-    settings.toolbarHidden = [];
+settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
+    settings.toolbarPlacement = {};
     buildToolbarVisibilityRows();
     applyToolbarOrder();
     applyToolbarVisibility();
@@ -28184,34 +28535,33 @@ function makeImportFolderName(label) {
     // only, AND respect the "Lower Toolbar Buttons" hidden setting —
     // unlike the buttons in the array above, these are also individually
     // hideable via Settings, so inView alone isn't sufficient here.
-    var _hiddenList = settings.toolbarHidden || [];
     var jumpToBtnEl = document.getElementById('jump-to-btn');
-    if (jumpToBtnEl) jumpToBtnEl.style.display = (inView && _hiddenList.indexOf('jump-to-btn') === -1) ? '' : 'none';
+    if (jumpToBtnEl) jumpToBtnEl.style.display = (inView && !isToolbarPlacementHidden('jump-to-btn')) ? '' : 'none';
     var jumpNextSectionBtnEl = document.getElementById('jump-next-section-btn');
-    if (jumpNextSectionBtnEl) jumpNextSectionBtnEl.style.display = (inView && _hiddenList.indexOf('jump-next-section-btn') === -1) ? '' : 'none';
+    if (jumpNextSectionBtnEl) jumpNextSectionBtnEl.style.display = (inView && !isToolbarPlacementHidden('jump-next-section-btn')) ? '' : 'none';
     var outlineModeBtnEl = document.getElementById('outline-mode-btn');
-    if (outlineModeBtnEl) outlineModeBtnEl.style.display = (inView && _hiddenList.indexOf('outline-mode-btn') === -1) ? '' : 'none';
+    if (outlineModeBtnEl) outlineModeBtnEl.style.display = (inView && !isToolbarPlacementHidden('outline-mode-btn')) ? '' : 'none';
     // Show @tags / Insert tag / Filter by tag (stage 3c toolbar buttons):
     // R&R mode (Insert tag also allowed in typing mode, matching its More
     // menu counterpart's !quietMode && !viewOnly rule) AND note has tags
     // AND not hidden via Settings.
     var _hasTagsNow = typeof noteHasTags === 'function' && noteHasTags();
     var showTagsBtnEl = document.getElementById('show-tags-btn');
-    if (showTagsBtnEl) showTagsBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('show-tags-btn') === -1) ? '' : 'none';
+    if (showTagsBtnEl) showTagsBtnEl.style.display = (inView && _hasTagsNow && !isToolbarPlacementHidden('show-tags-btn')) ? '' : 'none';
     var insertTagBtnEl = document.getElementById('insert-tag-btn');
-    if (insertTagBtnEl) insertTagBtnEl.style.display = (!_readingMode && !document.body.classList.contains('view-only-mode') && _hasTagsNow && _hiddenList.indexOf('insert-tag-btn') === -1) ? '' : 'none';
+    if (insertTagBtnEl) insertTagBtnEl.style.display = (!_readingMode && !document.body.classList.contains('view-only-mode') && _hasTagsNow && !isToolbarPlacementHidden('insert-tag-btn')) ? '' : 'none';
     var tagFilterBtnEl = document.getElementById('tag-filter-btn');
-    if (tagFilterBtnEl) tagFilterBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('tag-filter-btn') === -1) ? '' : 'none';
+    if (tagFilterBtnEl) tagFilterBtnEl.style.display = (inView && _hasTagsNow && !isToolbarPlacementHidden('tag-filter-btn')) ? '' : 'none';
     var tagPresenceBtnEl = document.getElementById('tag-presence-btn');
-    if (tagPresenceBtnEl) tagPresenceBtnEl.style.display = (inView && _hasTagsNow && _hiddenList.indexOf('tag-presence-btn') === -1) ? '' : 'none';
+    if (tagPresenceBtnEl) tagPresenceBtnEl.style.display = (inView && _hasTagsNow && !isToolbarPlacementHidden('tag-presence-btn')) ? '' : 'none';
     // Uncheck all / Hide completed items (stage 3d toolbar buttons): R&R
     // mode AND note has checked items AND not hidden via Settings — same
     // combined condition as their existing static More menu entries.
     var _hasCheckedNow = typeof noteHasCheckedItems === 'function' && noteHasCheckedItems();
     var uncheckAllBtnEl = document.getElementById('uncheck-all-btn');
-    if (uncheckAllBtnEl) uncheckAllBtnEl.style.display = (inView && _hasCheckedNow && _hiddenList.indexOf('uncheck-all-btn') === -1) ? '' : 'none';
+    if (uncheckAllBtnEl) uncheckAllBtnEl.style.display = (inView && _hasCheckedNow && !isToolbarPlacementHidden('uncheck-all-btn')) ? '' : 'none';
     var hideCompletedBtnEl = document.getElementById('hide-completed-btn');
-    if (hideCompletedBtnEl) hideCompletedBtnEl.style.display = (inView && _hasCheckedNow && _hiddenList.indexOf('hide-completed-btn') === -1) ? '' : 'none';
+    if (hideCompletedBtnEl) hideCompletedBtnEl.style.display = (inView && _hasCheckedNow && !isToolbarPlacementHidden('hide-completed-btn')) ? '' : 'none';
     // Cut and paste: show in both edit and view mode
     // But defer to applySmallScreenOverflow for small-screen+large-icon policy
     if (deleteTextBtn) deleteTextBtn.style.display = '';
@@ -28225,7 +28575,7 @@ function makeImportFolderName(label) {
     // Toolbar Buttons" settings (replaces the old standalone
     // showTapToEditBtn setting, which duplicated this same control).
     // Dynamic-only now — no static More menu entry exists for this item.
-    var _showTTE = (settings.toolbarHidden || []).indexOf('tap-to-edit-btn') === -1;
+    var _showTTE = !isToolbarPlacementHidden('tap-to-edit-btn');
     var tapToEditBtn = document.getElementById('tap-to-edit-btn');
     if (tapToEditBtn) tapToEditBtn.style.display = (inView && _showTTE) ? 'flex' : 'none';
     // Exit tap-to-edit mode when leaving view mode
