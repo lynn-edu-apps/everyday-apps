@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1575 -->
+<!-- Remember App - Version 0.1581 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1575
+  Version 0.1581
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,13 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1581 - Check-off animation (demo option F, exact timing): new Note Behavior setting checkAnimation ('none' | 'draw' [default] | 'confetti' | 'both'), radio row in Checklist Behavior. Draw animates the optimistic tap-swap checkmark polyline (0.4s); confetti spawns six plain-span dots (0.22s delay + 0.6s flight -- spans, not injected SVG, per the WebKit lesson). On animated checks the full re-render defers until the animation ends (data/undo/save still immediate); the animation is force-skipped whenever the item will auto-move to bottom, keeping that path byte-identical to before (stale-line-index hazard). Honors prefers-reduced-motion. Also per Lynn's request: doMoveCompletedToBottom now takes a pre-operation note snapshot like every other multi-line-rewriting operation.
+  v0.1580 - FIX pinch-zoom regression from v0.1570: the permanent iOS maximum-scale=1 relied on "iOS ignores the cap for user pinches," which is only true in the Safari browser -- standalone PWA mode ENFORCES it, killing pinch there. The cap is now dynamic: normal state keeps the original maximum-scale=5 (pinch works in browser and PWA); the cap applies only while a text field is focused (set on touchstart before focus so it precedes the iOS auto-zoom decision, plus focusin for programmatic/tab focus; restored ~350ms after focusout unless focus moved to another text field). Small-font focus auto-zoom stays suppressed; accepted trade-off: no pinch while the keyboard is up. iOS only, as before.
+  v0.1579 - Rounded highlight corners, "subtle" option per Lynn's pick from the demo: plain ==highlight== radius 2px -> 3px (it already had 2px + padding; the REAL missing piece found while implementing was box-decoration-break:clone, without which wrapped highlights get square line-break edges -- the squareness actually being seen). clone added to all three highlight variants (plain, ==#hex:, ==#bg|#fg:); the two hex variants already had 3px radius and keep their existing 4px side padding unchanged. Scratch pad Copy/Undo/Redo button gaps widened 6px -> 14px.
+  v0.1578 - FIX for a v0.1577 mistake: omitting a ui-xlarge selector for .fab does NOT mean "stay at large size" -- body size classes are mutually exclusive, so with no ui-xlarge rule .fab fell all the way back to its 56px BASE at xlarge, visibly shrinking below large (the "shrinks to medium/small" Lynn reported). Meanwhile #note-fab's own pre-existing ui-xlarge rule (80px) was untouched, growing it further (the "huger" Lynn reported). Both FABs now have an EXPLICIT ui-xlarge rule pinned to the same values as their ui-large rule, so large and xlarge look visually identical for both FABs, as requested.
+  v0.1577 - FIX for a v0.1576 mistake: home-screen "+" FAB (.fab) was accidentally made BIGGER (64px base, plus a new 90px xlarge step) instead of matching the smaller note-editor "+" FAB (#note-fab, 56px base) as intended. While fixing, also found a genuinely pre-existing second ui-xlarge .fab rule (48px icon) that predated this session, stacked underneath the mistaken one. Rewrote the whole .fab size block as one clean set of rules: base and large tier now match #note-fab exactly (56px/68px); per Lynn's explicit follow-up, NEITHER FAB grows past the large tier anymore -- no xlarge rule at all, since that step looked too big. Desktop/mouse override sizes scaled down proportionally to match.
+  v0.1576 - Home header padding bottom +2px (12/10 -> 12/12) per Lynn's follow-up. Home-screen "+" FAB (.fab) now has an xlarge size tier, matching the note-editor "+" FAB (#note-fab), which already scaled at both large and xlarge -- same relative proportions, .fab's own larger base. Notes list gets real bottom padding (16px -> 100px, more at larger icon tiers) so the FAB can no longer sit over the last note and block swipe-to-delete there -- a gap against the project's own standing rule that scrolling panels always get extra blank space at the end.
+  v0.1575 - (backfilled while preparing v0.1576: this entry was missed at the time) Home header padding top/bottom raised 10/8 -> 12/10, per Lynn's request to compare against the v0.1574 trim.
   v0.1574a - Home header padding adjusted 10/8 -> 12/10 per Lynn's request, to compare against the v0.1574 trim.
   v0.1574 - Vertical space: home-screen header padding trimmed (18/16 -> 10/8). Lower toolbar height now tracks the icon size instead of being effectively constant: the injected button min-height was Math.max(36, iconPx) + 10, so small (22px) and medium (28px) icons both produced a 46px button (identical bar height at small/medium/large, growing only at extra-large) -- it is now Math.max(28, iconPx + 10), keeping a real floor (needed: a blanket min-width:0 previously collapsed other toolbar buttons) but one that can never sit above the intended size. The toolbar scroll arrows' hardcoded min-height:44px, which would have silently become the new height floor, now tracks the icon size too. Safe by construction: every consumer of header/toolbar height measures it at runtime (offsetHeight / getBoundingClientRect) -- no pixel height is hardcoded in any calculation.
   v0.1573 - New Note Behavior setting newItemDefaultTags ('Default tags for new items', e.g. '@inbox @prioUnset'): auto-appended to any newly added checkbox-ish item (checkbox OR plain bullet, detected through the standard formatting strippers) that has item text and no @tag yet. Applied on Enter at the end of a line in the editor, per-line in Add Text to Note (after its hyphen/checkbox toggles), and to ?action=new / share-target content; new optional URL parameter tags= overrides the setting per action (present-but-empty suppresses; commas and missing @ signs accepted everywhere and normalized). New top-level pure functions isMarkerLineRaw (the outline's isCheckboxRaw real implementation now delegates to it, one source of truth usable before the note screen exists), normalizeTagListSetting, appendDefaultTagsToLine/appendDefaultTagsToText. TODO #19 done: _tokenAtCaret promoted to top level for harness access. New test files: cases v13, goldens v13.
@@ -358,7 +365,7 @@ body.in-iframe #home-screen {
      MEASURES it at runtime (pinToolbars' offsetHeight, the sticky-offset
      and search-bar getBoundingClientRect calls) — no pixel value is
      hardcoded anywhere. */
-  padding: 12px calc(20px + env(safe-area-inset-right, 0px)) 10px calc(20px + env(safe-area-inset-left, 0px));
+  padding: 12px calc(20px + env(safe-area-inset-right, 0px)) 12px calc(20px + env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -738,9 +745,15 @@ body.in-iframe #home-screen {
 .notes-list {
   flex: 1;
   /* env() terms clear the iPhone landscape notch/corners — see .note-header */
-  padding: 16px calc(16px + var(--list-margin-right) + env(safe-area-inset-right, 0px)) 16px calc(16px + var(--list-margin-left) + env(safe-area-inset-left, 0px));
+  /* v0.1576: bottom padding raised 16px -> 100px so the "+" FAB (64px
+     button + 28px bottom offset at base size) can never sit over the
+     last note, which was blocking swipe-to-delete there. Scales up
+     below to keep clearing the FAB as it grows at larger icon tiers. */
+  padding: 16px calc(16px + var(--list-margin-right) + env(safe-area-inset-right, 0px)) 100px calc(16px + var(--list-margin-left) + env(safe-area-inset-left, 0px));
   overflow-y: auto;
 }
+body.ui-large .notes-list { padding-bottom: 118px; }
+body.ui-xlarge .notes-list { padding-bottom: 134px; }
 
 .notes-empty {
   display: flex;
@@ -1191,8 +1204,16 @@ body.hide-note-preview .note-item-preview {
   color: white;
   border: none;
   border-radius: 50%;
-  width: 64px;
-  height: 64px;
+  /* v0.1577 FIX: reverses a v0.1576 mistake that made this FAB BIGGER
+     (64px base + a new 90px xlarge step) instead of matching the smaller
+     note-editor "+" FAB, #note-fab (56px base). Base now matches
+     #note-fab exactly. That earlier edit also went unnoticed on top of a
+     genuinely pre-existing xlarge rule further down (48px icon) -- there
+     were briefly two stacked, near-duplicate ui-xlarge .fab rules; both
+     removed below in favor of ONE rule, matching Lynn's explicit request
+     that xlarge should NOT grow further for either FAB. */
+  width: 56px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1204,18 +1225,24 @@ body.hide-note-preview .note-item-preview {
 }
 .fab:hover { background: var(--accent2); transform: scale(1.07); box-shadow: 0 6px 28px rgba(0,0,0,0.32); }
 .fab:active { transform: scale(0.96); }
-.fab svg { width: 32px; height: 32px; }
+.fab svg { width: 28px; height: 28px; }
 
-body.ui-large .fab { width: 78px; height: 78px; bottom: 32px; right: 28px; }
-body.ui-large .fab svg { width: 40px; height: 40px; }
-body.ui-xlarge .fab { width: 90px; height: 90px; bottom: 36px; right: 32px; }
-body.ui-xlarge .fab svg { width: 48px; height: 48px; }
-/* FAB: smaller on desktop/mouse — touch targets need 64px, mouse does not */
+/* v0.1578 FIX: matches #note-fab's own large-tier size exactly
+   (68px/34px icon). Per Lynn's request neither FAB should grow past the
+   large-tier size for xlarge -- that requires an EXPLICIT ui-xlarge rule
+   set to these same values, not simply omitting a ui-xlarge selector.
+   v0.1577 omitted it, and since body classes are mutually exclusive
+   (ui-xlarge does not also carry ui-large), .fab fell all the way back
+   to its 56px BASE at xlarge -- it visibly SHRANK compared to large,
+   instead of staying level with it. */
+body.ui-large .fab, body.ui-xlarge .fab { width: 68px; height: 68px; bottom: 32px; right: 28px; }
+body.ui-large .fab svg, body.ui-xlarge .fab svg { width: 34px; height: 34px; }
+/* FAB: smaller on desktop/mouse — touch targets need the full size, mouse does not */
 @media (hover: hover) {
-  .fab { width: 44px; height: 44px; bottom: 20px; right: 20px; }
-  .fab svg { width: 22px; height: 22px; }
-  body.ui-large .fab { width: 52px; height: 52px; bottom: 24px; right: 24px; }
-  body.ui-large .fab svg { width: 28px; height: 28px; }
+  .fab { width: 40px; height: 40px; bottom: 20px; right: 20px; }
+  .fab svg { width: 20px; height: 20px; }
+  body.ui-large .fab { width: 48px; height: 48px; bottom: 24px; right: 24px; }
+  body.ui-large .fab svg { width: 24px; height: 24px; }
 }
 
 
@@ -1324,14 +1351,47 @@ body.reading-mode #theme-indicator-pill { display: none !important; }
 .viewer-highlight {
   background: var(--highlight-color);
   color: #1a1a1a !important;
-  border-radius: 2px;
+  /* v0.1579: radius 2px -> 3px (Lynn picked "subtle" from the rounding
+     demo), and box-decoration-break:clone added -- without it, a
+     highlight that WRAPS gets no rounding at all on the line-break
+     edges (only the very first and last corner of the whole phrase),
+     which is what read as "perfectly square corners" in practice. */
+  border-radius: 3px;
   padding: 0 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 /* Force dark text on highlights in dark mode — pastels need dark text */
 body.dark .viewer-highlight,
 body.dark .note-viewer .viewer-highlight,
 body.dark .note-viewer span.viewer-highlight {
   color: #1a1a1a !important;
+}
+
+/* ===== CHECK-OFF ANIMATION (v0.1581) =====
+   Timing copied exactly from the approved demo (option F): checkmark
+   draws in 0.4s ease-out; confetti dots wait 0.22s (bursting just as the
+   checkmark lands), then fly 0.6s. Applied ONLY to the optimistic
+   tap-swap SVG in _handleCheckboxToggle, never to static renders. */
+@keyframes cbDrawIn { to { stroke-dashoffset: 0; } }
+polyline.cb-draw-anim {
+  stroke-dasharray: 16; /* checkmark path length is ~14.9 in viewBox units */
+  stroke-dashoffset: 16;
+  animation: cbDrawIn 0.4s ease-out forwards;
+}
+.cb-confetti-wrap { position: fixed; width: 0; height: 0; z-index: 300; pointer-events: none; }
+.cb-confetti-dot {
+  position: absolute; left: 0; top: 0; width: 7px; height: 7px; border-radius: 50%;
+  pointer-events: none;
+  animation: cbConfettiFly 0.6s ease-out 0.22s both;
+}
+@keyframes cbConfettiFly {
+  0%   { transform: translate(-50%,-50%) scale(0.5); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  polyline.cb-draw-anim, .cb-confetti-dot { animation: none !important; }
+  polyline.cb-draw-anim { stroke-dashoffset: 0; }
 }
 
 
@@ -1631,10 +1691,14 @@ body.dark #note-fab {
   #note-fab:hover { background: var(--accent); color: white; transform: scale(1.07); }
 }
 #note-fab:active { transform: scale(0.96); }
-body.ui-large #note-fab { width: 68px; height: 68px; bottom: 32px; right: 28px; }
-body.ui-large #note-fab svg { width: 34px; height: 34px; }
-body.ui-xlarge #note-fab { width: 80px; height: 80px; bottom: 36px; right: 32px; }
-body.ui-xlarge #note-fab svg { width: 40px; height: 40px; }
+/* v0.1578 FIX: this rule used to grow #note-fab to 80px at xlarge --
+   the "huger" note-editor FAB Lynn flagged. Pinned to the SAME
+   large-tier values instead of just deleting the selector, since an
+   ABSENT ui-xlarge selector is what caused .fab's shrink bug just above
+   -- pinning both explicitly keeps large and xlarge visually identical
+   for both FABs, matching Lynn's request. */
+body.ui-large #note-fab, body.ui-xlarge #note-fab { width: 68px; height: 68px; bottom: 32px; right: 28px; }
+body.ui-large #note-fab svg, body.ui-xlarge #note-fab svg { width: 34px; height: 34px; }
 @media (hover: hover) {
   #note-fab { width: 40px; height: 40px; bottom: 20px; right: 20px; }
   #note-fab svg { width: 20px; height: 20px; }
@@ -4940,8 +5004,10 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   #scratch-copy-fab:hover, #scratch-undo-fab:hover, #scratch-redo-fab:hover { background: rgba(0,0,0,0.15); }
 }
 #scratch-copy-fab:active, #scratch-undo-fab:active, #scratch-redo-fab:active { transform: scale(0.9); }
-#scratch-undo-fab { left: 42px; }
-#scratch-redo-fab { left: 78px; }
+/* v0.1579: gaps widened 6px -> 14px (buttons are 30px wide; copy sits
+   at left:6px) -- they were too easy to fat-finger sitting 6px apart. */
+#scratch-undo-fab { left: 50px; }
+#scratch-redo-fab { left: 94px; }
 /* Dimmed when that direction's stack is empty (session-only stacks) */
 #scratch-undo-fab.sp-empty, #scratch-redo-fab.sp-empty { opacity: 0.3; }
 
@@ -8514,6 +8580,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           style="font-size:1em;padding:6px 8px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg)">
       </div>
 
+<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div>
+          <div class="settings-row-label">Check-off animation</div>
+          <div class="settings-row-desc">Fun feedback when you check an item off. Skipped when the item is set to move to the bottom.</div>
+        </div>
+        <div class="settings-radio-group" id="check-animation-seg">
+          <label class="settings-radio-label"><input type="radio" name="check-animation" value="none"> None</label>
+          <label class="settings-radio-label"><input type="radio" name="check-animation" value="draw"> Draw the checkmark</label>
+          <label class="settings-radio-label"><input type="radio" name="check-animation" value="confetti"> Confetti</label>
+          <label class="settings-radio-label"><input type="radio" name="check-animation" value="both"> Both</label>
+        </div>
+      </div>
+
 <div class="settings-subsection-title" style="margin-top:10px">Note Behavior</div>
 <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;">
         <div>
@@ -9607,16 +9686,29 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1575';
+const APP_VERSION = '0.1581';
 
-// v0.1570: iOS auto-zooms the page whenever a text field with a font size
-// under 16px receives focus (this is what made double-tap-to-type zoom in
-// at note font sizes of 15px and below -- it was never the double-tap
-// gesture itself). Setting viewport maximum-scale=1 suppresses that focus
-// auto-zoom; since iOS 10, Safari deliberately IGNORES maximum-scale for
-// user-initiated pinch gestures, so manual pinch-zoom keeps working.
-// Applied on iOS ONLY: Android Chrome genuinely honors the cap and would
-// lose pinch-zoom, so Android keeps the original meta tag untouched.
+// v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
+// iOS auto-zooms the page whenever a text field with a font size under
+// 16px receives focus (this is what made double-tap-to-type zoom in at
+// note font sizes of 15px and below -- never the double-tap gesture
+// itself). v0.1570 suppressed that by setting viewport maximum-scale=1
+// permanently at startup on iOS, on the belief that iOS always ignores
+// maximum-scale for user pinches. That belief is only true for pages in
+// the SAFARI BROWSER -- in standalone PWA mode (home-screen web app),
+// iOS ENFORCES the cap, which killed pinch-zoom entirely there (real
+// regression reported on device).
+//
+// New approach -- the cap exists only while it's needed:
+// - Normal state: maximum-scale=5 (the app's original value); pinch-zoom
+//   works everywhere, browser and PWA alike.
+// - While a text field is focused: maximum-scale=1, applied on touchstart
+//   (before focus, so it's in force before iOS makes its auto-zoom
+//   decision) and again on focusin (covers programmatic focus and
+//   physical-keyboard tabbing), then restored ~350ms after focusout.
+// - Accepted trade-off: pinch is unavailable while the keyboard is up.
+// Applied on iOS ONLY: Android Chrome honors the cap even in-browser and
+// would lose pinch; Android keeps the original meta permanently.
 (function() {
   var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -9626,8 +9718,43 @@ const APP_VERSION = '0.1575';
     if (typeof logSys === 'function') logSys('iOS viewport fix: meta tag not found');
     return;
   }
-  vp.setAttribute('content',
-    'width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover');
+  var FREE   = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover';
+  var CAPPED = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover';
+  var _capped = false;
+  var _restoreTimer = null;
+  function _isTextField(el) {
+    return el && (el.tagName === 'TEXTAREA' ||
+      (el.tagName === 'INPUT' && !/^(checkbox|radio|button|range|color|file|submit)$/i.test(el.type || '')));
+  }
+  function _cap() {
+    if (_restoreTimer) { clearTimeout(_restoreTimer); _restoreTimer = null; }
+    if (_capped) return;
+    _capped = true;
+    vp.setAttribute('content', CAPPED);
+  }
+  function _scheduleFree() {
+    if (_restoreTimer) clearTimeout(_restoreTimer);
+    _restoreTimer = setTimeout(function() {
+      _restoreTimer = null;
+      // Don't free the cap if focus just moved to ANOTHER text field
+      if (_isTextField(document.activeElement)) return;
+      _capped = false;
+      vp.setAttribute('content', FREE);
+    }, 350);
+  }
+  // touchstart fires before the tap can focus anything -- capping here
+  // guarantees the cap is already in force when iOS decides whether to
+  // auto-zoom. Only cap when the touch is on (or inside) a text field.
+  document.addEventListener('touchstart', function(e) {
+    var t = e.target;
+    if (_isTextField(t) || (t && t.closest && _isTextField(t.closest('textarea, input')))) _cap();
+  }, { capture: true, passive: true });
+  document.addEventListener('focusin', function(e) {
+    if (_isTextField(e.target)) _cap();
+  }, true);
+  document.addEventListener('focusout', function(e) {
+    if (_isTextField(e.target)) _scheduleFree();
+  }, true);
 })();
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
@@ -10878,6 +11005,7 @@ const DEFAULT_SETTINGS = {
   helpSectionStates: {},     // collapsed/expanded state for each Help dialog section, keyed by its stable HTML id
   indentSpaces: 4,             // spaces per indent/dedent action
   newItemDefaultTags: '',      // '@tag @tag2' auto-appended to new checkbox-ish items without tags (Note Behavior)
+  checkAnimation: 'draw',      // check-off animation: 'none' | 'draw' | 'confetti' | 'both'
   defaultCheckboxIndent: 0,    // default indent levels for new checkbox/hyphen items
   toolbarHidden: [],           // array of button IDs hidden from bottom toolbar
   toolbarOrder: [],            // ordered array of button IDs (empty = use default order)
@@ -11009,7 +11137,7 @@ const SETTING_BUCKETS = {
   // ---- NOTE_BEHAVIOR (31) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
   confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
-  moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, checkAnimation: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR,
   quietMode: SETTING_BUCKETS_NOTE_BEHAVIOR, showSpeakBtn: SETTING_BUCKETS_NOTE_BEHAVIOR, skipListMarkers: SETTING_BUCKETS_NOTE_BEHAVIOR, smartIndentBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColor: SETTING_BUCKETS_NOTE_BEHAVIOR,
   speakBtnIconOnly: SETTING_BUCKETS_NOTE_BEHAVIOR, speakInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speechPause: SETTING_BUCKETS_NOTE_BEHAVIOR, speechRate: SETTING_BUCKETS_NOTE_BEHAVIOR, tagScope: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -11176,7 +11304,7 @@ const THEMEABLE_SETTINGS=[
 ['wordSpacing','Word spacing',0],['disableLigatures','Disable ligatures',0],
 ['fontVariantNumeric','Numeric style',0],['viewIndentWidth','Indent width (view)',0],
 ['headingIndent','Indent headings by level (R&R)',0],
-['indentSpaces','Spaces per indent',0],['newItemDefaultTags','Default tags for new items',0],['checkStrikethrough','Strikethrough when checked',0],['checkSoundEnabled','Sound when checking off an item',0],['checkSound','Check-off sound',0],
+['indentSpaces','Spaces per indent',0],['newItemDefaultTags','Default tags for new items',0],['checkAnimation','Check-off animation',0],['checkStrikethrough','Strikethrough when checked',0],['checkSoundEnabled','Sound when checking off an item',0],['checkSound','Check-off sound',0],
 ['showParagraphRules','Paragraph rules',0],['showBlockRules','List item rules',0],
 ['showBlockRulesTop','Rule above checkbox sections',0],
 ['ruledLineTone','Ruled line color (auto/light/dark)',0],
@@ -12461,6 +12589,37 @@ var CHECK_SOUNDS = {
 // Plays the currently-selected check-off sound, if the setting is on.
 // Call this from a checkbox/hyphen tap handler ONLY when a single item
 // just became checked — never from bulk operations, never on uncheck.
+// v0.1581: per-item check-off confetti (the whole-note confettiOnComplete
+// remains separate). Plain colored spans -- deliberately NOT injected SVG,
+// which iOS WebKit can silently refuse to render (documented lesson; it is
+// exactly what broke the first sparkle demo). Positioned fixed at the
+// checkbox's viewport center; removed after the flight (0.22s delay +
+// 0.6s) with margin.
+function spawnCheckConfetti(anchorEl) {
+  try {
+    var r = anchorEl.getBoundingClientRect();
+    var wrap = document.createElement('span');
+    wrap.className = 'cb-confetti-wrap';
+    wrap.style.left = (r.left + r.width / 2) + 'px';
+    wrap.style.top  = (r.top  + r.height / 2) + 'px';
+    var COLORS = ['#e8a13c','#5b7c6e','#c96f6f','#6f8fc9','#b58cc9','#d9a4c0'];
+    for (var i = 0; i < 6; i++) {
+      var p = document.createElement('span');
+      p.className = 'cb-confetti-dot';
+      p.style.background = COLORS[i % COLORS.length];
+      var ang = (Math.PI * 2 / 6) * i + Math.random() * 0.6;
+      var dist = 22 + Math.random() * 14;
+      p.style.setProperty('--dx', Math.cos(ang) * dist + 'px');
+      p.style.setProperty('--dy', Math.sin(ang) * dist + 'px');
+      wrap.appendChild(p);
+    }
+    document.body.appendChild(wrap);
+    setTimeout(function() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 1200);
+  } catch (e) {
+    logDebugAction('spawnCheckConfetti failed: ' + (e && e.message));
+  }
+}
+
 function playCheckSound() {
   if (!settings.checkSoundEnabled) return;
   var ctx = _getCheckSoundCtx();
@@ -14213,7 +14372,7 @@ function urlsToLinks(text, addLineWrappers) {
   escaped = escaped.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
   // Render ==#bg|#fg:text== (fixed bg AND fg colors — used for light/dark mode previews)
   escaped = escaped.replace(/==(#[0-9a-fA-F]{3,6})\|(#[0-9a-fA-F]{3,6}):([^=\n]*)==/g, function(m, bg, fg, content) {
-    return '<span style="background:'+bg+';color:'+fg+';border-radius:3px;padding:0 4px">'+content+'</span>';
+    return '<span style="background:'+bg+';color:'+fg+';border-radius:3px;padding:0 4px;-webkit-box-decoration-break:clone;box-decoration-break:clone">'+content+'</span>';
   });
   // Render ==#hex:text== — supports nested {color} tags inside for dark bg preview
   escaped = escaped.replace(/==(#[0-9a-fA-F]{3,6}):([^=\n]+)==/g, function(m, hex, content) {
@@ -14223,7 +14382,7 @@ function urlsToLinks(text, addLineWrappers) {
       rose:'var(--color-rose)',violet:'var(--color-violet)',black:'var(--color-black)',gray:'var(--color-gray)',white:'var(--color-white)'};
     content = content.replace(/\{(red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white)\}([^{]*)\{\/\1\}/g,
       function(m2,c,t){ return '<span style="color:'+(icm[c]||c)+'">'+t+'</span>'; });
-    return '<span style="background:'+hex+';color:#1a1a1a;border-radius:3px;padding:0 4px">'+content+'</span>';
+    return '<span style="background:'+hex+';color:#1a1a1a;border-radius:3px;padding:0 4px;-webkit-box-decoration-break:clone;box-decoration-break:clone">'+content+'</span>';
   });
   // Render ==highlight== (uses current --highlight-color setting)
   escaped = escaped.replace(/==([^=\n]+)==/g, '<span class="viewer-highlight" style="color:#1a1a1a">$1</span>');
@@ -18240,6 +18399,9 @@ function openSettings() {
   var _nem = settings.noteEditingMode || 'both';
   var _nemRadio = document.querySelector('#note-editing-mode-seg input[value="' + _nem + '"]');
   if (_nemRadio) _nemRadio.checked = true;
+  var _cka = settings.checkAnimation || 'draw';
+  var _ckaRadio = document.querySelector('#check-animation-seg input[value="' + _cka + '"]');
+  if (_ckaRadio) _ckaRadio.checked = true;
 
   // Ruled lines / grid
   var _rls = settings.ruledLineStyle || 'none';
@@ -27074,6 +27236,12 @@ function makeImportFolderName(label) {
     settings.newItemDefaultTags = norm;
     updateSaveBtnState();
   });
+  document.querySelectorAll('#check-animation-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.checkAnimation = this.value;
+      updateSaveBtnState();
+    });
+  });
   document.getElementById('view-mode-btn').addEventListener('click', function() {
     var newMode = !isViewMode;
     settings.lastViewMode = newMode;
@@ -27177,6 +27345,19 @@ function makeImportFolderName(label) {
     // unchecking) — !isChecked is the line's NEW state here.
     if (!isChecked) playCheckSound();
 
+    // v0.1581: check-off animation mode for THIS tap. Only when becoming
+    // checked; NEVER when the item is about to auto-move to bottom (the
+    // deferred re-render below could hand a rapid second tap a stale line
+    // index and move the WRONG line -- when it will move, this path stays
+    // exactly the pre-v0.1581 next-frame behavior); and reduced-motion
+    // preference is honored as 'none'.
+    var _anim = 'none';
+    if (!isChecked && settings.checkAnimation && settings.checkAnimation !== 'none') {
+      var _willAutoMove = settings.moveCompletedToBottom && !isAlreadyAtBottom(lineIndex);
+      var _reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!_willAutoMove && !_reducedMotion) _anim = settings.checkAnimation;
+    }
+
     // ── Optimistic visual update ──────────────────────────────────────────
     // Swap the checkbox SVG to its new state IMMEDIATELY, before the full
     // re-render. The full urlsToLinks() pass (which processes the entire
@@ -27213,6 +27394,7 @@ function makeImportFolderName(label) {
       _check.setAttribute('stroke-width', '2.2');
       _check.setAttribute('stroke-linecap', 'round');
       _check.setAttribute('stroke-linejoin', 'round');
+      if (_anim === 'draw' || _anim === 'both') _check.setAttribute('class', 'cb-draw-anim');
       _newSvg.appendChild(_check);
     } else {
       // Becoming unchecked: outline rect only
@@ -27224,19 +27406,22 @@ function makeImportFolderName(label) {
       _newSvg.appendChild(_newRect);
     }
     _oldSvg.parentNode.replaceChild(_newSvg, _oldSvg);
+    if (_anim === 'confetti' || _anim === 'both') spawnCheckConfetti(_newSvg);
     // ─────────────────────────────────────────────────────────────────────
 
     pushUndo();
     notes[currentNoteId].content = lines.join('\n');
     document.getElementById('note-editor').value = notes[currentNoteId].content;
     scheduleSave();
-    // Defer the full re-render to the next animation frame. The optimistic
-    // SVG swap above has already given visual feedback; the browser can now
-    // paint that update on this frame before we start the expensive work.
+    // Defer the full re-render: to the next animation frame normally (the
+    // optimistic SVG swap above already gave visual feedback; paint that
+    // first, then do the expensive work) -- or, when a check-off animation
+    // is running, until the animation completes (see dispatch below the
+    // body; an immediate re-render would wipe the animation one frame in).
     var _reRenderContent = notes[currentNoteId].content;
     var _deletingLine = deletingLine;
     var _wasUnchecked = !isChecked;
-    requestAnimationFrame(function() {
+    var _finishRender = function() {
       renderViewer(_reRenderContent);
       document.getElementById('note-viewer').classList.toggle('crossout-mode', _deletingLine);
       updateViewOnlyBtns();
@@ -27263,7 +27448,20 @@ function makeImportFolderName(label) {
         });
         if (_totalCb > 0 && _uncheckedCb === 0) showConfetti();
       }
-    });
+    };
+    // v0.1581 dispatch: content/undo/editor/save were all updated above --
+    // ONLY the visual refresh (and the move-to-bottom / whole-note-confetti
+    // checks inside it) waits for the animation. _anim is forced to 'none'
+    // whenever the item will auto-move, so that path is byte-identical to
+    // the previous behavior. Rapid multi-taps are safe: each deferred
+    // render draws from the freshest content, line indexes are stable
+    // (check/uncheck rewrites lines in place), and at worst an earlier
+    // tap's render truncates a later tap's animation mid-flight.
+    if (_anim === 'none') {
+      requestAnimationFrame(_finishRender);
+    } else {
+      setTimeout(_finishRender, _anim === 'draw' ? 450 : 850);
+    }
   }
 
   // ===== DELETE LINE =====
@@ -32245,6 +32443,11 @@ function isAlreadyAtBottom(lineIdx) {
 
 function doMoveCompletedToBottom(lineIdx) {
   if (!currentNoteId || !notes[currentNoteId]) return;
+  // v0.1581 (Lynn's request): moving a completed item relocates a whole
+  // block (the item + its outline descendants + separator blank lines) --
+  // snapshot first like every other multi-line-rewriting operation, so it
+  // is restorable via More menu > "Restore note backup".
+  snapshotNoteBeforeOp(currentNoteId, 'Move completed to bottom');
   var lines = notes[currentNoteId].content.split('\n');
 
   // Collect the item and its outline descendants
