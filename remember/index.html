@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1586 -->
+<!-- Remember App - Version 0.1587 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1586
+  Version 0.1587
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1587 - FIX the v0.1586 fix, which never actually ran: its touch gate could never fire because the trackpad drag happens on the VIRTUAL KEYBOARD (OS chrome -- its touches never reach the page; deployed log showed touch=0 throughout and zero tpad-follow lines). Replaced with a drag-SIGNATURE detector: 3+ consecutive caret-only selection changes, each under 350ms apart and moving under 200 chars, engage follow mode, latched 600ms past the last step -- so the mid-drag sel=0 snap is caught and self-healed. Programmatic moves (two huge jumps) can't match the signature by construction; held arrow keys now also follow (standard behavior). Diagnostics extended: 'tpad:' lines add drag=, 'tpad-follow:' adds vvOff, and 'tpad-drag: engaged' marks detector activation. The reported toolbar shaking correlates in the log with iOS violently oscillating visualViewport.offsetTop (21<->403) trying to reveal the offscreen caret AFTER the snap -- v0.1586's own code never scrolled anything (it never ran), so the shake wasn't the follow logic; whether healing the snap quickly also removes the shake window is exactly what this build's logs will show.
   v0.1586 - FIX for TODO #20, from v0.1585's deployed diagnostics: during an iOS trackpad-mode drag toward the top edge, WebKit's autoscroll-to-caret only scrolls the focused textarea's OWN scrollTop (a no-op -- the wrapper note-content-area is the real scroller), then snaps the selection to index 0 far above the visible window, losing the OS-drawn I-beam permanently (captured: caretY 2538->2238 with areaScroll frozen at 2123, then sel=0/caretY=168). The app now follows the caret with the WRAPPER's scroll, only while a touch is active (trackpad drags always have one): caret outside the usable band (pinned header+toolbar overlay respected at top) scrolls note-content-area to bring it back with a margin -- giving real edge-autoscroll and making any residual sel=0 snap self-healing. Programmatic caret moves are immune by construction (no active touch); taps are already-visible no-ops; arrow keys deliberately not covered yet. 'tpad:'/'tpad-follow:' logging kept one more build for on-device verification.
   v0.1585 - DIAGNOSTIC build for TODO #20 (iOS trackpad-mode caret drag loses the I-beam off the top): logs 'tpad:' lines on caret-only selection movement (selection changed with no input event -- trackpad drags/taps/arrows; typing filtered out), throttled to 200ms, capturing selectionStart, caret Y in the scroller's content space, note-content-area scrollTop/clientHeight, note-editor's own scrollTop and rect top, and visualViewport offset/height. Hypothesis under test: the textarea never scrolls itself (the wrapper scrolls), so iOS's built-in autoscroll-to-caret has nothing to scroll. No behavior change; instrumentation only, removed after the fix is confirmed.
   v0.1584 - Replaced the v0.1583 placement segmented control with a custom dropdown (button + popup list), per Lynn's request for something more compact -- deliberately NOT a native <select>, per the documented iOS font-size bug, so it honors the app's UI font size like every other Settings control. At most one dropdown can be open at a time (module-level singleton with a shared closer), fixing a real leak found while building it: removing a stale popup's DOM node on row-rebuild didn't remove its document-level outside-click listener, since each row's close logic was a closure with no way to reach it again afterward.
@@ -9723,7 +9724,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1586';
+const APP_VERSION = '0.1587';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23147,7 +23148,24 @@ function makeImportFolderName(label) {
   var _tpadInputSinceSel = false;
   var _tpadLastLog = 0;
   var _tpadLastFollow = 0;
-  var _tpadTouchCount = 0;
+  var _tpadTouchCount = 0; // kept for LOGGING only -- see below, it can never gate this feature
+  // v0.1587: the v0.1586 touch gate NEVER FIRED (deployed log: touch=0 on
+  // every line, zero tpad-follow entries) -- the trackpad drag happens on
+  // the VIRTUAL KEYBOARD, which is OS chrome; those touches never reach
+  // the page as touch events at all. Design error, corrected here:
+  // detect the drag by its SIGNATURE instead -- 3+ consecutive caret-only
+  // selection changes, each within 350ms of the previous, each moving
+  // fewer than 200 characters (trackpad drags creep; programmatic moves
+  // like mode-switch's setSelectionRange(0,0)-then-restore jump thousands,
+  // and only twice, so they can never look like three small steps).
+  // Once engaged, drag mode latches for 600ms past the last qualifying
+  // step, so the mid-drag sel=0 snap (the actual bug) is still inside
+  // the window and the self-heal scroll fires. Held arrow keys now also
+  // engage follow -- standard editor behavior, acceptable.
+  var _tpadDragSteps = 0;
+  var _tpadLastSelTime = 0;
+  var _tpadLastSel = -1;
+  var _tpadDragUntil = 0;
   document.addEventListener('touchstart',  function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
   document.addEventListener('touchend',    function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
   document.addEventListener('touchcancel', function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
@@ -23156,7 +23174,18 @@ function makeImportFolderName(label) {
     if (document.activeElement !== noteEditor) return;
     if (_tpadInputSinceSel) { _tpadInputSinceSel = false; return; } // typing, not a caret-only move
     var now = Date.now();
-    var doFollow = _tpadTouchCount > 0 && (now - _tpadLastFollow >= 80);
+    // Drag-signature detection (see comment at the vars above)
+    var sel = noteEditor.selectionStart;
+    var gap = now - _tpadLastSelTime;
+    var dsel = (_tpadLastSel === -1) ? 0 : Math.abs(sel - _tpadLastSel);
+    var qualifies = gap < 350 && dsel > 0 && dsel < 200;
+    _tpadDragSteps = qualifies ? _tpadDragSteps + 1 : 1;
+    _tpadLastSelTime = now;
+    _tpadLastSel = sel;
+    if (_tpadDragSteps === 3) logDebugAction('tpad-drag: engaged');
+    if (_tpadDragSteps >= 3) _tpadDragUntil = now + 600;
+    var dragActive = now < _tpadDragUntil;
+    var doFollow = dragActive && (now - _tpadLastFollow >= 80);
     var doLog = (now - _tpadLastLog >= 200);
     if (!doFollow && !doLog) return;
     try {
@@ -23179,7 +23208,8 @@ function makeImportFolderName(label) {
           var oldScroll = area.scrollTop;
           area.scrollTop = newScroll;
           logDebugAction('tpad-follow: caretY=' + Math.round(caretY) +
-            ' scroll ' + Math.round(oldScroll) + '->' + Math.round(area.scrollTop));
+            ' scroll ' + Math.round(oldScroll) + '->' + Math.round(area.scrollTop) +
+            ' vvOff=' + (window.visualViewport ? Math.round(window.visualViewport.offsetTop) : 'n/a'));
         }
       }
       if (doLog) {
@@ -23192,6 +23222,7 @@ function makeImportFolderName(label) {
           ' edScroll=' + Math.round(noteEditor.scrollTop) +
           ' edTop=' + Math.round(edRect.top) +
           ' touch=' + _tpadTouchCount +
+          ' drag=' + (dragActive ? 1 : 0) +
           ' vvOff=' + (vv ? Math.round(vv.offsetTop) : 'n/a') +
           ' vvH=' + (vv ? Math.round(vv.height) : 'n/a'));
       }
