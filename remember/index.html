@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1587 -->
+<!-- Remember App - Version 0.1588 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1587
+  Version 0.1588
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1588 - Trackpad bug, round 3, from v0.1587's deployed log: the follow logic was STARVED BY ITS OWN THROTTLE -- the detector runs on every selection change (not just the 200ms-logged ones), every in-view check consumed the 80ms window, and the sel=0 snap arrived <80ms after an unlogged nothing-to-do check, so the one event that mattered never scrolled (log proof: drag=1 printed at the snap with areaScroll unmoved, and the log statement runs AFTER the scroll code). Fixes: (1) caret jumps >=200 chars bypass the throttle (the snap always qualifies, by the same threshold that disqualifies it as a drag step); (2) a trailing 150ms re-check scheduled during live drags catches a final move with no event behind it; (3) per Lynn's request, an app-drawn DEBUG CARET (red blinking bar inside the scroll content, tracking the real selection) shows ground truth regardless of whether iOS renders its I-beam -- diagnostic only, remove with the tpad logging. Ensure-visible logic extracted to a shared _tpadEnsureCaretVisible (live + trailing paths); its topClear also addresses Lynn's Android observation (OS autoscroll parks the I-beam under the pinned toolbars, which the OS knows nothing about).
   v0.1587 - FIX the v0.1586 fix, which never actually ran: its touch gate could never fire because the trackpad drag happens on the VIRTUAL KEYBOARD (OS chrome -- its touches never reach the page; deployed log showed touch=0 throughout and zero tpad-follow lines). Replaced with a drag-SIGNATURE detector: 3+ consecutive caret-only selection changes, each under 350ms apart and moving under 200 chars, engage follow mode, latched 600ms past the last step -- so the mid-drag sel=0 snap is caught and self-healed. Programmatic moves (two huge jumps) can't match the signature by construction; held arrow keys now also follow (standard behavior). Diagnostics extended: 'tpad:' lines add drag=, 'tpad-follow:' adds vvOff, and 'tpad-drag: engaged' marks detector activation. The reported toolbar shaking correlates in the log with iOS violently oscillating visualViewport.offsetTop (21<->403) trying to reveal the offscreen caret AFTER the snap -- v0.1586's own code never scrolled anything (it never ran), so the shake wasn't the follow logic; whether healing the snap quickly also removes the shake window is exactly what this build's logs will show.
   v0.1586 - FIX for TODO #20, from v0.1585's deployed diagnostics: during an iOS trackpad-mode drag toward the top edge, WebKit's autoscroll-to-caret only scrolls the focused textarea's OWN scrollTop (a no-op -- the wrapper note-content-area is the real scroller), then snaps the selection to index 0 far above the visible window, losing the OS-drawn I-beam permanently (captured: caretY 2538->2238 with areaScroll frozen at 2123, then sel=0/caretY=168). The app now follows the caret with the WRAPPER's scroll, only while a touch is active (trackpad drags always have one): caret outside the usable band (pinned header+toolbar overlay respected at top) scrolls note-content-area to bring it back with a margin -- giving real edge-autoscroll and making any residual sel=0 snap self-healing. Programmatic caret moves are immune by construction (no active touch); taps are already-visible no-ops; arrow keys deliberately not covered yet. 'tpad:'/'tpad-follow:' logging kept one more build for on-device verification.
   v0.1585 - DIAGNOSTIC build for TODO #20 (iOS trackpad-mode caret drag loses the I-beam off the top): logs 'tpad:' lines on caret-only selection movement (selection changed with no input event -- trackpad drags/taps/arrows; typing filtered out), throttled to 200ms, capturing selectionStart, caret Y in the scroller's content space, note-content-area scrollTop/clientHeight, note-editor's own scrollTop and rect top, and visualViewport offset/height. Hypothesis under test: the textarea never scrolls itself (the wrapper scrolls), so iOS's built-in autoscroll-to-caret has nothing to scroll. No behavior change; instrumentation only, removed after the fix is confirmed.
@@ -1373,6 +1374,9 @@ body.dark .note-viewer .viewer-highlight,
 body.dark .note-viewer span.viewer-highlight {
   color: #1a1a1a !important;
 }
+
+/* v0.1588 DIAGNOSTIC: blink for the app-drawn debug caret marker */
+@keyframes tpadBlink { 50% { opacity: 0.15; } }
 
 /* ===== CHECK-OFF ANIMATION (v0.1581) =====
    Timing copied exactly from the approved demo (option F): checkmark
@@ -9724,7 +9728,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1587';
+const APP_VERSION = '0.1588';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23166,10 +23170,62 @@ function makeImportFolderName(label) {
   var _tpadLastSelTime = 0;
   var _tpadLastSel = -1;
   var _tpadDragUntil = 0;
+  var _tpadTrailTimer = null;
+  var _tpadCaretMark = null;
+  var _tpadCaretMarkTimer = null;
+  // Shared "bring the caret into the usable band" step, used by the live
+  // follow AND the trailing re-check. topClear keeps the caret BELOW the
+  // pinned header+toolbar overlay -- which is also exactly Lynn's Android
+  // complaint (the OS I-beam hiding behind the two toolbars when the OS
+  // itself autoscrolls, since the OS knows nothing about our overlay).
+  function _tpadEnsureCaretVisible(caretY, area, why) {
+    var topClear = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + 12;
+    var bottomClear = 40;
+    var viewTop = area.scrollTop + topClear;
+    var viewBottom = area.scrollTop + area.clientHeight - bottomClear;
+    var newScroll = null;
+    if (caretY < viewTop) newScroll = Math.max(0, caretY - topClear);
+    else if (caretY > viewBottom) newScroll = caretY - area.clientHeight + bottomClear;
+    if (newScroll !== null && Math.round(newScroll) !== Math.round(area.scrollTop)) {
+      var oldScroll = area.scrollTop;
+      area.scrollTop = newScroll;
+      logDebugAction('tpad-follow(' + why + '): caretY=' + Math.round(caretY) +
+        ' scroll ' + Math.round(oldScroll) + '->' + Math.round(area.scrollTop) +
+        ' vvOff=' + (window.visualViewport ? Math.round(window.visualViewport.offsetTop) : 'n/a'));
+    }
+  }
+  // v0.1588 DIAGNOSTIC (Lynn's request): the app draws its OWN caret
+  // marker -- a red blinking bar at the caret's line, inside the scroll
+  // content so it moves with the note -- showing where the SELECTION
+  // actually is regardless of whether iOS draws its I-beam. Purely
+  // visual, pointer-events:none; remove with the rest of the tpad
+  // diagnostics once this bug is closed.
+  function _tpadUpdateCaretMark(caretY) {
+    var area = document.getElementById('note-content-area');
+    if (!_tpadCaretMark) {
+      if (getComputedStyle(area).position === 'static') area.style.position = 'relative';
+      _tpadCaretMark = document.createElement('div');
+      _tpadCaretMark.id = 'tpad-caret-mark';
+      _tpadCaretMark.style.cssText = 'position:absolute;left:2px;width:4px;height:26px;background:#e03030;border-radius:2px;pointer-events:none;z-index:50;animation:tpadBlink 1s step-end infinite';
+      area.appendChild(_tpadCaretMark);
+    }
+    _tpadCaretMark.style.top = Math.round(caretY) + 'px';
+    _tpadCaretMark.style.display = 'block';
+  }
   document.addEventListener('touchstart',  function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
   document.addEventListener('touchend',    function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
   document.addEventListener('touchcancel', function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
-  noteEditor.addEventListener('input', function() { _tpadInputSinceSel = true; });
+  noteEditor.addEventListener('input', function() {
+    _tpadInputSinceSel = true;
+    // Keep the debug caret marker roughly current during typing too
+    clearTimeout(_tpadCaretMarkTimer);
+    _tpadCaretMarkTimer = setTimeout(function() {
+      if (document.activeElement === noteEditor) _tpadUpdateCaretMark(getCursorY(noteEditor));
+    }, 250);
+  });
+  noteEditor.addEventListener('blur', function() {
+    if (_tpadCaretMark) _tpadCaretMark.style.display = 'none';
+  });
   document.addEventListener('selectionchange', function() {
     if (document.activeElement !== noteEditor) return;
     if (_tpadInputSinceSel) { _tpadInputSinceSel = false; return; } // typing, not a caret-only move
@@ -23185,32 +23241,35 @@ function makeImportFolderName(label) {
     if (_tpadDragSteps === 3) logDebugAction('tpad-drag: engaged');
     if (_tpadDragSteps >= 3) _tpadDragUntil = now + 600;
     var dragActive = now < _tpadDragUntil;
-    var doFollow = dragActive && (now - _tpadLastFollow >= 80);
+    // v0.1588 FIX: big caret jumps (dsel >= 200 -- notably THE sel=0
+    // snap, which the same threshold disqualifies as a drag step) BYPASS
+    // the 80ms follow throttle. v0.1587's deployed log showed the snap
+    // event getting starved: the detector runs on EVERY selection change
+    // (not just logged ones), each in-view check consumed the throttle
+    // window, and the one event where scrolling mattered arrived <80ms
+    // after an unlogged nothing-to-do check -- so it never scrolled.
+    var doFollow = dragActive && (now - _tpadLastFollow >= 80 || dsel >= 200);
     var doLog = (now - _tpadLastLog >= 200);
-    if (!doFollow && !doLog) return;
+    // (v0.1588: no early return -- caretY is now measured on every
+    // caret-only event so the debug caret marker stays live. Diagnostic
+    // build only; restore the early-out when diagnostics are removed.)
     try {
       var area = document.getElementById('note-content-area');
       var vv = window.visualViewport;
       var caretY = getCursorY(noteEditor); // Y within area's content space
+      _tpadUpdateCaretMark(caretY);
       if (doFollow) {
         _tpadLastFollow = now;
-        // Usable viewport within the area: the pinned header + toolbar
-        // overlay the top of the box (content scrolls underneath them),
-        // so the caret only truly shows below that overlay.
-        var topClear = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + 12;
-        var bottomClear = 40; // caret line height + breathing room
-        var viewTop = area.scrollTop + topClear;
-        var viewBottom = area.scrollTop + area.clientHeight - bottomClear;
-        var newScroll = null;
-        if (caretY < viewTop) newScroll = Math.max(0, caretY - topClear);
-        else if (caretY > viewBottom) newScroll = caretY - area.clientHeight + bottomClear;
-        if (newScroll !== null && Math.round(newScroll) !== Math.round(area.scrollTop)) {
-          var oldScroll = area.scrollTop;
-          area.scrollTop = newScroll;
-          logDebugAction('tpad-follow: caretY=' + Math.round(caretY) +
-            ' scroll ' + Math.round(oldScroll) + '->' + Math.round(area.scrollTop) +
-            ' vvOff=' + (window.visualViewport ? Math.round(window.visualViewport.offsetTop) : 'n/a'));
-        }
+        _tpadEnsureCaretVisible(caretY, area, 'drag');
+        // Trailing one-shot ~150ms later: covers a final caret move that
+        // arrives with no further selectionchange behind it to trigger us
+        // (the drag latch may have expired by then, so it's scheduled
+        // here, while we still know a drag is happening).
+        clearTimeout(_tpadTrailTimer);
+        _tpadTrailTimer = setTimeout(function() {
+          if (document.activeElement !== noteEditor) return;
+          _tpadEnsureCaretVisible(getCursorY(noteEditor), document.getElementById('note-content-area'), 'trail');
+        }, 150);
       }
       if (doLog) {
         _tpadLastLog = now;
