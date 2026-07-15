@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1593 -->
+<!-- Remember App - Version 0.1594 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1593
+  Version 0.1594
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1594 - Caret nudge fixes per Lynn's testing: (1) the four buttons now appear only in EMTIP (keyboard open), like Dictate and Dismiss-keyboard -- switched from edit-only-btn to the kb-only class (dismiss-keyboard-btn's exact pattern), removing the inline display:none that would have overridden the CSS. (2) Nudge scrolling now uses the keyboard-aware _tpadEnsureCaretVisible (visualViewport band + pinned-toolbar clearance, new quiet flag so held repeats don't flood the log) instead of scrollCursorIntoView, whose band ignores the keyboard/toolbar overlay and left the caret slightly hidden under them. Flagged: scrollCursorIntoView vs _tpadEnsureCaretVisible duplication is now explicit; consolidation deferred.
   v0.1593 - Caret nudge buttons (the user-facing answer to the iOS trackpad WebKit bug, TODO #20): four new lower-toolbar buttons -- Cursor left/right (one character) and Cursor up/down (one line, column-preserving via new pure top-level caretLineMove()) -- press for one step, hold to repeat (450ms delay then ~11/s). Pointer Events with pointerdown preventDefault keep the keyboard open (same goal as indent-btn's established mousedown pattern). Wired into every existing toolbar system: HIDEABLE_BUTTONS, SETTINGS_ROW_PAIRS (left/right and up/down each share a settings row), TOOLBAR_ONLY placement category (a nudge in the More menu is useless), DEFAULT_TOOLBAR_ORDER after Unindent, toolbar-help catalog, edit-only-btn mode gating. New test files: cases v14 (adds caretLineMove cases), goldens v15 (paired with cases v14).
   v0.1592 - Trackpad (TODO #20) FINAL MITIGATION, scaling back per Lynn's decision after CKEditor and Trinket were found to share this WebKit platform bug: removed the continuous caret-follow (it fought iOS's own autoscroll -- the reported jumpiness), the snap-restore experiment, the app-drawn debug I-beam, the touch counters, and all per-event tpad diagnostics. Kept exactly one surgical piece: the HEAL -- a caret jump >=500 chars landing during a detected drag scrolls the wrapper so the caret is visible again (single 'tpad-heal:' log line when it fires). Trackpad now behaves no worse than other web editors, with recoverability they lack. getCursorXY/getCursorY refactor kept (one mirror implementation). Caret nudge toolbar buttons come next build as the real user-facing answer.
   v0.1591 - Debug caret upgraded to a true tracking I-BEAM at the actual caret position (red, blinking, serif caps, sized to the editor's line height), per Lynn's request -- the previous left-gutter bar only showed the line. getCursorY refactored to getCursorXY returning {x,y} (the mirror span's rect always contained X; it was never returned) with getCursorY kept as a thin wrapper so all pre-existing callers are untouched -- one mirror implementation, not two. No behavior changes to the v0.1590 follow/snap-guard logic.
@@ -5978,16 +5979,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <!-- v0.1593: caret nudge buttons — the user-facing answer to the iOS
            trackpad-mode WebKit bug (TODO #20): explicit cursor arrows that
            work identically on every platform. Press = one step; hold repeats. -->
-      <button class="icon-btn edit-only-btn" id="caret-left-btn" tabindex="-1" aria-label="Move cursor left" title="Cursor left" style="display:none">
+      <button class="icon-btn kb-only" id="caret-left-btn" tabindex="-1" aria-label="Move cursor left" title="Cursor left">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <button class="icon-btn edit-only-btn" id="caret-right-btn" tabindex="-1" aria-label="Move cursor right" title="Cursor right" style="display:none">
+      <button class="icon-btn kb-only" id="caret-right-btn" tabindex="-1" aria-label="Move cursor right" title="Cursor right">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </button>
-      <button class="icon-btn edit-only-btn" id="caret-up-btn" tabindex="-1" aria-label="Move cursor up one line" title="Cursor up" style="display:none">
+      <button class="icon-btn kb-only" id="caret-up-btn" tabindex="-1" aria-label="Move cursor up one line" title="Cursor up">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>
       </button>
-      <button class="icon-btn edit-only-btn" id="caret-down-btn" tabindex="-1" aria-label="Move cursor down one line" title="Cursor down" style="display:none">
+      <button class="icon-btn kb-only" id="caret-down-btn" tabindex="-1" aria-label="Move cursor down one line" title="Cursor down">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
       <!-- Code block button — wraps selection in a fence, or inserts an empty fence pair at the cursor -->
@@ -9745,7 +9746,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1593';
+const APP_VERSION = '0.1594';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -22927,7 +22928,16 @@ function makeImportFolderName(label) {
                           : Math.max(0, Math.min(noteEditor.value.length, pos + dx));
     if (newPos === pos) return;
     noteEditor.setSelectionRange(newPos, newPos);
-    scrollCursorIntoView(); // shared: keeps the caret visible in the wrapper
+    // v0.1594: use the keyboard-aware ensure-visible (visualViewport band
+    // with pinned-toolbar top clearance) instead of scrollCursorIntoView()
+    // -- the old function's band ignores the keyboard and the toolbar
+    // overlay, which left the nudged caret sitting a bit under the
+    // toolbars at the top or under the keyboard at the bottom (Lynn's
+    // report). Known, flagged duplication: two ensure-visible functions
+    // now coexist (scrollCursorIntoView, non-vv-aware, many callers;
+    // _tpadEnsureCaretVisible, vv-aware) -- consolidation is a candidate
+    // follow-up, not done here to keep this fix's blast radius small.
+    _tpadEnsureCaretVisible(getCursorY(noteEditor), document.getElementById('note-content-area'), true);
   }
   function wireCaretNudge(id, dx, dy) {
     var btn = document.getElementById(id);
@@ -23248,7 +23258,7 @@ function makeImportFolderName(label) {
   // aware: with the keyboard open, vv.height is ~half the area's box
   // height and the bottom half sits under the keyboard; the pinned
   // header/toolbar overlay eats the top of the band).
-  function _tpadEnsureCaretVisible(caretY, area) {
+  function _tpadEnsureCaretVisible(caretY, area, quiet) {
     var vv = window.visualViewport;
     var vvOff = vv ? vv.offsetTop : 0;
     var visH = vv ? vv.height : area.clientHeight;
@@ -23262,7 +23272,10 @@ function makeImportFolderName(label) {
     if (newScroll !== null && Math.round(newScroll) !== Math.round(area.scrollTop)) {
       var oldScroll = area.scrollTop;
       area.scrollTop = newScroll;
-      logDebugAction('tpad-heal: caretY=' + Math.round(caretY) + ' scroll ' +
+      // quiet: the caret nudge buttons scroll on nearly every held-repeat
+      // step -- logging each would flood the debug log (applyRuledLines
+      // lesson). Only the trackpad heal path logs.
+      if (!quiet) logDebugAction('tpad-heal: caretY=' + Math.round(caretY) + ' scroll ' +
         Math.round(oldScroll) + '->' + Math.round(area.scrollTop));
     }
   }
