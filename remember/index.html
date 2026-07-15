@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1588 -->
+<!-- Remember App - Version 0.1589 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1588
+  Version 0.1589
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1589 - Trackpad detector RETUNE from v0.1588's deployed log: real drags are far slower than assumed (measured step gaps 200-1098ms; the sel=0 snap arrived 2168ms after the last step), so the 350ms/3-step/600ms gate died mid-drag (drag=1 at one logged step flipping to drag=0 at the next while still dragging) and the snap always landed on a dead latch. New values: steps qualify up to 1500ms apart, engage at 2 steps, latch 3000ms. Mode-switch scroll preservation remains immune by construction (its programmatic moves coalesce into a single selectionchange per task -- can never make two small steps). No mechanism changes; thresholds only.
   v0.1588 - Trackpad bug, round 3, from v0.1587's deployed log: the follow logic was STARVED BY ITS OWN THROTTLE -- the detector runs on every selection change (not just the 200ms-logged ones), every in-view check consumed the 80ms window, and the sel=0 snap arrived <80ms after an unlogged nothing-to-do check, so the one event that mattered never scrolled (log proof: drag=1 printed at the snap with areaScroll unmoved, and the log statement runs AFTER the scroll code). Fixes: (1) caret jumps >=200 chars bypass the throttle (the snap always qualifies, by the same threshold that disqualifies it as a drag step); (2) a trailing 150ms re-check scheduled during live drags catches a final move with no event behind it; (3) per Lynn's request, an app-drawn DEBUG CARET (red blinking bar inside the scroll content, tracking the real selection) shows ground truth regardless of whether iOS renders its I-beam -- diagnostic only, remove with the tpad logging. Ensure-visible logic extracted to a shared _tpadEnsureCaretVisible (live + trailing paths); its topClear also addresses Lynn's Android observation (OS autoscroll parks the I-beam under the pinned toolbars, which the OS knows nothing about).
   v0.1587 - FIX the v0.1586 fix, which never actually ran: its touch gate could never fire because the trackpad drag happens on the VIRTUAL KEYBOARD (OS chrome -- its touches never reach the page; deployed log showed touch=0 throughout and zero tpad-follow lines). Replaced with a drag-SIGNATURE detector: 3+ consecutive caret-only selection changes, each under 350ms apart and moving under 200 chars, engage follow mode, latched 600ms past the last step -- so the mid-drag sel=0 snap is caught and self-healed. Programmatic moves (two huge jumps) can't match the signature by construction; held arrow keys now also follow (standard behavior). Diagnostics extended: 'tpad:' lines add drag=, 'tpad-follow:' adds vvOff, and 'tpad-drag: engaged' marks detector activation. The reported toolbar shaking correlates in the log with iOS violently oscillating visualViewport.offsetTop (21<->403) trying to reveal the offscreen caret AFTER the snap -- v0.1586's own code never scrolled anything (it never ran), so the shake wasn't the follow logic; whether healing the snap quickly also removes the shake window is exactly what this build's logs will show.
   v0.1586 - FIX for TODO #20, from v0.1585's deployed diagnostics: during an iOS trackpad-mode drag toward the top edge, WebKit's autoscroll-to-caret only scrolls the focused textarea's OWN scrollTop (a no-op -- the wrapper note-content-area is the real scroller), then snaps the selection to index 0 far above the visible window, losing the OS-drawn I-beam permanently (captured: caretY 2538->2238 with areaScroll frozen at 2123, then sel=0/caretY=168). The app now follows the caret with the WRAPPER's scroll, only while a touch is active (trackpad drags always have one): caret outside the usable band (pinned header+toolbar overlay respected at top) scrolls note-content-area to bring it back with a margin -- giving real edge-autoscroll and making any residual sel=0 snap self-healing. Programmatic caret moves are immune by construction (no active touch); taps are already-visible no-ops; arrow keys deliberately not covered yet. 'tpad:'/'tpad-follow:' logging kept one more build for on-device verification.
@@ -9728,7 +9729,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1588';
+const APP_VERSION = '0.1589';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23234,12 +23235,21 @@ function makeImportFolderName(label) {
     var sel = noteEditor.selectionStart;
     var gap = now - _tpadLastSelTime;
     var dsel = (_tpadLastSel === -1) ? 0 : Math.abs(sel - _tpadLastSel);
-    var qualifies = gap < 350 && dsel > 0 && dsel < 200;
+    // v0.1589 RETUNE from v0.1588's deployed log: real trackpad drags are
+    // SLOW -- measured step gaps ran 200/493/517/652/1098ms, and the sel=0
+    // snap arrived 2168ms after the last step. The old 350ms/3-step/600ms
+    // gate died mid-drag (log proof: drag=1 at 22.465 flipping to drag=0
+    // at 22.665 while the drag was clearly still in progress), so the
+    // snap always landed on a dead latch and follow never ran. Mode-switch
+    // stays immune even at these looser values: its programmatic caret
+    // moves coalesce into ONE selectionchange per task, so it can never
+    // produce two qualifying small steps.
+    var qualifies = gap < 1500 && dsel > 0 && dsel < 200;
     _tpadDragSteps = qualifies ? _tpadDragSteps + 1 : 1;
     _tpadLastSelTime = now;
     _tpadLastSel = sel;
-    if (_tpadDragSteps === 3) logDebugAction('tpad-drag: engaged');
-    if (_tpadDragSteps >= 3) _tpadDragUntil = now + 600;
+    if (_tpadDragSteps === 2) logDebugAction('tpad-drag: engaged');
+    if (_tpadDragSteps >= 2) _tpadDragUntil = now + 3000;
     var dragActive = now < _tpadDragUntil;
     // v0.1588 FIX: big caret jumps (dsel >= 200 -- notably THE sel=0
     // snap, which the same threshold disqualifies as a drag step) BYPASS
