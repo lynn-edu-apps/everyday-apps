@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1591 -->
+<!-- Remember App - Version 0.1592 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1591
+  Version 0.1592
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1592 - Trackpad (TODO #20) FINAL MITIGATION, scaling back per Lynn's decision after CKEditor and Trinket were found to share this WebKit platform bug: removed the continuous caret-follow (it fought iOS's own autoscroll -- the reported jumpiness), the snap-restore experiment, the app-drawn debug I-beam, the touch counters, and all per-event tpad diagnostics. Kept exactly one surgical piece: the HEAL -- a caret jump >=500 chars landing during a detected drag scrolls the wrapper so the caret is visible again (single 'tpad-heal:' log line when it fires). Trackpad now behaves no worse than other web editors, with recoverability they lack. getCursorXY/getCursorY refactor kept (one mirror implementation). Caret nudge toolbar buttons come next build as the real user-facing answer.
   v0.1591 - Debug caret upgraded to a true tracking I-BEAM at the actual caret position (red, blinking, serif caps, sized to the editor's line height), per Lynn's request -- the previous left-gutter bar only showed the line. getCursorY refactored to getCursorXY returning {x,y} (the mirror span's rect always contained X; it was never returned) with getCursorY kept as a thin wrapper so all pre-existing callers are untouched -- one mirror implementation, not two. No behavior changes to the v0.1590 follow/snap-guard logic.
   v0.1590 - Trackpad round 4, from v0.1589's log (which finally showed tpad-follow running and the heal working). (1) EARTHQUAKE FIX: the follow's visible band now comes from the visualViewport (offsetTop/height) instead of the area's full box height -- with the keyboard open the bottom half of the area is UNDER the keyboard (vvH 409 vs areaH 812), the old math called carets there "visible", never corrected, and iOS panned violently (vvOff bouncing to 403) while the toolbars re-pinned each pan. (2) SNAP-GUARD EXPERIMENT: the v0.1589 log proved the sel=0 snap kills the whole trackpad session (19s of zero selection events on the subsequent downward drag) -- mid-drag teleports to 0 (jump >=500 chars from >=500 in) are now RESTORED to the pre-snap position instead of accepted; genuine gradual arrivals at the top are unaffected (their final step is small). Whether iOS keeps tracking after the restore is what this build's on-device test answers.
   v0.1589 - Trackpad detector RETUNE from v0.1588's deployed log: real drags are far slower than assumed (measured step gaps 200-1098ms; the sel=0 snap arrived 2168ms after the last step), so the 350ms/3-step/600ms gate died mid-drag (drag=1 at one logged step flipping to drag=0 at the next while still dragging) and the snap always landed on a dead latch. New values: steps qualify up to 1500ms apart, engage at 2 steps, latch 3000ms. Mode-switch scroll preservation remains immune by construction (its programmatic moves coalesce into a single selectionchange per task -- can never make two small steps). No mechanism changes; thresholds only.
@@ -1377,21 +1378,6 @@ body.dark .note-viewer .viewer-highlight,
 body.dark .note-viewer span.viewer-highlight {
   color: #1a1a1a !important;
 }
-
-/* v0.1588 DIAGNOSTIC: blink for the app-drawn debug caret marker */
-@keyframes tpadBlink { 50% { opacity: 0.15; } }
-/* v0.1591: upgraded from a left-gutter bar to a true I-beam that sits AT
-   the caret position (serif caps top and bottom), per Lynn's request. */
-#tpad-caret-mark {
-  position: absolute; width: 2px; background: #e03030;
-  pointer-events: none; z-index: 50;
-  animation: tpadBlink 1s step-end infinite;
-}
-#tpad-caret-mark::before, #tpad-caret-mark::after {
-  content: ''; position: absolute; left: -3px; width: 8px; height: 2px; background: #e03030;
-}
-#tpad-caret-mark::before { top: -1px; }
-#tpad-caret-mark::after { bottom: -1px; }
 
 /* ===== CHECK-OFF ANIMATION (v0.1581) =====
    Timing copied exactly from the approved demo (option F): checkmark
@@ -9743,7 +9729,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1591';
+const APP_VERSION = '0.1592';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23140,83 +23126,40 @@ function makeImportFolderName(label) {
     }, 0);
   });
 
-  // v0.1585 DIAGNOSTIC (TODO #20, iOS trackpad-mode I-beam lost off the
-  // top): log the full scroll/caret picture on CARET-ONLY movement --
-  // selection changes with no input event in between, which is exactly
-  // what trackpad drags, taps, and arrow keys produce; ordinary typing
-  // (which also fires selectionchange) is filtered out so the debug log
-  // isn't flooded (the applyRuledLines lesson). Throttled to 200ms.
-  // Architecture context for whoever reads the numbers: note-editor is a
-  // full-height textarea that never scrolls ITSELF -- the wrapper
-  // note-content-area is the real scroller. Hypothesis under test: iOS's
-  // trackpad autoscroll-to-caret only scrolls the focused textarea's own
-  // scrollTop (a no-op here), never the ancestor div, so dragging above
-  // the visible top moves the caret with nothing following it. If so,
-  // expect: caretY shrinking below area.scrollTop (caret above the
-  // visible window) while area.scrollTop stays FROZEN and ed.scrollTop
-  // stays 0 throughout. Remove after the fix is confirmed on device.
-  // v0.1586 FIX (TODO #20), built on the v0.1585 diagnostics, whose
-  // deployed capture showed the precise failure: during a trackpad drag
-  // toward the top edge, the caret walked smoothly (caretY 2538->2238)
-  // with note-content-area's scrollTop FROZEN and the textarea's own
-  // scrollTop at 0 (it never overflows -- the wrapper is the real
-  // scroller), then WebKit snapped the selection to index 0 (caretY 168,
-  // ~1950px above the visible window), where the OS I-beam -- drawn at
-  // the caret -- became invisible and stayed lost. Root cause: iOS's
-  // autoscroll-to-caret only knows how to scroll the focused textarea
-  // itself, which is a no-op here; it never scrolls the ancestor div.
+  // TODO #20 (iOS trackpad-mode caret loss) -- FINAL MITIGATION (v0.1592).
+  // Root cause is a WebKit platform bug family (caret machinery
+  // mishandles text fields scrolled by a CONTAINER rather than the field
+  // itself; reproduces in CKEditor and Trinket too, so this is NOT
+  // Remember-specific). History: v0.1585 diagnostics captured the failure
+  // (mid-drag the selection snaps to index 0 while the view is still
+  // ~2000px down; the OS I-beam, drawn at the caret, is lost and the
+  // trackpad session often dies); v0.1586-1591 tried touch-gated and then
+  // drag-signature-gated continuous caret-follow plus a snap-restore
+  // experiment and an app-drawn debug I-beam. On-device testing showed
+  // continuous follow FIGHTS iOS's own autoscroll (two systems scrolling
+  // one container = the reported "jumpy I-beam"), so everything was
+  // scaled back to this one surgical piece:
   //
-  // Fix: the app follows the caret with the WRAPPER's scroll, but ONLY
-  // while a finger is actually down (trackpad drags always have an
-  // active touch). This both provides real edge-autoscroll and makes the
-  // sel=0 snap self-healing (caret at 0 -> scroll to top -> I-beam
-  // visible again). Programmatic selection moves (mode-switch scroll
-  // preservation parks the caret at 0,0 deliberately) are immune BY
-  // CONSTRUCTION: no touch is active when they run. Taps are naturally
-  // unaffected (a tapped caret is already visible -> no-op). Arrow keys
-  // deliberately not covered in this first pass (no touch active).
-  // The 'tpad:' diagnostic logging is kept for one more build to verify
-  // the fix with numbers on device; remove after confirmation.
+  // HEAL ONLY: when a caret-only selection change lands with a jump of
+  // >=500 chars during a detected drag (the snap), scroll the wrapper so
+  // the caret is visible again. No per-step following, no selection
+  // restoring. Result: trackpad in Remember behaves no worse than other
+  // web editors, and unlike them the caret is always RECOVERABLE (lift
+  // finger, drag again -- confirmed working on device). The drag-
+  // signature gate (2+ caret-only steps <1500ms apart, <200 chars each,
+  // latched 3000ms) keeps programmatic caret moves immune: mode-switch
+  // scroll preservation coalesces into a single selectionchange per task
+  // and can never look like two small steps.
   var _tpadInputSinceSel = false;
-  var _tpadLastLog = 0;
-  var _tpadLastFollow = 0;
-  var _tpadTouchCount = 0; // kept for LOGGING only -- see below, it can never gate this feature
-  // v0.1587: the v0.1586 touch gate NEVER FIRED (deployed log: touch=0 on
-  // every line, zero tpad-follow entries) -- the trackpad drag happens on
-  // the VIRTUAL KEYBOARD, which is OS chrome; those touches never reach
-  // the page as touch events at all. Design error, corrected here:
-  // detect the drag by its SIGNATURE instead -- 3+ consecutive caret-only
-  // selection changes, each within 350ms of the previous, each moving
-  // fewer than 200 characters (trackpad drags creep; programmatic moves
-  // like mode-switch's setSelectionRange(0,0)-then-restore jump thousands,
-  // and only twice, so they can never look like three small steps).
-  // Once engaged, drag mode latches for 600ms past the last qualifying
-  // step, so the mid-drag sel=0 snap (the actual bug) is still inside
-  // the window and the self-heal scroll fires. Held arrow keys now also
-  // engage follow -- standard editor behavior, acceptable.
   var _tpadDragSteps = 0;
   var _tpadLastSelTime = 0;
   var _tpadLastSel = -1;
   var _tpadDragUntil = 0;
-  var _tpadTrailTimer = null;
-  var _tpadCaretMark = null;
-  var _tpadCaretMarkTimer = null;
-  // Shared "bring the caret into the usable band" step, used by the live
-  // follow AND the trailing re-check. topClear keeps the caret BELOW the
-  // pinned header+toolbar overlay -- which is also exactly Lynn's Android
-  // complaint (the OS I-beam hiding behind the two toolbars when the OS
-  // itself autoscrolls, since the OS knows nothing about our overlay).
-  function _tpadEnsureCaretVisible(caretY, area, why) {
-    // v0.1590 FIX (the downward-drag earthquake): the visible band must
-    // come from the VISUAL viewport, not the area's full box height --
-    // with the keyboard open, vvH is ~half of area.clientHeight (409 vs
-    // 812 in the logs) and the bottom half of the area is UNDER the
-    // keyboard. The old math considered a caret there "visible", so this
-    // follow never corrected it, iOS panned violently to reveal it
-    // (vvOff bouncing to 403), and the toolbars re-pinned on every pan.
-    // Visible content range in the area's content space is
-    // [scrollTop + vvOff, scrollTop + vvOff + vvH], with the pinned
-    // header/toolbar overlay eating the top of that band.
+  // Bring the caret into the VISUAL viewport's usable band (keyboard-
+  // aware: with the keyboard open, vv.height is ~half the area's box
+  // height and the bottom half sits under the keyboard; the pinned
+  // header/toolbar overlay eats the top of the band).
+  function _tpadEnsureCaretVisible(caretY, area) {
     var vv = window.visualViewport;
     var vvOff = vv ? vv.offsetTop : 0;
     var visH = vv ? vv.height : area.clientHeight;
@@ -23230,133 +23173,26 @@ function makeImportFolderName(label) {
     if (newScroll !== null && Math.round(newScroll) !== Math.round(area.scrollTop)) {
       var oldScroll = area.scrollTop;
       area.scrollTop = newScroll;
-      logDebugAction('tpad-follow(' + why + '): caretY=' + Math.round(caretY) +
-        ' scroll ' + Math.round(oldScroll) + '->' + Math.round(area.scrollTop) +
-        ' vvOff=' + (window.visualViewport ? Math.round(window.visualViewport.offsetTop) : 'n/a'));
+      logDebugAction('tpad-heal: caretY=' + Math.round(caretY) + ' scroll ' +
+        Math.round(oldScroll) + '->' + Math.round(area.scrollTop));
     }
   }
-  // v0.1588 DIAGNOSTIC (Lynn's request): the app draws its OWN caret
-  // marker -- a red blinking bar at the caret's line, inside the scroll
-  // content so it moves with the note -- showing where the SELECTION
-  // actually is regardless of whether iOS draws its I-beam. Purely
-  // visual, pointer-events:none; remove with the rest of the tpad
-  // diagnostics once this bug is closed.
-  function _tpadUpdateCaretMark(caretXY) {
-    var area = document.getElementById('note-content-area');
-    if (!_tpadCaretMark) {
-      if (getComputedStyle(area).position === 'static') area.style.position = 'relative';
-      _tpadCaretMark = document.createElement('div');
-      _tpadCaretMark.id = 'tpad-caret-mark';
-      area.appendChild(_tpadCaretMark);
-    }
-    var lh = parseFloat(getComputedStyle(noteEditor).lineHeight) || 26;
-    _tpadCaretMark.style.height = Math.round(lh) + 'px';
-    _tpadCaretMark.style.top = Math.round(caretXY.y) + 'px';
-    _tpadCaretMark.style.left = Math.round(caretXY.x - 1) + 'px';
-    _tpadCaretMark.style.display = 'block';
-  }
-  document.addEventListener('touchstart',  function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
-  document.addEventListener('touchend',    function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
-  document.addEventListener('touchcancel', function(e) { _tpadTouchCount = e.touches.length; }, { capture: true, passive: true });
-  noteEditor.addEventListener('input', function() {
-    _tpadInputSinceSel = true;
-    // Keep the debug caret marker roughly current during typing too
-    clearTimeout(_tpadCaretMarkTimer);
-    _tpadCaretMarkTimer = setTimeout(function() {
-      if (document.activeElement === noteEditor) _tpadUpdateCaretMark(getCursorXY(noteEditor));
-    }, 250);
-  });
-  noteEditor.addEventListener('blur', function() {
-    if (_tpadCaretMark) _tpadCaretMark.style.display = 'none';
-  });
+  noteEditor.addEventListener('input', function() { _tpadInputSinceSel = true; });
   document.addEventListener('selectionchange', function() {
     if (document.activeElement !== noteEditor) return;
     if (_tpadInputSinceSel) { _tpadInputSinceSel = false; return; } // typing, not a caret-only move
     var now = Date.now();
-    // Drag-signature detection (see comment at the vars above)
     var sel = noteEditor.selectionStart;
     var gap = now - _tpadLastSelTime;
     var dsel = (_tpadLastSel === -1) ? 0 : Math.abs(sel - _tpadLastSel);
-    // v0.1590 EXPERIMENT (snap-guard): the v0.1589 log proved the sel=0
-    // snap KILLS the trackpad session -- after it, a downward drag emits
-    // zero selection changes (19s of silence in the log). Instead of
-    // accepting the snap and healing the scroll, try RESTORING the
-    // selection to its pre-snap position: mid-drag (latch live), a
-    // teleport to 0 from >=500 chars into the note with a jump of >=500
-    // chars is never a real drag step (drags creep <200 chars/step) and
-    // never a genuine arrival at the top (those approach gradually, so
-    // the final jump is small and this guard doesn't apply). Whether iOS
-    // keeps tracking after a programmatic setSelectionRange mid-session
-    // is exactly what this experiment answers on-device.
-    if (now < _tpadDragUntil && sel === 0 && _tpadLastSel >= 500 && dsel >= 500) {
-      logDebugAction('tpad-snapguard: sel snapped ' + _tpadLastSel + '->0 mid-drag; restoring');
-      noteEditor.setSelectionRange(_tpadLastSel, _tpadLastSel);
-      _tpadLastSelTime = now;
-      return; // the restore fires its own selectionchange; handled there
-    }
-    // v0.1589 RETUNE from v0.1588's deployed log: real trackpad drags are
-    // SLOW -- measured step gaps ran 200/493/517/652/1098ms, and the sel=0
-    // snap arrived 2168ms after the last step. The old 350ms/3-step/600ms
-    // gate died mid-drag (log proof: drag=1 at 22.465 flipping to drag=0
-    // at 22.665 while the drag was clearly still in progress), so the
-    // snap always landed on a dead latch and follow never ran. Mode-switch
-    // stays immune even at these looser values: its programmatic caret
-    // moves coalesce into ONE selectionchange per task, so it can never
-    // produce two qualifying small steps.
     var qualifies = gap < 1500 && dsel > 0 && dsel < 200;
     _tpadDragSteps = qualifies ? _tpadDragSteps + 1 : 1;
     _tpadLastSelTime = now;
     _tpadLastSel = sel;
-    if (_tpadDragSteps === 2) logDebugAction('tpad-drag: engaged');
     if (_tpadDragSteps >= 2) _tpadDragUntil = now + 3000;
-    var dragActive = now < _tpadDragUntil;
-    // v0.1588 FIX: big caret jumps (dsel >= 200 -- notably THE sel=0
-    // snap, which the same threshold disqualifies as a drag step) BYPASS
-    // the 80ms follow throttle. v0.1587's deployed log showed the snap
-    // event getting starved: the detector runs on EVERY selection change
-    // (not just logged ones), each in-view check consumed the throttle
-    // window, and the one event where scrolling mattered arrived <80ms
-    // after an unlogged nothing-to-do check -- so it never scrolled.
-    var doFollow = dragActive && (now - _tpadLastFollow >= 80 || dsel >= 200);
-    var doLog = (now - _tpadLastLog >= 200);
-    // (v0.1588: no early return -- caretY is now measured on every
-    // caret-only event so the debug caret marker stays live. Diagnostic
-    // build only; restore the early-out when diagnostics are removed.)
-    try {
-      var area = document.getElementById('note-content-area');
-      var vv = window.visualViewport;
-      var caretXY = getCursorXY(noteEditor);
-      var caretY = caretXY.y; // Y within area's content space
-      _tpadUpdateCaretMark(caretXY);
-      if (doFollow) {
-        _tpadLastFollow = now;
-        _tpadEnsureCaretVisible(caretY, area, 'drag');
-        // Trailing one-shot ~150ms later: covers a final caret move that
-        // arrives with no further selectionchange behind it to trigger us
-        // (the drag latch may have expired by then, so it's scheduled
-        // here, while we still know a drag is happening).
-        clearTimeout(_tpadTrailTimer);
-        _tpadTrailTimer = setTimeout(function() {
-          if (document.activeElement !== noteEditor) return;
-          _tpadEnsureCaretVisible(getCursorY(noteEditor), document.getElementById('note-content-area'), 'trail');
-        }, 150);
-      }
-      if (doLog) {
-        _tpadLastLog = now;
-        var edRect = noteEditor.getBoundingClientRect();
-        logDebugAction('tpad: sel=' + noteEditor.selectionStart +
-          ' caretY=' + Math.round(caretY) +
-          ' areaScroll=' + Math.round(area.scrollTop) +
-          ' areaH=' + Math.round(area.clientHeight) +
-          ' edScroll=' + Math.round(noteEditor.scrollTop) +
-          ' edTop=' + Math.round(edRect.top) +
-          ' touch=' + _tpadTouchCount +
-          ' drag=' + (dragActive ? 1 : 0) +
-          ' vvOff=' + (vv ? Math.round(vv.offsetTop) : 'n/a') +
-          ' vvH=' + (vv ? Math.round(vv.height) : 'n/a'));
-      }
-    } catch (e) {
-      logDebugAction('tpad diagnostic/follow failed: ' + (e && e.message));
+    // The heal itself: big jump landing mid-drag -> caret visible again.
+    if (now < _tpadDragUntil && dsel >= 500) {
+      _tpadEnsureCaretVisible(getCursorY(noteEditor), document.getElementById('note-content-area'));
     }
   });
 
