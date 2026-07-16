@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1594 -->
+<!-- Remember App - Version 0.1612 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1594
+  Version 0.1612
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,24 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1612 - Per Lynn's explicit correction (a screenshot I mis-read as a good result was actually the mark 5+ lines away from the real caret) and explicit request: added an automated sanity check that catches an impossible cursor position BEFORE it renders, instead of relying on a human to spot it in a screenshot. A caret can never legitimately sit outside its own textarea's currently-visible area -- the computed Y is translated into the textarea's own visible-viewport coordinate space and checked against [0, clientHeight]. If it fails, the mark hides and logs loudly (boldcursor-SANITY-FAIL, with the exact numbers at that instant) instead of silently drawing a known-wrong position. This does not fix the underlying cause -- it makes failures self-reporting and precisely timestamped, which the next debug log should make possible to actually diagnose, rather than reconstructing the bug from a screenshot after the fact.
+  v0.1611 - REAL explanation and fix for the position jitter after opening Edit Paragraph on a long paragraph, confirmed by Lynn's v0.1610 diagnostic log: scrollTopAtCall and scrollTopNow matched on every line (the scroll READ was never stale -- three earlier timing theories, all now conclusively closed), but Lynn clarified the dialog auto-scrolls on open, not from a manual scroll -- and the log showed why: openEditBlockDialog() deliberately places the caret at the END of the text (setSelectionRange to the full length), which for a long paragraph forces the browser's OWN native scroll-to-caret. That scroll doesn't complete in one step -- the log showed the identical selection (sel=418, completely unchanged) with scrollTop drifting 170->214->211->174->...->170 over ~2.5 seconds as it settled, and update() faithfully (and correctly, for each instant) redrew the mark at every intermediate step -- individually accurate but visually jittery, and any single screenshot taken mid-settle would show a "wrong" position that was really just an in-progress native scroll animation. Fixed with a scroll-settle debounce (120ms of quiet before redrawing) replacing the previous unthrottled scroll listener.
+  v0.1610 - DIAGNOSTIC ONLY, no behavior fix, after Lynn's screenshot showed the mirror correctly reflecting its own cursor position but STILL disagreeing with the real editor's native cursor after a plain scroll+tap (a different scenario than v0.1609's auto-scroll-during-typing fix, which doesn't apply here -- a deliberate scroll then tap involves no browser auto-scroll-to-caret at all). Also confirmed Lynn's observation that the debug mirror's on-screen box position doesn't reflect scroll -- expected (it's meant to sit below the dialog, not track internal scroll), but made the underlying scroll VALUES fully visible in the log instead: new bc-scroll-check log line captures scrollTop at the moment update() is called vs. inside the deferred measurement callback (to test whether it's changing between those points), and bc-mirror now logs edScrollTop/edRect.top alongside the geometry it already reports. Next log from Lynn should show definitively whether the scroll read itself is unstable, or whether the bug is elsewhere (e.g. how the mark's position gets applied after a correct measurement).
+  v0.1609 - Two fixes for the remaining vertical drift Lynn found (cursor landing below the real box when text was near the bottom edge). (1) Double-rAF: a single requestAnimationFrame isn't guaranteed to run AFTER the browser's own native auto-scroll-to-caret has fully settled (it may itself be driven by a later layout pass) -- deferred to the frame after the one already scheduled, giving that browser-driven scroll a full cycle to land before ed.scrollTop is measured. (2) Per Lynn's direct observation that the mirror visibly had more padding at top/bottom than the real box: switched padding (a shorthand, same risk class as the border bug already found) to the four individual longhand properties, and added min-height/max-height to the mirror so its box height matches the real textarea's (which has min-height:12em, taller than a short paragraph's actual content) -- tests whether box-height difference was shifting where text visually starts within the box. Applied to both getCursorXYFor() and the shared getCursorXY().
+  v0.1608 - REAL bug behind the bold cursor landing in the wrong place after scrolling inside Quick Add/Edit Paragraph, confirmed by Lynn's two-screenshot comparison (which also confirmed the v0.1607 wrapping fix DID work -- both boxes now wrap identically). Root cause: the position math read scrollAncestor.scrollTop for the scroll offset, but scrollAncestor is the WRAPPER <div> added in v0.1601 (needed since a <textarea> can't render child elements) -- the wrapper itself never scrolls; the TEXTAREA scrolls internally. scrollAncestor.scrollTop was always reading the wrapper's scrollTop (always 0), never the textarea's real internal scroll position. Fixed: the scroll offset now always comes from ed (the textarea) itself -- correctly a no-op for note-editor (which doesn't scroll itself) and correctly live for the self-scrolling dialogs. scrollAncestor remains used only as the positioning reference frame, never as the scroll source.
+  v0.1607 - REAL bug behind the mirror being narrower than the real textarea, and WHY v0.1606's border fix made it worse instead of better -- from Lynn's screenshot showing the gap increased. Root cause: ed.clientWidth (content+padding, EXCLUDES border) was applied as a box-sizing:border-box width value (content+padding+border TOGETHER) -- double-subtracting the border from the mirror's available text space. Before v0.1606 the border was silently missing (the shorthand-serialization bug), which accidentally masked most of this by not subtracting a border at all; once v0.1606 correctly restored the border, it got double-subtracted, making the mirror measurably narrower than before -- exactly what Lynn observed. Fixed with the W3C-correct pairing: ed.offsetWidth (content+padding+border together), which matches border-box's own definition of 'width' with no double-counting, in both getCursorXYFor() and the shared getCursorXY(). Also added rounded corners (border-radius, copied from the real element) to the debug-visible mirror per Lynn's request, for a more accurate side-by-side visual comparison in future screenshots.
+  v0.1606 - Bold Cursor position bug, likely the real final fix -- from Lynn's direct observation comparing the two boxes in the screenshot: the mirror's rightmost edge sat inside the real box's edge, meaning the mirror was NARROWER than it should be. Root cause: 'border:' + cs.border used the SHORTHAND computed style, which is not reliably serialized across browsers -- WebKit/Safari has a known history of returning an empty string for shorthand computed properties even when the underlying longhand values are genuinely set. If that happened here, the mirror silently rendered with NO border at all, and under box-sizing:border-box that makes its actual text-content area WIDER than the real element's by the border width on each side -- shifting exactly where lines wrap, in both getCursorXYFor() and the shared getCursorXY() (same fix applied to both). Also fixed a second, compounding bug specific to the debug-visible mirror: its own extra 'border:2px dashed' for the yellow highlight was DOUBLE-COUNTING width on top of the real copied border -- moved to outline, which never affects box layout/width, so the debug view now measures the same box the real (invisible) production path does.
+  v0.1605 - REAL ROOT CAUSE for the Quick Add/Edit Paragraph position drift, finally confirmed by Lynn's screenshot showing the wrap points genuinely differ between the visible debug mirror and the real textarea (three earlier theories -- wrapper box mismatch, math error, staleness race -- were each individually disproven). Cause: getCursorXYFor() (and the shared getCursorXY(), same latent gap, fixed too) never copied letter-spacing or word-spacing to the mirror -- both real, pervasive properties in this app's CSS cascade. If the textarea's own computed value for either ever resolves to non-default (inherited from any ancestor), the mirror's text packs differently and wraps at different points than the real textarea -- worse the longer the text, matching every symptom reported across this whole investigation. Fixed by copying letter-spacing, word-spacing, text-transform, and tab-size in addition to the properties already copied. Also: per Lynn's confirmation that showing both cursors together fixed the missing drag-handles bug, updated the Bold Cursor settings description to accurately describe current behavior (shows alongside the native cursor, not instead of it) and added the requested warning that two cursors may appear together. Noted for a future build, not yet implemented: Lynn wants platform-conditional behavior (skip showing both cursors on non-iOS, where caret-color may work reliably) -- deferred until tested on other platforms rather than guessed at.
+  v0.1604 - Per Lynn's decision: Bold Cursor no longer hides the native caret. Root cause search led to bugs.webkit.org #177489 -- caret-color is a long-standing, unresolved WebKit bug on iOS Safari (open since 2017; doesn't reliably respect changes, can bleed from a previously-focused field). This very likely explains BOTH the intermittent "still see the native cursor" reports AND the missing text-selection drag handles Lynn found (both plausibly downstream of the same broken iOS caret-rendering pipeline) -- not fixable from the page side. Removed ta.style.caretColor entirely; Bold Cursor now draws alongside the native caret rather than replacing it. Lynn's reasoning, worth recording: the audience this feature serves (low vision) is unlikely to even notice a second, thin native line once the bold one is visible, and this sidesteps the WebKit bug rather than continuing to fight it. The Quick Add/Edit Paragraph position-drift bug remains open and unrelated to this fix -- the v0.1603 debug-mirror toggle stays in for one more round of investigation.
+  v0.1603 - Bold Cursor position bug in Quick Add/Edit Paragraph, round 3. Lynn's screenshots showed the mark landing in plausible-but-wrong locations (inside an unrelated checkbox label; past the end of the visible textarea) even after v0.1602's full-text-mirror fix. Three theories (wrapper-div box mismatch, a math error, a selectionStart staleness race) were each proposed and discarded by code inspection without conclusive proof -- rather than guess a fourth time, DIAGNOSTIC ONLY this build: getCursorXYFor()'s mirror can now be rendered genuinely ON SCREEN (not off at -9999px) via a new temporary Settings toggle ("Show Bold Cursor debug mirror," Note Appearance > Bold Cursor), with its measurement marker highlighted, positioned directly below whichever text box is focused -- same technique that found the real v8 wrapping bug in the standalone demo originally. No behavior change to the actual Bold Cursor logic. Please enable this toggle, reproduce the bug in Quick Add or Edit Paragraph, and screenshot the yellow debug box alongside the real text box.
+  v0.1602 - REAL ROOT CAUSE for Bold Cursor drifting increasingly ahead of the real position in Quick Add/Edit Paragraph on longer text, eventually landing outside the box (Lynn's report). Both getCursorXYFor() (written fresh for this feature) and the app's shared getCursorXY() (16+ other callers: caret nudge buttons, mode-switch scroll preservation, find-in-note, trackpad heal) used a TRUNCATED-PREFIX mirror -- only the text BEFORE the cursor, nothing after. Word-wrap is a greedy fill algorithm whose line-break decisions depend on what comes AFTER the visible point too, so a truncated prefix wraps differently than the real textarea once a line is long enough to actually wrap -- exactly matching "fine on a short line, increasingly wrong on longer ones." This is the SAME structural bug a standalone demo already found and fixed once (v8 of that demo); it had silently regressed back to the truncated-prefix version in both of this app's copies. Fixed both the same way the demo was fixed: full text, with a zero-width marker inserted AT the real cursor position, nothing truncated. Full regression suite run specifically to catch any behavioral drift in getCursorXY()'s many other callers. Native-cursor-duplication: still real per Lynn's re-confirmation (blink-timing coincidence likely explains why it wasn't always noticed), but no code-level cause has been found (caret-color:transparent is set correctly, unopposed by any competing CSS rule) -- left as a known, watched issue rather than guessing at a fix with nothing concrete to go on.
+  v0.1601 - ROOT CAUSE finally found for "Bold Cursor invisible in Quick Add/Edit Paragraph" -- Lynn's log showed PERFECT math, parenting, and CSS (markParentPos=relative, markParentIsContainer=true, sane left/top values, updating live) yet total invisibility, which meant the bug wasn't in any of the logic already instrumented. Real cause: quick-add-input/edit-block-input are <textarea> elements, which per the HTML spec do NOT render arbitrary child DOM nodes inside their own box at all -- the mark was a real, correctly-positioned DOM node appended somewhere the browser will never paint it, no matter how correct the math was. note-editor's case worked only because its mark was parented to note-content-area, a real <div> -- never to the textarea itself. Fixed by wrapping each self-scrolling textarea in a real positioning <div> (hugs the textarea 1:1, no layout effect) and registering that wrapper as the scroll ancestor/container instead of the textarea. Also fixed a real, separate latent bug found while investigating: the mark's z-index (5) was far below these dialogs' own stacking (up to 10010) -- didn't matter while the mark never rendered at all, but would have surfaced the moment the wrapper fix made it paintable, so raised in the same build.
+  v0.1600 - Bold Cursor position bug in Quick Add/Edit Paragraph, round 2 -- from Lynn's log showing it working correctly once (top=216/226px) then reverting to the top=6px bug on the SAME dialog's next open in the same session. Root cause: position:relative enforcement on the mark's container only ran when CREATING the mark or when its parent CHANGED -- never on a plain re-open where the mark already existed with the same parent reference. If the container's position ever reverted to static between opens for any reason, a static mark falls back to the nearest positioned ANCESTOR up the tree, explaining both the wrong position and its intermittent, per-open nature. Fixed: position:relative is now enforced unconditionally on every getMark() call. Also fixed the diagnostic log itself, which was reading ta.parentElement (a separate, possibly-different lookup than the actual resolveScrollAncestor() result) -- now logs the real mark container and confirms it matches the resolved scroll ancestor.
+  v0.1599 - Two more real bugs from Lynn's log/report. (1) Bold Cursor appearing near the TOP of Quick Add/Edit Paragraph (in the title/label area, not the textarea): top=6px on every log line was the giveaway -- getMark() unconditionally parented the mark to ta.parentElement (quick-add-box, which ALSO contains the title/position-buttons/label ABOVE the textarea), a DIFFERENT element than scrollAncestorId used in the coordinate math. The mark's container and the math's reference frame must be the same element; fixed by having getMark() parent to the actual resolved scroll ancestor, consolidated into one shared resolveScrollAncestor() used by both. (2) Selection hide: double/triple-tap word/line selection was showing the caret at the selection start, reading as a stray artifact rather than standard editor behavior (no caret glyph while a real range is selected -- the browser's own highlight is the indicator). Fixed: update() now hides the mark whenever selectionStart !== selectionEnd. Native-caret-duplication in the main editor was NOT reproduced this session (Lynn confirmed it's gone) -- no code change was knowingly made to fix it; flagged as possibly intermittent, watch for recurrence.
+  v0.1598 - REAL BUG FOUND from Lynn's on-device log (erratic Bold Cursor position in Quick Add/Edit Paragraph, jumping non-monotonically as left=40/59/40/76px). Root cause: the app's pre-existing getCursorXY() hardcodes document.getElementById('note-content-area') as the scrolling ancestor for its coordinate math -- correct for note-editor (that IS its real ancestor) but silently wrong for quick-add-input/edit-block-input, whose real scrolling ancestors are themselves (both are self-scrolling textareas, no wrapper) -- measuring against the wrong box entirely produced garbage. Also confirmed from the SAME log that "Edit Paragraph doesn't show Bold Cursor" was never real -- it fires correctly once the setting is confirmed on; the earlier report came from a session where the toggle had silently reset to off. Fixed: added getCursorXYFor(ed, scrollAncestor), a Bold-Cursor-specific measurement function taking the correct ancestor per instance (getCursorXY() itself untouched -- 16+ other callers depend on its existing note-content-area-specific behavior). Confirmed via jsdom: both dialogs now produce sane, calibration-consistent coordinates matching the main editor's known-good values.
+  v0.1597 - Two things from Lynn's testing. (1) REAL BUG FOUND AND FIXED: the note-editor + FAB (note-fab) intermittently disappearing was two independent systems fighting over the same element's display -- the pre-existing showNoteFab setting (applySettings(), writes 'flex'/'none') and the newer toolbarPlacement system (applyToolbarHiddenOverrides(), writes ''/'none'), whichever ran last silently won, and note-fab's own CSS defaults to display:none, so the placement system's '' fallback (intended for elements with a class-level flex default) could hide a FAB showNoteFab had just correctly shown. Fixed: note-fab is now excluded from the placement system's display-writing loop entirely -- it stays governed by showNoteFab alone, as it always was; its settings-row pairing with quick-add-btn (for reordering/menu purposes) is untouched. (2) Bold Cursor diagnostics added for two unconfirmed reports (Edit Paragraph not showing it; native caret still visible alongside it in the main editor) -- both reproduce correctly in jsdom, meaning the bug (if real) is a real-device-only timing/rendering difference; logging added to apply()/update() to capture what's actually happening on Lynn's device rather than guessing further.
+  v0.1596 - Bold Cursor extended to Quick Add and Edit Paragraph, per Lynn's request (deliberately NOT the scratch pad -- Lynn's explicit design call, a future low-vision App Theme covers that audience via a curated bundle instead). Generalized the single hardcoded implementation into a reusable initBoldCursorFor() factory, one instance per textarea -- found and handled a real architecture difference while porting: note-editor is a non-scrolling textarea inside a scrolling WRAPPER, but quick-add-input and edit-block-input are each SELF-scrolling with no wrapper, so each instance's mark element now attaches to that textarea's own parent rather than a hardcoded note-content-area id. getCursorXY()'s coordinate math needed no changes -- it already accounts for whichever element's own scrollTop/scrollLeft is passed to it.
+  v0.1595 - Two features. (1) Default Checkbox & Bullet Color: checkboxColor now also colors bullet glyphs (viewer-bullet-char -- covers *, +, and hyphens-as-bullets when showBulletsForHyphens is on, including multi-level styles) in R&R mode, per Lynn's explicit design call that checkboxes and bullets should share one default color concept. NEVER applied to literal hyphens (viewer-hyphen-marker) -- Lynn's reasoning: too thin to carry color well. Color resolution extracted into a shared getDefaultMarkColor()/MARK_COLOR_PALETTE so checkboxes (which keep their [x:color] override) and bullets (no override, none planned) use the identical chain rather than duplicating it. Settings row description updated to reflect the broadened scope. (2) Bold Cursor: an app-drawn caret replacing the native one, ported from a standalone demo after 16 rounds of on-device calibration (X=-2.5px fixed, Y=-0.31em scaled to font, height=100%, same getCursorXY() mirror-div technique already used elsewhere in this file). Off by default -- Lynn's explicit risk call, since hiding the real caret and substituting a synced one is a bigger claim across the full editor than across a standalone demo. New Note Appearance settings: boldCursorEnabled, boldCursorWidth (2-7px, default 4), boldCursorColor (default a Bear-red #d6336c, Lynn's pick).
   v0.1594 - Caret nudge fixes per Lynn's testing: (1) the four buttons now appear only in EMTIP (keyboard open), like Dictate and Dismiss-keyboard -- switched from edit-only-btn to the kb-only class (dismiss-keyboard-btn's exact pattern), removing the inline display:none that would have overridden the CSS. (2) Nudge scrolling now uses the keyboard-aware _tpadEnsureCaretVisible (visualViewport band + pinned-toolbar clearance, new quiet flag so held repeats don't flood the log) instead of scrollCursorIntoView, whose band ignores the keyboard/toolbar overlay and left the caret slightly hidden under them. Flagged: scrollCursorIntoView vs _tpadEnsureCaretVisible duplication is now explicit; consolidation deferred.
   v0.1593 - Caret nudge buttons (the user-facing answer to the iOS trackpad WebKit bug, TODO #20): four new lower-toolbar buttons -- Cursor left/right (one character) and Cursor up/down (one line, column-preserving via new pure top-level caretLineMove()) -- press for one step, hold to repeat (450ms delay then ~11/s). Pointer Events with pointerdown preventDefault keep the keyboard open (same goal as indent-btn's established mousedown pattern). Wired into every existing toolbar system: HIDEABLE_BUTTONS, SETTINGS_ROW_PAIRS (left/right and up/down each share a settings row), TOOLBAR_ONLY placement category (a nudge in the More menu is useless), DEFAULT_TOOLBAR_ORDER after Unindent, toolbar-help catalog, edit-only-btn mode gating. New test files: cases v14 (adds caretLineMove cases), goldens v15 (paired with cases v14).
   v0.1592 - Trackpad (TODO #20) FINAL MITIGATION, scaling back per Lynn's decision after CKEditor and Trinket were found to share this WebKit platform bug: removed the continuous caret-follow (it fought iOS's own autoscroll -- the reported jumpiness), the snap-restore experiment, the app-drawn debug I-beam, the touch counters, and all per-event tpad diagnostics. Kept exactly one surgical piece: the HEAL -- a caret jump >=500 chars landing during a detected drag scrolls the wrapper so the caret is visible again (single 'tpad-heal:' log line when it fires). Trackpad now behaves no worse than other web editors, with recoverability they lack. getCursorXY/getCursorY refactor kept (one mirror implementation). Caret nudge toolbar buttons come next build as the real user-facing answer.
@@ -1379,6 +1397,24 @@ body.dark .viewer-highlight,
 body.dark .note-viewer .viewer-highlight,
 body.dark .note-viewer span.viewer-highlight {
   color: #1a1a1a !important;
+}
+
+/* v0.1595: Bold Cursor -- app-drawn caret replacing the native one.
+   Ported from the standalone thick-caret-demo after 16 rounds of
+   on-device calibration. */
+@keyframes boldCursorBlink { 50% { opacity: 0; } }
+.bold-cursor-mark-instance {
+  /* v0.1601: z-index raised from 5 -- far below the Quick Add/Edit
+     Paragraph dialogs' own stacking (.confirm-overlay: 10010,
+     #edit-block-overlay: 3000). Didn't matter for the "never renders at
+     all" bug this build fixes, but would have surfaced the moment that
+     fix made the mark paintable -- raised now rather than shipping a
+     newly-exposed bug. 10011 clears the highest dialog z-index (10010)
+     by one; still well below anything meant to render ABOVE a dialog
+     (there is nothing higher in this app's z-index scheme). */
+  position: absolute; pointer-events: none; z-index: 10011;
+  animation: boldCursorBlink 1s step-end infinite;
+  border-radius: 1px;
 }
 
 /* ===== CHECK-OFF ANIMATION (v0.1581) =====
@@ -7159,8 +7195,14 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <button class="qa-pos-btn" id="qa-pos-rule" type="button">After —</button>
     </div>
     <div class="qa-pos-label" id="qa-pos-label">Will insert at bottom</div>
-    <textarea id="quick-add-input" rows="4" placeholder="Type text to add…" spellcheck="true"
-      style="width:100%;font-family:var(--font-note);font-size:var(--font-size-editor);background:var(--bg2);color:var(--fg);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;resize:none;outline:none;box-sizing:border-box;line-height:var(--line-height);transition:border-color 0.2s"></textarea>
+    <!-- v0.1601: wrapper div for Bold Cursor -- a <textarea> does not
+         render arbitrary child DOM nodes inside its own box; the mark
+         must be parented to a real element instead. Hugs the textarea
+         1:1 (position:relative, no size/layout effect of its own). -->
+    <div id="quick-add-input-wrap" style="position:relative">
+      <textarea id="quick-add-input" rows="4" placeholder="Type text to add…" spellcheck="true"
+        style="width:100%;font-family:var(--font-note);font-size:var(--font-size-editor);background:var(--bg2);color:var(--fg);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;resize:none;outline:none;box-sizing:border-box;line-height:var(--line-height);transition:border-color 0.2s"></textarea>
+    </div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
       <input type="checkbox" id="quick-add-blank-line-before" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
       Add a blank line before the new text
@@ -8086,7 +8128,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <div class="settings-subsection-title" style="margin-top:10px">Color-Coding Palette</div>
       <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-        <div class="settings-row-desc">Default checkbox color. Also used by the Color toolbar button for color-coding text with tags like {red}, {gold}, {rose} etc.</div>
+        <div class="settings-row-desc">Default color for checkboxes and bullets (• ▪ ◦) in Read &amp; Revise mode — plain hyphens stay uncolored text. Also used by the Color toolbar button for color-coding text with tags like {red}, {gold}, {rose} etc. Checkboxes can still be individually recolored with [x:color].</div>
         <div class="color-swatch-row" id="checkbox-color-swatches">
           <button class="settings-color-swatch" data-value="gray" style="background:#888888" title="Gray (default)"></button>
           <button class="settings-color-swatch" data-value="red" style="background:#e83535" title="Red"></button>
@@ -8279,6 +8321,44 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
       <!-- v0.1548: Notes List Entry Background (Profiles & Note Styles Phase A, build 5, FINAL Phase A build) -->
       
+
+      <div class="settings-subsection-title" style="margin-top:10px">Bold Cursor</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Bold Cursor</div>
+          <div class="settings-row-desc">Adds a thicker, colored cursor that's easier to spot — for people with vision difficulty seeing the standard thin blinking line. It appears alongside the device's own cursor rather than replacing it, so you may briefly see two cursors together in the same spot — not elegant, but reliable, and most people who need this feature won't notice the thinner one once the bold one is visible.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Bold Cursor"><input type="checkbox" id="bold-cursor-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="settings-row-desc">Width. Larger widths mainly help with serious vision difficulty combined with a large font size.</div>
+        <div style="display:flex;align-items:center;gap:10px;width:100%;">
+          <input type="range" id="bold-cursor-width-slider" min="2" max="7" step="1" value="4" style="flex:1">
+          <span id="bold-cursor-width-val" style="min-width:3em;text-align:right;">4px</span>
+        </div>
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="settings-row-desc">Color.</div>
+        <!-- Deliberate exception to this app's usual swatch-row + custom-
+             color-picker convention: Bold Cursor is a single free-choice
+             color with no preset palette or per-item override concept
+             (unlike checkbox/bullet color), so a plain native color input
+             is simpler and sufficient rather than wiring up the full CCP
+             dialog machinery for one field. -->
+        <input type="color" id="bold-cursor-color-picker" value="#d6336c" style="width:48px;height:32px;padding:0;border:1px solid var(--border);border-radius:6px;">
+      </div>
+      <!-- v0.1603 TEMPORARY DIAGNOSTIC -- remove once the Quick
+           Add/Edit Paragraph position bug is fully root-caused. Makes
+           the invisible measurement mirror visible on screen so the
+           real, on-device geometry can be inspected directly. -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Show Bold Cursor debug mirror</div>
+          <div class="settings-row-desc">TEMPORARY diagnostic. Shows the invisible measurement box on screen below whichever text box is focused, to help find the Quick Add / Edit Paragraph position bug.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show Bold Cursor debug mirror"><input type="checkbox" id="bold-cursor-debug-mirror-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+
     
 <div class="settings-subsection-title" style="margin-top:10px">Layout &amp; Indent</div>
 <div class="settings-row-desc" style="padding:0 0 8px">Add extra space to the left or right edges. Useful on wide screens to center content. Does not affect toolbars.</div>
@@ -8951,7 +9031,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 <div id="edit-block-overlay">
   <div id="edit-block-dialog">
     <h3>Edit paragraph</h3>
-    <textarea id="edit-block-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Block text…" rows="3"></textarea>
+    <!-- v0.1601: wrapper div for Bold Cursor -- see quick-add-input's identical comment above -->
+    <div id="edit-block-input-wrap" style="position:relative">
+      <textarea id="edit-block-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Block text…" rows="3"></textarea>
+    </div>
     <p id="edit-block-tip">Editing a single line or paragraph — line breaks are not allowed.</p>
     <div id="edit-block-btns">
       <button id="edit-block-tag-btn" aria-label="Insert tag" title="Insert tag" style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
@@ -9746,7 +9829,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1594';
+const APP_VERSION = '0.1612';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11097,6 +11180,13 @@ const DEFAULT_SETTINGS = {
   highlightColor: '#ffe066',    // color used for ==highlight== rendering
   activeHighlightHex: '',       // long-press quick palette choice; '' = default plain ==highlight==
   checkboxColor: 'gray',        // default checkbox color (named palette key)
+  // v0.1595: Bold Cursor -- an app-drawn caret replacing the native one,
+  // for people with vision difficulty spotting a thin blinking line.
+  // Ported from a standalone demo (16 rounds of on-device calibration).
+  // Default OFF: see the long comment where this is applied (init()).
+  boldCursorEnabled: false,
+  boldCursorWidth: 4,           // px, range 2-7 (7 = "serious vision problems + huge font" per Lynn)
+  boldCursorColor: '#d6336c',   // Bear-red default, per Lynn's explicit preference
   customColor: '#9b59b6',       // user-defined custom color for {custom} tag
   customColor2: '#e67e22',      // user-defined custom color for {custom2} tag
   customColor3: '#27ae60',      // user-defined custom color for {custom3} tag
@@ -11189,7 +11279,7 @@ const SETTING_BUCKETS = {
   tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL,
   uiLineHeight: SETTING_BUCKETS_GENERAL, uiBlankLineHeight: SETTING_BUCKETS_GENERAL,
   // ---- NOTE_APPEARANCE (50) ----
-  accentColorNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, blankLineHeight: SETTING_BUCKETS_NOTE_APPEARANCE, charsPerLine: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxColor: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE,
+  accentColorNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, blankLineHeight: SETTING_BUCKETS_NOTE_APPEARANCE, charsPerLine: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxColor: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorEnabled: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorWidth: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorColor: SETTING_BUCKETS_NOTE_APPEARANCE,
   customColor: SETTING_BUCKETS_NOTE_APPEARANCE, customColor2: SETTING_BUCKETS_NOTE_APPEARANCE, customColor3: SETTING_BUCKETS_NOTE_APPEARANCE, darkNotePaperBg: SETTING_BUCKETS_NOTE_APPEARANCE, darkNotePaperFg: SETTING_BUCKETS_NOTE_APPEARANCE,
   darkNoteTexture: SETTING_BUCKETS_NOTE_APPEARANCE, darkNoteToolbarBgColor: SETTING_BUCKETS_NOTE_APPEARANCE, disableLigatures: SETTING_BUCKETS_NOTE_APPEARANCE, editorFontSize: SETTING_BUCKETS_NOTE_APPEARANCE, fontVariantNumeric: SETTING_BUCKETS_NOTE_APPEARANCE,
   fontWeight: SETTING_BUCKETS_NOTE_APPEARANCE, gridLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, headingIndent: SETTING_BUCKETS_NOTE_APPEARANCE, highlightColor: SETTING_BUCKETS_NOTE_APPEARANCE, letterSpacing: SETTING_BUCKETS_NOTE_APPEARANCE,
@@ -11477,6 +11567,12 @@ var isHeadingRaw = function() { return false; }; // replaced in init
 var getHeadingLevel = function() { return 0; }; // replaced in init
 var getParentDescendants = function() { return []; }; // replaced in init
 var applyOutlineMode = function() {};
+// v0.1595: Bold Cursor module-level stubs -- real implementations
+// assigned inside init() (module-level scope rule: these are called from
+// event handlers wired at various points, must be visible before init()
+// finishes running everything in order).
+var updateBoldCursor = function() {};
+var applyBoldCursorSetting = function() {};
 // v0.1582 FIX: buildToolbarVisibilityRows() was declared with the
 // `function` keyword INSIDE init() -- invisible to openSettings(), which
 // is itself module-level. Caught by jsdom smoke-calling openSettings()
@@ -12701,6 +12797,7 @@ function playCheckSound() {
 }
 
 function applySettings() {
+  applyBoldCursorSetting(); // v0.1595: safe pre-init() -- assigned stub is a no-op until init() runs
   var _nem = settings.noteEditingMode || 'both';
   document.body.classList.toggle('typing-mode-only', _nem === 'typing');
   document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
@@ -12815,6 +12912,15 @@ function applySettings() {
   if (_showSpeakTog) _showSpeakTog.checked = settings.showSpeakBtn !== false;
   var _showThemeIndTog = document.getElementById('show-theme-indicator-toggle');
   if (_showThemeIndTog) _showThemeIndTog.checked = settings.showThemeIndicator !== false;
+  // v0.1595: Bold Cursor control sync
+  var _boldCursorTog = document.getElementById('bold-cursor-toggle');
+  if (_boldCursorTog) _boldCursorTog.checked = !!settings.boldCursorEnabled;
+  var _boldCursorWidthSlider = document.getElementById('bold-cursor-width-slider');
+  if (_boldCursorWidthSlider) _boldCursorWidthSlider.value = settings.boldCursorWidth || 4;
+  var _boldCursorWidthVal = document.getElementById('bold-cursor-width-val');
+  if (_boldCursorWidthVal) _boldCursorWidthVal.textContent = (settings.boldCursorWidth || 4) + 'px';
+  var _boldCursorColorPicker = document.getElementById('bold-cursor-color-picker');
+  if (_boldCursorColorPicker) _boldCursorColorPicker.value = settings.boldCursorColor || '#d6336c';
   renderThemesList();
   if (_iconOnlyTog)  _iconOnlyTog.checked  = !!settings.speakBtnIconOnly;
   if (_accentTog)    _accentTog.checked     = settings.speakBtnAccentColor !== false;
@@ -14348,16 +14454,24 @@ function escHtml(s) {
 }
 
 // ===== VIEW MODE =====
+// v0.1595: shared palette + resolution chain, extracted from what used
+// to be checkboxSVG()'s own inline logic, so bullets (which have no
+// override syntax) and checkboxes (which do, via [x:color]) resolve
+// their DEFAULT color identically rather than duplicating the chain.
+var MARK_COLOR_PALETTE = {gray:'var(--color-gray)',red:'var(--color-red)',orange:'var(--color-orange)',
+  gold:'var(--color-gold)',yellow:'var(--color-gold)',green:'var(--color-green)',
+  blue:'var(--color-blue)',purple:'var(--color-purple)',magenta:'var(--color-magenta)',
+  pink:'var(--color-pink)',rose:'var(--color-rose)',violet:'var(--color-violet)',
+  black:'var(--color-black)',gray:'var(--color-gray)',white:'var(--color-white)',custom:'var(--custom-color)'};
+function getDefaultMarkColor() {
+  return MARK_COLOR_PALETTE[settings && settings.checkboxColor] || (settings && settings.customColor) || 'var(--color-gray)';
+}
 function checkboxSVG(checked, overrideColor) {
-  var _cbPalette = {gray:'var(--color-gray)',red:'var(--color-red)',orange:'var(--color-orange)',
-    gold:'var(--color-gold)',yellow:'var(--color-gold)',green:'var(--color-green)',
-    blue:'var(--color-blue)',purple:'var(--color-purple)',magenta:'var(--color-magenta)',
-    pink:'var(--color-pink)',rose:'var(--color-rose)',violet:'var(--color-violet)',
-    black:'var(--color-black)',gray:'var(--color-gray)',white:'var(--color-white)',custom:'var(--custom-color)'};
+  var _cbPalette = MARK_COLOR_PALETTE;
   // overrideColor from [ :red] syntax takes priority over global setting
   var cbColor = (overrideColor && _cbPalette[overrideColor])
     ? _cbPalette[overrideColor]
-    : (_cbPalette[settings && settings.checkboxColor] || (settings && settings.customColor) || 'var(--color-gray)');
+    : getDefaultMarkColor();
   if (checked) {
     return '<svg class="viewer-checkbox" data-cb="checked" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">' +
       '<rect x="1.5" y="1.5" width="15" height="15" rx="3" style="fill:' + cbColor + '"/>' +
@@ -14793,7 +14907,19 @@ function urlsToLinks(text, addLineWrappers) {
             var _bullets = ['•', '▪', '◦']; // •, ▪, ◦
             _bulletChar = _bullets[_level % 3];
           }
-          line = line.replace(/^(\s*)[-*+] /, '$1<span class="viewer-bullet-char">' + _bulletChar + '</span> ');
+          // v0.1595: bullet glyphs share the SAME default color as
+          // checkboxes (settings.checkboxColor) -- Lynn's explicit
+          // design call: "the default checkbox color and the default
+          // bullet color could be the same setting... you would want
+          // your checkboxes and bullets to be the same color usually."
+          // No per-bullet override syntax exists (confirmed before this
+          // build) and none is being added -- Bear-style, one consistent
+          // color. NEVER applied to the literal-hyphen path
+          // (.viewer-hyphen-marker, the 'else if' branch below) -- a
+          // hyphen's thin stroke doesn't carry a color well, and that
+          // was Lynn's own reasoning for excluding it.
+          var _bulletColorVal = getDefaultMarkColor();
+          line = line.replace(/^(\s*)[-*+] /, '$1<span class="viewer-bullet-char" style="color:' + _bulletColorVal + '">' + _bulletChar + '</span> ');
         } else if (_markerChar === '-') {
           // Literal hyphen, not converted to a bullet — add a touch of
           // extra breathing room before the next word.
@@ -16510,6 +16636,22 @@ function getCursorXY(ed) {
   var cs = getComputedStyle(ed);
   var mirror = document.createElement('div');
   mirror.setAttribute('aria-hidden', 'true');
+  // v0.1605 FIX: letter-spacing and word-spacing were never copied here
+  // either -- same gap found and fixed in getCursorXYFor() after Lynn's
+  // screenshot proved the mirror and the real textarea can wrap text
+  // differently. This function backs the main note editor, caret nudge
+  // buttons, mode-switch scroll preservation, find-in-note, and trackpad
+  // heal -- hasn't shown symptoms yet, likely because those contexts
+  // happen to use default spacing, but the same latent bug applies
+  // wherever a non-default letter/word-spacing is in effect.
+  // v0.1606 FIX: 'border:' + cs.border used the SHORTHAND computed
+  // style, not reliably serialized across browsers (WebKit/Safari can
+  // return an empty string for shorthand computed properties even when
+  // the longhands are genuinely set) -- if that happened, the mirror
+  // silently rendered with NO border, making its box-sizing:border-box
+  // text area wider than the real element's by the border width on each
+  // side, shifting wrap points. Fixed with the four individual longhand
+  // properties, which serialize reliably everywhere.
   mirror.style.cssText = [
     'position:absolute',
     'top:-9999px',
@@ -16518,28 +16660,51 @@ function getCursorXY(ed) {
     'pointer-events:none',
     'white-space:pre-wrap',
     'word-wrap:break-word',
-    'width:' + ed.clientWidth + 'px',
+    // v0.1607 FIX: was ed.clientWidth (content+padding, EXCLUDES border)
+    // applied as a box-sizing:border-box width (content+padding+border
+    // TOGETHER) -- double-subtracting the border, same bug found and
+    // fixed in getCursorXYFor(). offsetWidth is the W3C-correct match.
+    'width:' + ed.offsetWidth + 'px',
     'font-family:' + cs.fontFamily,
     'font-size:' + cs.fontSize,
     'font-weight:' + cs.fontWeight,
     'line-height:' + cs.lineHeight,
-    'padding:' + cs.padding,
-    'border:' + cs.border,
-    'box-sizing:' + cs.boxSizing
+    'padding-top:' + cs.paddingTop,
+    'padding-right:' + cs.paddingRight,
+    'padding-bottom:' + cs.paddingBottom,
+    'padding-left:' + cs.paddingLeft,
+    'border-top-width:' + cs.borderTopWidth,
+    'border-right-width:' + cs.borderRightWidth,
+    'border-bottom-width:' + cs.borderBottomWidth,
+    'border-left-width:' + cs.borderLeftWidth,
+    'border-top-style:' + cs.borderTopStyle,
+    'border-right-style:' + cs.borderRightStyle,
+    'border-bottom-style:' + cs.borderBottomStyle,
+    'border-left-style:' + cs.borderLeftStyle,
+    'box-sizing:' + cs.boxSizing,
+    'letter-spacing:' + cs.letterSpacing,
+    'word-spacing:' + cs.wordSpacing,
+    'text-transform:' + cs.textTransform,
+    'tab-size:' + cs.tabSize
   ].join(';');
 
-  // Text up to cursor with a span marker; handle trailing newline edge case
-  var textBefore = ed.value.substring(0, ed.selectionStart);
-  var safeText = textBefore
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  // If text ends with newline, the span would land on same line — add zero-width space
-  if (safeText.charAt(safeText.length - 1) === '\n') safeText += '\u200b';
+  // v0.1602 FIX: was a TRUNCATED-PREFIX mirror (only text BEFORE the
+  // cursor) -- word-wrap is a greedy fill algorithm whose line-break
+  // decisions depend on what comes AFTER the visible point too, so a
+  // truncated prefix wraps differently than the real textarea once a
+  // line is long enough to actually wrap. This is the exact bug a
+  // standalone demo already found and fixed once (full text + zero-width
+  // marker AT the cursor); it had silently regressed back to the
+  // truncated-prefix version here. Fixed the same way: full text, marker
+  // inserted at the real cursor position, nothing truncated.
+  var _gcxyPos = ed.selectionStart;
+  var _gcxyBefore = ed.value.substring(0, _gcxyPos);
+  var _gcxyAfter = ed.value.substring(_gcxyPos);
+  mirror.textContent = '';
+  mirror.appendChild(document.createTextNode(_gcxyBefore));
   var span = document.createElement('span');
-  span.textContent = '\u200b';
-  mirror.innerHTML = safeText;
   mirror.appendChild(span);
+  mirror.appendChild(document.createTextNode(_gcxyAfter || ' ')); // trailing space: something after the very end of the text too
 
   document.body.appendChild(mirror);
   var spanRect   = span.getBoundingClientRect();
@@ -21728,6 +21893,20 @@ function makeImportFolderName(label) {
     HIDEABLE_BUTTONS.forEach(function(b) {
       var el = document.getElementById(b.id);
       if (!el) return;
+      if (b.id === 'note-fab') {
+        // v0.1597 FIX: note-fab has its OWN independent visibility
+        // setting (showNoteFab, applied in applySettings()) that predates
+        // the toolbarPlacement system. Two systems writing the same
+        // element's display -- whichever ran LAST silently won, and
+        // note-fab's own CSS defaults to display:none, so this loop's
+        // '' fallback (meant for elements with a class-level flex
+        // default) was intermittently hiding a FAB showNoteFab had just
+        // correctly shown. note-fab stays governed by showNoteFab alone,
+        // as it always was; ONLY skip the display write here -- its
+        // settings-row membership (reordering, its paired quick-add-btn
+        // TOOLBAR ICON's own visibility) is completely unaffected.
+        return;
+      }
       if (MODE_GATED_BUTTON_IDS.indexOf(b.id) !== -1) {
         // Only ever force-hide; never force-show. Showing is decided by
         // this button's own mode logic, called separately and later.
@@ -23249,6 +23428,387 @@ function makeImportFolderName(label) {
   // latched 3000ms) keeps programmatic caret moves immune: mode-switch
   // scroll preservation coalesces into a single selectionchange per task
   // and can never look like two small steps.
+  // ===== BOLD CURSOR (v0.1595) =====
+  // App-drawn caret replacing the native one, for people who have
+  // trouble spotting a thin blinking line -- ported from a standalone
+  // demo after 16 rounds of on-device calibration (Lynn's confirmed
+  // final values: X=-2.5px fixed, Y=-0.31em scaled to font size,
+  // height=100%). Default OFF (settings.boldCursorEnabled) -- Lynn's
+  // explicit risk call: proven solid across the demo's test surface,
+  // but hiding the real caret and substituting a synced one is a
+  // different, larger claim across the FULL editor's every code path
+  // (paste, undo, tag autocomplete, outline mode, trackpad drags, all
+  // of it) than across a standalone demo's much smaller surface.
+  // v0.1596: generalized to a reusable factory instead of one hardcoded
+  // instance, per Lynn's request to also support Quick Add and Edit
+  // Paragraph. IMPORTANT ARCHITECTURE DIFFERENCE found while porting:
+  // note-editor is a non-scrolling textarea inside a scrolling WRAPPER
+  // (note-content-area), but quick-add-input and edit-block-input are
+  // each SELF-scrolling textareas with no such wrapper. So the mark
+  // element for each instance is appended to and positioned relative to
+  // THAT textarea's own nearest positioned ancestor (its parent), not a
+  // hardcoded 'note-content-area' id -- getCursorXY()'s own coordinate
+  // space already accounts for scrollTop/scrollLeft on whichever element
+  // is passed to it, so this generalizes cleanly with no per-instance
+  // math changes needed, only where the mark div gets attached.
+  // Deliberately NOT wired into the scratch pad -- Lynn's explicit
+  // decision: it's meant to stay simple, and is not a surface aimed at
+  // the low-vision audience this feature serves (that audience gets a
+  // future "Simplified"/low-vision App Theme instead, a curated bundle
+  // rather than every accommodation in every surface -- a legitimate,
+  // well-regarded accessibility pattern, not a compromise).
+  // v0.1598 FIX: the app's pre-existing getCursorXY() hardcodes
+  // note-content-area as the scrolling ancestor for ALL its math -- fine
+  // for note-editor (that IS its real ancestor) but wrong for
+  // quick-add-input/edit-block-input, whose real scrolling ancestors are
+  // quick-add-box/edit-block-dialog respectively. Reusing it there
+  // measured against the wrong box entirely, producing the erratic
+  // coordinates in Lynn's log. This Bold-Cursor-specific version takes
+  // the correct ancestor per call instead of assuming one globally;
+  // getCursorXY() itself is untouched (16+ other callers depend on its
+  // current note-content-area-specific behavior).
+  var _boldCursorDebugMirror = null; // v0.1603 DIAGNOSTIC: visible-mirror debug aid, see getCursorXYFor
+  function getCursorXYFor(ed, scrollAncestor) {
+    var cs = getComputedStyle(ed);
+    // v0.1606 REAL FIX: cs.border (the SHORTHAND computed style) is not
+    // reliably serialized across browsers -- WebKit/Safari has a known
+    // history of returning an empty string for shorthand computed
+    // properties even when the underlying longhands are genuinely set.
+    // If that happened here, 'border:' + cs.border silently became the
+    // invalid string 'border:', rendering the mirror with NO border --
+    // under box-sizing:border-box, that makes the mirror's actual
+    // text-content area WIDER than the real textarea by exactly the
+    // border width on each side, shifting where lines wrap. Fixed with
+    // the four individual longhand properties, which ARE reliably
+    // serialized everywhere. Also: the debug-visible mirror's own extra
+    // 'border:2px dashed' was DOUBLE-COUNTING width on top of the real
+    // copied border -- another real source of the mismatch in Lynn's
+    // screenshot -- moved to outline, which never affects layout.
+    var mirror = document.createElement('div');
+    mirror.setAttribute('aria-hidden', 'true');
+    // v0.1603 DIAGNOSTIC: three theories (wrapper box mismatch, math
+    // error, staleness race) were proposed and discarded by code
+    // inspection without conclusive proof after Lynn's screenshots showed
+    // the mark landing in plausible-but-wrong locations (inside a
+    // checkbox label; past the end of the visible textarea). Rather than
+    // guess a fourth time, make the mirror ITSELF visible on screen --
+    // same technique that found the real v8 wrapping bug in the
+    // standalone demo. window._bcShowMirror toggles it; OFF by default,
+    // does not affect normal operation.
+    // v0.1605 REAL FIX: Lynn's screenshot proved the wrap points
+    // genuinely differ between the mirror and the real textarea --
+    // letter-spacing and word-spacing were never copied, despite being
+    // real, pervasive properties in this app's CSS cascade. If the
+    // textarea's own computed value for either ever resolves to
+    // anything non-default, the mirror's text packs differently and
+    // wraps at different points -- the actual root cause behind every
+    // round of this investigation, not any of the three earlier,
+    // disproven theories.
+    var _bcBorderProps = [
+      'border-top-width:' + cs.borderTopWidth, 'border-right-width:' + cs.borderRightWidth,
+      'border-bottom-width:' + cs.borderBottomWidth, 'border-left-width:' + cs.borderLeftWidth,
+      'border-top-style:' + cs.borderTopStyle, 'border-right-style:' + cs.borderRightStyle,
+      'border-bottom-style:' + cs.borderBottomStyle, 'border-left-style:' + cs.borderLeftStyle,
+      'border-top-color:' + cs.borderTopColor, 'border-right-color:' + cs.borderRightColor,
+      'border-bottom-color:' + cs.borderBottomColor, 'border-left-color:' + cs.borderLeftColor
+    ];
+    var _bcPaddingProps = [
+      'padding-top:' + cs.paddingTop, 'padding-right:' + cs.paddingRight,
+      'padding-bottom:' + cs.paddingBottom, 'padding-left:' + cs.paddingLeft
+    ];
+    var _bcCommonMirrorProps = [
+      'font-family:' + cs.fontFamily, 'font-size:' + cs.fontSize, 'font-weight:' + cs.fontWeight,
+      'line-height:' + cs.lineHeight, 'box-sizing:' + cs.boxSizing,
+      'letter-spacing:' + cs.letterSpacing, 'word-spacing:' + cs.wordSpacing,
+      'text-transform:' + cs.textTransform, 'tab-size:' + cs.tabSize,
+      // v0.1609 EXPERIMENT, per Lynn's observation: the real textarea has
+      // min-height:12em, making its box taller than its actual text
+      // content -- the mirror had no min-height at all, only ever as
+      // tall as its own content. If min-height changes where the text
+      // visually STARTS within the box (it shouldn't, for top-aligned
+      // text, but worth testing rather than assuming), that would shift
+      // the Y math exactly as Lynn's screenshot showed: same wrap, same
+      // content, different vertical position. Also switched padding
+      // (shorthand) to the four individual longhands -- same
+      // shorthand-serialization risk already found and fixed for border.
+      'min-height:' + cs.minHeight, 'max-height:' + cs.maxHeight,
+      // v0.1607 REAL FIX: was ed.clientWidth (content+padding, EXCLUDES
+      // border) applied as a box-sizing:border-box width (content+
+      // padding+border TOGETHER) -- double-subtracting the border and
+      // making the mirror narrower than the real element by 2x the
+      // border width. offsetWidth (content+padding+border) is the
+      // W3C-correct match for border-box's own definition of 'width'.
+      'width:' + ed.offsetWidth + 'px'
+    ].concat(_bcPaddingProps).concat(_bcBorderProps);
+    if (window._bcShowMirror) {
+      var edRectDbg = ed.getBoundingClientRect();
+      mirror.style.cssText = [
+        'position:fixed', 'top:' + (edRectDbg.bottom + 4) + 'px', 'left:' + edRectDbg.left + 'px',
+        'visibility:visible', 'background:#fffbe0', 'outline:2px dashed #e67700', 'z-index:99999',
+        'border-radius:' + cs.borderRadius,
+        'pointer-events:none', 'white-space:pre-wrap', 'word-wrap:break-word'
+      ].concat(_bcCommonMirrorProps).join(';');
+      if (_boldCursorDebugMirror) _boldCursorDebugMirror.remove();
+    } else {
+      mirror.style.cssText = [
+        'position:absolute', 'top:-9999px', 'left:-9999px', 'visibility:hidden',
+        'pointer-events:none', 'white-space:pre-wrap', 'word-wrap:break-word'
+      ].concat(_bcCommonMirrorProps).join(';');
+    }
+    // v0.1602 FIX: full text + zero-width marker AT the cursor, NOT a
+    // truncated prefix (see comment above this function). Same
+    // structural bug the standalone demo's v8 fix already solved once,
+    // reintroduced here because this function was written fresh instead
+    // of ported from the demo's proven version.
+    var pos = ed.selectionStart;
+    var beforeText = ed.value.substring(0, pos);
+    var afterText = ed.value.substring(pos);
+    mirror.textContent = '';
+    mirror.appendChild(document.createTextNode(beforeText));
+    var span = document.createElement('span');
+    span.style.cssText = window._bcShowMirror ? 'background:#ff6b6b;outline:2px solid #c92a2a' : '';
+    mirror.appendChild(span);
+    mirror.appendChild(document.createTextNode(afterText || ' ')); // trailing space: gives the wrap algorithm something after the very end of the text too
+    document.body.appendChild(mirror);
+    var spanRect = span.getBoundingClientRect();
+    var mirrorRect = mirror.getBoundingClientRect();
+    var offsetWithinText = spanRect.top - mirrorRect.top;
+    var offsetWithinTextX = spanRect.left - mirrorRect.left;
+    var edRect = ed.getBoundingClientRect();
+    var areaRect = scrollAncestor.getBoundingClientRect();
+    // v0.1608 REAL FIX, from Lynn's two-screenshot comparison: after
+    // scrolling INSIDE the real textarea, the bold cursor landed in the
+    // wrong spot. Root cause: scrollAncestor here is the WRAPPER <div>
+    // (needed since v0.1601 so the mark has somewhere real to render --
+    // a <textarea> can't hold child elements), but for the self-scrolling
+    // dialogs the wrapper itself never scrolls -- the TEXTAREA scrolls
+    // internally. Reading scrollAncestor.scrollTop was always reading the
+    // wrapper's scrollTop (always 0), never the textarea's real internal
+    // scroll position. Fixed: scroll offset now always comes from ed
+    // itself (the element that actually scrolls, in every case -- for
+    // note-editor, ed doesn't scroll and this is 0, correctly a no-op;
+    // for the self-scrolling dialogs, ed.scrollTop is the real, live
+    // value). scrollAncestor remains correctly used ONLY as the
+    // positioning reference frame (edRect vs areaRect), never as the
+    // scroll source.
+    var edTopWithinContent = (edRect.top - areaRect.top) + ed.scrollTop;
+    var edLeftWithinContent = (edRect.left - areaRect.left) + ed.scrollLeft;
+    if (window._bcShowMirror) {
+      _boldCursorDebugMirror = mirror; // leave ON SCREEN for inspection instead of removing
+      logDebugAction('bc-mirror: edRect.width=' + Math.round(edRect.width) + ' edClientWidth=' + ed.clientWidth +
+        ' areaRect.width=' + Math.round(areaRect.width) + ' mirrorRect.width=' + Math.round(mirrorRect.width) +
+        ' spanRect.left=' + Math.round(spanRect.left) + ' mirrorRect.left=' + Math.round(mirrorRect.left) +
+        ' edScrollTop=' + ed.scrollTop + ' edRect.top=' + Math.round(edRect.top));
+    } else {
+      document.body.removeChild(mirror);
+    }
+    return { x: offsetWithinTextX + edLeftWithinContent, y: offsetWithinText + edTopWithinContent };
+  }
+
+  function initBoldCursorFor(getTextarea, scrollAncestorId) {
+    var mark = null;
+    var gen = 0;
+    function resolveScrollAncestor(ta) {
+      return document.getElementById(scrollAncestorId) || ta.parentElement;
+    }
+    // v0.1599 FIX: the mark's CONTAINER must be the SAME element used as
+    // the coordinate reference frame in the math below, or the numbers
+    // don't mean what the rendering assumes -- this was the real bug
+    // (mark parented to ta.parentElement unconditionally, while the math
+    // used scrollAncestorId, a DIFFERENT element for both dialogs).
+    function getMark() {
+      var ta = getTextarea();
+      if (!ta) return null;
+      var container = resolveScrollAncestor(ta);
+      // v0.1600 FIX: enforce position:relative on EVERY call, not just
+      // when creating/re-parenting the mark. If the container's position
+      // ever reverts to static between dialog opens for any reason, a
+      // static-positioned mark falls back to the nearest positioned
+      // ANCESTOR up the tree -- landing far from the textarea, which
+      // fully explains both the top=6px readings and their intermittent,
+      // per-open-cycle nature (Lynn's log: worked once, broke on the
+      // next open, same dialog, same session).
+      if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+      if (!mark) {
+        mark = document.createElement('div');
+        mark.className = 'bold-cursor-mark-instance';
+        container.appendChild(mark);
+      } else if (mark.parentElement !== container) {
+        container.appendChild(mark);
+      }
+      return mark;
+    }
+    function update() {
+      var ta = getTextarea();
+      if (!ta || !settings.boldCursorEnabled) return;
+      if (document.activeElement !== ta) {
+        if (mark) mark.style.display = 'none';
+        return;
+      }
+      // v0.1599 FIX: hide during a real text SELECTION (double/triple-tap
+      // word/line select, drag-select, etc.) -- a caret has no meaning
+      // while a range is selected; standard editors show only the
+      // selection highlight, never a caret glyph on top of it. Lynn's
+      // report: the mark was appearing at the selection START, which
+      // read as a stray artifact rather than a real insertion point.
+      if (ta.selectionStart !== ta.selectionEnd) {
+        if (mark) mark.style.display = 'none';
+        return;
+      }
+      var myGen = ++gen;
+      var _scrollTopAtCall = ta.scrollTop; // v0.1610 DIAGNOSTIC: captured synchronously, at the moment update() was called (e.g. right when a click/selectionchange fires)
+      // v0.1609 FIX, from Lynn's screenshot: cursor drifted downward
+      // specifically when text was near the BOTTOM of the box -- exactly
+      // the condition that triggers the browser's own native auto-
+      // scroll-to-caret behavior in a textarea. A single rAF isn't
+      // guaranteed to run AFTER that auto-scroll has fully settled (it
+      // may itself be driven by a subsequent layout/paint pass), so
+      // reading ed.scrollTop could catch a stale, pre-scroll value.
+      // Double-rAF defers to the frame after the one already scheduled,
+      // giving the browser's own scroll adjustment a full cycle to land
+      // before measuring -- standard technique for this exact class of
+      // "wait for a browser-driven side effect" timing gap.
+      requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        if (myGen !== gen) return; // a newer request superseded this one (v10 lesson from the demo)
+        if (document.activeElement !== ta) {
+          logDebugAction('boldcursor-update: SKIPPED for id=' + (ta.id || '?') + ', not the active element (activeElement.id=' + (document.activeElement && document.activeElement.id) + ')');
+          return;
+        }
+        // v0.1610 DIAGNOSTIC: compare scrollTop captured synchronously at
+        // call time vs. now, inside the deferred callback -- if these
+        // differ, something IS still changing scroll state between click
+        // and measurement (the double-rAF theory, just not yet proven
+        // for a plain scroll+tap with no auto-scroll involved). If they
+        // match, the scroll READ itself is stable and the bug is
+        // elsewhere (e.g. in how the mark's own position gets applied).
+        logDebugAction('bc-scroll-check: id=' + (ta.id || '?') + ' scrollTopAtCall=' + _scrollTopAtCall +
+          ' scrollTopNow=' + ta.scrollTop + ' sel=' + ta.selectionStart);
+        var scrollAncestor = resolveScrollAncestor(ta); // v0.1599: shared resolver, same element getMark() parents the mark to
+        var xy = getCursorXYFor(ta, scrollAncestor); // v0.1598: per-instance ancestor, NOT the shared getCursorXY() (see note above initBoldCursorFor)
+        var fontSizePx = parseFloat(getComputedStyle(ta).fontSize) || 16;
+        var lineHeightPx = parseFloat(getComputedStyle(ta).lineHeight) || fontSizePx * 1.4;
+        var xOffsetPx = -2.5;   // calibrated in the demo -- fixed, does not scale with font
+        var yOffsetEm = -0.31;  // calibrated in the demo -- scales with font size
+        var heightScale = 1.0;  // calibrated in the demo -- confirmed 100% is correct
+        var m = getMark();
+        if (!m) return;
+        var newLeft = xy.x + xOffsetPx;
+        var newTop = xy.y + (yOffsetEm * fontSizePx);
+        var newHeight = lineHeightPx * heightScale;
+        // v0.1612 SANITY CHECK, per Lynn's explicit request after seeing
+        // the mark land 5+ lines away from the real caret: a caret can
+        // NEVER legitimately be positioned outside its own textarea's
+        // CURRENTLY VISIBLE area -- translate the computed Y into the
+        // textarea's own visible-viewport coordinate space (subtract its
+        // current scrollTop) and check it against [0, visible height].
+        // If that check fails, the position is PROVABLY wrong (not a
+        // borderline case -- an off-screen caret is impossible by
+        // definition), so hide the mark and log loudly instead of
+        // silently drawing something impossible. This is the automated
+        // version of what Lynn has been catching by eye across many
+        // screenshots -- it should never again take a human to notice.
+        var visibleTop = newTop - ta.scrollTop;
+        var visibleBottom = visibleTop + newHeight;
+        var taVisibleHeight = ta.clientHeight;
+        if (visibleTop < -2 || visibleBottom > taVisibleHeight + 2) {
+          logDebugAction('boldcursor-SANITY-FAIL: id=' + (ta.id || '?') +
+            ' computed top=' + Math.round(newTop) + ' visibleTop=' + Math.round(visibleTop) +
+            ' visibleBottom=' + Math.round(visibleBottom) + ' taVisibleHeight=' + taVisibleHeight +
+            ' scrollTop=' + ta.scrollTop + ' sel=' + ta.selectionStart +
+            ' -- caret cannot legitimately be off-screen from its own textarea; hiding mark instead of drawing a known-wrong position.');
+          m.style.display = 'none';
+          return;
+        }
+        m.style.left = Math.round(newLeft) + 'px';
+        m.style.top = Math.round(newTop) + 'px';
+        m.style.width = (settings.boldCursorWidth || 4) + 'px';
+        m.style.height = Math.round(newHeight) + 'px';
+        m.style.background = settings.boldCursorColor || '#d6336c';
+        m.style.display = 'block';
+        // v0.1600: log the ACTUAL container the mark is parented to and
+        // ITS computed position (was previously logging ta.parentElement,
+        // a possibly-different lookup than the real resolveScrollAncestor()
+        // result -- fixed so the log can no longer be ambiguous about this).
+        logDebugAction('boldcursor-update: id=' + (ta.id || '?') + ' left=' + m.style.left + ' top=' + m.style.top +
+          ' markParentPos=' + getComputedStyle(m.parentElement).position + ' markParentId=' + (m.parentElement.id || '?') +
+          ' markParentIsContainer=' + (m.parentElement === scrollAncestor));
+      });
+      });
+    }
+    function apply() {
+      var ta = getTextarea();
+      if (!ta) {
+        logDebugAction('boldcursor-apply: SKIPPED, textarea not found');
+        return;
+      }
+      // v0.1604: no longer touches caret-color at all -- per Lynn's
+      // decision, the native caret now stays visible alongside the bold
+      // one (see the long comment above initBoldCursorFor). caret-color
+      // on iOS Safari is a long-standing, unresolved WebKit bug
+      // (bugs.webkit.org #177489) that made reliably hiding the native
+      // caret impossible, and likely explains the missing text-selection
+      // drag handles Lynn also reported -- both plausibly downstream of
+      // the same broken pipeline. Removing this line sidesteps the bug
+      // entirely rather than fighting it further.
+      logDebugAction('boldcursor-apply: id=' + (ta.id || '?') + ' enabled=' + !!settings.boldCursorEnabled);
+      if (settings.boldCursorEnabled) update();
+      else if (mark) mark.style.display = 'none';
+    }
+    // Cover the same event surface the demo proved necessary: typing,
+    // tapping, selection changes, and scrolling all move the caret.
+    // getTextarea() is called fresh each time rather than captured once,
+    // since quick-add-input/edit-block-input persist in the DOM across
+    // dialog open/close (only note-editor is guaranteed to exist from
+    // page load) -- but listeners are still attached once, here, since
+    // all three textareas ARE present in the DOM from page load even
+    // when their dialogs are closed (confirmed: single-page app, dialogs
+    // just toggle visibility, don't add/remove the textarea itself).
+    var ta0 = getTextarea();
+    ta0.addEventListener('input', function() { if (settings.boldCursorEnabled) update(); });
+    ta0.addEventListener('click', function() { if (settings.boldCursorEnabled) update(); });
+    ta0.addEventListener('keyup', function() { if (settings.boldCursorEnabled) update(); });
+    ta0.addEventListener('focus', function() { if (settings.boldCursorEnabled) update(); });
+    // v0.1611: plain unthrottled scroll listener REMOVED from here --
+    // replaced by the debounced version below, since having both would
+    // defeat the debounce (the unthrottled one would still fire
+    // immediately on every intermediate settle frame). See that
+    // listener's comment for the full story.
+    ta0.addEventListener('blur', function() { if (mark) mark.style.display = 'none'; });
+    document.addEventListener('selectionchange', function() {
+      if (document.activeElement === ta0 && settings.boldCursorEnabled) update();
+    });
+    // v0.1611 FIX, from Lynn's log: Edit Paragraph/Quick Add deliberately
+    // place the caret at the END of the text on open (setSelectionRange
+    // to inp.value.length), which for a long paragraph forces the
+    // browser's OWN native scroll-to-caret -- that scroll doesn't
+    // complete in one synchronous step; Lynn's log showed the same
+    // selection (sel=418, completely unchanged) with scrollTop drifting
+    // 170->214->211->174->...->170 over ~2.5 seconds as it settled. Each
+    // intermediate step fired its own selectionchange, and update()
+    // faithfully redrew the mark at each -- individually correct, but
+    // visually jittery, and any single screenshot taken mid-settle would
+    // show a "wrong" position that was actually just a snapshot of an
+    // in-progress native scroll animation. Fixed with a scroll-settle
+    // debounce: redraw only after scrolling has been quiet for 120ms,
+    // rather than on every intermediate frame.
+    var _scrollSettleTimer = null;
+    ta0.addEventListener('scroll', function() {
+      if (!settings.boldCursorEnabled) return;
+      clearTimeout(_scrollSettleTimer);
+      _scrollSettleTimer = setTimeout(function() { update(); }, 120);
+    });
+    return { update: update, apply: apply };
+  }
+
+  var _boldCursorInstances = [
+    initBoldCursorFor(function() { return noteEditor; }, 'note-content-area'),
+    initBoldCursorFor(function() { return document.getElementById('quick-add-input'); }, 'quick-add-input-wrap'), // v0.1601: wrapper div, NOT the textarea itself -- see architecture note above initBoldCursorFor
+    initBoldCursorFor(function() { return document.getElementById('edit-block-input'); }, 'edit-block-input-wrap'), // v0.1601: same
+  ];
+  updateBoldCursor = function() { _boldCursorInstances.forEach(function(inst) { inst.update(); }); };
+  applyBoldCursorSetting = function() { _boldCursorInstances.forEach(function(inst) { inst.apply(); }); };
+
   var _tpadInputSinceSel = false;
   var _tpadDragSteps = 0;
   var _tpadLastSelTime = 0;
@@ -26771,6 +27331,31 @@ function makeImportFolderName(label) {
     },false,'Cancel',null);
   });
   document.getElementById('show-theme-indicator-toggle').addEventListener('change',function(){settings.showThemeIndicator=this.checked;updateThemeIndicator();applySettings();updateSaveBtnState();});
+
+  // v0.1595: Bold Cursor control wiring
+  document.getElementById('bold-cursor-toggle').addEventListener('change', function() {
+    settings.boldCursorEnabled = this.checked;
+    applyBoldCursorSetting();
+    updateSaveBtnState();
+  });
+  document.getElementById('bold-cursor-width-slider').addEventListener('input', function() {
+    settings.boldCursorWidth = parseInt(this.value, 10);
+    document.getElementById('bold-cursor-width-val').textContent = this.value + 'px';
+    if (settings.boldCursorEnabled) updateBoldCursor();
+    updateSaveBtnState();
+  });
+  document.getElementById('bold-cursor-color-picker').addEventListener('input', function() {
+    settings.boldCursorColor = this.value;
+    if (settings.boldCursorEnabled) updateBoldCursor();
+    updateSaveBtnState();
+  });
+  // v0.1603 TEMPORARY DIAGNOSTIC -- remove once the position bug is
+  // fully root-caused. See getCursorXYFor() and the settings row above.
+  document.getElementById('bold-cursor-debug-mirror-toggle').addEventListener('change', function() {
+    window._bcShowMirror = this.checked;
+    logDebugAction('bc-mirror: debug mirror ' + (this.checked ? 'ON' : 'off'));
+    if (settings.boldCursorEnabled) updateBoldCursor();
+  });
   document.getElementById('more-note-theme-btn').addEventListener('click',function(){closeMoreMenu();openNoteThemePicker();});
   document.getElementById('note-theme-cancel-btn').addEventListener('click',function(){logDebugAction('Cancelled Note Theme picker');document.getElementById('note-theme-overlay').classList.remove('open');});
   document.getElementById('note-theme-manage-btn').addEventListener('click',function(){
