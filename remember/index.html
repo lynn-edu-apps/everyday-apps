@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1612 -->
+<!-- Remember App - Version 0.1613 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1612
+  Version 0.1613
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1613 - The v0.1612 sanity check worked exactly as intended: Lynn's first deployed iOS PWA test caught real, self-reporting SANITY-FAIL log lines instead of silent wrong positions. One of them revealed a genuinely impossible reading: scrollTop=-1. Negative scrollTop is physically meaningless, but iOS Safari -- especially the standalone PWA context Lynn is now testing for the first time (previously mostly tested via the Claude app browser tab) -- can transiently report negative values during elastic overscroll/bounce (the rubber-band effect past a content edge) before settling back to rest. Clamped scrollTop/scrollLeft to 0 at the source in getCursorXYFor(), and consistently in the sanity check's own read, instead of trusting a transient physically-impossible value. Other sanity-check firings in the same log (taVisibleHeight=132, consistent with quick-add-input's actual unconstrained rows=4 height) may reflect the textarea genuinely being very short relative to a long pasted paragraph, a real and separate case worth investigating next if failures continue after this fix.
   v0.1612 - Per Lynn's explicit correction (a screenshot I mis-read as a good result was actually the mark 5+ lines away from the real caret) and explicit request: added an automated sanity check that catches an impossible cursor position BEFORE it renders, instead of relying on a human to spot it in a screenshot. A caret can never legitimately sit outside its own textarea's currently-visible area -- the computed Y is translated into the textarea's own visible-viewport coordinate space and checked against [0, clientHeight]. If it fails, the mark hides and logs loudly (boldcursor-SANITY-FAIL, with the exact numbers at that instant) instead of silently drawing a known-wrong position. This does not fix the underlying cause -- it makes failures self-reporting and precisely timestamped, which the next debug log should make possible to actually diagnose, rather than reconstructing the bug from a screenshot after the fact.
   v0.1611 - REAL explanation and fix for the position jitter after opening Edit Paragraph on a long paragraph, confirmed by Lynn's v0.1610 diagnostic log: scrollTopAtCall and scrollTopNow matched on every line (the scroll READ was never stale -- three earlier timing theories, all now conclusively closed), but Lynn clarified the dialog auto-scrolls on open, not from a manual scroll -- and the log showed why: openEditBlockDialog() deliberately places the caret at the END of the text (setSelectionRange to the full length), which for a long paragraph forces the browser's OWN native scroll-to-caret. That scroll doesn't complete in one step -- the log showed the identical selection (sel=418, completely unchanged) with scrollTop drifting 170->214->211->174->...->170 over ~2.5 seconds as it settled, and update() faithfully (and correctly, for each instant) redrew the mark at every intermediate step -- individually accurate but visually jittery, and any single screenshot taken mid-settle would show a "wrong" position that was really just an in-progress native scroll animation. Fixed with a scroll-settle debounce (120ms of quiet before redrawing) replacing the previous unthrottled scroll listener.
   v0.1610 - DIAGNOSTIC ONLY, no behavior fix, after Lynn's screenshot showed the mirror correctly reflecting its own cursor position but STILL disagreeing with the real editor's native cursor after a plain scroll+tap (a different scenario than v0.1609's auto-scroll-during-typing fix, which doesn't apply here -- a deliberate scroll then tap involves no browser auto-scroll-to-caret at all). Also confirmed Lynn's observation that the debug mirror's on-screen box position doesn't reflect scroll -- expected (it's meant to sit below the dialog, not track internal scroll), but made the underlying scroll VALUES fully visible in the log instead: new bc-scroll-check log line captures scrollTop at the moment update() is called vs. inside the deferred measurement callback (to test whether it's changing between those points), and bc-mirror now logs edScrollTop/edRect.top alongside the geometry it already reports. Next log from Lynn should show definitively whether the scroll read itself is unstable, or whether the bug is elsewhere (e.g. how the mark's position gets applied after a correct measurement).
@@ -9829,7 +9830,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1612';
+const APP_VERSION = '0.1613';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23591,8 +23592,19 @@ function makeImportFolderName(label) {
     // value). scrollAncestor remains correctly used ONLY as the
     // positioning reference frame (edRect vs areaRect), never as the
     // scroll source.
-    var edTopWithinContent = (edRect.top - areaRect.top) + ed.scrollTop;
-    var edLeftWithinContent = (edRect.left - areaRect.left) + ed.scrollLeft;
+    // v0.1613 FIX, from Lynn's deployed iOS PWA log: scrollTop=-1 appeared
+    // in a real sanity-check failure. Negative scrollTop is physically
+    // meaningless (scroll position can't be negative) but iOS Safari --
+    // especially in the standalone PWA context Lynn is now testing for
+    // the first time -- can transiently report negative values during
+    // ELASTIC OVERSCROLL/BOUNCE (the rubber-band effect scrolling past a
+    // content edge), before it settles back to rest. Clamped to 0 here,
+    // at the source, rather than trusting a transient physically-
+    // impossible reading.
+    var edScrollTopClamped = Math.max(0, ed.scrollTop);
+    var edScrollLeftClamped = Math.max(0, ed.scrollLeft);
+    var edTopWithinContent = (edRect.top - areaRect.top) + edScrollTopClamped;
+    var edLeftWithinContent = (edRect.left - areaRect.left) + edScrollLeftClamped;
     if (window._bcShowMirror) {
       _boldCursorDebugMirror = mirror; // leave ON SCREEN for inspection instead of removing
       logDebugAction('bc-mirror: edRect.width=' + Math.round(edRect.width) + ' edClientWidth=' + ed.clientWidth +
@@ -23708,7 +23720,7 @@ function makeImportFolderName(label) {
         // silently drawing something impossible. This is the automated
         // version of what Lynn has been catching by eye across many
         // screenshots -- it should never again take a human to notice.
-        var visibleTop = newTop - ta.scrollTop;
+        var visibleTop = newTop - Math.max(0, ta.scrollTop); // v0.1613: same clamp as getCursorXYFor, avoids re-introducing a transient negative reading here
         var visibleBottom = visibleTop + newHeight;
         var taVisibleHeight = ta.clientHeight;
         if (visibleTop < -2 || visibleBottom > taVisibleHeight + 2) {
