@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1615 -->
+<!-- Remember App - Version 0.1616 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1615
+  Version 0.1616
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1616 - THE REAL BUG, found by actually tracing the call graph instead of assuming: Lynn's screenshot showed the note-editor's bold cursor landing in the TOOLBAR area after scrolling. Investigation revealed update() (shared by all 3 Bold Cursor instances) ALWAYS calls getCursorXYFor(), never the shared getCursorXY() -- meaning v0.1605's and v0.1615's fixes to getCursorXY(), while real and correct fixes for that function's OTHER 16+ callers (nudge buttons, scroll preservation, find-in-note, trackpad heal), never had any effect on Bold Cursor at all. The actual live bug was in getCursorXYFor()'s own v0.1608 fix: it read scroll ONLY from ed (correct for the self-scrolling Quick Add/Edit Paragraph dialogs), but ed (note-editor) never scrolls itself -- the WRAPPER (note-content-area) does -- so note-editor's real scroll offset was always read as 0, exactly matching "mark renders where it would be if the note had never been scrolled" (i.e. near the top, under the toolbar). Fixed generically for both architectures at once: since exactly one of ed/scrollAncestor actually scrolls in each real case (the other is always 0 by construction), the fix now sums both clamped values instead of reading only one.
   v0.1615 - Fixed the main note editor's Y drift after scrolling, per Lynn's precise iOS PWA screenshot (correct X, wrong Y, worsening the further scrolled down). Root cause: the exact same iOS elastic-overscroll/bounce bug already found and fixed in getCursorXYFor() (v0.1613, confirmed via a deployed log showing scrollTop=-1) was never carried over to the SHARED getCursorXY() -- the function that actually backs the main note editor, caret nudge buttons, mode-switch scroll preservation, find-in-note, and trackpad heal. Clamped area.scrollTop/scrollLeft to 0 at the source here too. Note the two functions correctly use different scroll sources for their different architectures (getCursorXY reads the WRAPPER's scroll, correct since note-editor sits in a separately-scrolling div; getCursorXYFor reads the TEXTAREA's own scroll, correct since Quick Add/Edit Paragraph are self-scrolling) -- both needed the identical clamp against the same transient iOS quirk despite reading different elements. The v0.1612 sanity check never fired for this bug because the wrong position stayed WITHIN the textarea's visible bounds (a smaller, non-off-screen error) -- consistent with Lynn's own description of it as "almost correct," not wildly wrong.
   v0.1614 - Fixed Bold Cursor bleeding through the More menu, per Lynn's report. Root cause: the mark's z-index (10011, raised in v0.1601 to clear the Quick Add/Edit Paragraph dialogs' stacking at 10010) was never checked against toolbar-more-menu specifically (z-index 10000) -- a separate overlay this app already has an established fix-pattern for (the very same function already clears text selection to stop OS-drawn selection handles bleeding through the same way, for the same reason: some UI ignores normal z-index or sits at an unexpectedly high value). Rather than keep chasing every current/future overlay's z-index number, added shared hide()/show() to each Bold Cursor instance plus window._boldCursorHideAll()/_boldCursorShowAll(), called from openMoreMenu()/closeMoreMenu() directly. Also: Lynn's screenshot of the note-editor position bug showed what looks like a SEPARATE issue -- a second, differently-colored (blue, likely the native system caret) cursor at a different character position than the red mark, rather than simple wrong math on one cursor. Flagged for focused investigation next -- didn't want to guess at a fix for a bug whose actual shape may be different from every prior position bug in this investigation.
   v0.1613 - The v0.1612 sanity check worked exactly as intended: Lynn's first deployed iOS PWA test caught real, self-reporting SANITY-FAIL log lines instead of silent wrong positions. One of them revealed a genuinely impossible reading: scrollTop=-1. Negative scrollTop is physically meaningless, but iOS Safari -- especially the standalone PWA context Lynn is now testing for the first time (previously mostly tested via the Claude app browser tab) -- can transiently report negative values during elastic overscroll/bounce (the rubber-band effect past a content edge) before settling back to rest. Clamped scrollTop/scrollLeft to 0 at the source in getCursorXYFor(), and consistently in the sanity check's own read, instead of trusting a transient physically-impossible value. Other sanity-check firings in the same log (taVisibleHeight=132, consistent with quick-add-input's actual unconstrained rows=4 height) may reflect the textarea genuinely being very short relative to a long pasted paragraph, a real and separate case worth investigating next if failures continue after this fix.
@@ -9832,7 +9833,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1615';
+const APP_VERSION = '0.1616';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23624,8 +23625,21 @@ function makeImportFolderName(label) {
     // content edge), before it settles back to rest. Clamped to 0 here,
     // at the source, rather than trusting a transient physically-
     // impossible reading.
-    var edScrollTopClamped = Math.max(0, ed.scrollTop);
-    var edScrollLeftClamped = Math.max(0, ed.scrollLeft);
+    // v0.1616 REAL FIX, from Lynn's screenshot showing the mark landing
+    // in the TOOLBAR area for note-editor after scrolling: v0.1608's "read
+    // scroll from ed itself" was correct for the self-scrolling dialogs,
+    // but silently WRONG for note-editor, where ed (the textarea) never
+    // scrolls at all -- the WRAPPER (note-content-area) does. Reading
+    // only ed.scrollTop meant note-editor's real scroll offset was always
+    // read as 0, exactly matching "mark renders where it would be if the
+    // note had never been scrolled" (i.e. up near the top/toolbar).
+    // Fixed generically for BOTH architectures at once: in each real
+    // case, exactly one of ed/scrollAncestor actually scrolls (the other
+    // is always 0 by construction), so summing both clamped values is
+    // correct without needing to special-case which architecture is
+    // active for a given call.
+    var edScrollTopClamped = Math.max(0, ed.scrollTop) + Math.max(0, scrollAncestor.scrollTop);
+    var edScrollLeftClamped = Math.max(0, ed.scrollLeft) + Math.max(0, scrollAncestor.scrollLeft);
     var edTopWithinContent = (edRect.top - areaRect.top) + edScrollTopClamped;
     var edLeftWithinContent = (edRect.left - areaRect.left) + edScrollLeftClamped;
     if (window._bcShowMirror) {
