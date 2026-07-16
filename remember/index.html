@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1614 -->
+<!-- Remember App - Version 0.1615 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1614
+  Version 0.1615
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1615 - Fixed the main note editor's Y drift after scrolling, per Lynn's precise iOS PWA screenshot (correct X, wrong Y, worsening the further scrolled down). Root cause: the exact same iOS elastic-overscroll/bounce bug already found and fixed in getCursorXYFor() (v0.1613, confirmed via a deployed log showing scrollTop=-1) was never carried over to the SHARED getCursorXY() -- the function that actually backs the main note editor, caret nudge buttons, mode-switch scroll preservation, find-in-note, and trackpad heal. Clamped area.scrollTop/scrollLeft to 0 at the source here too. Note the two functions correctly use different scroll sources for their different architectures (getCursorXY reads the WRAPPER's scroll, correct since note-editor sits in a separately-scrolling div; getCursorXYFor reads the TEXTAREA's own scroll, correct since Quick Add/Edit Paragraph are self-scrolling) -- both needed the identical clamp against the same transient iOS quirk despite reading different elements. The v0.1612 sanity check never fired for this bug because the wrong position stayed WITHIN the textarea's visible bounds (a smaller, non-off-screen error) -- consistent with Lynn's own description of it as "almost correct," not wildly wrong.
   v0.1614 - Fixed Bold Cursor bleeding through the More menu, per Lynn's report. Root cause: the mark's z-index (10011, raised in v0.1601 to clear the Quick Add/Edit Paragraph dialogs' stacking at 10010) was never checked against toolbar-more-menu specifically (z-index 10000) -- a separate overlay this app already has an established fix-pattern for (the very same function already clears text selection to stop OS-drawn selection handles bleeding through the same way, for the same reason: some UI ignores normal z-index or sits at an unexpectedly high value). Rather than keep chasing every current/future overlay's z-index number, added shared hide()/show() to each Bold Cursor instance plus window._boldCursorHideAll()/_boldCursorShowAll(), called from openMoreMenu()/closeMoreMenu() directly. Also: Lynn's screenshot of the note-editor position bug showed what looks like a SEPARATE issue -- a second, differently-colored (blue, likely the native system caret) cursor at a different character position than the red mark, rather than simple wrong math on one cursor. Flagged for focused investigation next -- didn't want to guess at a fix for a bug whose actual shape may be different from every prior position bug in this investigation.
   v0.1613 - The v0.1612 sanity check worked exactly as intended: Lynn's first deployed iOS PWA test caught real, self-reporting SANITY-FAIL log lines instead of silent wrong positions. One of them revealed a genuinely impossible reading: scrollTop=-1. Negative scrollTop is physically meaningless, but iOS Safari -- especially the standalone PWA context Lynn is now testing for the first time (previously mostly tested via the Claude app browser tab) -- can transiently report negative values during elastic overscroll/bounce (the rubber-band effect past a content edge) before settling back to rest. Clamped scrollTop/scrollLeft to 0 at the source in getCursorXYFor(), and consistently in the sanity check's own read, instead of trusting a transient physically-impossible value. Other sanity-check firings in the same log (taVisibleHeight=132, consistent with quick-add-input's actual unconstrained rows=4 height) may reflect the textarea genuinely being very short relative to a long pasted paragraph, a real and separate case worth investigating next if failures continue after this fix.
   v0.1612 - Per Lynn's explicit correction (a screenshot I mis-read as a good result was actually the mark 5+ lines away from the real caret) and explicit request: added an automated sanity check that catches an impossible cursor position BEFORE it renders, instead of relying on a human to spot it in a screenshot. A caret can never legitimately sit outside its own textarea's currently-visible area -- the computed Y is translated into the textarea's own visible-viewport coordinate space and checked against [0, clientHeight]. If it fails, the mark hides and logs loudly (boldcursor-SANITY-FAIL, with the exact numbers at that instant) instead of silently drawing a known-wrong position. This does not fix the underlying cause -- it makes failures self-reporting and precisely timestamped, which the next debug log should make possible to actually diagnose, rather than reconstructing the bug from a screenshot after the fact.
@@ -9831,7 +9832,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1614';
+const APP_VERSION = '0.1615';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -16727,8 +16728,16 @@ function getCursorXY(ed) {
   // `position`, so offsetTop is not guaranteed relative to area at all).
   var edRect  = ed.getBoundingClientRect();
   var areaRect = area.getBoundingClientRect();
-  var edTopWithinContent = (edRect.top - areaRect.top) + area.scrollTop;
-  var edLeftWithinContent = (edRect.left - areaRect.left) + area.scrollLeft;
+  // v0.1615 FIX, from Lynn's iOS PWA screenshot of the MAIN note editor
+  // (correct X, wrong Y, worsening the further scrolled): the exact same
+  // iOS elastic-overscroll/bounce bug already found and fixed in
+  // getCursorXYFor() (v0.1613, scrollTop=-1 confirmed in a deployed log)
+  // was never carried over to THIS function -- the one that actually
+  // backs the main note editor. Clamped here too, at the source.
+  var areaScrollTopClamped = Math.max(0, area.scrollTop);
+  var areaScrollLeftClamped = Math.max(0, area.scrollLeft);
+  var edTopWithinContent = (edRect.top - areaRect.top) + areaScrollTopClamped;
+  var edLeftWithinContent = (edRect.left - areaRect.left) + areaScrollLeftClamped;
   var resultY = offsetWithinText + edTopWithinContent;
   var resultX = offsetWithinTextX + edLeftWithinContent;
   document.body.removeChild(mirror);  // remove immediately — never leave in DOM
