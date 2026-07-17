@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1623 -->
+<!-- Remember App - Version 0.1624 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1623
+  Version 0.1624
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1624 - DIAGNOSTIC ONLY, for Lynn's report of an intermittent ~200px Y gap in Quick Add that the full mirror overlay was too hard to visually verify (it covers the real dialog content entirely, making a direct comparison difficult). Log analysis of the same session found scrollTopAtCall=-1 reappearing for quick-add-input during a rapid multi-step scroll sequence (782->419->84->84->-1->0->35) while Lynn was scrolling within a long pasted paragraph -- the same iOS elastic-overscroll condition already clamped at the source, but never specifically confirmed to hold through an active, fast multi-step scroll episode in the dialogs. Added a simpler diagnostic than the full mirror: a bright green line drawn directly ON the real dialog at the mark's exact computed Y, visible whenever the debug toggle is on -- directly overlays the real content instead of competing with it, making any Y mismatch immediately and unambiguously visible even during active scrolling, without needing to compare two separate text blocks.
   v0.1623 - Two things. (1) REAL FIX for Quick Add/Edit Paragraph losing the bold cursor after the very first render, per Lynn's log: computed top=8 (correct) but visibleTop=-70 due to a nonzero vvOffsetTop=77.65625 -- but these dialogs are FIXED-POSITION overlays whose own coordinate space is already anchored to the visual viewport, unlike note-editor's panning layout-viewport content. The v0.1619 offsetTop subtraction was correct for note-editor but wrongly applied to the dialogs too, double-counting an offset that doesn't apply to fixed-position elements -- exactly matching "works once at open (offsetTop still 0) breaks once the keyboard settles (offsetTop becomes nonzero)." Scoped the subtraction to note-editor only. Note this was ONLY a sanity-check bug, never a real position error -- getCursorXYFor's own math never referenced offsetTop at all, so the dialogs' mark was likely correctly positioned the whole time and just being wrongly hidden. (2) Per Lynn's explicit decision, recorded Bold Cursor bleeding through the More menu and scratch pad on ANDROID specifically as an ACCEPTED KNOWN QUIRK, not planned for further investigation -- same underlying Android compositor/z-index behavior already documented in this codebase for OS-drawn selection handles (a pre-existing issue that predates Bold Cursor entirely). The Android note-editor cursor desync Lynn also newly reported remains open -- no Android-specific log data yet to diagnose it from.
   v0.1622 - Two things. (1) PRAGMATIC fix for the sanity check's persistent false-positive: three consecutive attempts at fixing visualViewport's own height-reporting timing (v0.1619 offsetTop subtraction, v0.1620 direct read, v0.1621 event-driven cache) all failed identically per Lynn's repeated logs, always the same four lines, always a modest 30-90px overshoot. Rather than attempt a fourth timing fix against an evidently elusive iOS quirk, widened the bottom-edge tolerance to 100px (roughly 3+ lines) -- a borderline near-bottom overshoot is a weak signal not worth repeatedly hiding an otherwise-correct cursor over; top/left/right bounds keep their original strict tolerance. (2) Fixed Bold Cursor bleeding through the scratch pad (both iOS and Android per Lynn's report) -- a real, previously untouched gap; wired the same hide-on-open/show-on-close pattern already used for the More menu. The Android More-menu bleed-through Lynn also reported remains open -- the existing fix's code is platform-agnostic and its call site is confirmed correctly wired, so this is likely a genuine Android-specific rendering quirk (this app already documents Android's OS-drawn selection handles ignoring normal z-index in this exact function) rather than a gap in the fix itself; needs an Android-side log/screenshot before guessing further.
   v0.1621 - REAL fix for the sanity check's false-positive, this time confirmed against Lynn's log DISPROVING v0.1620: taVisibleHeight=409 STILL persisted with vvOffsetTop=0 even after switching to a direct, synchronous visualViewport.height read -- ruling out the "stale clientHeight" theory entirely. The actual cause: visualViewport.height ITSELF can lag its own resize event on iOS -- offsetTop (driven by scroll/pan repositioning) snaps back to 0 quickly on keyboard dismiss, but .height can genuinely update a beat later, and a synchronous read at an arbitrary moment can land in that gap. Fixed by no longer reading .height cold: added a module-level cache (_bcCachedViewportHeight) updated ONLY when visualViewport's own real 'resize' event fires, so the sanity check always compares against a value known to be current as of the last actual viewport change, never a mid-transition snapshot that races against iOS's own event timing.
@@ -9840,7 +9841,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1623';
+const APP_VERSION = '0.1624';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23896,6 +23897,27 @@ function makeImportFolderName(label) {
         m.style.top = Math.round(newTop) + 'px';
         m.style.width = (settings.boldCursorWidth || 4) + 'px';
         m.style.height = Math.round(newHeight) + 'px';
+        // v0.1624 DIAGNOSTIC, per Lynn's report of an intermittent ~200px
+        // Y gap in Quick Add that the full mirror overlay was too hard to
+        // visually compare against (it covers the real content). This
+        // draws a bright, full-width line directly ON the real dialog at
+        // the mark's exact computed Y -- much simpler to check: does the
+        // line cross exactly at the real caret's row, even mid-scroll?
+        // Remove once the Y bug (if still real) is confirmed fixed.
+        if (window._bcShowMirror) {
+          var yLine = document.getElementById('bc-y-line-' + ta.id) || (function() {
+            var l = document.createElement('div');
+            l.id = 'bc-y-line-' + ta.id;
+            l.style.cssText = 'position:absolute;left:0;right:0;height:2px;background:#00c853;z-index:99998;pointer-events:none;';
+            m.parentElement.appendChild(l);
+            return l;
+          })();
+          yLine.style.top = Math.round(newTop + newHeight / 2) + 'px';
+          yLine.style.display = 'block';
+        } else {
+          var existingYLine = document.getElementById('bc-y-line-' + ta.id);
+          if (existingYLine) existingYLine.style.display = 'none';
+        }
         // v0.1617 DIAGNOSTIC, per Lynn's report (last ~4 lines of a note,
         // near/under the keyboard: native cursor visible, bold cursor
         // not): the existing sanity check can't detect this for
