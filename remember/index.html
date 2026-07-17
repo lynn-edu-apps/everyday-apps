@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1622 -->
+<!-- Remember App - Version 0.1623 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1622
+  Version 0.1623
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1623 - Two things. (1) REAL FIX for Quick Add/Edit Paragraph losing the bold cursor after the very first render, per Lynn's log: computed top=8 (correct) but visibleTop=-70 due to a nonzero vvOffsetTop=77.65625 -- but these dialogs are FIXED-POSITION overlays whose own coordinate space is already anchored to the visual viewport, unlike note-editor's panning layout-viewport content. The v0.1619 offsetTop subtraction was correct for note-editor but wrongly applied to the dialogs too, double-counting an offset that doesn't apply to fixed-position elements -- exactly matching "works once at open (offsetTop still 0) breaks once the keyboard settles (offsetTop becomes nonzero)." Scoped the subtraction to note-editor only. Note this was ONLY a sanity-check bug, never a real position error -- getCursorXYFor's own math never referenced offsetTop at all, so the dialogs' mark was likely correctly positioned the whole time and just being wrongly hidden. (2) Per Lynn's explicit decision, recorded Bold Cursor bleeding through the More menu and scratch pad on ANDROID specifically as an ACCEPTED KNOWN QUIRK, not planned for further investigation -- same underlying Android compositor/z-index behavior already documented in this codebase for OS-drawn selection handles (a pre-existing issue that predates Bold Cursor entirely). The Android note-editor cursor desync Lynn also newly reported remains open -- no Android-specific log data yet to diagnose it from.
   v0.1622 - Two things. (1) PRAGMATIC fix for the sanity check's persistent false-positive: three consecutive attempts at fixing visualViewport's own height-reporting timing (v0.1619 offsetTop subtraction, v0.1620 direct read, v0.1621 event-driven cache) all failed identically per Lynn's repeated logs, always the same four lines, always a modest 30-90px overshoot. Rather than attempt a fourth timing fix against an evidently elusive iOS quirk, widened the bottom-edge tolerance to 100px (roughly 3+ lines) -- a borderline near-bottom overshoot is a weak signal not worth repeatedly hiding an otherwise-correct cursor over; top/left/right bounds keep their original strict tolerance. (2) Fixed Bold Cursor bleeding through the scratch pad (both iOS and Android per Lynn's report) -- a real, previously untouched gap; wired the same hide-on-open/show-on-close pattern already used for the More menu. The Android More-menu bleed-through Lynn also reported remains open -- the existing fix's code is platform-agnostic and its call site is confirmed correctly wired, so this is likely a genuine Android-specific rendering quirk (this app already documents Android's OS-drawn selection handles ignoring normal z-index in this exact function) rather than a gap in the fix itself; needs an Android-side log/screenshot before guessing further.
   v0.1621 - REAL fix for the sanity check's false-positive, this time confirmed against Lynn's log DISPROVING v0.1620: taVisibleHeight=409 STILL persisted with vvOffsetTop=0 even after switching to a direct, synchronous visualViewport.height read -- ruling out the "stale clientHeight" theory entirely. The actual cause: visualViewport.height ITSELF can lag its own resize event on iOS -- offsetTop (driven by scroll/pan repositioning) snaps back to 0 quickly on keyboard dismiss, but .height can genuinely update a beat later, and a synchronous read at an arbitrary moment can land in that gap. Fixed by no longer reading .height cold: added a module-level cache (_bcCachedViewportHeight) updated ONLY when visualViewport's own real 'resize' event fires, so the sanity check always compares against a value known to be current as of the last actual viewport change, never a mid-transition snapshot that races against iOS's own event timing.
   v0.1620 - REAL FIX for the sanity check's remaining false-positive, from Lynn's precise report (works when the keyboard is showing, fails when it's closed) and the log proving it directly: taVisibleHeight=409 (the keyboard-SHRUNK value) persisted on lines where vvOffsetTop=0 (keyboard genuinely closed, viewport back to full height) -- an internally impossible combination if both were read fresh together, meaning clientHeight itself was the STALE value in that moment, not visualViewport. Root cause: the old code only ever let visualViewport.height shrink taVisibleHeight downward, assuming clientHeight was always the more-current, larger value -- but this session showed clientHeight lagging behind after a keyboard-dismiss animation, still reporting the keyboard-open height after the keyboard had actually closed. Fixed by trusting visualViewport.height directly as the primary visible-height source whenever available, rather than only allowing it to shrink a value that can itself be wrong.
@@ -9839,7 +9840,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1622';
+const APP_VERSION = '0.1623';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -22487,6 +22488,20 @@ function makeImportFolderName(label) {
     // selection (editor, in typing mode) and a normal browser text
     // selection (the rendered viewer in R&R mode also allows text
     // selection for double/triple-tap and copy).
+    //
+    // ACCEPTED KNOWN QUIRK (v0.1623, Lynn's explicit decision, not
+    // pursued further): Bold Cursor's mark also still bleeds through
+    // this menu AND the scratch pad on ANDROID specifically (the
+    // hide()/show() calls at the relevant open/close points are correct
+    // and DO work — this is iOS-fixed as of v0.1622 for the scratch
+    // pad) — the same underlying Android compositor/z-index behavior
+    // documented above for selection handles most likely applies to
+    // Bold Cursor's own mark too. Lynn: "I've decided I don't care...
+    // mark this as a known quirk... it is not a big deal" — explicitly
+    // the same category of long-standing issue as drag handles bleeding
+    // through the scratch pad on Android, which predates Bold Cursor
+    // entirely. Not planned for further investigation; recorded here so
+    // this doesn't get rediscovered and re-investigated later.
     var _edForClear = document.getElementById('note-editor');
     if (_edForClear && document.activeElement === _edForClear) {
       _edForClear.setSelectionRange(_edForClear.selectionStart, _edForClear.selectionStart);
@@ -23796,7 +23811,21 @@ function makeImportFolderName(label) {
         // successful bc-keyboard-check line in the same session showed
         // offsetTop=69 in one state -- a real, changing value this
         // calculation never accounted for.
-        var vvOffsetTopNow = (window.visualViewport ? window.visualViewport.offsetTop : 0);
+        // v0.1623 REAL FIX, from Lynn's log: quick-add-input/edit-block-
+        // input showed the red cursor correctly ONLY right when a dialog
+        // first opens, then losing sync as soon as the keyboard settles.
+        // Root cause: vvOffsetTop compensates for the LAYOUT viewport
+        // panning under the note editor's scrolling content -- correct
+        // for note-editor, which lives in that panning layout space. But
+        // Quick Add/Edit Paragraph are FIXED-POSITION overlay dialogs;
+        // their own coordinate space is already anchored to the VISUAL
+        // viewport, which doesn't pan the same way. Subtracting
+        // offsetTop for them double-counted an offset that doesn't apply
+        // to fixed-position elements at all -- exactly matching "works
+        // once at open (offsetTop still 0 before the keyboard has
+        // settled), breaks the moment offsetTop becomes nonzero."
+        // Scoped: only note-editor gets the offsetTop compensation now.
+        var vvOffsetTopNow = (ta.id === 'note-editor' && window.visualViewport) ? window.visualViewport.offsetTop : 0;
         var visibleTop = newTop - visScrollTop - vvOffsetTopNow;
         var visibleBottom = visibleTop + newHeight;
         // Same reasoning as the scroll fix: exactly one of ta/scrollAncestor
