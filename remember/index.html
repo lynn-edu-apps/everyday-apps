@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1619 -->
+<!-- Remember App - Version 0.1620 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1619
+  Version 0.1620
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1620 - REAL FIX for the sanity check's remaining false-positive, from Lynn's precise report (works when the keyboard is showing, fails when it's closed) and the log proving it directly: taVisibleHeight=409 (the keyboard-SHRUNK value) persisted on lines where vvOffsetTop=0 (keyboard genuinely closed, viewport back to full height) -- an internally impossible combination if both were read fresh together, meaning clientHeight itself was the STALE value in that moment, not visualViewport. Root cause: the old code only ever let visualViewport.height shrink taVisibleHeight downward, assuming clientHeight was always the more-current, larger value -- but this session showed clientHeight lagging behind after a keyboard-dismiss animation, still reporting the keyboard-open height after the keyboard had actually closed. Fixed by trusting visualViewport.height directly as the primary visible-height source whenever available, rather than only allowing it to shrink a value that can itself be wrong.
   v0.1619 - REAL FIX for the sanity check's remaining false-positive, from Lynn's log showing a consistent ~35px overshoot (visibleBottom=444 vs taVisibleHeight=409) repeating across nearly every failure, plus Lynn's precise behavioral report (works once right after opening a note, breaks after dismissing the keyboard and tapping again, only fixed by a fresh note-open). Root cause: visualViewport doesn't just SHRINK when the keyboard is up, it also SHIFTS DOWN by offsetTop -- the check never subtracted this, so the "visible window" it compared against was anchored at the wrong vertical origin whenever offsetTop was nonzero. Verified arithmetically against Lynn's actual numbers before writing the fix: subtracting a plausible offsetTop brings the overshoot back to zero, consistent with a real, changing offsetTop value already visible elsewhere in the same log (69 in one successful state, 0 in another). Fixed by subtracting visualViewport.offsetTop from visibleTop. Also added vvOffsetTop to the failure log itself (previously only captured on SUCCESS via bc-keyboard-check, never at the moment of an actual failure) so the next log shows the real value directly if this doesn't fully resolve it.
   v0.1618 - REAL FIX for the sanity check itself, from Lynn's log: it WAS firing for note-editor (v0.1617's exemption theory was wrong), nearly succeeding each time (only ~53px over) -- but that "near miss" was an illusion. ta.clientHeight for note-editor is the ENTIRE document's height (~4844px, matching a long note's real length), not the visible screen -- confirmed against the same log's OWN successful line, which showed wrapperClientHeight=812 (a real, screen-sized number) alongside the failing lines' taVisibleHeight=4844. The check was comparing two document-scale numbers that happen to land close together near the END of a long note, never actually validating against the visible viewport. Fixed by using scrollAncestor (the wrapper) as the visible-height/scroll source when it's the real scroller (same "which element actually matters" distinction already applied to the position math itself), then further clamping to visualViewport.height when the keyboard makes even that too generous (Lynn's log: vvHeight=409 vs wrapperClientHeight=812 with the keyboard open).
   v0.1617 - DIAGNOSTIC ONLY, no behavior change, for Lynn's newest report: the last ~4 lines of a long note (near/under the iOS keyboard) show the native cursor but not the bold one, specifically when tapping there after scrolling. Checked the existing sanity check first -- it can't be the cause here: for note-editor, ta.scrollTop is always 0 (the WRAPPER scrolls, not the textarea itself), so the check compares against the textarea's ENTIRE height, effectively never firing for this element. Working theory: the mark's position may be CORRECT (in document space) but physically covered by the OS keyboard, which iOS draws outside the web content layer entirely -- no code-side z-index can affect it. Added a targeted log (bc-keyboard-check) capturing the mark's computed top alongside visualViewport height/offsetTop and the wrapper's own scroll/visible state, to confirm or rule this out with real numbers before writing a fix (which, if confirmed, would likely mean proactively scrolling the note to keep the cursor above the keyboard -- the same principle already established elsewhere in this file for the trackpad-heal work).
@@ -9836,7 +9837,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1619';
+const APP_VERSION = '0.1620';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23801,12 +23802,22 @@ function makeImportFolderName(label) {
         var taVisibleHeight = (scrollAncestor.clientHeight > 0 && scrollAncestor !== ta)
           ? Math.min(ta.clientHeight || Infinity, scrollAncestor.clientHeight)
           : ta.clientHeight;
-        // Further clamp to the visualViewport when it's meaningfully
-        // smaller than the wrapper's own box -- Lynn's log showed
-        // vvHeight=409 vs wrapperClientHeight=812 with the keyboard open;
-        // clientHeight alone doesn't know the keyboard covers roughly
-        // half the wrapper's box.
-        if (window.visualViewport && window.visualViewport.height < taVisibleHeight) {
+        // v0.1620 REAL FIX, from Lynn's log: taVisibleHeight=409 (the
+        // keyboard-SHRUNK value) persisted even on lines where
+        // vvOffsetTop=0 (keyboard genuinely closed, viewport back to full
+        // height) -- meaning clientHeight itself was the STALE value in
+        // that moment, not visualViewport. The old code only ever let
+        // visualViewport.height shrink taVisibleHeight, assuming
+        // clientHeight was always the more-current, larger value -- but
+        // iOS can genuinely update visualViewport.height and
+        // clientHeight on different frames across a keyboard dismiss
+        // animation, and this session showed clientHeight lagging behind
+        // (still reporting the keyboard-open height after the keyboard
+        // had actually closed). Fixed by trusting visualViewport.height
+        // directly as the primary source whenever it's available, rather
+        // than only allowing it to shrink a value that can itself be the
+        // stale one.
+        if (window.visualViewport) {
           taVisibleHeight = window.visualViewport.height;
         }
         if (visibleTop < -2 || visibleBottom > taVisibleHeight + 2) {
