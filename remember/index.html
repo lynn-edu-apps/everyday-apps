@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1621 -->
+<!-- Remember App - Version 0.1622 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1621
+  Version 0.1622
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1622 - Two things. (1) PRAGMATIC fix for the sanity check's persistent false-positive: three consecutive attempts at fixing visualViewport's own height-reporting timing (v0.1619 offsetTop subtraction, v0.1620 direct read, v0.1621 event-driven cache) all failed identically per Lynn's repeated logs, always the same four lines, always a modest 30-90px overshoot. Rather than attempt a fourth timing fix against an evidently elusive iOS quirk, widened the bottom-edge tolerance to 100px (roughly 3+ lines) -- a borderline near-bottom overshoot is a weak signal not worth repeatedly hiding an otherwise-correct cursor over; top/left/right bounds keep their original strict tolerance. (2) Fixed Bold Cursor bleeding through the scratch pad (both iOS and Android per Lynn's report) -- a real, previously untouched gap; wired the same hide-on-open/show-on-close pattern already used for the More menu. The Android More-menu bleed-through Lynn also reported remains open -- the existing fix's code is platform-agnostic and its call site is confirmed correctly wired, so this is likely a genuine Android-specific rendering quirk (this app already documents Android's OS-drawn selection handles ignoring normal z-index in this exact function) rather than a gap in the fix itself; needs an Android-side log/screenshot before guessing further.
   v0.1621 - REAL fix for the sanity check's false-positive, this time confirmed against Lynn's log DISPROVING v0.1620: taVisibleHeight=409 STILL persisted with vvOffsetTop=0 even after switching to a direct, synchronous visualViewport.height read -- ruling out the "stale clientHeight" theory entirely. The actual cause: visualViewport.height ITSELF can lag its own resize event on iOS -- offsetTop (driven by scroll/pan repositioning) snaps back to 0 quickly on keyboard dismiss, but .height can genuinely update a beat later, and a synchronous read at an arbitrary moment can land in that gap. Fixed by no longer reading .height cold: added a module-level cache (_bcCachedViewportHeight) updated ONLY when visualViewport's own real 'resize' event fires, so the sanity check always compares against a value known to be current as of the last actual viewport change, never a mid-transition snapshot that races against iOS's own event timing.
   v0.1620 - REAL FIX for the sanity check's remaining false-positive, from Lynn's precise report (works when the keyboard is showing, fails when it's closed) and the log proving it directly: taVisibleHeight=409 (the keyboard-SHRUNK value) persisted on lines where vvOffsetTop=0 (keyboard genuinely closed, viewport back to full height) -- an internally impossible combination if both were read fresh together, meaning clientHeight itself was the STALE value in that moment, not visualViewport. Root cause: the old code only ever let visualViewport.height shrink taVisibleHeight downward, assuming clientHeight was always the more-current, larger value -- but this session showed clientHeight lagging behind after a keyboard-dismiss animation, still reporting the keyboard-open height after the keyboard had actually closed. Fixed by trusting visualViewport.height directly as the primary visible-height source whenever available, rather than only allowing it to shrink a value that can itself be wrong.
   v0.1619 - REAL FIX for the sanity check's remaining false-positive, from Lynn's log showing a consistent ~35px overshoot (visibleBottom=444 vs taVisibleHeight=409) repeating across nearly every failure, plus Lynn's precise behavioral report (works once right after opening a note, breaks after dismissing the keyboard and tapping again, only fixed by a fresh note-open). Root cause: visualViewport doesn't just SHRINK when the keyboard is up, it also SHIFTS DOWN by offsetTop -- the check never subtracted this, so the "visible window" it compared against was anchored at the wrong vertical origin whenever offsetTop was nonzero. Verified arithmetically against Lynn's actual numbers before writing the fix: subtracting a plausible offsetTop brings the overshoot back to zero, consistent with a real, changing offsetTop value already visible elsewhere in the same log (69 in one successful state, 0 in another). Fixed by subtracting visualViewport.offsetTop from visibleTop. Also added vvOffsetTop to the failure log itself (previously only captured on SUCCESS via bc-keyboard-check, never at the moment of an actual failure) so the next log shows the real value directly if this doesn't fully resolve it.
@@ -9838,7 +9839,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1621';
+const APP_VERSION = '0.1622';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -21054,10 +21055,16 @@ function makeImportFolderName(label) {
       // restoring scratch pad pages), so the pad never shows stale text.
       if (!_scratchSaveTimer) ta.value = settings[PAGE_KEYS[_curPage]] || '';
       panel.classList.add('open');
+      // v0.1622 FIX, per Lynn's report (Bold Cursor bleeding through the
+      // scratch pad on both iOS and Android): same pattern already used
+      // for the More menu -- the mark's z-index was never checked
+      // against this panel specifically.
+      if (window._boldCursorHideAll) window._boldCursorHideAll();
     }
     function closeScratchPad() {
       panel.classList.remove('open');
       ta.blur();
+      if (window._boldCursorShowAll) window._boldCursorShowAll();
     }
 
     // Debounced save — mirrors the note editor's own debounce delay,
@@ -23830,7 +23837,24 @@ function makeImportFolderName(label) {
         // (_bcCachedViewportHeight, updated only on visualViewport's own
         // real 'resize' event) instead of a cold synchronous read.
         taVisibleHeight = _bcCachedViewportHeight;
-        if (visibleTop < -2 || visibleBottom > taVisibleHeight + 2) {
+        // v0.1622 PRAGMATIC FIX: three consecutive attempts to fix
+        // visualViewport's own height-reporting timing (v0.1619 offsetTop,
+        // v0.1620 direct read, v0.1621 event-driven cache) all failed
+        // identically per Lynn's repeated logs -- taVisibleHeight kept
+        // landing around 409 (the keyboard-open height) even with
+        // vvOffsetTop=0, always at the SAME four lines at the bottom of
+        // this specific long note, always a modest 30-90px overshoot.
+        // That consistency suggests a genuinely elusive iOS timing quirk
+        // that keeps resisting every synchronization approach tried so
+        // far, not a simple bug with one more fix available. Rather than
+        // attempt a fourth timing fix, this build tolerates a real
+        // margin (100px, roughly 3+ lines) at the BOTTOM edge specifically
+        // before hiding the mark -- a borderline near-bottom overshoot is
+        // a weak signal not worth repeatedly hiding an otherwise-correct
+        // cursor over. The TOP/left/right bounds keep their original
+        // strict tolerance, since those never showed this problem.
+        var bottomTolerance = 100;
+        if (visibleTop < -2 || visibleBottom > taVisibleHeight + bottomTolerance) {
           logDebugAction('boldcursor-SANITY-FAIL: id=' + (ta.id || '?') +
             ' computed top=' + Math.round(newTop) + ' visibleTop=' + Math.round(visibleTop) +
             ' visibleBottom=' + Math.round(visibleBottom) + ' taVisibleHeight=' + taVisibleHeight +
