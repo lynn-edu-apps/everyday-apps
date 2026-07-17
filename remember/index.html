@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1617 -->
+<!-- Remember App - Version 0.1618 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1617
+  Version 0.1618
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1618 - REAL FIX for the sanity check itself, from Lynn's log: it WAS firing for note-editor (v0.1617's exemption theory was wrong), nearly succeeding each time (only ~53px over) -- but that "near miss" was an illusion. ta.clientHeight for note-editor is the ENTIRE document's height (~4844px, matching a long note's real length), not the visible screen -- confirmed against the same log's OWN successful line, which showed wrapperClientHeight=812 (a real, screen-sized number) alongside the failing lines' taVisibleHeight=4844. The check was comparing two document-scale numbers that happen to land close together near the END of a long note, never actually validating against the visible viewport. Fixed by using scrollAncestor (the wrapper) as the visible-height/scroll source when it's the real scroller (same "which element actually matters" distinction already applied to the position math itself), then further clamping to visualViewport.height when the keyboard makes even that too generous (Lynn's log: vvHeight=409 vs wrapperClientHeight=812 with the keyboard open).
   v0.1617 - DIAGNOSTIC ONLY, no behavior change, for Lynn's newest report: the last ~4 lines of a long note (near/under the iOS keyboard) show the native cursor but not the bold one, specifically when tapping there after scrolling. Checked the existing sanity check first -- it can't be the cause here: for note-editor, ta.scrollTop is always 0 (the WRAPPER scrolls, not the textarea itself), so the check compares against the textarea's ENTIRE height, effectively never firing for this element. Working theory: the mark's position may be CORRECT (in document space) but physically covered by the OS keyboard, which iOS draws outside the web content layer entirely -- no code-side z-index can affect it. Added a targeted log (bc-keyboard-check) capturing the mark's computed top alongside visualViewport height/offsetTop and the wrapper's own scroll/visible state, to confirm or rule this out with real numbers before writing a fix (which, if confirmed, would likely mean proactively scrolling the note to keep the cursor above the keyboard -- the same principle already established elsewhere in this file for the trackpad-heal work).
   v0.1616 - THE REAL BUG, found by actually tracing the call graph instead of assuming: Lynn's screenshot showed the note-editor's bold cursor landing in the TOOLBAR area after scrolling. Investigation revealed update() (shared by all 3 Bold Cursor instances) ALWAYS calls getCursorXYFor(), never the shared getCursorXY() -- meaning v0.1605's and v0.1615's fixes to getCursorXY(), while real and correct fixes for that function's OTHER 16+ callers (nudge buttons, scroll preservation, find-in-note, trackpad heal), never had any effect on Bold Cursor at all. The actual live bug was in getCursorXYFor()'s own v0.1608 fix: it read scroll ONLY from ed (correct for the self-scrolling Quick Add/Edit Paragraph dialogs), but ed (note-editor) never scrolls itself -- the WRAPPER (note-content-area) does -- so note-editor's real scroll offset was always read as 0, exactly matching "mark renders where it would be if the note had never been scrolled" (i.e. near the top, under the toolbar). Fixed generically for both architectures at once: since exactly one of ed/scrollAncestor actually scrolls in each real case (the other is always 0 by construction), the fix now sums both clamped values instead of reading only one.
   v0.1615 - Fixed the main note editor's Y drift after scrolling, per Lynn's precise iOS PWA screenshot (correct X, wrong Y, worsening the further scrolled down). Root cause: the exact same iOS elastic-overscroll/bounce bug already found and fixed in getCursorXYFor() (v0.1613, confirmed via a deployed log showing scrollTop=-1) was never carried over to the SHARED getCursorXY() -- the function that actually backs the main note editor, caret nudge buttons, mode-switch scroll preservation, find-in-note, and trackpad heal. Clamped area.scrollTop/scrollLeft to 0 at the source here too. Note the two functions correctly use different scroll sources for their different architectures (getCursorXY reads the WRAPPER's scroll, correct since note-editor sits in a separately-scrolling div; getCursorXYFor reads the TEXTAREA's own scroll, correct since Quick Add/Edit Paragraph are self-scrolling) -- both needed the identical clamp against the same transient iOS quirk despite reading different elements. The v0.1612 sanity check never fired for this bug because the wrong position stayed WITHIN the textarea's visible bounds (a smaller, non-off-screen error) -- consistent with Lynn's own description of it as "almost correct," not wildly wrong.
@@ -9834,7 +9835,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1617';
+const APP_VERSION = '0.1618';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23758,14 +23759,47 @@ function makeImportFolderName(label) {
         // silently drawing something impossible. This is the automated
         // version of what Lynn has been catching by eye across many
         // screenshots -- it should never again take a human to notice.
-        var visibleTop = newTop - Math.max(0, ta.scrollTop); // v0.1613: same clamp as getCursorXYFor, avoids re-introducing a transient negative reading here
+        // v0.1618 REAL FIX for the sanity check itself, from Lynn's log:
+        // the check WAS firing (not exempt, as v0.1617 assumed), and
+        // nearly succeeded (visibleBottom=4897 vs taVisibleHeight=4844,
+        // only 53px over) -- but that "near miss" was an illusion: for
+        // note-editor, ta.clientHeight is the ENTIRE document's height
+        // (~4844px, matching the note's real length), not the visible
+        // screen. The check was comparing two document-scale numbers
+        // that happen to be close together near the END of a long note
+        // -- not a real visible-viewport comparison at all. The correct
+        // visible-area source is scrollAncestor (the WRAPPER) for
+        // note-editor's architecture, same distinction already fixed in
+        // the position math itself -- reusing scrollAncestor here rather
+        // than introducing a third ad-hoc "which element really matters"
+        // decision.
+        var visScrollTop = Math.max(0, ta.scrollTop) + Math.max(0, scrollAncestor.scrollTop);
+        var visibleTop = newTop - visScrollTop;
         var visibleBottom = visibleTop + newHeight;
-        var taVisibleHeight = ta.clientHeight;
+        // Same reasoning as the scroll fix: exactly one of ta/scrollAncestor
+        // has a real, meaningful clientHeight for "what's actually visible"
+        // in each architecture -- for note-editor that's scrollAncestor
+        // (812px, screen-sized); for the self-scrolling dialogs it's ta
+        // itself (scrollAncestor there is a non-scrolling wrapper div with
+        // no independent height concept). Prefer scrollAncestor's height
+        // when it differs meaningfully from ta's (i.e. when ta is the
+        // "whole document" case); otherwise use ta's own.
+        var taVisibleHeight = (scrollAncestor.clientHeight > 0 && scrollAncestor !== ta)
+          ? Math.min(ta.clientHeight || Infinity, scrollAncestor.clientHeight)
+          : ta.clientHeight;
+        // Further clamp to the visualViewport when it's meaningfully
+        // smaller than the wrapper's own box -- Lynn's log showed
+        // vvHeight=409 vs wrapperClientHeight=812 with the keyboard open;
+        // clientHeight alone doesn't know the keyboard covers roughly
+        // half the wrapper's box.
+        if (window.visualViewport && window.visualViewport.height < taVisibleHeight) {
+          taVisibleHeight = window.visualViewport.height;
+        }
         if (visibleTop < -2 || visibleBottom > taVisibleHeight + 2) {
           logDebugAction('boldcursor-SANITY-FAIL: id=' + (ta.id || '?') +
             ' computed top=' + Math.round(newTop) + ' visibleTop=' + Math.round(visibleTop) +
             ' visibleBottom=' + Math.round(visibleBottom) + ' taVisibleHeight=' + taVisibleHeight +
-            ' scrollTop=' + ta.scrollTop + ' sel=' + ta.selectionStart +
+            ' scrollTop=' + visScrollTop + ' sel=' + ta.selectionStart +
             ' -- caret cannot legitimately be off-screen from its own textarea; hiding mark instead of drawing a known-wrong position.');
           m.style.display = 'none';
           return;
