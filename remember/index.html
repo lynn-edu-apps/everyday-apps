@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1624 -->
+<!-- Remember App - Version 0.1627 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1624
+  Version 0.1627
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,9 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1627 - REAL fix for the black-square multi-level bullet, per Lynn's report that v0.1625's U+FE0E fix did not work. Researched properly this time (v0.1625's theory was backwards): U+25AA's DEFAULT presentation is already text/monochrome per Unicode's own reference -- appending U+FE0E was a no-op that never addressed the real cause. Far more likely cause: Atkinson Hyperlegible (this app's chosen accessibility font) is a text-focused typeface unlikely to include the rarely-used Geometric Shapes Unicode block -- if the glyph is missing, the browser substitutes a fallback font for just that character, and some fallback/symbol fonts render shapes with their own fixed color, ignoring inherited CSS color entirely. Sidestepped the whole font-substitution problem: the third-level bullet (reordered to index 2 per Lynn's request, was index 1) is now drawn as an actual CSS box (.viewer-bullet-box, sized proportionally to font-size) instead of relying on any font's glyph for it -- exactly what Lynn originally asked for, "just a plain flat square that uses a single flat color."
+  v0.1626 - CORRECTION, no code change needed: v0.1625's color fix was correct and IS working (confirmed by Lynn), but the changelog/comments mislabeled which level the square bullet belongs to. The _bullets array is ['•', '▪︎', '◦', '‣', '⁃'] -- zero-indexed, so the square is index 1 (the SECOND level), never the third as every earlier round of this investigation assumed and stated. Lynn's own testing caught this by noticing the square moved from where they remembered it (their original report was about "third level," but the square was always level 2 -- the earlier bug reports and this file's own comments simply had the wrong level number attached to a real, correctly-diagnosed color bug). No behavior change in this build; recorded so the level number is accurate in future reference rather than perpetuating the mislabel.
+  v0.1625 - Fixed the third-level (square) multi-level bullet not showing its default color on iOS, per Lynn's precise description ("black square... gradient... 3D look... no hint of color"). Root cause: U+25AA (BLACK SMALL SQUARE) is a known emoji-presentation character on iOS -- Apple's emoji font renders it as a small glyph with its own built-in shading instead of plain flat text, and CSS color has zero effect on an emoji glyph, since it's rendered as a tiny image rather than colorable text. Fixed with U+FE0E (the Unicode text-presentation selector) appended right after the character, forcing plain flat-text rendering in the current color, matching the other levels. Also expanded the bullet cycle from 3 to 5 styles per Lynn's request (added ‣ and ⁃), with the modulo now derived from the array's own length instead of a hardcoded 3, so it stays correct if the set size changes again. Not added to the automated regression suite -- this behavior depends on global settings state (showMultiLevelBullets) that the current test harness has no mechanism to pre-set before a case runs; verified instead via a direct jsdom smoke test for this build.
   v0.1624 - DIAGNOSTIC ONLY, for Lynn's report of an intermittent ~200px Y gap in Quick Add that the full mirror overlay was too hard to visually verify (it covers the real dialog content entirely, making a direct comparison difficult). Log analysis of the same session found scrollTopAtCall=-1 reappearing for quick-add-input during a rapid multi-step scroll sequence (782->419->84->84->-1->0->35) while Lynn was scrolling within a long pasted paragraph -- the same iOS elastic-overscroll condition already clamped at the source, but never specifically confirmed to hold through an active, fast multi-step scroll episode in the dialogs. Added a simpler diagnostic than the full mirror: a bright green line drawn directly ON the real dialog at the mark's exact computed Y, visible whenever the debug toggle is on -- directly overlays the real content instead of competing with it, making any Y mismatch immediately and unambiguously visible even during active scrolling, without needing to compare two separate text blocks.
   v0.1623 - Two things. (1) REAL FIX for Quick Add/Edit Paragraph losing the bold cursor after the very first render, per Lynn's log: computed top=8 (correct) but visibleTop=-70 due to a nonzero vvOffsetTop=77.65625 -- but these dialogs are FIXED-POSITION overlays whose own coordinate space is already anchored to the visual viewport, unlike note-editor's panning layout-viewport content. The v0.1619 offsetTop subtraction was correct for note-editor but wrongly applied to the dialogs too, double-counting an offset that doesn't apply to fixed-position elements -- exactly matching "works once at open (offsetTop still 0) breaks once the keyboard settles (offsetTop becomes nonzero)." Scoped the subtraction to note-editor only. Note this was ONLY a sanity-check bug, never a real position error -- getCursorXYFor's own math never referenced offsetTop at all, so the dialogs' mark was likely correctly positioned the whole time and just being wrongly hidden. (2) Per Lynn's explicit decision, recorded Bold Cursor bleeding through the More menu and scratch pad on ANDROID specifically as an ACCEPTED KNOWN QUIRK, not planned for further investigation -- same underlying Android compositor/z-index behavior already documented in this codebase for OS-drawn selection handles (a pre-existing issue that predates Bold Cursor entirely). The Android note-editor cursor desync Lynn also newly reported remains open -- no Android-specific log data yet to diagnose it from.
   v0.1622 - Two things. (1) PRAGMATIC fix for the sanity check's persistent false-positive: three consecutive attempts at fixing visualViewport's own height-reporting timing (v0.1619 offsetTop subtraction, v0.1620 direct read, v0.1621 event-driven cache) all failed identically per Lynn's repeated logs, always the same four lines, always a modest 30-90px overshoot. Rather than attempt a fourth timing fix against an evidently elusive iOS quirk, widened the bottom-edge tolerance to 100px (roughly 3+ lines) -- a borderline near-bottom overshoot is a weak signal not worth repeatedly hiding an otherwise-correct cursor over; top/left/right bounds keep their original strict tolerance. (2) Fixed Bold Cursor bleeding through the scratch pad (both iOS and Android per Lynn's report) -- a real, previously untouched gap; wired the same hide-on-open/show-on-close pattern already used for the More menu. The Android More-menu bleed-through Lynn also reported remains open -- the existing fix's code is platform-agnostic and its call site is confirmed correctly wired, so this is likely a genuine Android-specific rendering quirk (this app already documents Android's OS-drawn selection handles ignoring normal z-index in this exact function) rather than a gap in the fix itself; needs an Android-side log/screenshot before guessing further.
@@ -3939,6 +3942,12 @@ body.has-mouse .toolbar-drag-handle.dragging {
    alone doesn't reliably center a bullet glyph against surrounding text across
    fonts, so nudge it up slightly as well. */
 .viewer-bullet-char { display: inline-block; vertical-align: middle; line-height: 1; transform: translateY(-0.05em); }
+/* v0.1627: CSS-drawn square for the third-level multi-level bullet,
+   replacing the font-glyph U+25AA. Sized proportionally to font-size so
+   it scales with the user's text-size setting the same way the
+   character-based bullets do; background-color (not color, since this
+   isn't text) picks up the same default color value. */
+.viewer-bullet-box { display: inline-block; width: 0.62em; height: 0.62em; vertical-align: middle; }
 /* Literal (non-bulleted) hyphen marker — a single typed space afterward
    looked too tight against the following word. */
 .viewer-hyphen-marker { margin-right: 0.2em; }
@@ -9841,7 +9850,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1624';
+const APP_VERSION = '0.1627';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14912,12 +14921,33 @@ function urlsToLinks(text, addLineWrappers) {
         var _bulletOn = _markerChar === '-' ? settings.showBulletsForHyphens : true;
         if (_bulletOn) {
           var _bulletChar = '•'; // default: filled circle
+          var _bulletIsCssBox = false; // v0.1627: true when the glyph is drawn as a CSS box instead of a font character
           if (settings.showMultiLevelBullets) {
             var _indentSpaces = (settings.indentSpaces || 4);
             var _leadingSpaces = rawLine.match(/^(\s*)/)[1].length;
             var _level = Math.floor(_leadingSpaces / _indentSpaces);
-            var _bullets = ['•', '▪', '◦']; // •, ▪, ◦
-            _bulletChar = _bullets[_level % 3];
+            // v0.1627 REAL FIX: the v0.1625 U+FE0E theory was backwards --
+            // researched properly this time. U+25AA's DEFAULT presentation
+            // is ALREADY text/monochrome (Unicode's own reference: "will
+            // be rendered as monochrome character on conforming
+            // platforms... to enable colorful emoji display, combine with
+            // Variation Selector-16 [FE0F]") -- appending FE0E was a
+            // no-op, doing nothing to whatever the real cause was. Far
+            // more likely cause: Atkinson Hyperlegible (this app's chosen
+            // accessibility font) is a text-focused typeface with no
+            // obvious reason to include the rarely-used Geometric Shapes
+            // Unicode block -- if it's missing, the browser substitutes a
+            // FALLBACK font for just this character, and some fallback/
+            // symbol fonts render shapes with their own fixed color,
+            // ignoring inherited CSS color entirely. Sidesteps the whole
+            // font-substitution problem: the square (index 2, third
+            // level, reordered per Lynn's request) is now drawn as an
+            // actual CSS box, not a font character at all -- exactly what
+            // Lynn originally asked for ("just a plain flat square that
+            // uses a single flat color").
+            var _bullets = ['•', '\u25e6', null, '\u2023', '\u2043']; // null marks the CSS-box square (level 2/third level)
+            _bulletChar = _bullets[_level % _bullets.length]; // v0.1625: was hardcoded % 3, now derives from the array's actual length so it stays correct if the set size changes again
+            _bulletIsCssBox = (_bulletChar === null);
           }
           // v0.1595: bullet glyphs share the SAME default color as
           // checkboxes (settings.checkboxColor) -- Lynn's explicit
@@ -14931,7 +14961,11 @@ function urlsToLinks(text, addLineWrappers) {
           // hyphen's thin stroke doesn't carry a color well, and that
           // was Lynn's own reasoning for excluding it.
           var _bulletColorVal = getDefaultMarkColor();
-          line = line.replace(/^(\s*)[-*+] /, '$1<span class="viewer-bullet-char" style="color:' + _bulletColorVal + '">' + _bulletChar + '</span> ');
+          var _bulletInnerHtml = _bulletIsCssBox
+            ? '<span class="viewer-bullet-box" style="background-color:' + _bulletColorVal + '"></span>'
+            : _bulletChar;
+          var _bulletSpanStyle = _bulletIsCssBox ? '' : ' style="color:' + _bulletColorVal + '"';
+          line = line.replace(/^(\s*)[-*+] /, '$1<span class="viewer-bullet-char"' + _bulletSpanStyle + '>' + _bulletInnerHtml + '</span> ');
         } else if (_markerChar === '-') {
           // Literal hyphen, not converted to a bullet — add a touch of
           // extra breathing room before the next word.
