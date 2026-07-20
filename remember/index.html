@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1627 -->
+<!-- Remember App - Version 0.1630 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1627
+  Version 0.1630
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,9 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1630 - FIX per Lynn's bug report: Settings > Reinstall Sample Notes is now purely ADDITIVE. createInitialNotes() historically OVERWROTE anything sharing an id with a sample: the Sample Notes folder record (which is exactly why renaming that folder appeared to "delete" it on reinstall -- the rename lives on the folder object, and the object was replaced wholesale, resetting the stock name and any parent move), every fixed-id sample note (destroying user edits to them), and every fixed-id sample theme -- directly contradicting the Reinstall dialog's own "Your existing notes will not be affected" promise. Implemented as a snapshot-and-restore wrapper inside createInitialNotes rather than ~20 per-registration guards: everything existing at entry (notes, folders, themes) is snapshotted, a restoration pass just before the final saves puts back any record this run replaced (preserving renames, folder moves, edits, and custom themes), and newly created notes whose EXACT name already exists are dropped so reinstall never makes duplicates (Lynn's unique-names suggestion) -- deleted samples still reinstall, and renamed copies coexist with the restored stock original. No-op on fresh installs. logSys reports preserved/skipped counts. No behavior change to any tested function: suite still 233/233 on cases v16 / goldens v17.
+  v0.1629 - Tag Sort Sampler rebuilt per Lynn's testing feedback: ~46 checkbox-ish items across 12 top-level parents, nesting now FIVE levels deep (great-great-grandchildren), every parent has 3-4 children mixing tagged and untagged, and NOTHING starts pre-sorted -- child lists are deliberately scrambled and untagged items sit in FIRST/middle positions (never already at the end) so the sort visibly moves things. Several sibling groups share the same primary tag (including three @prio3 top-level parents) to verify stable ordering, and plain paragraphs are interspersed between three separate item groups to verify consolidation around stationary text. Also one Sort-by-tag refinement the new sampler exposed: separator blank lines now join the sorted region ONLY when they sit between two region lines -- a blank run trailing stationary content (e.g. a paragraph between item groups) stays in place with that content instead of traveling into the consolidated list as a stray gap (was visible in double-spacing-OFF mode when groups merged across paragraphs). Two new test cases lock the rule (cases v16, 233 total; goldens v17). Note the v0.1628 migration flag is unchanged, so a device that already ran the v0.1628 migration keeps the OLD sampler (delete it and use Settings, Reinstall Sample Notes, to get this one).
+  v0.1628 - NEW: "Sort by tag" in the More menu (works in BOTH Typing and R&R modes) sorts checkbox-ish items to match the note's [tag order] line, keyed by each item's FIRST tag; children travel with their parent and are sorted among themselves; untagged items sink to the bottom of their own sibling list (after a confirm dialog); all items consolidate at the position of the first item while every other line stays put; sorting only selected lines works via the Select Lines tool OR a live text selection (a new snapshot in openMoreMenu captures the selection before the menu's existing selection-clearing destroys it). PURE-PERMUTATION design agreed with Lynn: the result is exactly the original lines reordered -- nothing added/removed/edited -- and three sanity checks (line count, checkbox-ish count, full multiset comparison) refuse to touch the note and log to the system log on any mismatch. Blank-line handling honors the double-spacing setting (ON: separator blanks pooled and redistributed one-per-seam; OFF: blanks glue to the item they followed). Original preserved TWICE before applying: snapshotNoteBeforeOp ring + a visible backup note named with an em-dash "before sort N" suffix (always numbered, never overwritten, same folder). Structural lines are never treated as items: the [tag order] line and horizontal rules (the same pattern notePreview already skips) stay in place -- detection itself is ONLY the canonical isChecklistLine(), never reimplemented. New "Tag Sort Sampler" demo note (createInitialNotes for fresh installs + a one-time STORAGE-FLAG-gated migration for existing installs, flag not name so deleting it sticks) showcasing the locked built-in tag roster (@inbox @prio0 @asap @prio1-9 @prioSomeday @prioUnset primaries; @next @today @inProgress @mightBeDone @waiting @wontDo @done secondaries). New test files: cases v15 (+21 cases = 231), goldens v16.
   v0.1627 - REAL fix for the black-square multi-level bullet, per Lynn's report that v0.1625's U+FE0E fix did not work. Researched properly this time (v0.1625's theory was backwards): U+25AA's DEFAULT presentation is already text/monochrome per Unicode's own reference -- appending U+FE0E was a no-op that never addressed the real cause. Far more likely cause: Atkinson Hyperlegible (this app's chosen accessibility font) is a text-focused typeface unlikely to include the rarely-used Geometric Shapes Unicode block -- if the glyph is missing, the browser substitutes a fallback font for just that character, and some fallback/symbol fonts render shapes with their own fixed color, ignoring inherited CSS color entirely. Sidestepped the whole font-substitution problem: the third-level bullet (reordered to index 2 per Lynn's request, was index 1) is now drawn as an actual CSS box (.viewer-bullet-box, sized proportionally to font-size) instead of relying on any font's glyph for it -- exactly what Lynn originally asked for, "just a plain flat square that uses a single flat color."
   v0.1626 - CORRECTION, no code change needed: v0.1625's color fix was correct and IS working (confirmed by Lynn), but the changelog/comments mislabeled which level the square bullet belongs to. The _bullets array is ['•', '▪︎', '◦', '‣', '⁃'] -- zero-indexed, so the square is index 1 (the SECOND level), never the third as every earlier round of this investigation assumed and stated. Lynn's own testing caught this by noticing the square moved from where they remembered it (their original report was about "third level," but the square was always level 2 -- the earlier bug reports and this file's own comments simply had the wrong level number attached to a real, correctly-diagnosed color bug). No behavior change in this build; recorded so the level number is accurate in future reference rather than perpetuating the mislabel.
   v0.1625 - Fixed the third-level (square) multi-level bullet not showing its default color on iOS, per Lynn's precise description ("black square... gradient... 3D look... no hint of color"). Root cause: U+25AA (BLACK SMALL SQUARE) is a known emoji-presentation character on iOS -- Apple's emoji font renders it as a small glyph with its own built-in shading instead of plain flat text, and CSS color has zero effect on an emoji glyph, since it's rendered as a tiny image rather than colorable text. Fixed with U+FE0E (the Unicode text-presentation selector) appended right after the character, forcing plain flat-text rendering in the current color, matching the other levels. Also expanded the bullet cycle from 3 to 5 styles per Lynn's request (added ‣ and ⁃), with the modulo now derived from the array's own length instead of a hardcoded 3, so it stays correct if the set size changes again. Not added to the automated regression suite -- this behavior depends on global settings state (showMultiLevelBullets) that the current test harness has no mechanism to pre-set before a case runs; verified instead via a direct jsdom smoke test for this build.
@@ -7092,6 +7095,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" style="pointer-events:none"/><line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/></svg>
     <span class="more-label" id="more-tag-order-label" style="pointer-events:none;flex:1">Add tag order line</span>
   </button>
+  <button id="more-sort-by-tag-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <line x1="11" y1="5" x2="21" y2="5" style="pointer-events:none"/>
+      <line x1="11" y1="10" x2="18" y2="10" style="pointer-events:none"/>
+      <line x1="11" y1="15" x2="15" y2="15" style="pointer-events:none"/>
+      <polyline points="3,16 6,19 9,16" style="pointer-events:none"/>
+      <line x1="6" y1="19" x2="6" y2="5" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Sort by tag</span>
+  </button>
   <button id="more-ruler-btn" style="
     display:none;align-items:center;gap:20px;
     width:100%;padding:13px 18px;
@@ -9850,7 +9863,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1627';
+const APP_VERSION = '0.1630';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11524,6 +11537,12 @@ var deletingLine = false;
 var selectMode = false;      // whether block-select mode is active
 var isAllSelected = false;   // whether select-all is currently active
 var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
+var _moreMenuSelSnapshot = null; // v0.1628: text selection captured at More-menu OPEN — openMoreMenu
+                                 // deliberately clears the live selection right after (Android
+                                 // selection-handle compositor fix), so any selection-scoped menu
+                                 // action (currently Sort by tag) must read this snapshot instead.
+                                 // Shape: null | {kind:'editor', start, end} (char offsets)
+                                 //             | {kind:'viewer', start, end} (line indices)
 var updateViewOnlyBtns = function() {}; // replaced in init
 var _buildTexPickers = function() {}; // replaced in init — called from openSettings() which is module-level
 
@@ -12066,6 +12085,32 @@ function loadState() {
     };
     saveNotes();
   }
+
+  // One-time migration (v0.1628): add the Tag Sort Sampler note for
+  // EXISTING installs (fresh installs get it inside createInitialNotes).
+  // Guarded by a STORAGE FLAG rather than by name, so deleting the note
+  // keeps it deleted — never resurrect a deliberately deleted sample
+  // (known-quirks registry rule). Name check is only a belt-and-braces
+  // duplicate guard for the first run.
+  try {
+    if (!localStorage.getItem(storeKey('remember_migr_tag_sort_sampler'))) {
+      var _tssExists = Object.values(notes).some(function(n) {
+        return (n.name || '').indexOf('Tag Sort Sampler') !== -1;
+      });
+      if (!_tssExists) {
+        var _tssId = makeId();
+        var _tssNow = Date.now();
+        notes[_tssId] = {
+          id: _tssId, name: 'Tag Sort Sampler', content: _tagSortSamplerContent(),
+          autoNamed: false, createdAt: _tssNow, editedAt: _tssNow, viewedAt: _tssNow,
+          folderId: folders['folder-sample-notes'] ? 'folder-sample-notes' : null
+        };
+        saveNotes();
+        logSys('MIGRATION: added Tag Sort Sampler note (v0.1628)');
+      }
+      localStorage.setItem(storeKey('remember_migr_tag_sort_sampler'), '1');
+    }
+  } catch (eTssMigr) { logSys('MIGRATION: Tag Sort Sampler failed: ' + eTssMigr); }
 }
 
 function saveSettings() {
@@ -22494,6 +22539,9 @@ function makeImportFolderName(label) {
     // ── Edit / typing mode (not quiet, not view-only) ───────────────────────
     { id: 'more-insert-tag-btn',      show: function(s) { return !s.quietMode && !s.viewOnly; } },
     { id: 'more-tag-order-btn',       show: function(s) { return !s.quietMode && !s.viewOnly && s.hasTags; } },
+    // Sort by tag (v0.1628): BOTH modes by design (Lynn's call) — needs
+    // items and at least one tag to be meaningful; hidden when locked.
+    { id: 'more-sort-by-tag-btn',     show: function(s) { return !s.quietMode && !s.viewOnly && s.hasCbs && s.hasTags; } },
     // ── R&R mode + extra per-item setting gate (override applies the gate) ──
     // Tap to Edit no longer has a static More menu entry (more-tap-to-edit-btn
     // was removed) — per the stage-3 redesign it is dynamic-only now, since
@@ -22537,6 +22585,32 @@ function makeImportFolderName(label) {
     // through the scratch pad on Android, which predates Bold Cursor
     // entirely. Not planned for further investigation; recorded here so
     // this doesn't get rediscovered and re-investigated later.
+    // v0.1628: snapshot any active text selection BEFORE the clearing just
+    // below destroys it — "Sort by tag" (and any future selection-scoped
+    // menu action) needs to know what was selected when the menu opened.
+    // Reset on every open so a stale snapshot can never leak into a later
+    // open that has no selection.
+    _moreMenuSelSnapshot = null;
+    try {
+      var _snapEd = document.getElementById('note-editor');
+      if (!isViewMode && _snapEd && _snapEd.selectionStart !== _snapEd.selectionEnd) {
+        _moreMenuSelSnapshot = { kind: 'editor', start: _snapEd.selectionStart, end: _snapEd.selectionEnd };
+      } else if (isViewMode && window.getSelection) {
+        var _snapSel = window.getSelection();
+        if (_snapSel && _snapSel.toString().length > 0) {
+          var _snapLineOf = function(nd) {
+            while (nd && nd.nodeType !== 1) nd = nd.parentNode; // climb text node -> element
+            var vl = (nd && nd.closest) ? nd.closest('.viewer-line') : null;
+            return vl ? parseInt(vl.dataset.line, 10) : NaN;
+          };
+          var _snapA = _snapLineOf(_snapSel.anchorNode);
+          var _snapF = _snapLineOf(_snapSel.focusNode);
+          if (!isNaN(_snapA) && !isNaN(_snapF)) {
+            _moreMenuSelSnapshot = { kind: 'viewer', start: Math.min(_snapA, _snapF), end: Math.max(_snapA, _snapF) };
+          }
+        }
+      }
+    } catch (eSnap) { _moreMenuSelSnapshot = null; }
     var _edForClear = document.getElementById('note-editor');
     if (_edForClear && document.activeElement === _edForClear) {
       _edForClear.setSelectionRange(_edForClear.selectionStart, _edForClear.selectionStart);
@@ -27287,6 +27361,12 @@ function makeImportFolderName(label) {
     showToast((tocIdx >= 0 ? 'Tag order line updated' : 'Tag order line added'), false);
   });
 
+  document.getElementById('more-sort-by-tag-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-sort-by-tag-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    runSortByTag();
+  });
+
   document.getElementById('more-show-tags-btn').addEventListener('click', function() {
     setShowTags(!settings.showTagsInViewer); closeMoreMenu();
   });
@@ -30917,9 +30997,105 @@ function updateHexLabel(rowKey, hex) {
 }
 
 // ===== INITIAL NOTES =====
+// Content of the "Tag Sort Sampler" demo note — shared by
+// createInitialNotes() (fresh installs) and the one-time migration in
+// loadState() (existing installs). One source of truth, never two copies.
+// Demos the v0.1628 built-in tag roster: primaries @inbox @prio0 @asap
+// @prio1-@prio9 @prioSomeday @prioUnset, secondaries @next @today
+// @inProgress @mightBeDone @waiting @wontDo @done.
+function _tagSortSamplerContent() {
+  return [
+    '#### Sort by Tag Demo',
+    '',
+    'This note demos the "Sort by tag" option in the More menu. Items are sorted to match the order of the tags on the [tag order] line at the bottom of this note. An item\'s FIRST tag decides its position. Children stay under their parent and get sorted among themselves too. Items with no tag sink to the bottom of their own list (the sort asks you first). The lists below are deliberately scrambled — try it: open the More menu and tap "Sort by tag". The original is saved as a new note first, so you can always compare or go back.',
+    '',
+    '- [ ] Fix the squeaky door @prio2 @done',
+    '- [ ] Water the plants @prio3',
+    '- [ ] Pay the water bill @asap',
+    '    - [ ] File the old statements @prio5',
+    '    - [ ] Ask about the late fee',
+    '    - [ ] Set up autopay @prio1 @inProgress',
+    '        - [ ] Find the bank login @prio2',
+    '        - [ ] Write down the confirmation code',
+    '        - [ ] Check the routing number @prio1 @mightBeDone',
+    '        - [ ] Print the receipt @prio2',
+    '    - [ ] Find the account number @prio2',
+    '- [ ] New idea from this morning @inbox',
+    '- [ ] Empty the dishwasher @prio5 @next',
+    '',
+    'This paragraph sits in the middle of the items on purpose. After sorting, all the checkbox items above and below it gather into one list where the first item used to be, and this paragraph stays right here.',
+    '',
+    '- [ ] Sort the mail pile @prioUnset',
+    '- [ ] Call the pharmacy @prio1 @today',
+    '    - [ ] Ask about refills @prio2 @waiting',
+    '    - [ ] Check the opening hours',
+    '    - [ ] Find the prescription number @prio1',
+    '    - [ ] Ask about the flu shot @prio1',
+    '- [ ] Plan the garden beds @prio3',
+    '    - [ ] Sketch the layout @prio4',
+    '    - [ ] Ask a neighbor about deer fencing',
+    '    - [ ] Measure the side yard @prio2',
+    '    - [ ] Order seeds @prio2',
+    '        - [ ] Zinnias @prio3',
+    '            - [ ] Check the last frost date @prio2',
+    '            - [ ] Reuse the old seed trays',
+    '            - [ ] Buy potting soil @prio1',
+    '                - [ ] Compare prices at two stores @prio2',
+    '                - [ ] Check the shed first @prio1',
+    '                - [ ] Ask which size bag to get @prio1',
+    '        - [ ] Decide on heirloom or hybrid',
+    '        - [ ] Tomatoes @prio1',
+    '        - [ ] Carrots @prio1',
+    '',
+    'Here is a second stray paragraph, again separating two groups of items. Notice the garden list above nests five levels deep — children follow their parents down every level when you sort.',
+    '',
+    '- [ ] Organize the photo box',
+    '    - [ ] Label the shoeboxes',
+    '    - [ ] Buy photo sleeves @prio4',
+    '    - [ ] Scan the wedding album @prio6',
+    '    - [ ] Ask Mom about the mystery photos @prio4',
+    '- [ ] Sharpen every pencil in the house @prio7 @wontDo',
+    '- [ ] Read one chapter of that library book @prioSomeday',
+    '- [ ] Clean out the coat closet @prio3',
+    '    - [ ] Vacuum the closet floor @prio8',
+    '    - [ ] Find the missing glove',
+    '    - [ ] Donate the coats that do not fit @prio2',
+    '    - [ ] Buy more hangers @prio2',
+    '',
+    'Things to watch for after sorting: three top-level items share @prio3 (plants, garden, closet) and keep their original order among themselves, because items with the same tag never swap. Untagged items (including the whole photo box) end up at the bottom of their own list. You can also sort just part of a note: select some lines first (the Select Lines tool or a normal text selection), then tap Sort by tag.',
+    '',
+    '[tag order] @inbox @prio0 @asap @prio1 @prio2 @prio3 @prio4 @prio5 @prio6 @prio7 @prio8 @prio9 @prioSomeday @prioUnset @next @today @inProgress @mightBeDone @waiting @wontDo @done',
+    '',
+  ].join('\n');
+}
+
 // Named function so it can be called from Settings > Reinstall Sample Notes
 function createInitialNotes() {
   var now = Date.now();
+
+  // v0.1630 (Lynn's bug report): Reinstall Sample Notes must be purely
+  // ADDITIVE. This function historically OVERWROTE anything sharing an id
+  // with a sample: the Sample Notes folder record (which is how renaming
+  // that folder appeared to "delete" it on reinstall — the rename lives on
+  // the folder object, and the object got replaced, resetting the stock
+  // name and any parent move), every fixed-id sample note (destroying
+  // user edits), and every fixed-id sample theme — breaking the Reinstall
+  // dialog's own "Your existing notes will not be affected" promise.
+  // Snapshot everything that exists NOW; the restoration pass just before
+  // the final saves (end of this function) puts back anything this run
+  // replaced, and drops newly created notes whose exact name already
+  // exists (never duplicate; deleted samples still reinstall, renamed
+  // copies are left alone and the stock original comes back beside them).
+  // On a fresh install all of this is an empty no-op.
+  var _preNotes = {}, _preFolders = {}, _preThemes = {}, _preNoteNames = {};
+  Object.keys(notes).forEach(function(id) {
+    _preNotes[id] = notes[id];
+    _preNoteNames[(notes[id].name || '')] = true;
+  });
+  Object.keys(folders).forEach(function(id) { _preFolders[id] = folders[id]; });
+  if (typeof themes === 'object' && themes) {
+    Object.keys(themes).forEach(function(id) { _preThemes[id] = themes[id]; });
+  }
 
   var welcomeId = makeId();
   var readMeFirstId = 'note-read-me-first';
@@ -31767,6 +31943,16 @@ function createInitialNotes() {
   notes[bulletSamplerId].folderId = sampleFolderId;
   notes[bulletSamplerId].themeId = 'theme-sample-bullets';
 
+  // Tag Sort Sampler — demo note for More menu > "Sort by tag" (v0.1628).
+  // Content lives in _tagSortSamplerContent(), shared with the one-time
+  // migration in loadState() that covers existing installs.
+  var tagSortSamplerId = 'note-tag-sort-sampler';
+  notes[tagSortSamplerId] = {
+    id: tagSortSamplerId, name: 'Tag Sort Sampler', content: _tagSortSamplerContent(),
+    autoNamed: false, createdAt: now + 9, editedAt: now + 9, viewedAt: now + 9,
+    folderId: sampleFolderId
+  };
+
   // ── Boat Pre-Launch Checklist (Today note sample) ──────────────────────────
   var boatChecklistId = 'note-boat-checklist-today';
   var boatContent = [
@@ -32340,6 +32526,32 @@ function createInitialNotes() {
   // if a reload happened before that (e.g. the service-worker
   // controllerchange reload elsewhere in this file) those notes could
   // be silently lost, or saved inconsistently with the folder data.
+  // v0.1630 restoration pass — see the snapshot comment at the top of
+  // this function. Reference-restore is safe: this function only ever
+  // REPLACES slots (never mutates a pre-existing object), so the
+  // snapshotted originals are pristine, including their folderId/themeId.
+  var _restored = 0, _deduped = 0;
+  Object.keys(_preFolders).forEach(function(id) {
+    if (folders[id] !== _preFolders[id]) { folders[id] = _preFolders[id]; _restored++; }
+  });
+  Object.keys(_preNotes).forEach(function(id) {
+    if (notes[id] !== _preNotes[id]) { notes[id] = _preNotes[id]; _restored++; }
+  });
+  if (typeof themes === 'object' && themes) {
+    Object.keys(_preThemes).forEach(function(id) {
+      if (themes[id] !== _preThemes[id]) { themes[id] = _preThemes[id]; _restored++; }
+    });
+  }
+  Object.keys(notes).forEach(function(id) {
+    if (!_preNotes[id] && _preNoteNames[(notes[id].name || '')]) {
+      delete notes[id];
+      _deduped++;
+    }
+  });
+  if (_restored || _deduped) {
+    logSys('Reinstall samples: preserved ' + _restored + ' pre-existing record(s), skipped ' + _deduped + ' duplicate-name note(s)');
+  }
+
   saveFolders();
   saveNotes();
   }
@@ -33746,6 +33958,408 @@ function getIndentLevelFromWhitespace(rawLine) {
   var tabWidth = settings.indentSpaces || 4;
   var expanded = leading.replace(/\t/g, ' '.repeat(tabWidth));
   return Math.floor(expanded.length / tabWidth);
+}
+
+// ===== SORT CHECKBOX-ISH ITEMS BY TAG (v0.1628) =====
+// More menu > "Sort by tag" (works in BOTH Typing and R&R modes).
+// Reorders the note's checkbox-ish items to match the order of the tags
+// on the note's [tag order] line, keyed by each item's FIRST @tag (its
+// "primary" tag). Children always travel with their parent and are
+// themselves sorted within their parent by the same rule. Untagged items
+// sink to the bottom of their own sibling list (stable). All
+// non-checkbox-ish content stays where it is; the sorted items
+// consolidate at the position of the first item.
+//
+// PURE PERMUTATION DESIGN (Lynn's explicit choice, chat 12): the result
+// is exactly the original lines reordered — nothing is ever added,
+// removed, or edited, and blank lines are never synthesized. Line count
+// and item count are therefore preserved by construction; runSortByTag()
+// still verifies both plus a full multiset comparison and refuses to
+// apply on any mismatch (fail loudly, never silently).
+//
+// DETECTION IS NEVER REIMPLEMENTED HERE: "checkbox-ish" is decided only
+// by the canonical isChecklistLine() (the isCheckboxRaw(
+// stripFormattingForDetect()) chain — sees through bold/italic/highlight
+// wrappers, accepts -, *, + markers with or without a checkbox). The
+// only lines excluded ON TOP of that are the two STRUCTURAL line types
+// the app already special-cases elsewhere:
+//   - the [tag order] line (same /^\[tag order\]/-on-trimmed test the
+//     tag-order updater and viewer use), and
+//   - horizontal rules (the same /^(-\s*){3,}$/ skip notePreview uses) —
+//     an HR matches the marker-line regex but is a divider, not an item.
+// Both stay exactly where the user put them.
+//
+// Hierarchy uses the same raw-leading-whitespace semantics as the
+// outline's getDescendants(): a deeper line is a descendant; blank runs
+// belong to an item only when deeper content follows them. Continuation
+// text (indented non-item lines) travels with its owning item.
+//
+// Blank lines BETWEEN items ("separator blanks") honor the double-space
+// setting (settings.smartIndentBlankLine, passed in as doubleSpace):
+//   ON:  pooled per sibling scope and redistributed one-per-seam between
+//        the sorted blocks (exactly reconstructs a uniformly
+//        double-spaced list; still a pure permutation).
+//   OFF: each blank stays glued to the item block it originally
+//        followed, traveling with it.
+
+function findTagOrderLine(lines) {
+  // Same detection the tag-order updater/viewer use: [tag order] at the
+  // start of the trimmed line. Returns the FIRST match, or -1.
+  for (var i = 0; i < lines.length; i++) {
+    if (/^\[tag order\]/.test(lines[i].trim())) return i;
+  }
+  return -1;
+}
+
+function primaryTagOfLine(line) {
+  // First @tag on the line, using the app's standard tag pattern —
+  // deliberately IDENTICAL to _getNoteTags / the tag-order updater, so
+  // "missing from the tag order line" always agrees with what "Update
+  // tag order line" would have collected (including the known app-wide
+  // quirk that an email address's @domain part matches first — kept for
+  // consistency, not "fixed" here in isolation). Returns null for the
+  // [tag order] line itself and for lines with no tag.
+  var s = String(line == null ? '' : line);
+  if (/^\[tag order\]/.test(s.trim())) return null;
+  var m = s.match(/@([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+function computeChecklistTagSort(lines, startIdx, endIdx, doubleSpace) {
+  // Pure function (no DOM, no settings reads) — harness-testable.
+  // Sorts checkbox-ish items in lines[startIdx..endIdx] (inclusive; the
+  // range is EXPANDED so no item's descendant block is cut in half).
+  // The [tag order] line is searched in the WHOLE note, since it
+  // normally sits at the bottom, outside any selection.
+  // Returns { error, missingTags, untaggedCount, itemCount, lines }:
+  //   error: null | 'no-tag-order' | 'no-items' | 'missing-tags'
+  //   lines: the full new lines array (only when error === null)
+  var res = { error: null, missingTags: [], untaggedCount: 0, itemCount: 0, lines: null };
+
+  var tocIdx = findTagOrderLine(lines);
+  if (tocIdx === -1) { res.error = 'no-tag-order'; return res; }
+  var orderMap = {};
+  (lines[tocIdx].match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t, i) {
+    var tag = t.slice(1);
+    if (!(tag in orderMap)) orderMap[tag] = i;
+  });
+
+  if (startIdx == null || startIdx < 0) startIdx = 0;
+  if (endIdx == null || endIdx > lines.length - 1) endIdx = lines.length - 1;
+
+  function _sortableItem(l) {
+    var t = l.trim();
+    if (/^\[tag order\]/.test(t)) return false;  // structural: tag order line
+    if (/^(-\s*){3,}$/.test(t)) return false;    // structural: horizontal rule (same skip as notePreview)
+    // Canonical detection — the exact isChecklistLine() chain, called via
+    // the top-level isMarkerLineRaw (v0.1573's single source of truth,
+    // "usable before the note screen exists") instead of the late-armed
+    // isCheckboxRaw alias, so this pure function also works before the
+    // Collapsible Outline init runs (startup paths, regression harness).
+    // NOT new detection logic — same two canonical functions.
+    return isMarkerLineRaw(stripFormattingForDetect(l));
+  }
+
+  // ── Expand endIdx so children always travel with their parent ──
+  // (mirrors getDescendants: deeper leading whitespace = descendant;
+  // blank runs included only when deeper content follows them)
+  var i, j, k;
+  for (i = startIdx; i <= endIdx; i++) {
+    if (!_sortableItem(lines[i])) continue;
+    var pInd = leadingWhitespaceOf(lines[i]).length;
+    var spanEnd = i;
+    j = i + 1;
+    while (j < lines.length) {
+      if (lines[j].trim() === '') {
+        k = j + 1;
+        while (k < lines.length && lines[k].trim() === '') k++;
+        if (k >= lines.length || leadingWhitespaceOf(lines[k]).length <= pInd) break;
+        spanEnd = j; j++;
+      } else {
+        if (leadingWhitespaceOf(lines[j]).length <= pInd) break;
+        spanEnd = j; j++;
+      }
+    }
+    if (spanEnd > endIdx) endIdx = spanEnd;
+  }
+
+  // ── Build the item forest ──
+  // Scope objects: { segs: [ {kind:'raw', idx} | {kind:'item', node} ],
+  //                  blankPool: [idx...] }  (pool used only when doubleSpace)
+  // Item nodes additionally carry { idx, indent, tag, seq }.
+  var rootScope = { segs: [], blankPool: [] };
+  var stack = [];          // open item nodes, strictly increasing indent
+  var pendingBlanks = [];  // run of blank-line indices awaiting classification
+  var allItems = [];
+  var seq = 0;
+  var blockLineSet = {};   // line idx -> true for every line in the consolidated region
+  var firstBlockIdx = -1;  // where the sorted region is emitted (first item's position)
+  var prevNonBlankInRegion = false; // was the line just above the current blank run part of the region?
+
+  for (i = startIdx; i <= endIdx; i++) {
+    var line = lines[i];
+    if (line.trim() === '') { pendingBlanks.push(i); continue; }
+    var ind = leadingWhitespaceOf(line).length;
+    if (_sortableItem(line)) {
+      while (stack.length && stack[stack.length - 1].indent >= ind) stack.pop();
+      var parentScope = stack.length ? stack[stack.length - 1] : rootScope;
+      if (firstBlockIdx === -1) {
+        // Blanks BEFORE the first item separate it from preceding
+        // non-item content — they stay in place (not part of the region).
+        pendingBlanks = [];
+        firstBlockIdx = i;
+      } else if (pendingBlanks.length) {
+        if (prevNonBlankInRegion) {
+          // Separator blanks BETWEEN two region lines: pool (ON) or glue (OFF).
+          pendingBlanks.forEach(function(bIdx) {
+            blockLineSet[bIdx] = true;
+            if (doubleSpace) parentScope.blankPool.push(bIdx);
+            else parentScope.segs.push({ kind: 'raw', idx: bIdx });
+          });
+        }
+        // else: the blank run followed STATIONARY content (e.g. a paragraph
+        // between two groups of items) — it is that content's trailing
+        // spacing and stays in place with it, never traveling into the list.
+        pendingBlanks = [];
+      }
+      var node = { idx: i, indent: ind, segs: [], blankPool: [],
+                   tag: primaryTagOfLine(line), seq: seq++ };
+      allItems.push(node);
+      blockLineSet[i] = true;
+      parentScope.segs.push({ kind: 'item', node: node });
+      stack.push(node);
+      prevNonBlankInRegion = true;
+    } else {
+      // Non-item, non-blank. Pop per indent first (a line at <= an open
+      // item's indent ends that item, exactly like getDescendants).
+      while (stack.length && stack[stack.length - 1].indent >= ind) stack.pop();
+      var t = line.trim();
+      if (/^\[tag order\]/.test(t) || /^(-\s*){3,}$/.test(t)) {
+        // Structural line: always stays in place, never travels.
+        pendingBlanks = [];
+        prevNonBlankInRegion = false;
+        continue;
+      }
+      if (stack.length) {
+        // Continuation text inside the innermost open item — it (and any
+        // blanks that led up to it) travels with that item.
+        var owner = stack[stack.length - 1];
+        pendingBlanks.forEach(function(bIdx) {
+          blockLineSet[bIdx] = true;
+          owner.segs.push({ kind: 'raw', idx: bIdx });
+        });
+        pendingBlanks = [];
+        blockLineSet[i] = true;
+        owner.segs.push({ kind: 'raw', idx: i });
+        prevNonBlankInRegion = true;
+      } else {
+        // Standalone other content — stays in place, as do the blanks
+        // that preceded it.
+        pendingBlanks = [];
+        prevNonBlankInRegion = false;
+      }
+    }
+  }
+  // Trailing blanks at the end of the scope stay in place (same as
+  // getDescendants popping trailing blanks off a descendant list).
+  pendingBlanks = [];
+
+  res.itemCount = allItems.length;
+  if (!allItems.length) { res.error = 'no-items'; return res; }
+
+  // ── Analysis: missing tags (abort) and untagged count (confirm) ──
+  var missingSeen = {};
+  allItems.forEach(function(n) {
+    if (n.tag === null) { res.untaggedCount++; }
+    else if (!(n.tag in orderMap) && !missingSeen[n.tag]) {
+      missingSeen[n.tag] = true;
+      res.missingTags.push(n.tag);
+    }
+  });
+  if (res.missingTags.length) { res.error = 'missing-tags'; return res; }
+
+  // ── Serialize the sorted region ──
+  var out = [];
+  function keyOf(n) { return n.tag === null ? Infinity : orderMap[n.tag]; }
+  function serializeScope(scope, isRoot) {
+    // Group segs into: leading raws (before the first child item), then
+    // units of [item + trailing raws]. Trailing raws glue to the item
+    // block they followed, so they travel with it when units reorder.
+    var units = [];
+    var current = { node: null, raws: [] };
+    var leading = current;
+    scope.segs.forEach(function(seg) {
+      if (seg.kind === 'item') { current = { node: seg.node, raws: [] }; units.push(current); }
+      else current.raws.push(seg.idx);
+    });
+    units.sort(function(a, b) {
+      var ka = keyOf(a.node), kb = keyOf(b.node);
+      if (ka !== kb) return ka < kb ? -1 : 1;
+      return a.node.seq - b.node.seq;  // explicit stability tie-break
+    });
+    leading.raws.forEach(function(idx) { out.push(lines[idx]); });
+    var pool = scope.blankPool.slice(); // FIFO, original blank lines verbatim
+    units.forEach(function(u, ui) {
+      // ON-mode pooled blanks: one before each block. At the ROOT the
+      // first block gets none (the region must START with the first
+      // item, at its original position); inside a parent even the first
+      // child gets one (double-spaced lists have a blank between the
+      // parent line and its first child).
+      if (pool.length && (!isRoot || ui > 0)) out.push(lines[pool.shift()]);
+      out.push(lines[u.node.idx]);
+      serializeScope(u.node, false);
+      u.raws.forEach(function(idx) { out.push(lines[idx]); });
+    });
+    // Leftover pooled blanks (irregular original spacing): emit after the
+    // last block so the permutation stays complete.
+    pool.forEach(function(idx) { out.push(lines[idx]); });
+  }
+  serializeScope(rootScope, true);
+
+  // ── Reassemble the whole note ──
+  var newLines = [];
+  for (i = 0; i < lines.length; i++) {
+    if (i >= startIdx && i <= endIdx) {
+      if (i === firstBlockIdx) { Array.prototype.push.apply(newLines, out); continue; }
+      if (blockLineSet[i]) continue;
+      newLines.push(lines[i]);
+    } else {
+      newLines.push(lines[i]);
+    }
+  }
+  res.lines = newLines;
+  return res;
+}
+
+// UI entry point for More menu > "Sort by tag" (wired in init next to the
+// other More-menu handlers). All user feedback, preservation, and sanity
+// checking lives here; the math lives in computeChecklistTagSort().
+function runSortByTag() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  if (document.body.classList.contains('view-only-mode')) {
+    showToast('This note is view only', false);
+    return;
+  }
+  var note = notes[currentNoteId];
+  var ed = document.getElementById('note-editor');
+  // Editor value is the live source of truth in typing mode (may be ahead
+  // of the debounced save) — same choice the tag-order updater makes.
+  var content = ed ? ed.value : (note.content || '');
+  var lines = content.split('\n');
+
+  // ── Scope: selected lines (either selection mechanism) or whole note ──
+  var scope = { start: 0, end: lines.length - 1, mode: 'whole' };
+  if (isViewMode && selectedBlocks.size > 0) {
+    // Select Lines tool (R&R). Non-contiguous selections sort the whole
+    // span from first to last selected line.
+    var _mn = Infinity, _mx = -1;
+    selectedBlocks.forEach(function(li) { if (li < _mn) _mn = li; if (li > _mx) _mx = li; });
+    if (_mx >= 0) scope = { start: Math.max(0, _mn), end: Math.min(_mx, lines.length - 1), mode: 'selection' };
+  } else if (_moreMenuSelSnapshot && _moreMenuSelSnapshot.kind === 'editor' && !isViewMode) {
+    // Live textarea selection, captured at More-menu open.
+    var _s = Math.min(_moreMenuSelSnapshot.start, _moreMenuSelSnapshot.end);
+    var _e = Math.max(_moreMenuSelSnapshot.start, _moreMenuSelSnapshot.end);
+    var _sl = content.slice(0, _s).split('\n').length - 1;
+    var _el = content.slice(0, _e).split('\n').length - 1;
+    // A selection ending exactly at the start of a line doesn't visually
+    // include that line — exclude it.
+    if (_el > _sl && _e > 0 && content.charAt(_e - 1) === '\n') _el--;
+    scope = { start: _sl, end: Math.min(_el, lines.length - 1), mode: 'selection' };
+  } else if (_moreMenuSelSnapshot && _moreMenuSelSnapshot.kind === 'viewer' && isViewMode) {
+    // Live browser selection in the R&R viewer, captured at More-menu open.
+    scope = { start: Math.max(0, _moreMenuSelSnapshot.start),
+              end: Math.min(_moreMenuSelSnapshot.end, lines.length - 1), mode: 'selection' };
+  }
+
+  var r = computeChecklistTagSort(lines, scope.start, scope.end, !!settings.smartIndentBlankLine);
+
+  if (r.error === 'no-tag-order') {
+    logDebugAction('Sort by tag: aborted — no [tag order] line');
+    showToast('This note has no [tag order] line, so there is no order to sort by.\n\nTap "Add tag order line" in the More menu first, arrange the tags on that line in the order you want, then sort again.', true);
+    return;
+  }
+  if (r.error === 'no-items') {
+    showToast(scope.mode === 'selection'
+      ? 'No checkbox or list items in the selected lines'
+      : 'No checkbox or list items to sort', false);
+    return;
+  }
+  if (r.error === 'missing-tags') {
+    logDebugAction('Sort by tag: aborted — tags missing from tag order line: ' + r.missingTags.join(', '));
+    showToast('Cannot sort — these first-position tags are not on the [tag order] line:\n\n' +
+      r.missingTags.map(function(t) { return '@' + t; }).join('  ') +
+      '\n\nAdd them to the tag order line (or tap "Update tag order line" in the More menu), then sort again. Nothing was changed.', true);
+    return;
+  }
+
+  var doApply = function() {
+    var newLines = r.lines;
+    // ── Sanity checks: refuse to touch the note on ANY mismatch ──
+    var fails = [];
+    if (newLines.length !== lines.length) {
+      fails.push('line count changed: ' + lines.length + ' before, ' + newLines.length + ' after');
+    }
+    // Same arming-robust canonical chain as computeChecklistTagSort uses,
+    // so both sides of this sanity check share ONE detection path.
+    var _cbDetect = function(l) { return isMarkerLineRaw(stripFormattingForDetect(l)); };
+    var oldItems = lines.filter(_cbDetect).length;
+    var newItems = newLines.filter(_cbDetect).length;
+    if (oldItems !== newItems) {
+      fails.push('checkbox-ish line count changed: ' + oldItems + ' before, ' + newItems + ' after');
+    }
+    if (JSON.stringify(lines.slice().sort()) !== JSON.stringify(newLines.slice().sort())) {
+      fails.push('result is not a pure reordering of the original lines');
+    }
+    if (fails.length) {
+      logSys('SORT-BY-TAG SANITY-FAIL (note NOT changed): ' + fails.join('; ') +
+        ' | scope=' + scope.mode + ' ' + scope.start + '-' + scope.end +
+        ' items=' + r.itemCount + ' note=' + currentNoteId);
+      showToast('Sort cancelled — a safety check failed, so your note was NOT changed:\n\n' +
+        fails.join('\n') + '\n\nDetails were written to the system log (Settings, Debugging).', true);
+      return;
+    }
+    var newContent = newLines.join('\n');
+    if (newContent === content) {
+      showToast('Items are already in tag order', false);
+      return;
+    }
+    // ── Preserve the original TWICE: snapshot ring + visible backup note ──
+    snapshotNoteBeforeOp(currentNoteId, 'Sort by tag');
+    var baseName = (note.name || 'Untitled') + ' \u2014 before sort ';
+    var bn = 1;
+    while (noteNameExists(baseName + bn, null)) bn++;
+    var backupName = baseName + bn;
+    var bId = makeId();
+    var bNow = Date.now();
+    notes[bId] = { id: bId, name: backupName, content: content, autoNamed: false,
+      createdAt: bNow, editedAt: bNow, viewedAt: bNow, folderId: note.folderId || null };
+    pushUndo();
+    note.content = newContent;
+    note.editedAt = Date.now();
+    if (ed) ed.value = newContent;
+    saveNotes();
+    renderViewer(newContent);
+    clearSelectedBlocks();       // old line indices are meaningless now
+    renderBlockSelections();
+    updateViewOnlyBtns();
+    if (typeof applyOutlineMode === 'function') applyOutlineMode();
+    if (typeof applyTagFilter === 'function' && typeof _tagFilterActive !== 'undefined' && _tagFilterActive) applyTagFilter();
+    try { resizeEditor(); } catch (eRz) {}
+    logDebugAction('Sort by tag: sorted ' + r.itemCount + ' items (' +
+      (scope.mode === 'selection' ? 'selected lines ' + scope.start + '-' + scope.end : 'whole note') +
+      '); original saved to "' + backupName + '"');
+    showToast('Sorted ' + r.itemCount + ' item' + (r.itemCount === 1 ? '' : 's') +
+      ' \u2014 original saved to \u201c' + backupName + '\u201d', false);
+  };
+
+  if (r.untaggedCount > 0) {
+    showConfirm('Sort anyway?',
+      r.untaggedCount + ' checkbox-ish item' + (r.untaggedCount === 1 ? ' has' : 's have') +
+      ' no @tag.\n\nUntagged items go to the bottom of their own list (children stay under their parent).',
+      'Sort anyway', doApply, false, 'Cancel', null);
+  } else {
+    doApply();
+  }
 }
 
 // ===== MOVE COMPLETED TO BOTTOM =====
