@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1630 -->
+<!-- Remember App - Version 0.1633 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1630
+  Version 0.1633
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,9 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1633 - Two things, both per Lynn. (1) NEW: "Rename note" in the home-screen long-press context menu (right under Open note), reusing the SAME rename sheet the in-note title tap opens -- select-all and clear buttons, dirty tracking, duplicate-name confirm, autoNamed handling all included, one dialog for both entry points instead of a second implementation. openRenameDialog()/applyRename() gained a target-note parameter (_renameTargetNoteId, defaulting to currentNoteId so every existing call site is unchanged); the sheet already lived at top level in the DOM so it works from the home screen as-is, and renaming now refreshes the notes list. Renaming view-only notes is allowed from the menu, matching the existing in-note behavior (view-only protects content, not the name). (2) FIX for the long-deferred iOS no-keyboard-on-rename problem, root cause finally identified: every name dialog focused its input inside setTimeout(...,50), and iOS WebKit only shows the virtual keyboard for a focus() that runs SYNCHRONOUSLY within the user's tap gesture -- an async focus sets the caret but deliberately suppresses the keyboard (Apple anti-popup policy; Android/desktop honor async focus, which is exactly the asymmetry Lynn observed). Fixed platform-conditionally exactly as she proposed: new _isIOSDevice() helper (userAgent + the MacIntel/maxTouchPoints check for iPadOS masquerading as Mac); on iOS both the rename sheet and the folder-name dialog now focus+select synchronously in the gesture, everywhere else the original setTimeout path is untouched -- zero behavior change on Android/Windows, where it already worked. Physical keyboards: text arrives selected (select-all for auto-named/folder, caret-at-end for user-named notes, both unchanged), so typing replaces immediately. No pure-function changes: suite 243/243 on cases v17 / goldens v18.
+  v0.1632 - Find/Replace split into two More-menu items per Lynn (the common editor pattern): "Find in note" opens the bar find-only (replace row hidden -- one row shorter on a phone), and a new "Find and replace" item right below it opens the same bar with the replace row shown. The new item is registry-managed and hidden on view-only notes (plus a runtime guard in openFindReplace and the existing CSS hide as belt-and-braces). The bar remembers nothing between modes except the query: switching items while the bar is open just toggles the row in place, keeping the search. Toolbar find button and Cmd/Ctrl+F stay find-only; NEW Cmd/Ctrl+H toggles Find and replace (standard shortcut), ignored on view-only notes. Implemented as a _findReplaceMode flag + a replace-mode class on the find bar; openFind(keepReplaceMode) resets the flag unless called from openFindReplace(), so every existing openFind() call site is find-only automatically. closeFind resets the mode. No pure-function changes: suite unchanged at 243/243 on cases v17 / goldens v18.
+  v0.1631 - NEW: Replace added to Find in note. The find bar gains a second row (hidden on view-only notes) with a "Replace with" field plus Replace and All buttons; Enter in the replace field replaces the current match. Replace-current swaps the highlighted match and lands on the next match AFTER the replaced text (so a replacement that contains the search text, like cat -> cats, can never loop or re-match in place); Replace All swaps every occurrence in one action with a toast reporting the count. Matching is the same case-insensitive literal (non-regex) search Find has always used -- the scan was extracted verbatim from runFind() into a shared findMatchPositions() helper so Find and Replace can never disagree about what counts as a match, plus a pure applyReplaceAll() (both harness-testable; 10 new cases lock literal-matching semantics incl. regex chars staying literal, adjacent matches, case-insensitive replace, deletion via empty replacement, and replacement-contains-query safety -- cases v17, 243 total, goldens v18). Both operations pushUndo first; Replace All additionally snapshots via snapshotNoteBeforeOp. Works in both Typing and R&R modes through the existing find machinery (offsets are recomputed from content at replace time since R&R stores DOM marks, and both lists come from the same ordered scan). Housekeeping note for a future build: isHrLine() (which pre-dates this build) and the sort module's inline HR regex are duplicate expressions of the same pattern and should be consolidated.
   v0.1630 - FIX per Lynn's bug report: Settings > Reinstall Sample Notes is now purely ADDITIVE. createInitialNotes() historically OVERWROTE anything sharing an id with a sample: the Sample Notes folder record (which is exactly why renaming that folder appeared to "delete" it on reinstall -- the rename lives on the folder object, and the object was replaced wholesale, resetting the stock name and any parent move), every fixed-id sample note (destroying user edits to them), and every fixed-id sample theme -- directly contradicting the Reinstall dialog's own "Your existing notes will not be affected" promise. Implemented as a snapshot-and-restore wrapper inside createInitialNotes rather than ~20 per-registration guards: everything existing at entry (notes, folders, themes) is snapshotted, a restoration pass just before the final saves puts back any record this run replaced (preserving renames, folder moves, edits, and custom themes), and newly created notes whose EXACT name already exists are dropped so reinstall never makes duplicates (Lynn's unique-names suggestion) -- deleted samples still reinstall, and renamed copies coexist with the restored stock original. No-op on fresh installs. logSys reports preserved/skipped counts. No behavior change to any tested function: suite still 233/233 on cases v16 / goldens v17.
   v0.1629 - Tag Sort Sampler rebuilt per Lynn's testing feedback: ~46 checkbox-ish items across 12 top-level parents, nesting now FIVE levels deep (great-great-grandchildren), every parent has 3-4 children mixing tagged and untagged, and NOTHING starts pre-sorted -- child lists are deliberately scrambled and untagged items sit in FIRST/middle positions (never already at the end) so the sort visibly moves things. Several sibling groups share the same primary tag (including three @prio3 top-level parents) to verify stable ordering, and plain paragraphs are interspersed between three separate item groups to verify consolidation around stationary text. Also one Sort-by-tag refinement the new sampler exposed: separator blank lines now join the sorted region ONLY when they sit between two region lines -- a blank run trailing stationary content (e.g. a paragraph between item groups) stays in place with that content instead of traveling into the consolidated list as a stray gap (was visible in double-spacing-OFF mode when groups merged across paragraphs). Two new test cases lock the rule (cases v16, 233 total; goldens v17). Note the v0.1628 migration flag is unchanged, so a device that already ran the v0.1628 migration keeps the OLD sampler (delete it and use Settings, Reinstall Sample Notes, to get this one).
   v0.1628 - NEW: "Sort by tag" in the More menu (works in BOTH Typing and R&R modes) sorts checkbox-ish items to match the note's [tag order] line, keyed by each item's FIRST tag; children travel with their parent and are sorted among themselves; untagged items sink to the bottom of their own sibling list (after a confirm dialog); all items consolidate at the position of the first item while every other line stays put; sorting only selected lines works via the Select Lines tool OR a live text selection (a new snapshot in openMoreMenu captures the selection before the menu's existing selection-clearing destroys it). PURE-PERMUTATION design agreed with Lynn: the result is exactly the original lines reordered -- nothing added/removed/edited -- and three sanity checks (line count, checkbox-ish count, full multiset comparison) refuse to touch the note and log to the system log on any mismatch. Blank-line handling honors the double-spacing setting (ON: separator blanks pooled and redistributed one-per-seam; OFF: blanks glue to the item they followed). Original preserved TWICE before applying: snapshotNoteBeforeOp ring + a visible backup note named with an em-dash "before sort N" suffix (always numbered, never overwritten, same folder). Structural lines are never treated as items: the [tag order] line and horizontal rules (the same pattern notePreview already skips) stay in place -- detection itself is ONLY the canonical isChecklistLine(), never reimplemented. New "Tag Sort Sampler" demo note (createInitialNotes for fresh installs + a one-time STORAGE-FLAG-gated migration for existing installs, flag not name so deleting it sticks) showcasing the locked built-in tag roster (@inbox @prio0 @asap @prio1-9 @prioSomeday @prioUnset primaries; @next @today @inProgress @mightBeDone @waiting @wontDo @done secondaries). New test files: cases v15 (+21 cases = 231), goldens v16.
@@ -3198,6 +3201,45 @@ body.has-mouse .font-face-arrow { display: block; }
 }
 .find-nav-btn:active { background: var(--accent); color: white; }
 @media (hover: hover) { .find-nav-btn:hover { background: var(--accent); color: white; } }
+#find-replace-row {
+  flex: 0 0 100%;   /* own wrapped line inside the find bar */
+  display: none;    /* v0.1632: only "Find and replace" shows the row */
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+#find-bar.replace-mode #find-replace-row { display: flex; }
+/* Replacing edits the note — hidden entirely on view-only notes */
+body.view-only-mode #find-replace-row { display: none; }
+#find-replace-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  outline: none;
+}
+#find-replace-input:focus { border-color: var(--accent); }
+.find-replace-btn {
+  background: var(--fg2);
+  border: none;
+  color: var(--bg);
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  font-size: var(--font-ui);
+  font-weight: 600;
+}
+.find-replace-btn:disabled { opacity: 0.4; cursor: default; }
+.find-replace-btn:active:not(:disabled) { background: var(--accent); color: white; }
+@media (hover: hover) { .find-replace-btn:hover:not(:disabled) { background: var(--accent); color: white; } }
 .find-nav-btn:disabled { opacity: 0.3; pointer-events: none; }
 #find-close-btn {
   background: var(--bg3);
@@ -5930,6 +5972,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
     </button>
+    <div id="find-replace-row">
+      <input type="search" id="find-replace-input" placeholder="Replace with…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button class="find-replace-btn" id="find-replace-btn" title="Replace current match">Replace</button>
+      <button class="find-replace-btn" id="find-replace-all-btn" title="Replace all matches">All</button>
+    </div>
   </div>
 
   <!-- Second toolbar — always at top, below note header -->
@@ -6597,6 +6644,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none">Open note</span>
   </button>
+  <button class="context-menu-item" id="ctx-rename-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0">
+      <path d="M17 3a2.83 2.83 0 014 4L7.5 20.5 2 22l1.5-5.5z"/>
+    </svg>
+    <span style="pointer-events:none">Rename note</span>
+  </button>
   <button class="context-menu-item" id="ctx-favorite-btn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
     <span id="ctx-favorite-label" style="pointer-events:none">Add to Favorites</span>
@@ -6903,6 +6956,24 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
     <span class="more-label" style="pointer-events:none;flex:1">Find in note</span>
+  </button>
+  <button id="more-find-replace-btn" style="
+    display:none;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <circle cx="10" cy="10" r="7" style="pointer-events:none"/>
+      <line x1="19.5" y1="19.5" x2="15" y2="15" style="pointer-events:none"/>
+      <polyline points="15 4 19 4 19 8" style="pointer-events:none"/>
+      <polyline points="9 20 5 20 5 16" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Find and replace</span>
   </button>
   <button id="more-share-btn" style="
     display:flex;align-items:center;gap:12px;
@@ -9863,7 +9934,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1630';
+const APP_VERSION = '0.1633';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13479,6 +13550,20 @@ function scrollToSearchMatch(term) {
 }
 
 
+// v0.1633: iOS (including iPadOS, which masquerades as MacIntel but
+// exposes touch points) needs to be detected because iOS WebKit only
+// shows the virtual keyboard for a focus() that runs SYNCHRONOUSLY
+// inside the user's tap gesture. Async focus (setTimeout, promises,
+// animation callbacks) sets the caret but deliberately suppresses the
+// keyboard — Apple's anti-popup policy. Android and desktop honor async
+// focus, which is why the name dialogs "worked everywhere but iOS".
+function _isIOSDevice() {
+  try {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  } catch (e) { return false; }
+}
+
 function showFolderNameDialog(existingName, callback) {
   var overlay  = document.getElementById('folder-name-overlay');
   var input    = document.getElementById('folder-name-input');
@@ -13491,7 +13576,16 @@ function showFolderNameDialog(existingName, callback) {
   logDebugAction(existingName ? 'Opened Rename Folder' : 'Opened New Folder');
   input.value = existingName || '';
   overlay.style.display = 'flex';
-  setTimeout(function() { input.focus(); input.select(); }, 50);
+  if (_isIOSDevice()) {
+    // Must stay INSIDE the tap gesture's synchronous call stack or iOS
+    // will not raise the virtual keyboard — see _isIOSDevice() above.
+    input.focus();
+    input.select();
+  } else {
+    // Android/Windows: original path, untouched — async focus works
+    // there and the small delay lets the overlay finish rendering.
+    setTimeout(function() { input.focus(); input.select(); }, 50);
+  }
   function finish(save) {
     var name = input.value.trim();
     if (save && name) {
@@ -19784,6 +19878,10 @@ function init() {
     downloadJSON({ version: APP_VERSION, exportDate: new Date().toISOString(), notes: { [n.id]: n } }, 'remember-' + safeName + '.json');
   })(document.getElementById('ctx-export-btn'));
   ctxAction(openNote)(document.getElementById('ctx-open-btn'));
+  // Rename note (v0.1633): same sheet the in-note title tap opens —
+  // the ctx tap gesture carries through openRenameDialog to the
+  // synchronous iOS focus, so the keyboard comes up here too.
+  ctxAction(function(id) { openRenameDialog(id); })(document.getElementById('ctx-rename-btn'));
   ctxAction(duplicateNote)(document.getElementById('ctx-duplicate-btn'));
   ctxAction(confirmDeleteNote)(document.getElementById('ctx-delete-btn'));
   ctxAction(function(id) {
@@ -21432,30 +21530,49 @@ function makeImportFolderName(label) {
     goHome();
   });
   var _renameSnapshot = '';
+  var _renameTargetNoteId = null; // v0.1633: which note the open rename sheet edits
   function updateRenameSaveBtn() {
     var input = document.getElementById('rename-input');
     var btn   = document.getElementById('rename-save-btn');
     var dirty = input.value.trim() !== _renameSnapshot;
     btn.classList.toggle('dimmed', !dirty);
   }
-  function openRenameDialog() {
-    logDebugAction('Opened Rename note');
-    var currentName = document.getElementById('note-title').textContent.trim();
+  function openRenameDialog(noteId) {
+    // v0.1633: optional noteId targets a note from the home-screen
+    // context menu; no argument keeps the original in-note behavior
+    // (current note, name read live from the title element).
+    _renameTargetNoteId = noteId || currentNoteId;
+    logDebugAction(noteId && noteId !== currentNoteId ? 'Opened Rename note (context menu)' : 'Opened Rename note');
+    var currentName;
+    if (noteId && noteId !== currentNoteId) {
+      if (!notes[noteId]) return;
+      currentName = (notes[noteId].name || '').trim();
+    } else {
+      currentName = document.getElementById('note-title').textContent.trim();
+    }
     var input = document.getElementById('rename-input');
     input.value = currentName;
     _renameSnapshot = currentName; // snapshot for dirty tracking
     document.getElementById('rename-overlay').classList.add('open');
     document.getElementById('rename-sheet').classList.add('open');
     updateRenameSaveBtn(); // set initial dimmed state
-    var isAuto = currentNoteId && notes[currentNoteId] && notes[currentNoteId].autoNamed;
-    setTimeout(function() {
+    var isAuto = _renameTargetNoteId && notes[_renameTargetNoteId] && notes[_renameTargetNoteId].autoNamed;
+    var _renamePlaceCaret = function() {
       input.focus();
       if (isAuto) {
         input.select();
       } else {
         input.setSelectionRange(input.value.length, input.value.length);
       }
-    }, 50);
+    };
+    if (_isIOSDevice()) {
+      // Synchronous focus inside the tap gesture — the only way iOS
+      // raises the virtual keyboard. See _isIOSDevice().
+      _renamePlaceCaret();
+    } else {
+      // Android/Windows: original path, untouched.
+      setTimeout(_renamePlaceCaret, 50);
+    }
   }
 
   document.getElementById('rename-btn').addEventListener('mousedown', function(e) {
@@ -21507,7 +21624,7 @@ function makeImportFolderName(label) {
       return;
     }
     // Check for duplicate
-    if (noteNameExists(newName, currentNoteId)) {
+    if (noteNameExists(newName, _renameTargetNoteId)) {
       showConfirm(
         'Duplicate Name',
         'Another note is already called "' + newName + '". Keep this name anyway?',
@@ -21524,13 +21641,19 @@ function makeImportFolderName(label) {
 
   function applyRename(newName) {
     logDebugAction('Saved Rename note: "' + newName + '"');
-    document.getElementById('note-title').textContent = newName;
-    if (currentNoteId && notes[currentNoteId]) {
-      notes[currentNoteId].name = newName;
+    var target = _renameTargetNoteId || currentNoteId;
+    // Only touch the note screen's title element when renaming the note
+    // that is actually open in it.
+    if (target === currentNoteId) {
+      document.getElementById('note-title').textContent = newName;
+    }
+    if (target && notes[target]) {
+      notes[target].name = newName;
       // User explicitly saved a name — always lock it (autoNamed = false)
-      notes[currentNoteId].autoNamed = false;
+      notes[target].autoNamed = false;
       saveNotes();
     }
+    renderNotesList(); // home-screen list shows the new name immediately
     document.getElementById('rename-overlay').classList.remove('open');
     document.getElementById('rename-sheet').classList.remove('open');
   }
@@ -22542,6 +22665,9 @@ function makeImportFolderName(label) {
     // Sort by tag (v0.1628): BOTH modes by design (Lynn's call) — needs
     // items and at least one tag to be meaningful; hidden when locked.
     { id: 'more-sort-by-tag-btn',     show: function(s) { return !s.quietMode && !s.viewOnly && s.hasCbs && s.hasTags; } },
+    // Find and replace (v0.1632): edit operation, so never on view-only
+    // notes. (Plain "Find in note" stays a static, always-visible item.)
+    { id: 'more-find-replace-btn',    show: function(s) { return !s.viewOnly; } },
     // ── R&R mode + extra per-item setting gate (override applies the gate) ──
     // Tap to Edit no longer has a static More menu entry (more-tap-to-edit-btn
     // was removed) — per the stage-3 redesign it is dynamic-only now, since
@@ -29865,12 +29991,32 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     closeMoreMenu();
     openFind();
   });
+  document.getElementById('more-find-replace-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-find-replace-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    openFindReplace();
+  });
   document.getElementById('find-close-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('find-close-btn').addEventListener('click', function() { closeFind(); });
   document.getElementById('find-prev-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('find-prev-btn').addEventListener('click', function() { findPrev(); });
   document.getElementById('find-next-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('find-next-btn').addEventListener('click', function() { findNext(); });
+  document.getElementById('find-replace-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('find-replace-btn').addEventListener('click', function() { runReplaceCurrent(); });
+  document.getElementById('find-replace-all-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('find-replace-all-btn').addEventListener('click', function() { runReplaceAll(); });
+  document.getElementById('find-replace-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Typing mode with a changed, not-yet-searched query: run the
+      // search first (same rule as Enter in the find field), otherwise
+      // replace the current match.
+      if (!isViewMode && _findQuery !== (document.getElementById('find-input').value || '')) { runFind(); }
+      else { runReplaceCurrent(); }
+    }
+    if (e.key === 'Escape') { closeFind(); }
+  });
   document.getElementById('find-input').addEventListener('input', function() {
     // Search-as-you-type only in R&R mode. In typing mode, the match
     // highlight uses the SAME textarea the person is typing the search
@@ -29902,12 +30048,19 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     }
     if (e.key === 'Escape') { closeFind(); }
   });
-  // Keyboard shortcut: Cmd/Ctrl+F
+  // Keyboard shortcuts: Cmd/Ctrl+F = Find, Cmd/Ctrl+H = Find and replace
   document.addEventListener('keydown', function(e) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
       if (document.getElementById('note-screen').classList.contains('active')) {
         e.preventDefault();
         if (_findActive) { closeFind(); } else { openFind(); }
+      }
+    }
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
+      if (document.getElementById('note-screen').classList.contains('active') &&
+          !document.body.classList.contains('view-only-mode')) {
+        e.preventDefault();
+        if (_findActive && _findReplaceMode) { closeFind(); } else { openFindReplace(); }
       }
     }
   });
@@ -32630,15 +32783,23 @@ var _findMatches    = [];  // array of {lineIndex, matchIndex, startOffset, leng
 var _findCurrent    = -1;  // index into _findMatches
 var _findQuery      = '';
 var _findActive     = false;
+var _findReplaceMode = false; // v0.1632: true when opened via "Find and replace"
 
-function openFind() {
-  logDebugAction('Opened Find in note');
+function openFind(keepReplaceMode) {
+  // v0.1632: openFind() alone is always find-only; openFindReplace()
+  // passes keepReplaceMode=true after setting _findReplaceMode, so every
+  // pre-existing openFind() call site stays find-only automatically.
+  if (!keepReplaceMode) _findReplaceMode = false;
+  logDebugAction(_findReplaceMode ? 'Opened Find and replace' : 'Opened Find in note');
   // No longer forces R&R mode — Find now has a simple typing-mode path
   // too (see runFind()/setCurrentMatch()), for people using
   // noteEditingMode:'typing' with R&R mode disabled entirely.
   _findActive = true;
   var bar = document.getElementById('find-bar');
-  if (bar) bar.classList.add('open');
+  if (bar) {
+    bar.classList.add('open');
+    bar.classList.toggle('replace-mode', _findReplaceMode);
+  }
   var input = document.getElementById('find-input');
   if (input) {
     input.value = _findQuery;
@@ -32650,16 +32811,31 @@ function openFind() {
   runFind();
 }
 
+function openFindReplace() {
+  // "Find and replace" (v0.1632): the same bar with the replace row
+  // shown. The menu item is already hidden on view-only notes; this
+  // runtime guard covers the Cmd/Ctrl+H path and any future caller.
+  if (document.body.classList.contains('view-only-mode')) {
+    showToast('This note is view only', false);
+    return;
+  }
+  _findReplaceMode = true;
+  openFind(true);
+}
+
 function closeFind() {
   logDebugAction('Closed Find in note');
   _findActive = false;
+  _findReplaceMode = false;
   _findQuery = '';
   _findMatches = [];
   _findCurrent = -1;
   var bar = document.getElementById('find-bar');
-  if (bar) bar.classList.remove('open');
+  if (bar) bar.classList.remove('open', 'replace-mode');
   var input = document.getElementById('find-input');
   if (input) input.value = '';
+  var repInput = document.getElementById('find-replace-input');
+  if (repInput) repInput.value = '';
   var findBtn = document.getElementById('find-btn');
   if (findBtn) findBtn.classList.remove('active');
   // Re-render viewer without highlights — only relevant in R&R mode;
@@ -32693,15 +32869,10 @@ function runFind(skipJump) {
   }
 
   // Find all matches in content (case-insensitive) — shared between both
-  // modes; this part never depended on rendering at all.
-  var lower = content.toLowerCase();
-  var q     = _findQuery.toLowerCase();
-  var pos   = 0;
-  var matchPositions = []; // {start, end} in content string
-  while ((pos = lower.indexOf(q, pos)) !== -1) {
-    matchPositions.push({ start: pos, end: pos + q.length });
-    pos += q.length;
-  }
+  // modes; this part never depended on rendering at all. v0.1631: the
+  // scan itself moved verbatim into findMatchPositions() so Replace uses
+  // the IDENTICAL definition of a match.
+  var matchPositions = findMatchPositions(content, _findQuery); // {start, end} in content string
 
   if (matchPositions.length === 0) {
     if (isViewMode) {
@@ -32861,6 +33032,116 @@ function updateFindUI() {
   }
   if (prevBtn) prevBtn.disabled = total === 0 || _findCurrent <= 0;
   if (nextBtn) nextBtn.disabled = total === 0 || _findCurrent >= total - 1;
+  var repBtn    = document.getElementById('find-replace-btn');
+  var repAllBtn = document.getElementById('find-replace-all-btn');
+  if (repBtn)    repBtn.disabled    = total === 0 || _findCurrent < 0;
+  if (repAllBtn) repAllBtn.disabled = total === 0;
+}
+
+
+// ── Replace (v0.1631) ──────────────────────────────────────────────────────
+function findMatchPositions(content, query) {
+  // The ONE definition of a Find match — extracted verbatim from
+  // runFind()'s original inline scan so Find highlighting and Replace can
+  // never disagree. Case-insensitive, LITERAL text (never a regex —
+  // characters like . * ( ) match themselves only). Returns ordered,
+  // non-overlapping {start, end} offsets into content.
+  var out = [];
+  if (!query || !String(query).trim()) return out;
+  var lower = String(content == null ? '' : content).toLowerCase();
+  var q     = String(query).toLowerCase();
+  var pos   = 0;
+  while ((pos = lower.indexOf(q, pos)) !== -1) {
+    out.push({ start: pos, end: pos + q.length });
+    pos += q.length;
+  }
+  return out;
+}
+
+function applyReplaceAll(content, query, replacement) {
+  // Pure + harness-testable: replace every case-insensitive literal
+  // occurrence of query with replacement. Positions are precomputed and
+  // applied back-to-front, so a replacement that itself contains the
+  // query (cat -> cats) can never loop or re-match, and everything
+  // outside the matches is preserved byte-for-byte.
+  var c = String(content == null ? '' : content);
+  var r = String(replacement == null ? '' : replacement);
+  var positions = findMatchPositions(c, query);
+  for (var i = positions.length - 1; i >= 0; i--) {
+    c = c.slice(0, positions[i].start) + r + c.slice(positions[i].end);
+  }
+  return { content: c, count: positions.length };
+}
+
+function runReplaceCurrent() {
+  if (document.body.classList.contains('view-only-mode')) { showToast('This note is view only', false); return; }
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  if (!_findQuery.trim() || _findCurrent < 0 || !_findMatches.length) {
+    showToast('No current match to replace', false);
+    return;
+  }
+  var note    = notes[currentNoteId];
+  var content = note.content || '';
+  // Recompute offsets from content: R&R mode's _findMatches holds DOM
+  // <mark> elements, not offsets — but both modes' match lists are built
+  // from this same ordered scan, so _findCurrent indexes it 1:1.
+  var positions = findMatchPositions(content, _findQuery);
+  if (_findCurrent >= positions.length) {
+    // Content changed under us (shouldn't happen, but never guess) —
+    // refresh the search instead of replacing the wrong text.
+    runFind(true);
+    updateFindUI();
+    return;
+  }
+  var mp = positions[_findCurrent];
+  var repInput = document.getElementById('find-replace-input');
+  var replacement = repInput ? repInput.value : '';
+  pushUndo();
+  var newContent = content.slice(0, mp.start) + replacement + content.slice(mp.end);
+  note.content = newContent;
+  note.editedAt = Date.now();
+  var ed = document.getElementById('note-editor');
+  if (ed) ed.value = newContent;
+  saveNotes();
+  logDebugAction('Find: replaced match ' + (_findCurrent + 1) + ' of ' + positions.length);
+  // Land on the first match AFTER the replaced region (standard replace
+  // behavior; immune to a replacement that contains the query).
+  var boundary = mp.start + replacement.length;
+  runFind(true);
+  var newPositions = findMatchPositions(newContent, _findQuery);
+  var nextIdx = -1;
+  for (var i = 0; i < newPositions.length; i++) {
+    if (newPositions[i].start >= boundary) { nextIdx = i; break; }
+  }
+  if (nextIdx === -1 && newPositions.length) nextIdx = newPositions.length - 1;
+  if (nextIdx !== -1) setCurrentMatch(nextIdx);
+  updateFindUI();
+}
+
+function runReplaceAll() {
+  if (document.body.classList.contains('view-only-mode')) { showToast('This note is view only', false); return; }
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  if (!_findQuery.trim() || !_findMatches.length) {
+    showToast('No matches to replace', false);
+    return;
+  }
+  var note     = notes[currentNoteId];
+  var content  = note.content || '';
+  var repInput = document.getElementById('find-replace-input');
+  var r = applyReplaceAll(content, _findQuery, repInput ? repInput.value : '');
+  if (!r.count) { showToast('No matches to replace', false); return; }
+  // Bulk edit — preserve the original twice, like other bulk operations.
+  snapshotNoteBeforeOp(currentNoteId, 'Replace all');
+  pushUndo();
+  note.content = r.content;
+  note.editedAt = Date.now();
+  var ed = document.getElementById('note-editor');
+  if (ed) ed.value = r.content;
+  saveNotes();
+  logDebugAction('Find: replaced all ' + r.count + ' match(es)');
+  runFind(true);
+  updateFindUI();
+  showToast('Replaced ' + r.count + ' occurrence' + (r.count === 1 ? '' : 's'), false);
 }
 
 // ===== HR / DIVIDER HELPERS =====
