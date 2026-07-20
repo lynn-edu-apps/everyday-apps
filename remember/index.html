@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1633 -->
+<!-- Remember App - Version 0.1634 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1633
+  Version 0.1634
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1634 - Two things for the Quick Add / Edit Paragraph dialogs, per Lynn's report. (1) BOLD CURSOR DRIFT, likely root cause found by inspection: the measuring mirror's width was ed.offsetWidth (the v0.1607 choice) -- correct ONLY when the textarea has no visible scrollbar. These dialogs are fixed-height, SELF-SCROLLING textareas: a long paragraph summons a scrollbar, which (on Android and desktop classic scrollbars) consumes interior width, so the REAL text wraps in a narrower box than the mirror -- every wrap lands slightly later in the mirror and the error compounds line after line, precisely matching "drifts when the paragraph is long" and "fine when short". Fixed: width is now ed.clientWidth (which excludes any scrollbar) + the two border widths -- mathematically IDENTICAL to offsetWidth when no scrollbar exists, so zero change for short text, overlay-scrollbar iOS, and the main note editor. Additionally, every remaining wrap-affecting property is now COPIED from the textarea's computed style instead of omitted or hardcoded: overflow-wrap, word-break, hyphens, font-style, font-variant-ligatures, font-kerning, font-feature-settings, font-stretch, text-indent, text-rendering (the copied overflow-wrap deliberately overrides the older hardcoded word-wrap:break-word, since the cascade takes the later declaration) -- mirroring truth can only converge, never diverge, and ligature/kerning/wrap differences between a div and a textarea are the remaining credible iOS drift source. The v0.1624 green-line diagnostic stays in for on-device verification. (2) ANDROID PASTE in these dialogs: code inspection PROVED there is no app-side paste interceptor on either textarea (no paste/beforeinput preventDefault paths reach a paste, no readonly, no touch-action, no user-select, mark overlay is pointer-events:none) -- so rather than guess, this build adds a debug-gated paste-path tracer (paste / beforeinput / input / compositionstart / compositionend, logging inputType, data length, and value-length deltas) on both dialog textareas. Lynn's next Android session will show exactly which stage dies: no events at all (OS gesture/popup layer), events but no value change (app interference), or change-then-revert. Suite unchanged: 243/243 on cases v17 / goldens v18.
   v0.1633 - Two things, both per Lynn. (1) NEW: "Rename note" in the home-screen long-press context menu (right under Open note), reusing the SAME rename sheet the in-note title tap opens -- select-all and clear buttons, dirty tracking, duplicate-name confirm, autoNamed handling all included, one dialog for both entry points instead of a second implementation. openRenameDialog()/applyRename() gained a target-note parameter (_renameTargetNoteId, defaulting to currentNoteId so every existing call site is unchanged); the sheet already lived at top level in the DOM so it works from the home screen as-is, and renaming now refreshes the notes list. Renaming view-only notes is allowed from the menu, matching the existing in-note behavior (view-only protects content, not the name). (2) FIX for the long-deferred iOS no-keyboard-on-rename problem, root cause finally identified: every name dialog focused its input inside setTimeout(...,50), and iOS WebKit only shows the virtual keyboard for a focus() that runs SYNCHRONOUSLY within the user's tap gesture -- an async focus sets the caret but deliberately suppresses the keyboard (Apple anti-popup policy; Android/desktop honor async focus, which is exactly the asymmetry Lynn observed). Fixed platform-conditionally exactly as she proposed: new _isIOSDevice() helper (userAgent + the MacIntel/maxTouchPoints check for iPadOS masquerading as Mac); on iOS both the rename sheet and the folder-name dialog now focus+select synchronously in the gesture, everywhere else the original setTimeout path is untouched -- zero behavior change on Android/Windows, where it already worked. Physical keyboards: text arrives selected (select-all for auto-named/folder, caret-at-end for user-named notes, both unchanged), so typing replaces immediately. No pure-function changes: suite 243/243 on cases v17 / goldens v18.
   v0.1632 - Find/Replace split into two More-menu items per Lynn (the common editor pattern): "Find in note" opens the bar find-only (replace row hidden -- one row shorter on a phone), and a new "Find and replace" item right below it opens the same bar with the replace row shown. The new item is registry-managed and hidden on view-only notes (plus a runtime guard in openFindReplace and the existing CSS hide as belt-and-braces). The bar remembers nothing between modes except the query: switching items while the bar is open just toggles the row in place, keeping the search. Toolbar find button and Cmd/Ctrl+F stay find-only; NEW Cmd/Ctrl+H toggles Find and replace (standard shortcut), ignored on view-only notes. Implemented as a _findReplaceMode flag + a replace-mode class on the find bar; openFind(keepReplaceMode) resets the flag unless called from openFindReplace(), so every existing openFind() call site is find-only automatically. closeFind resets the mode. No pure-function changes: suite unchanged at 243/243 on cases v17 / goldens v18.
   v0.1631 - NEW: Replace added to Find in note. The find bar gains a second row (hidden on view-only notes) with a "Replace with" field plus Replace and All buttons; Enter in the replace field replaces the current match. Replace-current swaps the highlighted match and lands on the next match AFTER the replaced text (so a replacement that contains the search text, like cat -> cats, can never loop or re-match in place); Replace All swaps every occurrence in one action with a toast reporting the count. Matching is the same case-insensitive literal (non-regex) search Find has always used -- the scan was extracted verbatim from runFind() into a shared findMatchPositions() helper so Find and Replace can never disagree about what counts as a match, plus a pure applyReplaceAll() (both harness-testable; 10 new cases lock literal-matching semantics incl. regex chars staying literal, adjacent matches, case-insensitive replace, deletion via empty replacement, and replacement-contains-query safety -- cases v17, 243 total, goldens v18). Both operations pushUndo first; Replace All additionally snapshots via snapshotNoteBeforeOp. Works in both Typing and R&R modes through the existing find machinery (offsets are recomputed from content at replace time since R&R stores DOM marks, and both lists come from the same ordered scan). Housekeeping note for a future build: isHrLine() (which pre-dates this build) and the sort module's inline HR regex are duplicate expressions of the same pattern and should be consolidated.
@@ -9934,7 +9935,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1633';
+const APP_VERSION = '0.1634';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23825,7 +23826,37 @@ function makeImportFolderName(label) {
       // making the mirror narrower than the real element by 2x the
       // border width. offsetWidth (content+padding+border) is the
       // W3C-correct match for border-box's own definition of 'width'.
-      'width:' + ed.offsetWidth + 'px'
+      // v0.1634 REFINEMENT of that fix: offsetWidth is right ONLY while
+      // there is no visible scrollbar. Quick Add / Edit Paragraph are
+      // fixed-height SELF-SCROLLING textareas -- a long paragraph
+      // summons a scrollbar, which (Android/desktop classic scrollbars)
+      // consumes interior width, so the REAL text wraps in a narrower
+      // box than a scrollbar-less mirror sized to offsetWidth; the wrap
+      // error compounds with every line, exactly matching the reported
+      // long-paragraph drift. clientWidth EXCLUDES any scrollbar, so
+      // clientWidth + the two border widths is the correct border-box
+      // width in all cases -- and is mathematically IDENTICAL to
+      // offsetWidth whenever no scrollbar exists (short text, overlay-
+      // scrollbar iOS, the main note editor), i.e. zero regression risk.
+      'width:' + (ed.clientWidth +
+        (parseFloat(cs.borderLeftWidth) || 0) +
+        (parseFloat(cs.borderRightWidth) || 0)) + 'px',
+      // v0.1634: copy every remaining wrap-affecting property FROM the
+      // textarea's computed style rather than omitting or hardcoding it
+      // -- mirroring truth can only converge. The copied overflow-wrap
+      // deliberately lands AFTER (and therefore overrides) the older
+      // hardcoded word-wrap:break-word in the cssText cascade.
+      'overflow-wrap:' + (cs.overflowWrap || cs.wordWrap || 'break-word'),
+      'word-break:' + cs.wordBreak,
+      'hyphens:' + (cs.hyphens || cs.webkitHyphens || 'none'),
+      '-webkit-hyphens:' + (cs.webkitHyphens || cs.hyphens || 'none'),
+      'font-style:' + cs.fontStyle,
+      'font-stretch:' + cs.fontStretch,
+      'font-variant-ligatures:' + (cs.fontVariantLigatures || 'normal'),
+      'font-kerning:' + (cs.fontKerning || 'auto'),
+      'font-feature-settings:' + (cs.fontFeatureSettings || 'normal'),
+      'text-indent:' + cs.textIndent,
+      'text-rendering:' + (cs.textRendering || 'auto')
     ].concat(_bcPaddingProps).concat(_bcBorderProps);
     if (window._bcShowMirror) {
       var edRectDbg = ed.getBoundingClientRect();
@@ -29689,6 +29720,53 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     }
     _siClear();
   });
+
+  // v0.1634 DIAGNOSTIC for Lynn's Android report: paste does nothing in
+  // Quick Add / Edit Paragraph on Android (PWA and browser) while iOS
+  // works. Code inspection PROVED no app-side interceptor exists on
+  // these textareas (no paste/beforeinput preventDefault path can reach
+  // a paste, no readonly/touch-action/user-select problems, the Bold
+  // Cursor mark is pointer-events:none) -- so per this project's
+  // instrument-don't-guess rule, trace the whole paste path instead of
+  // guessing a fix. Every stage logs; the absence of lines is itself
+  // the answer (failure is then in the OS gesture/popup layer, before
+  // any DOM event fires). Passive listeners only -- nothing here can
+  // change behavior.
+  ['quick-add-input', 'edit-block-input'].forEach(function(_pdId) {
+    var _pdEl = document.getElementById(_pdId);
+    if (!_pdEl) return;
+    var _pdLastLen = -1;
+    _pdEl.addEventListener('paste', function(e) {
+      var t = '';
+      try { t = (e.clipboardData && e.clipboardData.getData('text/plain')) || ''; } catch (ePd) { t = '<getData threw: ' + ePd + '>'; }
+      logDebugAction('paste-diag[' + _pdId + ']: paste event, clipboard text len=' +
+        (typeof t === 'string' ? t.length : t) + ' defaultPrevented=' + e.defaultPrevented);
+    });
+    _pdEl.addEventListener('beforeinput', function(e) {
+      if (e.inputType && e.inputType.indexOf('insert') === 0) {
+        logDebugAction('paste-diag[' + _pdId + ']: beforeinput type=' + e.inputType +
+          ' dataLen=' + (e.data ? e.data.length : 0) + ' defaultPrevented=' + e.defaultPrevented);
+      }
+      _pdLastLen = this.value.length;
+    });
+    _pdEl.addEventListener('input', function(e) {
+      var d = this.value.length - (_pdLastLen === -1 ? this.value.length : _pdLastLen);
+      // Only log meaningful jumps (a paste is almost never 1 char) to
+      // keep normal typing out of the debug log.
+      if (Math.abs(d) > 1 || (e && e.inputType === 'insertFromPaste')) {
+        logDebugAction('paste-diag[' + _pdId + ']: input type=' + (e && e.inputType) +
+          ' valueLen ' + _pdLastLen + ' -> ' + this.value.length);
+      }
+      _pdLastLen = -1;
+    });
+    _pdEl.addEventListener('compositionstart', function() {
+      logDebugAction('paste-diag[' + _pdId + ']: compositionstart');
+    });
+    _pdEl.addEventListener('compositionend', function(e) {
+      logDebugAction('paste-diag[' + _pdId + ']: compositionend dataLen=' + (e.data ? e.data.length : 0));
+    });
+  });
+
   updateViewOnlyBtns = function() {
     var crossoutBtn   = document.getElementById('crossout-mode-btn');
     var clearBtn      = document.getElementById('clear-strikethroughs-btn');
