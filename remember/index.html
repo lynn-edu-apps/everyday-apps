@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1634 -->
+<!-- Remember App - Version 0.1635 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1634
+  Version 0.1635
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1635 - Android paste, round 2, from Lynn's decisive new report: the paste POPUP never appears at all in Quick Add / Edit Paragraph on Android -- she cannot even start a paste, so the v0.1634 event tracer stays silent by design (its silence correctly indicated the failure is in the OS selection layer, before any DOM event). Candidate fix shipped: body defaults to user-select:none with selective opt-ins that covered the FIELDS (input,textarea rule) but never the dialogs' ANCESTOR chains -- Android's OS-drawn selection/paste UI consults ancestors, and long-press in an EMPTY field is its most fragile path (note-editor escapes this because pasting there targets existing text: tap caret, handle, Paste). New scoped CSS opts #quick-add-box / #edit-block-dialog and their input wraps + textareas back to user-select:text (labels inside become cosmetically selectable; buttons unaffected). NOT verifiable off-device -- Lynn's next Android test is the experiment. Also added GESTURE-level diagnostics that fire regardless of whether any popup appears: touchstart (touch count), touchend (press duration in ms -- a long-press shows as 500ms+), contextmenu (Android fires this for text-field long-press; logged and never preventDefaulted), and focus, on both dialog textareas. Interpretation: no touch lines = touches never reach the textarea (something overlays it); touchend with 500ms+ but no contextmenu = the long-press gesture is being eaten before the OS menu stage; contextmenu fires but no popup = OS suppressed its own UI (the user-select fix is then the likeliest cure). Additional popup-independent test paths for Lynn: the Gboard clipboard chip (clipboard icon in the keyboard's toolbar) and Ctrl+V on any attached keyboard -- if either inserts text, insertion itself works and ONLY the popup layer is broken. Suite unchanged: 243/243 on cases v17 / goldens v18.
   v0.1634 - Two things for the Quick Add / Edit Paragraph dialogs, per Lynn's report. (1) BOLD CURSOR DRIFT, likely root cause found by inspection: the measuring mirror's width was ed.offsetWidth (the v0.1607 choice) -- correct ONLY when the textarea has no visible scrollbar. These dialogs are fixed-height, SELF-SCROLLING textareas: a long paragraph summons a scrollbar, which (on Android and desktop classic scrollbars) consumes interior width, so the REAL text wraps in a narrower box than the mirror -- every wrap lands slightly later in the mirror and the error compounds line after line, precisely matching "drifts when the paragraph is long" and "fine when short". Fixed: width is now ed.clientWidth (which excludes any scrollbar) + the two border widths -- mathematically IDENTICAL to offsetWidth when no scrollbar exists, so zero change for short text, overlay-scrollbar iOS, and the main note editor. Additionally, every remaining wrap-affecting property is now COPIED from the textarea's computed style instead of omitted or hardcoded: overflow-wrap, word-break, hyphens, font-style, font-variant-ligatures, font-kerning, font-feature-settings, font-stretch, text-indent, text-rendering (the copied overflow-wrap deliberately overrides the older hardcoded word-wrap:break-word, since the cascade takes the later declaration) -- mirroring truth can only converge, never diverge, and ligature/kerning/wrap differences between a div and a textarea are the remaining credible iOS drift source. The v0.1624 green-line diagnostic stays in for on-device verification. (2) ANDROID PASTE in these dialogs: code inspection PROVED there is no app-side paste interceptor on either textarea (no paste/beforeinput preventDefault paths reach a paste, no readonly, no touch-action, no user-select, mark overlay is pointer-events:none) -- so rather than guess, this build adds a debug-gated paste-path tracer (paste / beforeinput / input / compositionstart / compositionend, logging inputType, data length, and value-length deltas) on both dialog textareas. Lynn's next Android session will show exactly which stage dies: no events at all (OS gesture/popup layer), events but no value change (app interference), or change-then-revert. Suite unchanged: 243/243 on cases v17 / goldens v18.
   v0.1633 - Two things, both per Lynn. (1) NEW: "Rename note" in the home-screen long-press context menu (right under Open note), reusing the SAME rename sheet the in-note title tap opens -- select-all and clear buttons, dirty tracking, duplicate-name confirm, autoNamed handling all included, one dialog for both entry points instead of a second implementation. openRenameDialog()/applyRename() gained a target-note parameter (_renameTargetNoteId, defaulting to currentNoteId so every existing call site is unchanged); the sheet already lived at top level in the DOM so it works from the home screen as-is, and renaming now refreshes the notes list. Renaming view-only notes is allowed from the menu, matching the existing in-note behavior (view-only protects content, not the name). (2) FIX for the long-deferred iOS no-keyboard-on-rename problem, root cause finally identified: every name dialog focused its input inside setTimeout(...,50), and iOS WebKit only shows the virtual keyboard for a focus() that runs SYNCHRONOUSLY within the user's tap gesture -- an async focus sets the caret but deliberately suppresses the keyboard (Apple anti-popup policy; Android/desktop honor async focus, which is exactly the asymmetry Lynn observed). Fixed platform-conditionally exactly as she proposed: new _isIOSDevice() helper (userAgent + the MacIntel/maxTouchPoints check for iPadOS masquerading as Mac); on iOS both the rename sheet and the folder-name dialog now focus+select synchronously in the gesture, everywhere else the original setTimeout path is untouched -- zero behavior change on Android/Windows, where it already worked. Physical keyboards: text arrives selected (select-all for auto-named/folder, caret-at-end for user-named notes, both unchanged), so typing replaces immediately. No pure-function changes: suite 243/243 on cases v17 / goldens v18.
   v0.1632 - Find/Replace split into two More-menu items per Lynn (the common editor pattern): "Find in note" opens the bar find-only (replace row hidden -- one row shorter on a phone), and a new "Find and replace" item right below it opens the same bar with the replace row shown. The new item is registry-managed and hidden on view-only notes (plus a runtime guard in openFindReplace and the existing CSS hide as belt-and-braces). The bar remembers nothing between modes except the query: switching items while the bar is open just toggles the row in place, keeping the search. Toolbar find button and Cmd/Ctrl+F stay find-only; NEW Cmd/Ctrl+H toggles Find and replace (standard shortcut), ignored on view-only notes. Implemented as a _findReplaceMode flag + a replace-mode class on the find bar; openFind(keepReplaceMode) resets the flag unless called from openFindReplace(), so every existing openFind() call site is find-only automatically. closeFind resets the mode. No pure-function changes: suite unchanged at 243/243 on cases v17 / goldens v18.
@@ -318,6 +319,21 @@ body.ui-small {
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* Selective text-selection opt-ins — override the body-level none */
+/* v0.1635 (Android paste investigation): Android draws its selection
+   handles + paste popup in an OS compositor layer that consults the
+   field's ANCESTOR chain -- with body defaulting to user-select:none,
+   the input,textarea opt-in below covers the field itself but not its
+   ancestors, and long-press in an EMPTY field (exactly how a fresh
+   Quick Add / Edit Paragraph is pasted into) is the fragile path where
+   Android gives up silently while iOS's callout doesn't care. Opt the
+   two dialog boxes and their input wraps back to text. -webkit-user-
+   select inherits, so descendants follow; dialog labels becoming
+   cosmetically selectable is acceptable collateral. */
+#quick-add-box, #quick-add-input-wrap, #quick-add-input,
+#edit-block-dialog, #edit-block-input-wrap, #edit-block-input {
+  user-select: text;
+  -webkit-user-select: text;
+}
 /* Note editor and viewer: always selectable */
 #note-editor,
 #note-viewer,
@@ -9935,7 +9951,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1634';
+const APP_VERSION = '0.1635';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -29764,6 +29780,30 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     });
     _pdEl.addEventListener('compositionend', function(e) {
       logDebugAction('paste-diag[' + _pdId + ']: compositionend dataLen=' + (e.data ? e.data.length : 0));
+    });
+    // v0.1635 GESTURE-level diagnostics: Lynn's report says the paste
+    // POPUP never appears, so the event tracer above never fires — by
+    // design its silence pointed at the OS layer. These fire from the
+    // raw gesture itself, popup or no popup, so any Android attempt
+    // produces SOME log trail. touchend logs press duration: a long-
+    // press shows as 500ms+. contextmenu is what Android fires for a
+    // text-field long-press — logged, never preventDefaulted.
+    var _pdTouchStartAt = 0;
+    _pdEl.addEventListener('touchstart', function(e) {
+      _pdTouchStartAt = Date.now();
+      logDebugAction('paste-diag[' + _pdId + ']: touchstart touches=' + e.touches.length +
+        ' valueLen=' + this.value.length + ' focused=' + (document.activeElement === this));
+    }, { passive: true });
+    _pdEl.addEventListener('touchend', function() {
+      logDebugAction('paste-diag[' + _pdId + ']: touchend pressMs=' +
+        (_pdTouchStartAt ? Date.now() - _pdTouchStartAt : -1));
+    }, { passive: true });
+    _pdEl.addEventListener('contextmenu', function(e) {
+      logDebugAction('paste-diag[' + _pdId + ']: contextmenu fired (defaultPrevented=' + e.defaultPrevented + ')');
+      // deliberately NOT preventing default — the OS menu is wanted here
+    });
+    _pdEl.addEventListener('focus', function() {
+      logDebugAction('paste-diag[' + _pdId + ']: focus (valueLen=' + this.value.length + ')');
     });
   });
 
