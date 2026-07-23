@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1650 -->
+<!-- Remember App - Version 0.1656 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1650
+  Version 0.1656
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,12 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1656 - NEW: two fonts added, per Lynn -- Atkinson Hyperlegible Next (added alongside the existing default Atkinson Hyperlegible, not replacing it, so she can compare and remove the original later if she decides to) and Mulish, both requested by name. Both are genuine Google Fonts variable fonts, confirmed exact weight-axis ranges before adding (Next: 200-800, ExtraLight-ExtraBold; Mulish: 200-1000) rather than guessing -- added to the single shared Google Fonts @import URL every other font in this app already loads from (one more family= clause each, same variable-range syntax Inter already uses), plus a quick-pick pill, an <option> in all 4 font dropdowns, and a {min,max} entry in the weight-range registry (the same object shape Inter/Google Sans Flex already use, since both are real variable fonts, not discrete static weights). No structural changes -- this followed the exact existing per-font list pattern throughout. Suite unchanged: 307/307.
+  v0.1655 - NEW: "Slashed zero" checkbox added to Settings > Number Style, per Lynn. Implemented as an independent checkbox, not a 5th segmented-control option, because slashed-zero is genuinely a separate CSS font-variant-numeric keyword that COMBINES with Tabular/Old Style/Lining rather than being mutually exclusive with them (e.g. "tabular-nums slashed-zero" is one valid, different value from either alone) -- confirmed this is how the spec actually works before building it as a single 5-way exclusive choice, which would have silently prevented combining tabular numbers with a slashed zero, a completely reasonable thing to want together. settings.fontVariantNumeric now stores a space-separated combination; new helpers _dtiNumericMainToken()/_dtiNumericHasSlashedZero()/_dtiSetNumericValue() parse and rebuild it from the two independent UI controls. Verified end-to-end: enabling Tabular + slashed zero, switching the main style back to Default, confirms slashed-zero survives the switch (value correctly becomes "slashed-zero" alone rather than being lost), then disabling it fully clears the setting. Purely cosmetic when the current font has no slashed-zero alternate glyph -- flagged clearly in the row's own description, not a bug when nothing visibly changes. No new setting key added (reused the existing fontVariantNumeric slot), so no SETTING_BUCKETS change needed. Suite unchanged: 307/307.
+  v0.1654 - Added 3 informal US date styles to Insert Date/Time, per Lynn: usInformalNoYear (7/23), usInformalYear2 (7/23/26), usInformalYear4 (7/23/2026) -- no leading zeros on month/day, distinct from the existing padded usYear/usNoYear (07/23/2026 / 07/23), which stay as their own separate options rather than being replaced (both offered side by side). Matches what people commonly type or handwrite when given free choice, vs. the padded style being more of a forms/spreadsheet-sorting convention. Did NOT add international (day-first) informal equivalents this build -- flagged genuine uncertainty about exactly how universal no-leading-zero informal writing is across non-US regions (day-first order and dropped-leading-zeros both do occur elsewhere, e.g. the UK, but confidence is lower than for the well-established US convention); worth confirming with more certainty or actual regional feedback before adding those as their own options. 4 new cases (v24)/goldens (v25), including a single-digit-month-and-day case. Suite: 307/307.
+  v0.1653 - NEW: Insert Date/Time toolbar button, per Lynn. Typing mode inserts at the cursor; R&R mode appends to the end of every selected line (her explicit choice, matching how Indent/Dedent already treat multi-line selections). New pure functions formatDateOnly() (9 styles -- Jul 23 2026 / July 23 2026 / 07-23-2026 / 23-07-2026 / 2026-07-23, each with and without the year except ISO), formatTimeOnly() (reuses the existing 12h/24h setting, adds optional seconds), and formatInsertDateTime() (combines both, handles an optional day-of-week prefix -- full or abbreviated only, no medium form: no ambiguity exists among 3-letter day abbreviations so there's nothing a longer form would disambiguate). 4 new Note Behavior settings (per Lynn's explicit call -- this generates note CONTENT, not a visual choice, and is ready for a future Note Style): insertDateTimeMode/DateStyle/DayOfWeek/Seconds. Settings UI deliberately has NO format-string field anywhere -- every option's own label IS a live example computed from today's actual date, refreshing instantly as any control changes, using the app's existing accessible radio-group component (same one Ruled Lines/Note Editing Mode already use). Rows hide themselves when irrelevant (Date style/Day of week vanish for Time only; Include seconds vanishes for Date only). 20 new cases (v23)/goldens (v24), all hand-verified against a fixed reference date (including the 12am/12pm midnight/noon edge cases). Suite: 303/303.
+  v0.1652 - FIX: default tags for new checkbox-ish items weren't reliably applied in Typing mode, per Lynn's bug report -- she correctly narrowed it to "Double-space smart indent items" being on. Root cause: the Enter-keydown handler that appends default tags assumed the just-completed item was always exactly ONE line above the cursor's new line -- true when double-spacing is off, but false when it's on, since smart indent then inserts an EXTRA blank line between the completed item and the new one. "One line up" landed on that blank line instead, and appending tags to an empty line is always a no-op. Explains her exact "occasionally it did work" report too: only on presses where smart indent didn't fire at all that time (e.g. the previous line wasn't checkbox-ish), never when double-spacing actually inserted its blank line. Fixed by extracting the position-finding logic into a new pure function, computeDefaultTagInsertion (previously inline in the keydown handler and untestable -- exactly how this went unnoticed), which walks backward past ANY number of blank lines instead of assuming exactly one. Verified directly against the exact bug scenario plus already-tagged (no-op), non-checkbox-ish (no-op), and multiple-pre-existing-blank-lines cases. 6 new cases (v22)/goldens (v23), all hand-verified (caught and fixed an off-by-one in my own first draft of the test positions before shipping). Suite: 283/283.
+  v0.1651 - Two things, both per Lynn. (1) NEW setting: Disable scratch pad -- finally implements `disableScratchPad` from the spreadsheet's original planned-settings list (explicitly deferred since the SETTING_BUCKETS comment that first listed it). App Theme (General) bucket, per profiles-note-styles-plan-v2.md's own classification ("the pad is an app surface, not a note") -- ready to fold into a named App Theme once that save/apply UI exists, e.g. a senior-citizen-oriented theme that hides the pad since it uses a smaller font and lacks the note pane's full feature set. New Settings toggle in the App Theme section, right after the edge-swipe-home row. openScratchPad() itself refuses to open when disabled (defense in depth beyond just gating the gesture/click handlers), and turning the setting on force-closes the pad immediately if it happens to be open, via a new closeScratchPadHook (same late-assigned-hook pattern as the existing refreshScratchPad). (2) NEW: mouse support for the scratch pad, which previously only had touch-swipe open/close gestures with no mouse equivalent. A plain click within 12px of the note content pane's right edge (measured against #note-content-area's own bounding rect, not the whole window) opens it; a plain click on the pad's handle closes it. Both gated on `(hover: hover)` -- the same media feature this app already uses everywhere else to mean "a real mouse/trackpad is attached" -- so neither adds any new tap target on touch-only devices; the existing swipe gestures are completely unchanged and coexist safely (a simple tap's touchend never reaches the swipe-distance threshold, so it does nothing extra there). Suite unchanged: 277/277.
   v0.1650 - REVERTED v0.1649 (dictation-newline smart indent), per Lynn's on-device test: it occasionally worked, but when it did, dictation got stuck silently buffering words until she manually toggled the mic off/on -- an active regression to dictation itself, worse than not having the feature at all. Likely cause: this app already recognizes 'insertFromSpeech' as a real inputType (see the beforeinput handler that predates this feature), confirming dictation keeps its own live session state tied to the field while listening -- the feature's raw `ed.value = ...` reassignment is a fundamentally different operation from a real keystroke and likely desynced that session. Not something to keep guessing at blind in the sandbox; a future attempt, if wanted, should try document.execCommand('insertText', ...) instead, which goes through the same insertion path a real keystroke uses -- but that too would need an on-device test, not just code existing. Suite unchanged: 277/277.
   v0.1649 - NEW (experimental): smart indent / auto continue / continueList now also fires for DICTATED "new line" pauses, per Lynn -- the existing keydown-based smart indent only ever saw a real Enter keypress, and iOS dictation inserts a newline directly with no corresponding keydown, so it was invisible to that path. Separate, narrowly-scoped 'input' listener on the main note editor (not the Edit Paragraph dialog, at least for now): only continues the list if (a) exactly one bare newline appeared with nothing else changed in the same edit, and (b) nothing further arrives during a 500ms pause window afterward, per Lynn's explicit request (she pauses after saying "new line"; continuous dictation through it should not trigger this). Two independent guards against the real risk this design is built around -- corrupting a multi-line PASTE by splicing list markers into the middle of it: inputType exclusion (insertFromPaste/insertFromDrop/delete*/history*/insertReplacementText all skip outright) plus a strict value-diff requiring the ENTIRE change to be exactly one inserted '\n', which any real paste fails regardless of inputType. Verified in the sandbox with synthetic input events covering all three cases (isolated newline continues correctly; a dispatched insertFromPaste multi-line block is completely untouched; a newline immediately followed by more input cancels the pending continuation) -- but this is the one feature this session that could NOT be verified end-to-end, since genuine iOS dictation event timing/shape can't be simulated here; on-device testing is what actually confirms it works, not this code existing. Suite unchanged: 277/277 (no new pure-function cases -- this is DOM-event-driven, not a testable pure function, same as the existing keydown smart indent).
   v0.1648 - FIX: numbered-list child items weren't restarting at 1, per Lynn's bug report -- confirmed via both the Indent/Unindent toolbar buttons (applyIndentToSelectedBlocks(), which just prepends/removes literal leading spaces -- no bug found there) and manually typing leading spaces in the textarea, both hitting the same root cause: computeOrderedListNumbers() honored whatever digit was already typed when starting ANY new nesting level, not just a genuinely fresh run -- so indenting an existing "4. Fourth" (digit left unchanged) kept showing "4." instead of restarting at "1." like every other outliner/word processor. Fixed: the typed start number is now honored ONLY when the stack was completely empty before the push (a real fresh run, e.g. "5. 5. 5." at the very top of a list, or the first item after a paragraph break); a new level nested under an existing parent always starts at 1, full stop. 3 new cases (v21) covering Lynn's exact scenario, the still-working fresh-run start-number case, and a return-then-renest case; existing 274 cases didn't happen to cover this gap. Suite: 277/277.
@@ -213,7 +219,7 @@
 
 <style>
 /* ===== GOOGLE FONTS ===== */
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Atkinson+Hyperlegible:wght@400;700&family=Merriweather:wght@300;400;700&family=Source+Sans+3:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&family=Nunito:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Caveat:wght@400;700&family=Patrick+Hand+SC&family=Google+Sans+Flex:wght@300..700&family=Afacad:ital,wght@0,400;0,700;1,400;1,700&family=Alegreya+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@300..700&family=Comic+Relief:wght@400;700&family=Edu+SA+Beginner:wght@400;700&family=Playwrite+NZ+Basic:wght@100;400&family=Spectral:ital,wght@0,300;0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Atkinson+Hyperlegible:wght@400;700&family=Atkinson+Hyperlegible+Next:wght@200..800&family=Mulish:wght@200..1000&family=Merriweather:wght@300;400;700&family=Source+Sans+3:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&family=Nunito:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Caveat:wght@400;700&family=Patrick+Hand+SC&family=Google+Sans+Flex:wght@300..700&family=Afacad:ital,wght@0,400;0,700;1,400;1,700&family=Alegreya+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@300..700&family=Comic+Relief:wght@400;700&family=Edu+SA+Beginner:wght@400;700&family=Playwrite+NZ+Basic:wght@100;400&family=Spectral:ital,wght@0,300;0,400;0,700;1,400&display=swap');
 
 /* ===== CSS VARIABLES ===== */
 :root {
@@ -6150,6 +6156,15 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <polyline points="7,10 3,12 7,14"/>
         </svg>
       </button>
+      <!-- v0.1653: Insert Date/Time button. In Typing mode inserts at the
+           cursor; in Read & Revise mode adds to the end of every selected
+           line (matching Indent/Dedent's own multi-line behavior). -->
+      <button class="icon-btn edit-only-btn" id="insert-datetime-btn" tabindex="-1" aria-label="Insert date and time" title="Insert Date/Time" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <polyline points="12 7 12 12 16 14"/>
+        </svg>
+      </button>
       <!-- v0.1593: caret nudge buttons — the user-facing answer to the iOS
            trackpad-mode WebKit bug (TODO #20): explicit cursor arrows that
            work identically on every platform. Press = one step; hold repeats. -->
@@ -6552,6 +6567,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <button class="font-face-arrow" id="font-face-arrow-left" aria-label="Scroll left">&#8249;</button>
     <div id="font-face-pills">
       <button class="font-face-pill" data-font="'Atkinson Hyperlegible', sans-serif" style="font-family:'Atkinson Hyperlegible', sans-serif">Atkinson</button>
+      <button class="font-face-pill" data-font="'Atkinson Hyperlegible Next', sans-serif" style="font-family:'Atkinson Hyperlegible Next', sans-serif">Atkinson Next</button>
+      <button class="font-face-pill" data-font="'Mulish', sans-serif" style="font-family:'Mulish', sans-serif">Mulish</button>
       <button class="font-face-pill" data-font="'Lexend', sans-serif" style="font-family:'Lexend', sans-serif">Lexend</button>
       <button class="font-face-pill" data-font="'Nunito', sans-serif" style="font-family:'Nunito', sans-serif">Nunito</button>
       <button class="font-face-pill" data-font="'Rubik', sans-serif" style="font-family:'Rubik', sans-serif">Rubik</button>
@@ -7624,6 +7641,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <select class="settings-select" id="font-select">
           <optgroup label="— Sans-serif —">
           <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
+          <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
+          <option value="'Mulish', sans-serif">Mulish</option>
           <option value="'Lexend', sans-serif">Lexend</option>
           <option value="'Nunito', sans-serif">Nunito</option>
           <option value="'Rubik', sans-serif">Rubik</option>
@@ -7673,6 +7692,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <select class="settings-select" id="notes-list-name-font-select">
           <option value="">Default (match general UI font)</option>
           <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
+          <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
+          <option value="'Mulish', sans-serif">Mulish</option>
           <option value="'Lexend', sans-serif">Lexend</option>
           <option value="'Nunito', sans-serif">Nunito</option>
           <option value="'Rubik', sans-serif">Rubik</option>
@@ -7705,6 +7726,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <select class="settings-select" id="notes-list-preview-font-select">
           <option value="">Default (match note font)</option>
           <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
+          <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
+          <option value="'Mulish', sans-serif">Mulish</option>
           <option value="'Lexend', sans-serif">Lexend</option>
           <option value="'Nunito', sans-serif">Nunito</option>
           <option value="'Rubik', sans-serif">Rubik</option>
@@ -8021,6 +8044,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+      <!-- v0.1651: from the spreadsheet's original planned-settings list.
+           App Theme bucket per profiles-note-styles-plan-v2.md — ready to
+           fold into a named App Theme once that save/apply UI exists. -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Disable scratch pad</div>
+          <div class="settings-row-desc">Turns off the quick-notes side panel (swipe in from the right edge of a note, or click near the edge with a mouse). It uses a smaller font and doesn't have the note pane's full set of features, so some app themes — especially ones meant for senior citizens — may prefer it off.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Disable scratch pad">
+          <input type="checkbox" id="disable-scratch-pad-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Show toolbar collapse button</div>
@@ -8168,6 +8204,8 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <select class="settings-select" id="note-font-select">
           <optgroup label="— Sans-serif —">
           <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
+          <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
+          <option value="'Mulish', sans-serif">Mulish</option>
           <option value="'Lexend', sans-serif">Lexend</option>
           <option value="'Nunito', sans-serif">Nunito</option>
           <option value="'Rubik', sans-serif">Rubik</option>
@@ -8303,6 +8341,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
               <button class="seg-btn" data-val="oldstyle-nums">Old Style</button>
               <button class="seg-btn" data-val="lining-nums">Lining</button>
             </div>
+            <!-- v0.1655: per Lynn -- slashed-zero is its OWN independent
+                 CSS keyword (combines with whichever of the above is also
+                 chosen; it isn't mutually exclusive with them the way
+                 Tabular/Old Style/Lining are with each other), so this is
+                 a separate checkbox rather than a 5th segmented option.
+                 Only has a visible effect if the current font happens to
+                 include a slashed-zero alternate glyph at all -- most
+                 don't, and there's no setting that can add one to a font
+                 that lacks it. -->
+            <label style="display:flex;align-items:center;gap:8px;margin-top:4px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+              <input type="checkbox" id="slashed-zero-toggle" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+              Slashed zero (draws 0 with a diagonal line through it, if the font supports it)
+            </label>
           </div>
 
           <!-- Disable Ligatures -->
@@ -8932,7 +8983,70 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         </label>
       </div>
 
-        
+<!-- v0.1653: Insert Date/Time toolbar button settings. Every option's
+     own label IS a live example (today's actual date/time), rather than
+     a raw format-string field -- Lynn's explicit design call for this
+     senior-citizen-friendly audience: tap what you see, never construct
+     a pattern. Live example text is filled in by JS (updateDtiExamples())
+     whenever Settings opens AND whenever any of these controls change,
+     so the preview always reflects the currently-selected combination,
+     not just today's date in isolation. -->
+<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div>
+          <div class="settings-row-label">Insert Date/Time button</div>
+          <div class="settings-row-desc">Choose what the Insert Date/Time toolbar button adds. In Typing mode it inserts at the cursor; in Read &amp; Revise mode it adds to the end of each selected line.</div>
+        </div>
+        <div class="settings-radio-group" id="dti-mode-seg">
+          <label class="settings-radio-label"><input type="radio" name="dti-mode" value="both"> Date and time — <span id="dti-example-both"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-mode" value="dateOnly"> Date only — <span id="dti-example-dateOnly"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-mode" value="timeOnly"> Time only — <span id="dti-example-timeOnly"></span></label>
+        </div>
+      </div>
+
+<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px" id="dti-date-style-row">
+        <div>
+          <div class="settings-row-label">Date style</div>
+          <div class="settings-row-desc">Each option shows today's date the way it will actually look.</div>
+        </div>
+        <div class="settings-radio-group" id="dti-date-style-seg">
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="abbrevYear"> <span id="dti-example-abbrevYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="fullYear"> <span id="dti-example-fullYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="usYear"> <span id="dti-example-usYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="usInformalYear4"> <span id="dti-example-usInformalYear4"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="usInformalYear2"> <span id="dti-example-usInformalYear2"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="intlYear"> <span id="dti-example-intlYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="iso"> <span id="dti-example-iso"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="abbrevNoYear"> <span id="dti-example-abbrevNoYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="fullNoYear"> <span id="dti-example-fullNoYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="usNoYear"> <span id="dti-example-usNoYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="usInformalNoYear"> <span id="dti-example-usInformalNoYear"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-date-style" value="intlNoYear"> <span id="dti-example-intlNoYear"></span></label>
+        </div>
+      </div>
+
+<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px" id="dti-dow-row">
+        <div>
+          <div class="settings-row-label">Day of week</div>
+          <div class="settings-row-desc">Shown just before the date, if you'd like it.</div>
+        </div>
+        <div class="settings-radio-group" id="dti-dow-seg">
+          <label class="settings-radio-label"><input type="radio" name="dti-dow" value="none"> None</label>
+          <label class="settings-radio-label"><input type="radio" name="dti-dow" value="full"> Full — <span id="dti-example-dow-full"></span></label>
+          <label class="settings-radio-label"><input type="radio" name="dti-dow" value="short"> Short — <span id="dti-example-dow-short"></span></label>
+        </div>
+      </div>
+
+<div class="settings-row" id="dti-seconds-row">
+        <div>
+          <div class="settings-row-label">Include seconds</div>
+          <div class="settings-row-desc">Example: <span id="dti-example-seconds"></span></div>
+        </div>
+        <label class="toggle-switch" aria-label="Include seconds">
+          <input type="checkbox" id="dti-seconds-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
 <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
         <div>
           <div class="settings-row-label">Default tags for new items</div>
@@ -10055,7 +10169,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1650';
+const APP_VERSION = '0.1656';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11259,6 +11373,14 @@ const DEFAULT_SETTINGS = {
   scratchPadText2: '', // page 2
   scratchPadText3: '', // page 3
   scratchPadPage: 1, // which page (1-3) was last shown
+  // v0.1651: from the spreadsheet's original "new settings I'd like to
+  // add" list (disableScratchPad) -- see the SETTING_BUCKETS comment
+  // that explicitly deferred it. App Theme bucket (per profiles-note-
+  // styles-plan-v2.md: "the pad is an app surface, not a note"), so it's
+  // ready to fold into a named App Theme once that save/apply UI exists
+  // -- e.g. a senior-citizen-oriented theme that hides the pad, since it
+  // uses a smaller font and lacks the note pane's full feature set.
+  disableScratchPad: false,
   tagColorBorders: false,
   tagColorPills: false,   // color tag pills by tag identity in R&R mode
   tagScope: 'block',
@@ -11310,7 +11432,7 @@ const DEFAULT_SETTINGS = {
   letterSpacing: null,      // em value or null = unset
   wordSpacing: null,        // em value or null = unset
   disableLigatures: false,  // font-variant-ligatures: none when true
-  fontVariantNumeric: null, // null=unset, or tabular-nums/oldstyle-nums/lining-nums
+  fontVariantNumeric: null, // null=unset, or a space-separated CSS font-variant-numeric value, e.g. tabular-nums / oldstyle-nums / lining-nums, optionally combined with slashed-zero (v0.1655) since that keyword is independent, not mutually exclusive with the others
   lightBgColor: '#f5f0e8',
   lightFgColor: '#2a2520',
   lightNotePreviewColor: '#6b6258',  // note preview text color in light mode (default = --fg2)
@@ -11377,6 +11499,16 @@ const DEFAULT_SETTINGS = {
   helpSectionStates: {},     // collapsed/expanded state for each Help dialog section, keyed by its stable HTML id
   indentSpaces: 4,             // spaces per indent/dedent action
   newItemDefaultTags: '',      // '@tag @tag2' auto-appended to new checkbox-ish items without tags (Note Behavior)
+  // v0.1653: Insert Date/Time toolbar button settings. Note Behavior
+  // bucket (not Note Appearance) -- same reasoning as newItemDefaultTags
+  // just above: this generates actual note CONTENT, not a visual choice,
+  // and Lynn was explicit that different notes might reasonably want
+  // different combinations here, so it's ready to fold into a Note Style
+  // once that save/apply UI exists.
+  insertDateTimeMode: 'both',      // 'both' | 'dateOnly' | 'timeOnly'
+  insertDateTimeDateStyle: 'abbrevYear', // one of the 9 formatDateOnly() style keys
+  insertDateTimeDayOfWeek: 'none', // 'none' | 'full' | 'short' -- prepended ahead of the date, ignored when mode is 'timeOnly'
+  insertDateTimeSeconds: false,    // include seconds in the time part; ignored when mode is 'dateOnly'
   checkAnimation: 'draw',      // check-off animation: 'none' | 'draw' | 'confetti' | 'both'
   defaultCheckboxIndent: 0,    // default indent levels for new checkbox/hyphen items
   // v0.1583: replaces the old binary toolbarHidden array. Sparse map of
@@ -11496,9 +11628,9 @@ const SETTING_BUCKETS_NOTE_BEHAVIOR = 'noteBehavior';
 const SETTING_BUCKETS_EXCLUDED = 'excluded';
 
 const SETTING_BUCKETS = {
-  // ---- GENERAL (47) ----
+  // ---- GENERAL (48) ----
   accentColor: SETTING_BUCKETS_GENERAL, convertTabsOnPaste: SETTING_BUCKETS_GENERAL, darkBgColor: SETTING_BUCKETS_GENERAL, darkFgColor: SETTING_BUCKETS_GENERAL, darkNotePreviewColor: SETTING_BUCKETS_GENERAL,
-  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL,
+  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL,
   globalViewOnly: SETTING_BUCKETS_GENERAL, lastSuffix: SETTING_BUCKETS_GENERAL, lightBgColor: SETTING_BUCKETS_GENERAL, lightFgColor: SETTING_BUCKETS_GENERAL, lightNotePreviewColor: SETTING_BUCKETS_GENERAL,
   lightNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, listMarginLeft: SETTING_BUCKETS_GENERAL, listMarginRight: SETTING_BUCKETS_GENERAL, matchGeneralNotesListEntryColors: SETTING_BUCKETS_GENERAL, noteEditingMode: SETTING_BUCKETS_GENERAL,
   notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
@@ -11518,9 +11650,10 @@ const SETTING_BUCKETS = {
   ruledLineTone: SETTING_BUCKETS_NOTE_APPEARANCE, rulerColor: SETTING_BUCKETS_NOTE_APPEARANCE, rulerOpacity: SETTING_BUCKETS_NOTE_APPEARANCE, rulerThickness: SETTING_BUCKETS_NOTE_APPEARANCE, showBlockRules: SETTING_BUCKETS_NOTE_APPEARANCE,
   showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE,
   tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE,
-  // ---- NOTE_BEHAVIOR (31) ----
+  // ---- NOTE_BEHAVIOR (35) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
   confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  insertDateTimeMode: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDateStyle: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDayOfWeek: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeSeconds: SETTING_BUCKETS_NOTE_BEHAVIOR,
   moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, checkAnimation: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR, plusSortedByTag: SETTING_BUCKETS_NOTE_BEHAVIOR,
   quietMode: SETTING_BUCKETS_NOTE_BEHAVIOR, showSpeakBtn: SETTING_BUCKETS_NOTE_BEHAVIOR, skipListMarkers: SETTING_BUCKETS_NOTE_BEHAVIOR, smartIndentBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColor: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -11885,6 +12018,8 @@ var updateHideCompletedIndicator = function() {}; // replaced in init
 var updateHideCompletedMenuLabel = function() {}; // replaced in init
 var updateSelectModeBtn = function() {}; // replaced in init
 var refreshScratchPad = function() {}; // replaced in init (scratch pad section)
+var closeScratchPadHook = function() {}; // replaced in init (scratch pad section) -- v0.1651, lets Settings force the pad closed if it's open when disableScratchPad gets turned on
+var updateDtiExamples = function() {}; // replaced in init (Insert Date/Time settings section) -- v0.1653, lets the settings-open sync code refresh the live example previews
 let settingsSnapshot = null; // copy of settings when dialog was opened
 
 // ===== STORAGE =====
@@ -12747,6 +12882,8 @@ function lightenHex(hex, percent) {
 // show their few discrete weights regardless of step size).
 var FONT_WEIGHT_SUPPORT = {
   "'Atkinson Hyperlegible', sans-serif": [400, 700],
+  "'Atkinson Hyperlegible Next', sans-serif": { min: 200, max: 800 },
+  "'Mulish', sans-serif": { min: 200, max: 1000 },
   "'Lexend', sans-serif": [400, 500, 600, 700],
   "'Nunito', sans-serif": [400, 500, 600, 700],
   "'Rubik', sans-serif": [400, 500, 600, 700],
@@ -16973,6 +17110,62 @@ function applyIndentToSelectedBlocks(isIndent) {
   }
 }
 
+// v0.1653: shared options builder so both insertion paths below (and
+// only those two) read settings the exact same way -- avoids the two
+// call sites drifting out of sync with each other over time.
+function _currentDtiOpts() {
+  return {
+    mode: settings.insertDateTimeMode || 'both',
+    dateStyle: settings.insertDateTimeDateStyle || 'abbrevYear',
+    dayOfWeek: settings.insertDateTimeDayOfWeek || 'none',
+    seconds: !!settings.insertDateTimeSeconds,
+    timeFormat: settings.timeFormat || '12h'
+  };
+}
+
+// R&R mode: adds the formatted date/time to the END of every selected
+// line -- same iterate-selectedBlocks-and-rewrite-lines shape as
+// applyIndentToSelectedBlocks above, just appending text instead of
+// adding/removing leading spaces.
+function applyInsertDateTimeToSelectedBlocks() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  pushUndo();
+  var n = notes[currentNoteId];
+  var lines = (n.content || '').split('\n');
+  var text = formatInsertDateTime(new Date(), _currentDtiOpts());
+
+  selectedBlocks.forEach(function(idx) {
+    if (idx < 0 || idx >= lines.length) return;
+    var trimmed = lines[idx].replace(/\s+$/, '');
+    lines[idx] = trimmed === '' ? text : trimmed + ' ' + text;
+  });
+
+  n.content = lines.join('\n');
+  saveNotes();
+
+  var viewer = document.getElementById('note-viewer');
+  if (viewer) {
+    renderViewer(n.content);
+    renderBlockSelections();
+    renderBlockSelections();
+  }
+}
+
+// Typing mode: inserts at the cursor (replacing any text selection),
+// same shape as the Paste button's own cursor-insertion.
+function insertDateTimeAtCursor() {
+  var ed = document.getElementById('note-editor');
+  if (!ed) return;
+  var text = formatInsertDateTime(new Date(), _currentDtiOpts());
+  var start = ed.selectionStart, end = ed.selectionEnd;
+  ed.value = ed.value.slice(0, start) + text + ed.value.slice(end);
+  var newPos = start + text.length;
+  ed.setSelectionRange(newPos, newPos);
+  ed.dispatchEvent(new Event('input', { bubbles: true }));
+  resizeEditor();
+  scheduleSave();
+}
+
 function resizeEditor() {
   var ed = document.getElementById('note-editor');
   if (!ed) return;
@@ -19114,6 +19307,17 @@ function openSettings() {
   var _ckaRadio = document.querySelector('#check-animation-seg input[value="' + _cka + '"]');
   if (_ckaRadio) _ckaRadio.checked = true;
 
+  // Insert Date/Time (v0.1653)
+  var _dtiModeRadio = document.querySelector('#dti-mode-seg input[value="' + (settings.insertDateTimeMode || 'both') + '"]');
+  if (_dtiModeRadio) _dtiModeRadio.checked = true;
+  var _dtiStyleRadio = document.querySelector('#dti-date-style-seg input[value="' + (settings.insertDateTimeDateStyle || 'abbrevYear') + '"]');
+  if (_dtiStyleRadio) _dtiStyleRadio.checked = true;
+  var _dtiDowRadio = document.querySelector('#dti-dow-seg input[value="' + (settings.insertDateTimeDayOfWeek || 'none') + '"]');
+  if (_dtiDowRadio) _dtiDowRadio.checked = true;
+  var _dtiSecToggle = document.getElementById('dti-seconds-toggle');
+  if (_dtiSecToggle) _dtiSecToggle.checked = !!settings.insertDateTimeSeconds;
+  if (typeof updateDtiExamples === 'function') updateDtiExamples();
+
   // Ruled lines / grid
   var _rls = settings.ruledLineStyle || 'none';
   var _rlsRadio = document.querySelector('#ruled-line-style-seg input[value="' + _rls + '"]');
@@ -19146,6 +19350,7 @@ function openSettings() {
 
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
   var esToggle=document.getElementById('edge-swipe-home-toggle'); if(esToggle)esToggle.checked=(settings.edgeSwipeToHome !== false);
+  var dspToggle=document.getElementById('disable-scratch-pad-toggle'); if(dspToggle)dspToggle.checked=!!settings.disableScratchPad;
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
   var debugLogToggle=document.getElementById('debug-logging-toggle'); if(debugLogToggle)debugLogToggle.checked=!!settings.debugLoggingEnabled;
   (function() {
@@ -19739,6 +19944,58 @@ function appendDefaultTagsToText(text, tagList) {
   return String(text == null ? '' : text).split('\n').map(function(l) {
     return appendDefaultTagsToLine(l, tagList);
   }).join('\n');
+}
+
+// computeDefaultTagInsertion(val, pos, tagList) -- v0.1652 FIX, per
+// Lynn's bug report. Pure function, extracted from the note editor's
+// Enter-keydown handler so this logic is actually testable (it wasn't
+// before, and that's exactly how the bug went unnoticed). Given the
+// textarea's full value and cursor position just after Enter (and any
+// smart indent) has landed, finds the item Enter just completed and
+// appends default tags to it via appendDefaultTagsToLine(). Returns
+// {value, pos} (the new textarea value and where the caret should end
+// up) or null if nothing should change.
+//
+// THE BUG: the original inline version assumed the completed item was
+// always exactly ONE line above the cursor's new line. That's only true
+// when smartIndentBlankLine (the "Double-space smart indent items"
+// setting) is OFF. When it's ON, smart indent inserts an EXTRA blank
+// line between the completed item and the new one -- so "one line up"
+// lands on that blank line instead, and appendDefaultTagsToLine() on an
+// empty line is always a no-op (nothing to append tags to). Lynn's
+// report that it worked "occasionally" with double-spacing on matches
+// this exactly: it only worked on presses where smart indent DIDN'T fire
+// at all (e.g. the previous line wasn't checkbox-ish, so no blank line
+// got inserted that time), never when it did.
+//
+// THE FIX: walk backward from the cursor's line, skipping ANY number of
+// purely-blank lines (not assuming exactly one), stopping at the first
+// actual non-blank line found -- that's always the item Enter completed,
+// regardless of the double-space setting or how many blank lines happen
+// to already be there.
+function computeDefaultTagInsertion(val, pos, tagList) {
+  if (!tagList) return null;
+  var nextNl = val.indexOf('\n', pos);
+  // Enter must have been at the end of its line: nothing may sit
+  // between the caret and the end of the caret's (new) line.
+  if (val.slice(pos, nextNl === -1 ? val.length : nextNl) !== '') return null;
+  var end = val.lastIndexOf('\n', pos - 1); // end of the line just above the cursor's line
+  if (end === -1) return null; // no newline actually landed
+  var prevStart, prevLine;
+  while (true) {
+    prevStart = val.lastIndexOf('\n', end - 1) + 1;
+    prevLine = val.slice(prevStart, end);
+    if (prevLine.trim() !== '') break; // found the nearest non-blank line
+    if (prevStart === 0) return null; // only blank lines above -- nothing to tag
+    end = prevStart - 1; // step up past this blank line's own leading newline
+  }
+  var newLine = appendDefaultTagsToLine(prevLine, tagList);
+  if (newLine === prevLine) return null;
+  var delta = newLine.length - prevLine.length;
+  return {
+    value: val.slice(0, prevStart) + newLine + val.slice(end),
+    pos: pos + delta
+  };
 }
 
 // Shared @token scanner for tag autocomplete (used by _tagAC's update()
@@ -21509,6 +21766,11 @@ function makeImportFolderName(label) {
     if (pageNum) pageNum.textContent = (_curPage + 1);
 
     function openScratchPad() {
+      // v0.1651: defense in depth -- the gesture/click handlers below
+      // already refuse to arm at all when disabled, but guarding here
+      // too means ANY future call site (or a stale reference) can never
+      // reopen a pad the user has explicitly turned off.
+      if (settings.disableScratchPad) return;
       // Refresh from settings when there's no unsaved typing pending —
       // covers content changed underneath us (e.g. a JSON import
       // restoring scratch pad pages), so the pad never shows stale text.
@@ -21525,6 +21787,7 @@ function makeImportFolderName(label) {
       ta.blur();
       if (window._boldCursorShowAll) window._boldCursorShowAll();
     }
+    closeScratchPadHook = closeScratchPad; // v0.1651: lets Settings force-close it
 
     // Debounced save — mirrors the note editor's own debounce delay,
     // since this can be typed in just as continuously. Always writes to
@@ -21671,6 +21934,7 @@ function makeImportFolderName(label) {
     var OPEN_H_RATIO = 2.5;
     var _openStartX = null, _openStartY = null;
     document.getElementById('note-screen').addEventListener('touchstart', function(e) {
+      if (settings.disableScratchPad) { _openStartX = null; return; }
       if (e.touches.length !== 1 || e.touches[0].clientX < window.innerWidth - OPEN_EDGE_ZONE - 1) {
         _openStartX = null; return;
       }
@@ -21682,6 +21946,7 @@ function makeImportFolderName(label) {
       var dx = e.changedTouches[0].clientX - _openStartX;
       var dy = e.changedTouches[0].clientY - _openStartY;
       _openStartX = null; _openStartY = null;
+      if (settings.disableScratchPad) return;
       if (!document.body.classList.contains('note-screen-active')) return;
       if (_anyDialogOpen()) return;
       if (panel.classList.contains('open')) return; // already open — let the handle's own gesture close it
@@ -21690,6 +21955,33 @@ function makeImportFolderName(label) {
       if (Math.abs(dx) < Math.abs(dy) * OPEN_H_RATIO) return;
       openScratchPad();
     }, { passive: true });
+
+    // v0.1651: mouse equivalent, per Lynn — a swipe gesture doesn't
+    // translate to a mouse, so a plain click in a thin zone right at the
+    // edge of the note content pane opens the pad instead. Gated on
+    // `(hover: hover)`, the same media feature this app already uses
+    // throughout for "this is a mouse/trackpad, not a touch-only device"
+    // (see the many existing @media (hover: hover) CSS rules) — so this
+    // never adds an extra tap target on phones/tablets that don't have
+    // one. Measures against the note content pane's own right edge
+    // (getBoundingClientRect) rather than the whole window, in case a
+    // future desktop layout ever puts something else to the right of it;
+    // falls back to window.innerWidth if that element isn't found.
+    var MOUSE_OPEN_EDGE_ZONE = 12;
+    var _hasHoverMouse = window.matchMedia && window.matchMedia('(hover: hover)').matches;
+    if (_hasHoverMouse) {
+      document.getElementById('note-screen').addEventListener('click', function(e) {
+        if (settings.disableScratchPad) return;
+        if (!document.body.classList.contains('note-screen-active')) return;
+        if (_anyDialogOpen()) return;
+        if (panel.classList.contains('open')) return;
+        var contentArea = document.getElementById('note-content-area');
+        var rightEdge = contentArea ? contentArea.getBoundingClientRect().right : window.innerWidth;
+        if (e.clientX < rightEdge - MOUSE_OPEN_EDGE_ZONE - 1) return;
+        if (e.clientX > rightEdge + 1) return; // outside the pane entirely
+        openScratchPad();
+      });
+    }
 
     // Close gesture: swipe right starting on the handle itself
     var CLOSE_SWIPE_MIN = 40;
@@ -21711,6 +22003,20 @@ function makeImportFolderName(label) {
       if (dx < Math.abs(dy) * CLOSE_H_RATIO) return;
       closeScratchPad();
     }, { passive: true });
+
+    // v0.1651: mouse equivalent — a plain click on the handle closes the
+    // pad. Same (hover: hover) gate as the open zone above; on a touch
+    // device this listener still exists but is harmless; the swipe
+    // gesture above already handles touch closing, and a tap that isn't
+    // a swipe just does nothing extra here since touchend for a simple
+    // tap has |dx| below CLOSE_SWIPE_MIN, so both can coexist safely —
+    // this only actually acts on devices with a real mouse.
+    if (_hasHoverMouse) {
+      handle.addEventListener('click', function(e) {
+        if (_anyDialogOpen()) return;
+        closeScratchPad();
+      });
+    }
   })();
 
   // Show on first launch
@@ -22098,6 +22404,7 @@ function makeImportFolderName(label) {
     { id: 'move-mode-btn',           label: 'Move line' },
     { id: 'indent-btn',             label: 'Indent' },
     { id: 'dedent-btn',             label: 'Unindent' },
+    { id: 'insert-datetime-btn',    label: 'Insert Date/Time' },
     { id: 'caret-left-btn',         label: 'Cursor left' },
     { id: 'caret-right-btn',        label: 'Cursor right' },
     { id: 'caret-up-btn',           label: 'Cursor up' },
@@ -22138,7 +22445,7 @@ function makeImportFolderName(label) {
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['quick-add-btn', 'tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'caret-left-btn', 'caret-right-btn', 'caret-up-btn', 'caret-down-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['quick-add-btn', 'tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'insert-datetime-btn', 'caret-left-btn', 'caret-right-btn', 'caret-up-btn', 'caret-down-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -22502,8 +22809,8 @@ function makeImportFolderName(label) {
       if (isEditOnlyBtn && isViewMode)  shouldShow = false;
       if (isKbHide && kbOpen)           shouldShow = false;
       if (isKbOnly && !kbOpen)          shouldShow = false;
-      // indent/dedent/code-fence always show in More menu (with muted hint if no blocks)
-      if (btnId === 'indent-btn' || btnId === 'dedent-btn' || btnId === 'code-fence-btn') shouldShow = true;
+      // indent/dedent/code-fence/insert-datetime always show in More menu (with muted hint if no blocks)
+      if (btnId === 'indent-btn' || btnId === 'dedent-btn' || btnId === 'code-fence-btn' || btnId === 'insert-datetime-btn') shouldShow = true;
       // (dictate-btn's own display-based check used to live here, but
       // dictate-btn is now in DUAL_MODE_BUTTON_IDS and returns early above
       // — it never reaches this point, since more-dictate-btn's static
@@ -23758,6 +24065,27 @@ function makeImportFolderName(label) {
     }
   });
 
+  // v0.1653: Insert Date/Time button. View mode: appends to every
+  // selected line (per Lynn's explicit choice). Typing mode: inserts at
+  // the cursor, replacing any text selection -- no "select lines first"
+  // requirement there, since the cursor position itself IS the target.
+  document.getElementById('insert-datetime-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('insert-datetime-btn').addEventListener('click', function() {
+    if (isViewMode) {
+      if (selectedBlocks.size > 0) {
+        applyInsertDateTimeToSelectedBlocks();
+      } else {
+        showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn();
+      }
+    } else {
+      if (document.activeElement !== noteEditor) {
+        showToast('Tap in the note text first', false);
+        return;
+      }
+      insertDateTimeAtCursor();
+    }
+  });
+
   // ===== CODE BLOCK BUTTON =====
   // View mode: wraps the entire selected block range in one fence pair
   // (matching every other formatting button's selected-blocks convention).
@@ -23944,26 +24272,19 @@ function makeImportFolderName(label) {
   // caret then shifts by exactly the appended length. Known accepted edge:
   // Enter at the end of an EXISTING untagged item also appends (a textarea
   // can't reliably distinguish new lines from old ones).
+  // v0.1652: position-finding logic moved into computeDefaultTagInsertion()
+  // (see its own header comment) -- fixes the double-space-setting bug
+  // Lynn reported, and makes this actually testable, which is exactly
+  // what let the bug go unnoticed for as long as it did.
   noteEditor.addEventListener('keydown', function(e) {
     if (e.key !== 'Enter' || e.isComposing) return;
     var _tagList = normalizeTagListSetting(settings.newItemDefaultTags) || '';
     if (!_tagList) return;
     setTimeout(function() {
-      var val = noteEditor.value;
-      var pos = noteEditor.selectionStart;
-      var nextNl = val.indexOf('\n', pos);
-      // Enter must have been at the end of its line: nothing may sit
-      // between the caret and the end of the caret's (new) line.
-      if (val.slice(pos, nextNl === -1 ? val.length : nextNl) !== '') return;
-      var nlBefore = val.lastIndexOf('\n', pos - 1);
-      if (nlBefore === -1) return; // no newline actually landed
-      var prevStart = val.lastIndexOf('\n', nlBefore - 1) + 1;
-      var prevLine = val.slice(prevStart, nlBefore);
-      var newLine = appendDefaultTagsToLine(prevLine, _tagList);
-      if (newLine === prevLine) return;
-      noteEditor.value = val.slice(0, prevStart) + newLine + val.slice(nlBefore);
-      var delta = newLine.length - prevLine.length;
-      noteEditor.setSelectionRange(pos + delta, pos + delta);
+      var result = computeDefaultTagInsertion(noteEditor.value, noteEditor.selectionStart, _tagList);
+      if (!result) return;
+      noteEditor.value = result.value;
+      noteEditor.setSelectionRange(result.pos, result.pos);
       // Standard pipeline (scheduleSave, dirty-flag, resize) via a
       // synthetic input event -- same pattern as _insertTag.
       noteEditor.dispatchEvent(new Event('input', { bubbles: true }));
@@ -28294,6 +28615,7 @@ function makeImportFolderName(label) {
     { id: 'dismiss-keyboard-btn', name: 'Done typing',        desc: 'Dismiss the keyboard without leaving the note.' },
     { id: 'indent-btn',           name: 'Indent',             desc: 'Indent the selected line(s) one level to the right.' },
     { id: 'dedent-btn',           name: 'Unindent',           desc: 'Move the selected line(s) one indent level to the left.' },
+    { id: 'insert-datetime-btn',  name: 'Insert Date/Time',   desc: 'In Typing mode, inserts the current date/time at the cursor. In Read & Revise mode, adds it to the end of each selected line. Choose what it inserts in Settings.' },
     { id: 'caret-left-btn',       name: 'Cursor left',        desc: 'Move the typing cursor one character to the left. Hold to repeat.' },
     { id: 'caret-right-btn',      name: 'Cursor right',       desc: 'Move the typing cursor one character to the right. Hold to repeat.' },
     { id: 'caret-up-btn',         name: 'Cursor up',          desc: 'Move the typing cursor up one line, keeping the same column. Hold to repeat.' },
@@ -28772,17 +29094,43 @@ function makeImportFolderName(label) {
       }, false, 'Cancel', null, 'centered');
   });
 
-  // Font variant numeric
+  // Font variant numeric -- v0.1655: slashed-zero is an INDEPENDENT CSS
+  // keyword, combinable with the main choice (e.g. "tabular-nums
+  // slashed-zero" is valid and different from either alone), so the
+  // stored value is built from both controls together rather than either
+  // one alone overwriting the setting.
+  function _dtiNumericTokens() {
+    return (settings.fontVariantNumeric || '').split(' ').filter(Boolean);
+  }
+  function _dtiNumericMainToken() {
+    return _dtiNumericTokens().filter(function(t) { return t !== 'slashed-zero'; })[0] || '';
+  }
+  function _dtiNumericHasSlashedZero() {
+    return _dtiNumericTokens().indexOf('slashed-zero') !== -1;
+  }
+  function _dtiSetNumericValue(mainVal, slashedOn) {
+    var parts = [];
+    if (mainVal) parts.push(mainVal);
+    if (slashedOn) parts.push('slashed-zero');
+    settings.fontVariantNumeric = parts.length ? parts.join(' ') : null;
+  }
   document.getElementById('font-variant-numeric-seg').addEventListener('click', function(e) {
     var btn = e.target.closest('.seg-btn');
     if (!btn) return;
     var val = btn.dataset.val;
-    settings.fontVariantNumeric = val || null;
+    _dtiSetNumericValue(val || '', _dtiNumericHasSlashedZero());
     document.querySelectorAll('#font-variant-numeric-seg .seg-btn').forEach(function(b) {
       b.classList.toggle('active', b.dataset.val === (val || ''));
     });
     applySettings(); updateSaveBtnState();
   });
+  var _szToggle = document.getElementById('slashed-zero-toggle');
+  if (_szToggle) {
+    _szToggle.addEventListener('change', function() {
+      _dtiSetNumericValue(_dtiNumericMainToken(), this.checked);
+      applySettings(); updateSaveBtnState();
+    });
+  }
 
   function _syncAdvTypographyUI() {
     var lhr = document.getElementById('line-height-range');
@@ -28798,10 +29146,12 @@ function makeImportFolderName(label) {
     if (psv) psv.textContent = String(psVal.toFixed(1)).replace(/\.?0+$/, '') + ' em';
     _updateLetterSpacingUI();
     _updateWordSpacingUI();
-    var cur = settings.fontVariantNumeric || '';
+    var cur = _dtiNumericMainToken();
     document.querySelectorAll('#font-variant-numeric-seg .seg-btn').forEach(function(b) {
       b.classList.toggle('active', b.dataset.val === cur);
     });
+    var szt = document.getElementById('slashed-zero-toggle');
+    if (szt) szt.checked = _dtiNumericHasSlashedZero();
   }
 
 
@@ -28851,6 +29201,11 @@ function makeImportFolderName(label) {
   });
   document.getElementById('edge-swipe-home-toggle').addEventListener('change', function() {
     settings.edgeSwipeToHome = this.checked;
+    updateSaveBtnState();
+  });
+  document.getElementById('disable-scratch-pad-toggle').addEventListener('change', function() {
+    settings.disableScratchPad = this.checked;
+    if (this.checked) closeScratchPadHook();
     updateSaveBtnState();
   });
   document.getElementById('show-toolbar-collapse-tab-toggle').addEventListener('change', function() {
@@ -28947,6 +29302,73 @@ function makeImportFolderName(label) {
       updateSaveBtnState();
     });
   });
+
+  // v0.1653: Insert Date/Time — refresh every example span from the
+  // CURRENTLY CHECKED radios/toggle (not settings.*, which may not be
+  // saved yet), so the preview updates instantly as the user experiments
+  // before tapping Save. Also shows/hides the Date style and Day of week
+  // rows (meaningless when Time only is selected) and the Include
+  // seconds row (meaningless when Date only is selected).
+  function _updateDtiExamplesImpl() {
+    var now = new Date();
+    var mode = (document.querySelector('#dti-mode-seg input:checked') || {}).value || 'both';
+    var dateStyle = (document.querySelector('#dti-date-style-seg input:checked') || {}).value || 'abbrevYear';
+    var dayOfWeek = (document.querySelector('#dti-dow-seg input:checked') || {}).value || 'none';
+    var seconds = !!(document.getElementById('dti-seconds-toggle') || {}).checked;
+    var timeFormat = settings.timeFormat || '12h';
+
+    ['both', 'dateOnly', 'timeOnly'].forEach(function(m) {
+      var el = document.getElementById('dti-example-' + m);
+      if (el) el.textContent = formatInsertDateTime(now, { mode: m, dateStyle: dateStyle, dayOfWeek: dayOfWeek, seconds: seconds, timeFormat: timeFormat });
+    });
+    ['abbrevYear', 'abbrevNoYear', 'fullYear', 'fullNoYear', 'usYear', 'usNoYear', 'usInformalNoYear', 'usInformalYear2', 'usInformalYear4', 'intlYear', 'intlNoYear', 'iso'].forEach(function(s) {
+      var el = document.getElementById('dti-example-' + s);
+      if (el) el.textContent = formatDateOnly(now, s);
+    });
+    var dowFullEl = document.getElementById('dti-example-dow-full');
+    if (dowFullEl) dowFullEl.textContent = _DTI_DAY_FULL[now.getDay()];
+    var dowShortEl = document.getElementById('dti-example-dow-short');
+    if (dowShortEl) dowShortEl.textContent = _DTI_DAY_SHORT[now.getDay()];
+    var secEl = document.getElementById('dti-example-seconds');
+    if (secEl) secEl.textContent = formatTimeOnly(now, timeFormat, true);
+
+    var styleRow = document.getElementById('dti-date-style-row');
+    var dowRow = document.getElementById('dti-dow-row');
+    var secRow = document.getElementById('dti-seconds-row');
+    if (styleRow) styleRow.style.display = (mode === 'timeOnly') ? 'none' : '';
+    if (dowRow) dowRow.style.display = (mode === 'timeOnly') ? 'none' : '';
+    if (secRow) secRow.style.display = (mode === 'dateOnly') ? 'none' : '';
+  }
+  document.querySelectorAll('#dti-mode-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.insertDateTimeMode = this.value;
+      updateDtiExamples();
+      updateSaveBtnState();
+    });
+  });
+  document.querySelectorAll('#dti-date-style-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.insertDateTimeDateStyle = this.value;
+      updateDtiExamples();
+      updateSaveBtnState();
+    });
+  });
+  document.querySelectorAll('#dti-dow-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.insertDateTimeDayOfWeek = this.value;
+      updateDtiExamples();
+      updateSaveBtnState();
+    });
+  });
+  var _dtiSecondsToggleEl = document.getElementById('dti-seconds-toggle');
+  if (_dtiSecondsToggleEl) {
+    _dtiSecondsToggleEl.addEventListener('change', function() {
+      settings.insertDateTimeSeconds = this.checked;
+      updateDtiExamples();
+      updateSaveBtnState();
+    });
+  }
+  updateDtiExamples = _updateDtiExamplesImpl;
   var _ruledNudgeSlider = document.getElementById('ruled-line-nudge-slider');
   var _ruledNudgeVal = document.getElementById('ruled-line-nudge-val');
   if (_ruledNudgeSlider) {
@@ -30393,6 +30815,10 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     var showIndent = !inView || hasBlocks;
     if (indentBtn) indentBtn.style.display = showIndent ? '' : 'none';
     if (dedentBtn) dedentBtn.style.display = showIndent ? '' : 'none';
+
+    // Insert Date/Time: same rule as indent/dedent above (v0.1653)
+    var insertDatetimeBtn = document.getElementById('insert-datetime-btn');
+    if (insertDatetimeBtn) insertDatetimeBtn.style.display = showIndent ? '' : 'none';
 
     // Code block button: edit mode, OR view mode with blocks selected
     // (same rule as indent/dedent above — it now works in both modes)
@@ -35593,6 +36019,88 @@ var _updatingTimestamp = false;
 // ANYWHERE in a block — not just at the start. Detection must NOT use ^ anchors.
 // Exception: [tag order] MUST be at the start of the block (it is structural).
 var _lastModifiedRegex = /\[last modified\]/i;
+
+// ===== INSERT DATE/TIME toolbar button (v0.1653) =====
+// Pure, testable formatting functions -- deliberately separate from
+// _formatTimestamp() below, which is hardwired to the "[last modified]"
+// tag's own fixed ISO+12h/24h style and isn't reusable as-is. All
+// settings are passed explicitly (never read from the global `settings`
+// object inside these functions) so they're cleanly unit-testable via
+// the harness, the same discipline every other pure function added this
+// session follows.
+var _DTI_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var _DTI_MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var _DTI_DAY_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var _DTI_DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+// The 9 date styles offered in Settings -- each one IS its own live
+// example when rendered with today's date, per Lynn's explicit design
+// call to avoid a raw format-string field entirely (senior-user
+// audience). No "ISO, no year" variant -- ISO is defined as year-first,
+// so a no-year version isn't really the same standard anymore.
+function formatDateOnly(now, style) {
+  var yr = now.getFullYear();
+  var moNum = now.getMonth(); // 0-indexed
+  var dy = now.getDate();
+  var mo2 = String(moNum + 1).padStart(2, '0');
+  var dy2 = String(dy).padStart(2, '0');
+  switch (style) {
+    case 'abbrevYear':   return _DTI_MONTH_ABBR[moNum] + ' ' + dy + ', ' + yr;
+    case 'abbrevNoYear': return _DTI_MONTH_ABBR[moNum] + ' ' + dy;
+    case 'fullYear':     return _DTI_MONTH_FULL[moNum] + ' ' + dy + ', ' + yr;
+    case 'fullNoYear':   return _DTI_MONTH_FULL[moNum] + ' ' + dy;
+    case 'usYear':       return mo2 + '/' + dy2 + '/' + yr;
+    case 'usNoYear':     return mo2 + '/' + dy2;
+    // v0.1654: informal US styles, no leading zeros -- per Lynn, this is
+    // what people commonly type or handwrite when given free choice
+    // (vs. the padded usYear/usNoYear above, more of a forms/spreadsheet
+    // convention). Kept as separate style keys alongside the padded
+    // versions rather than replacing them -- both are offered.
+    case 'usInformalNoYear': return (moNum + 1) + '/' + dy;
+    case 'usInformalYear2':  return (moNum + 1) + '/' + dy + '/' + String(yr).slice(-2);
+    case 'usInformalYear4':  return (moNum + 1) + '/' + dy + '/' + yr;
+    case 'intlYear':     return dy2 + '/' + mo2 + '/' + yr;
+    case 'intlNoYear':   return dy2 + '/' + mo2;
+    case 'iso':          return yr + '-' + mo2 + '-' + dy2;
+    default:              return _DTI_MONTH_ABBR[moNum] + ' ' + dy + ', ' + yr;
+  }
+}
+
+// Time-only formatting, reusing the same 12h/24h convention
+// _formatTimestamp already uses, plus the new optional seconds.
+function formatTimeOnly(now, timeFormat, withSeconds) {
+  var h = now.getHours();
+  var mm = String(now.getMinutes()).padStart(2, '0');
+  var ss = withSeconds ? ':' + String(now.getSeconds()).padStart(2, '0') : '';
+  if (timeFormat === '24h') {
+    return String(h).padStart(2, '0') + ':' + mm + ss;
+  }
+  var ampm = h >= 12 ? 'pm' : 'am';
+  var h12 = h % 12; if (h12 === 0) h12 = 12;
+  return h12 + ':' + mm + ss + ampm;
+}
+
+// The single entry point the toolbar button (and the Settings preview
+// labels) both call. opts: { mode: 'both'|'dateOnly'|'timeOnly',
+// dateStyle, dayOfWeek: 'none'|'full'|'short', seconds: bool, timeFormat
+// (the existing 12h/24h setting, passed through unchanged) }. Day of
+// week only applies when a date is actually being shown -- prepended as
+// "Thu, " / "Thursday, " ahead of the date style, the same convention
+// calendar apps and email clients already use.
+function formatInsertDateTime(now, opts) {
+  var mode = opts.mode || 'both';
+  var parts = [];
+  if (mode !== 'timeOnly') {
+    var dateStr = formatDateOnly(now, opts.dateStyle);
+    if (opts.dayOfWeek === 'full') dateStr = _DTI_DAY_FULL[now.getDay()] + ', ' + dateStr;
+    else if (opts.dayOfWeek === 'short') dateStr = _DTI_DAY_SHORT[now.getDay()] + ', ' + dateStr;
+    parts.push(dateStr);
+  }
+  if (mode !== 'dateOnly') {
+    parts.push(formatTimeOnly(now, opts.timeFormat, !!opts.seconds));
+  }
+  return parts.join(', ');
+}
 
 function _formatTimestamp() {
   var now = new Date();
