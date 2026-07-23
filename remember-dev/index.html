@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1656 -->
+<!-- Remember App - Version 0.1658 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1656
+  Version 0.1658
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1658 - NEW: the delete guard dialog now reads differently when the deletion was actually a cut, per Lynn -- the old wording ("You deleted a lot of text" / "Go ahead and delete" / "Undo deletion") was scary and misleading when the text was already safely on the clipboard. Root cause of the inconsistent "Cut to clipboard" toast she noticed: the app's own scissor button always wrote to the clipboard explicitly, but there was no listener anywhere for the browser's NATIVE cut event, which fires for the OS/browser popup-menu Cut and any keyboard shortcut -- those cuts were completely invisible to the app. Added a native 'cut' listener on note-editor (sets a shared, short-lived _lastCutAt timestamp) alongside the scissor button now setting the same flag directly (its own primary path uses writeClipboardSafe + setRangeText, not the native cut command, so the listener alone wouldn't have seen it). The delete guard's existing 600ms-delayed check consumes this flag (2-second window, generous enough to survive that delay, tight enough not to misattribute a later unrelated delete) and swaps in reassuring wording when it applies: "You cut a lot of text" / "...it's on your clipboard, ready to paste..." / "Go ahead and remove it" / "Undo the cut" -- same button roles as before, still avoiding the earlier "keep the deletion" oxymoron trap. Verified end-to-end in the sandbox: plain deletion still shows the original wording unchanged; both the native-cut path and the scissor-button path correctly show the new wording. Suite unchanged: 307/307.
+  v0.1657 - FIX (probable): pinch-zoom getting stuck disabled on iOS PWA, per Lynn's bug report -- confirmed root cause by inspection of the existing v0.1580 dynamic-viewport-cap mechanism (caps maximum-scale to 1 while a text field is focused, to suppress iOS's auto-zoom-on-small-font-focus, restoring it ~350ms after focusout). iOS can suspend a backgrounded PWA WHILE a text field is focused -- backgrounding mid-typing is completely normal -- without ever firing focusout for it; document.activeElement can still report that field focused once the app resumes even though the keyboard is gone, so the cap-restore logic (which only listens for focusout) never runs and stays stuck capped indefinitely. Matches Lynn's report closely: fixed by entering/exiting Typing mode (produces a fresh, genuine focusout), described as happening after backgrounding, no periodic timer anywhere in the file that would explain a spontaneous ~10-second self-fix (more likely how long it took to notice a fix from something she'd just done). FIX: a new visibilitychange listener inside the same IIFE (kept separate from the existing, unrelated v0.1507 visibilitychange handler, which only fires on 'hidden' for select-mode/speech and doesn't share this one's private state) re-derives the truth directly from document.activeElement on resume, instead of trusting whatever stale cap state predates the suspension. Verified the logic in the sandbox (stuck-capped state + focus genuinely moved away -> visibilitychange correctly force-restores immediately; focus still genuinely on a field -> correctly stays capped, unchanged behavior) -- but flagged as "probable", not confirmed, since an actual iOS suspend-without-focusout cycle can't be simulated here; this is the one thing only an on-device test after real backgrounding can fully confirm. Suite unchanged: 307/307.
   v0.1656 - NEW: two fonts added, per Lynn -- Atkinson Hyperlegible Next (added alongside the existing default Atkinson Hyperlegible, not replacing it, so she can compare and remove the original later if she decides to) and Mulish, both requested by name. Both are genuine Google Fonts variable fonts, confirmed exact weight-axis ranges before adding (Next: 200-800, ExtraLight-ExtraBold; Mulish: 200-1000) rather than guessing -- added to the single shared Google Fonts @import URL every other font in this app already loads from (one more family= clause each, same variable-range syntax Inter already uses), plus a quick-pick pill, an <option> in all 4 font dropdowns, and a {min,max} entry in the weight-range registry (the same object shape Inter/Google Sans Flex already use, since both are real variable fonts, not discrete static weights). No structural changes -- this followed the exact existing per-font list pattern throughout. Suite unchanged: 307/307.
   v0.1655 - NEW: "Slashed zero" checkbox added to Settings > Number Style, per Lynn. Implemented as an independent checkbox, not a 5th segmented-control option, because slashed-zero is genuinely a separate CSS font-variant-numeric keyword that COMBINES with Tabular/Old Style/Lining rather than being mutually exclusive with them (e.g. "tabular-nums slashed-zero" is one valid, different value from either alone) -- confirmed this is how the spec actually works before building it as a single 5-way exclusive choice, which would have silently prevented combining tabular numbers with a slashed zero, a completely reasonable thing to want together. settings.fontVariantNumeric now stores a space-separated combination; new helpers _dtiNumericMainToken()/_dtiNumericHasSlashedZero()/_dtiSetNumericValue() parse and rebuild it from the two independent UI controls. Verified end-to-end: enabling Tabular + slashed zero, switching the main style back to Default, confirms slashed-zero survives the switch (value correctly becomes "slashed-zero" alone rather than being lost), then disabling it fully clears the setting. Purely cosmetic when the current font has no slashed-zero alternate glyph -- flagged clearly in the row's own description, not a bug when nothing visibly changes. No new setting key added (reused the existing fontVariantNumeric slot), so no SETTING_BUCKETS change needed. Suite unchanged: 307/307.
   v0.1654 - Added 3 informal US date styles to Insert Date/Time, per Lynn: usInformalNoYear (7/23), usInformalYear2 (7/23/26), usInformalYear4 (7/23/2026) -- no leading zeros on month/day, distinct from the existing padded usYear/usNoYear (07/23/2026 / 07/23), which stay as their own separate options rather than being replaced (both offered side by side). Matches what people commonly type or handwrite when given free choice, vs. the padded style being more of a forms/spreadsheet-sorting convention. Did NOT add international (day-first) informal equivalents this build -- flagged genuine uncertainty about exactly how universal no-leading-zero informal writing is across non-US regions (day-first order and dropped-leading-zeros both do occur elsewhere, e.g. the UK, but confidence is lower than for the well-established US convention); worth confirming with more certainty or actual regional feedback before adding those as their own options. 4 new cases (v24)/goldens (v25), including a single-digit-month-and-day case. Suite: 307/307.
@@ -10169,7 +10171,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1656';
+const APP_VERSION = '0.1658';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -10238,6 +10240,46 @@ const APP_VERSION = '0.1656';
   document.addEventListener('focusout', function(e) {
     if (_isTextField(e.target)) _scheduleFree();
   }, true);
+
+  // v0.1657 FIX, per Lynn's bug report (pinch-zoom gets stuck disabled,
+  // seemingly after backgrounding the PWA on iOS while typing, until she
+  // does something like entering/exiting Typing mode -- which produces a
+  // fresh, genuine focusout). Root cause, by inspection: iOS can suspend
+  // a backgrounded PWA while a text field is focused WITHOUT ever firing
+  // focusout for it -- backgrounding mid-typing is completely normal,
+  // and document.activeElement can still report that field as focused
+  // once the app resumes, even though the on-screen keyboard is gone. If
+  // that happens, _scheduleFree() is never called, _capped stays true
+  // forever, and nothing will ever un-stick it on its own -- there's no
+  // periodic timer anywhere in this file that would explain "it fixes
+  // itself after ~10 seconds"; that's more likely how long it took to
+  // notice a fix already took effect from something she'd just done,
+  // not an automatic recovery. This is a genuine gap: NEITHER touchstart
+  // nor focusin/focusout can detect "the app was suspended and resumed"
+  // on their own -- visibilitychange is the one signal that can. On
+  // resume, re-derive the truth directly from document.activeElement
+  // instead of trusting whatever _capped/_restoreTimer state predates
+  // the suspension -- if a field is genuinely still focused, the cap is
+  // correctly kept (unchanged behavior); otherwise it's force-cleared
+  // immediately rather than waiting for a focusout that may never come.
+  // A second, separate visibilitychange listener elsewhere in this file
+  // (v0.1507) intentionally only fires on 'hidden', for an unrelated
+  // concern (select mode / speech) with its own private state -- this
+  // one lives here instead of being merged into that one because it
+  // needs this IIFE's own private _cap/_capped/_restoreTimer/vp, and
+  // fires on the opposite transition ('visible'). Kept genuinely
+  // impossible to verify end-to-end without a real device: nothing can
+  // simulate an actual iOS app-suspend-and-resume cycle here.
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState !== 'visible') return;
+    if (_restoreTimer) { clearTimeout(_restoreTimer); _restoreTimer = null; }
+    if (_isTextField(document.activeElement)) {
+      _cap();
+    } else {
+      _capped = false;
+      vp.setAttribute('content', FREE);
+    }
+  });
 })();
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
@@ -17406,6 +17448,17 @@ function updateSpeakBtnState() {
 }
 
 var _deleteGuardTimer = null;
+// v0.1658: shared "a cut just happened" signal, per Lynn -- set both by
+// the app's own scissor button (delete-line-btn) AND by a native 'cut'
+// ClipboardEvent listener below (covers the OS/browser popup-menu Cut
+// and any keyboard shortcut, which the app previously had zero
+// visibility into -- neither the app's own writeClipboardSafe path nor
+// this native listener existed together before, which is exactly why
+// the "Cut to clipboard" toast only showed up sometimes). The delete
+// guard check below consumes (and clears) this within a short window so
+// it can only ever apply to the deletion that actually triggered it, not
+// some later, unrelated one.
+var _lastCutAt = 0;
 function scheduleSave() {
   if (saveTimeout) clearTimeout(saveTimeout);
   // Cancel any pending delete guard check — new input arrived
@@ -17446,17 +17499,27 @@ function scheduleSave() {
       // Wording deliberately avoids "keep the deletion" — testers found it
       // oxymoron-like and had to stop and think which button meant what.
       var _kbLikely = !isViewMode && document.activeElement === currentEditor;
+      // v0.1658: was this deletion actually a cut (text safely on the
+      // clipboard already)? Consume the flag immediately so it can never
+      // apply to some later, unrelated deletion. 2-second window is
+      // generous enough to survive the guard's own 600ms delay plus
+      // dialog positioning, tight enough not to misattribute a real
+      // delete that merely happens soon after an unrelated earlier cut.
+      var _wasCut = (Date.now() - _lastCutAt) < 2000;
+      _lastCutAt = 0;
       var _showGuardDialog = function() {
         showConfirm(
-          'You deleted a lot of text',
-          'You just deleted ' + lost + ' characters. Do you want to go ahead and delete it, or undo the deletion?',
-          'Go ahead and delete',
+          _wasCut ? 'You cut a lot of text' : 'You deleted a lot of text',
+          _wasCut
+            ? 'You just cut ' + lost + ' characters — it\'s on your clipboard, ready to paste. Do you want to go ahead and remove it here, or undo the cut?'
+            : 'You just deleted ' + lost + ' characters. Do you want to go ahead and delete it, or undo the deletion?',
+          _wasCut ? 'Go ahead and remove it' : 'Go ahead and delete',
           function() {
             // Go ahead: just clear the highlight, already saved
             oopsBtn.classList.remove('highlight');
           },
           false,
-          'Undo deletion',
+          _wasCut ? 'Undo the cut' : 'Undo deletion',
           function() {
             // Undo: restore pre-deletion content
             if (preDeleteContent !== undefined) {
@@ -25504,6 +25567,18 @@ function makeImportFolderName(label) {
       this._lastLength = this.value.length;
     }
   });
+  // v0.1658: native cut detection, per Lynn -- covers the OS/browser
+  // popup-menu Cut and any keyboard shortcut (Cmd/Ctrl+X on an attached
+  // keyboard), which the app previously never saw at all: this fires
+  // BEFORE the browser removes the selected text, so by the time the
+  // delete guard's own 600ms-later check runs, _lastCutAt already
+  // reflects it. The app's own scissor button (delete-line-btn) sets the
+  // same flag directly, since its primary path uses writeClipboardSafe +
+  // setRangeText rather than the native cut command, so this listener
+  // alone wouldn't see that one.
+  document.getElementById('note-editor').addEventListener('cut', function() {
+    _lastCutAt = Date.now();
+  });
   document.getElementById('note-editor').addEventListener('paste', function(e) {
     var indentSpaces = settings.indentSpaces !== undefined ? settings.indentSpaces : 4;
     var tabReplacement = '';
@@ -29754,6 +29829,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
           ed.setRangeText('', start, end, 'start');
           scheduleSave();
           showToast('Cut to clipboard', false);
+          _lastCutAt = Date.now(); // v0.1658: this path doesn't fire a native 'cut' event
         }).catch(function() {
           // Fallback: execCommand
           document.execCommand('cut');
