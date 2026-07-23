@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1630 -->
+<!-- Remember App - Version 0.1641 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1630
+  Version 0.1641
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,17 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1641 - R&R Select Lines mode gets range-select, per Lynn's request for a way to select many lines without requiring a drag (senior-user constraint). TWO independent additions, both purely additive -- ordinary tap-to-toggle is completely unchanged, so scattered/non-contiguous selection still works exactly as before: (1) Mobile: long-press a line to mark it the pending range anchor (added to the selection immediately, shown with a dashed amber outline via new .range-anchor-pending CSS) -- delegated through attachLongPress()'s new optional `selector` param (backward compatible, all 3 existing call sites unaffected) so it survives note re-renders with no re-attaching needed. The very next ordinary tap, on any line, selects everything between the anchor and that line inclusive; tapping the anchor itself cancels range mode and falls through to a normal toggle. The iOS synthesized click that follows a long-press's touchend is swallowed via the SAME e.preventDefault()-on-fired pattern note-item long-press already uses -- without it, that synthetic click would immediately cancel the range mode it had just armed. (2) Desktop/trackpad: shift-click extends from the last line involved in any select-mode tap, matching the standard file-manager convention -- real Shift is never present on a touch tap, so this is a pure addition invisible to mobile use. Overshooting a range needs no special undo: any extra lines come out with ordinary individual taps, same as scattered selection always has. Deliberately NOT built yet (per Lynn, ship the basic version first and see if it's needed): re-long-pressing to redraw/redo a range rather than trim it manually. Suite unchanged: 256/256 on cases v19 / goldens v20.
+  v0.1640 - Add Text to Note dialog: (1) removed the "(- )" and example checkbox glyph from the end of the hyphen/checkbox marker labels -- both were purely illustrative and wrapped confusingly onto their own line at large font sizes; the checkbox label's now-unneeded wrapper <span> was removed along with it. (2) Added a scroll-shadow indicator to the scrollable middle region (.qa-scroll-fade, new CSS class) using the well-known zero-JS "CSS scroll shadows" technique: two solid fade gradients pinned to the CONTENT (background-attachment: local) sit in front of two soft shadow gradients pinned to the VIEWPORT (background-attachment: scroll) -- a shadow only becomes visible at an edge once its fade has scrolled out of the way, i.e. exactly when there's more content past that edge, with no scroll-position listener needed. Suite unchanged: 247/247 on cases v18 / goldens v19.
+  v0.1639 - Add Text to Note dialog polish, per Lynn's first-look feedback on v0.1638's scrollable middle region: (1) the native scrollbar was overlapping the Paste button and textarea -- gave #quick-add-scroll its own 16px lane via padding-right + equal negative margin-right, which relocates the scrollbar without narrowing the dialog's visual width; (2) added padding-bottom so the last visible row (checkbox or not) never sits flush against the scroll edge. Suite unchanged: 247/247 on cases v18 / goldens v19.
+  v0.1638 - Add Text to Note dialog: collapsible "More options" section holds all six checkboxes (blank line before/after, dividing line, hyphen, checkbox marker, and v0.1637's tag-sort toggle, which gets extra top margin to set it apart from the other five). Reuses the existing .settings-section/-header/-chevron/-body CSS (same look as Settings/Help, not scoped to #settings-sheet) but with its own standalone toggle handler and a fully-tappable header, NOT the Settings screen's section-persistence system (sectionStates/jump-nav/search-expand) -- that's built for a whole navigable sheet and isn't a fit for one dialog control. Always starts collapsed on open for now (sticky may come later, per Lynn). Also fixes a real bug this surfaced: the Cancel/Add button row could get clipped at the bottom on smaller screens because .confirm-box (max-height: 80vh, overflow: hidden) had no internal scroll region of its own. Restructured so the title and button row are pinned (flex-shrink: 0) and everything between them (position picker, textarea, Paste button, More options) scrolls as one region -- same pattern .confirm-msg already uses for plain confirm dialogs -- so the buttons can no longer be clipped regardless of how tall the content gets. Suite: 247/247 on cases v18 / goldens v19 (new buildTagOrderMap coverage from the previous build; _qaTagSortTarget remains untested pending a harness fix -- see that build's changelog entry).
+  v0.1637 - NEW: Add Text to Note dialog gets an "Insert tagged items in sorted order" checkbox, shown only when the current note already has a real @tag and a pre-existing [tag order] line (reuses _getNoteTags/findTagOrderLine -- no new detection). When checked, each new checkbox-ish line whose first @tag is on the [tag order] line is placed before the first existing item whose own primary tag is equal-or-later in tag order (or after the last matching-tag item, if none sort later); items with no usable tag fall back silently to the position chosen above. New pure helpers buildTagOrderMap() and _qaTagSortTarget() reuse isChecklistLine()/primaryTagOfLine() rather than reimplementing checkbox-ish or tag detection. Multiple sorted insertions (plus any leftover fallback content) are combined into one list of anchored ops and applied bottom-to-top through the existing computeChecklistInsertion() pipeline, so each op's anchor index -- computed once against the original note -- stays valid without manual reindexing; indentation and double-spacing (smartIndentBlankLine) are therefore inherited automatically from that same shared pipeline, not reimplemented here. Sticky preference: settings.plusSortedByTag, only updated when the checkbox was actually shown. Suite unchanged: 243/243 on cases v17 / goldens v18.
+  v0.1636 - Android paste, round 3 -- THE PRODUCT ANSWER. Lynn's v0.1635 gesture log was decisive: three genuine long-presses (2116/2991/1768 ms) reached quick-add-input cleanly (matched touchstart/touchend pairs, focused=true throughout, nothing cancelled the gesture), Android still showed no paste popup, no contextmenu event ever fired, and the v0.1635 user-select ancestor-chain fix did not cure it. Conclusion: the failure lives in the OS/keyboard selection layer (possibly Samsung-keyboard-specific -- its clipboard tends to hide behind the keyboard toolbar's expander), which page code can neither observe nor fix. Correction to the v0.1635 interpretation guide: Android Chrome does not reliably fire a DOM contextmenu event for text-field long-presses even when its popup IS working, so 'no contextmenu line' alone must not be read as proof the gesture was eaten. Instead of a fourth OS-layer theory, this build adds an explicit PASTE BUTTON to both dialogs (below each textarea, styled like the qa-pos-btn row), using the async Clipboard API inside the button's own user gesture: reads text, inserts at the caret (replacing any selection), restores focus with the caret after the insertion, and dispatches a real input event so dirty-tracking, smart features, and the Bold Cursor all update through their normal paths. Failure modes handled loudly: clipboard API unavailable, permission denied (persistent toast pointing at site permissions), and empty clipboard. This also removes the OS 'secret handshake' (long-press vs caret-handle vs keyboard chip, all platform-specific) for the app's senior audience on EVERY platform -- the original UX concern behind this whole investigation. The gesture diagnostics stay in one more build. Suite unchanged: 243/243 on cases v17 / goldens v18.
+  v0.1635 - Android paste, round 2, from Lynn's decisive new report: the paste POPUP never appears at all in Quick Add / Edit Paragraph on Android -- she cannot even start a paste, so the v0.1634 event tracer stays silent by design (its silence correctly indicated the failure is in the OS selection layer, before any DOM event). Candidate fix shipped: body defaults to user-select:none with selective opt-ins that covered the FIELDS (input,textarea rule) but never the dialogs' ANCESTOR chains -- Android's OS-drawn selection/paste UI consults ancestors, and long-press in an EMPTY field is its most fragile path (note-editor escapes this because pasting there targets existing text: tap caret, handle, Paste). New scoped CSS opts #quick-add-box / #edit-block-dialog and their input wraps + textareas back to user-select:text (labels inside become cosmetically selectable; buttons unaffected). NOT verifiable off-device -- Lynn's next Android test is the experiment. Also added GESTURE-level diagnostics that fire regardless of whether any popup appears: touchstart (touch count), touchend (press duration in ms -- a long-press shows as 500ms+), contextmenu (Android fires this for text-field long-press; logged and never preventDefaulted), and focus, on both dialog textareas. Interpretation: no touch lines = touches never reach the textarea (something overlays it); touchend with 500ms+ but no contextmenu = the long-press gesture is being eaten before the OS menu stage; contextmenu fires but no popup = OS suppressed its own UI (the user-select fix is then the likeliest cure). Additional popup-independent test paths for Lynn: the Gboard clipboard chip (clipboard icon in the keyboard's toolbar) and Ctrl+V on any attached keyboard -- if either inserts text, insertion itself works and ONLY the popup layer is broken. Suite unchanged: 243/243 on cases v17 / goldens v18.
+  v0.1634 - Two things for the Quick Add / Edit Paragraph dialogs, per Lynn's report. (1) BOLD CURSOR DRIFT, likely root cause found by inspection: the measuring mirror's width was ed.offsetWidth (the v0.1607 choice) -- correct ONLY when the textarea has no visible scrollbar. These dialogs are fixed-height, SELF-SCROLLING textareas: a long paragraph summons a scrollbar, which (on Android and desktop classic scrollbars) consumes interior width, so the REAL text wraps in a narrower box than the mirror -- every wrap lands slightly later in the mirror and the error compounds line after line, precisely matching "drifts when the paragraph is long" and "fine when short". Fixed: width is now ed.clientWidth (which excludes any scrollbar) + the two border widths -- mathematically IDENTICAL to offsetWidth when no scrollbar exists, so zero change for short text, overlay-scrollbar iOS, and the main note editor. Additionally, every remaining wrap-affecting property is now COPIED from the textarea's computed style instead of omitted or hardcoded: overflow-wrap, word-break, hyphens, font-style, font-variant-ligatures, font-kerning, font-feature-settings, font-stretch, text-indent, text-rendering (the copied overflow-wrap deliberately overrides the older hardcoded word-wrap:break-word, since the cascade takes the later declaration) -- mirroring truth can only converge, never diverge, and ligature/kerning/wrap differences between a div and a textarea are the remaining credible iOS drift source. The v0.1624 green-line diagnostic stays in for on-device verification. (2) ANDROID PASTE in these dialogs: code inspection PROVED there is no app-side paste interceptor on either textarea (no paste/beforeinput preventDefault paths reach a paste, no readonly, no touch-action, no user-select, mark overlay is pointer-events:none) -- so rather than guess, this build adds a debug-gated paste-path tracer (paste / beforeinput / input / compositionstart / compositionend, logging inputType, data length, and value-length deltas) on both dialog textareas. Lynn's next Android session will show exactly which stage dies: no events at all (OS gesture/popup layer), events but no value change (app interference), or change-then-revert. Suite unchanged: 243/243 on cases v17 / goldens v18.
+  v0.1633 - Two things, both per Lynn. (1) NEW: "Rename note" in the home-screen long-press context menu (right under Open note), reusing the SAME rename sheet the in-note title tap opens -- select-all and clear buttons, dirty tracking, duplicate-name confirm, autoNamed handling all included, one dialog for both entry points instead of a second implementation. openRenameDialog()/applyRename() gained a target-note parameter (_renameTargetNoteId, defaulting to currentNoteId so every existing call site is unchanged); the sheet already lived at top level in the DOM so it works from the home screen as-is, and renaming now refreshes the notes list. Renaming view-only notes is allowed from the menu, matching the existing in-note behavior (view-only protects content, not the name). (2) FIX for the long-deferred iOS no-keyboard-on-rename problem, root cause finally identified: every name dialog focused its input inside setTimeout(...,50), and iOS WebKit only shows the virtual keyboard for a focus() that runs SYNCHRONOUSLY within the user's tap gesture -- an async focus sets the caret but deliberately suppresses the keyboard (Apple anti-popup policy; Android/desktop honor async focus, which is exactly the asymmetry Lynn observed). Fixed platform-conditionally exactly as she proposed: new _isIOSDevice() helper (userAgent + the MacIntel/maxTouchPoints check for iPadOS masquerading as Mac); on iOS both the rename sheet and the folder-name dialog now focus+select synchronously in the gesture, everywhere else the original setTimeout path is untouched -- zero behavior change on Android/Windows, where it already worked. Physical keyboards: text arrives selected (select-all for auto-named/folder, caret-at-end for user-named notes, both unchanged), so typing replaces immediately. No pure-function changes: suite 243/243 on cases v17 / goldens v18.
+  v0.1632 - Find/Replace split into two More-menu items per Lynn (the common editor pattern): "Find in note" opens the bar find-only (replace row hidden -- one row shorter on a phone), and a new "Find and replace" item right below it opens the same bar with the replace row shown. The new item is registry-managed and hidden on view-only notes (plus a runtime guard in openFindReplace and the existing CSS hide as belt-and-braces). The bar remembers nothing between modes except the query: switching items while the bar is open just toggles the row in place, keeping the search. Toolbar find button and Cmd/Ctrl+F stay find-only; NEW Cmd/Ctrl+H toggles Find and replace (standard shortcut), ignored on view-only notes. Implemented as a _findReplaceMode flag + a replace-mode class on the find bar; openFind(keepReplaceMode) resets the flag unless called from openFindReplace(), so every existing openFind() call site is find-only automatically. closeFind resets the mode. No pure-function changes: suite unchanged at 243/243 on cases v17 / goldens v18.
+  v0.1631 - NEW: Replace added to Find in note. The find bar gains a second row (hidden on view-only notes) with a "Replace with" field plus Replace and All buttons; Enter in the replace field replaces the current match. Replace-current swaps the highlighted match and lands on the next match AFTER the replaced text (so a replacement that contains the search text, like cat -> cats, can never loop or re-match in place); Replace All swaps every occurrence in one action with a toast reporting the count. Matching is the same case-insensitive literal (non-regex) search Find has always used -- the scan was extracted verbatim from runFind() into a shared findMatchPositions() helper so Find and Replace can never disagree about what counts as a match, plus a pure applyReplaceAll() (both harness-testable; 10 new cases lock literal-matching semantics incl. regex chars staying literal, adjacent matches, case-insensitive replace, deletion via empty replacement, and replacement-contains-query safety -- cases v17, 243 total, goldens v18). Both operations pushUndo first; Replace All additionally snapshots via snapshotNoteBeforeOp. Works in both Typing and R&R modes through the existing find machinery (offsets are recomputed from content at replace time since R&R stores DOM marks, and both lists come from the same ordered scan). Housekeeping note for a future build: isHrLine() (which pre-dates this build) and the sort module's inline HR regex are duplicate expressions of the same pattern and should be consolidated.
   v0.1630 - FIX per Lynn's bug report: Settings > Reinstall Sample Notes is now purely ADDITIVE. createInitialNotes() historically OVERWROTE anything sharing an id with a sample: the Sample Notes folder record (which is exactly why renaming that folder appeared to "delete" it on reinstall -- the rename lives on the folder object, and the object was replaced wholesale, resetting the stock name and any parent move), every fixed-id sample note (destroying user edits to them), and every fixed-id sample theme -- directly contradicting the Reinstall dialog's own "Your existing notes will not be affected" promise. Implemented as a snapshot-and-restore wrapper inside createInitialNotes rather than ~20 per-registration guards: everything existing at entry (notes, folders, themes) is snapshotted, a restoration pass just before the final saves puts back any record this run replaced (preserving renames, folder moves, edits, and custom themes), and newly created notes whose EXACT name already exists are dropped so reinstall never makes duplicates (Lynn's unique-names suggestion) -- deleted samples still reinstall, and renamed copies coexist with the restored stock original. No-op on fresh installs. logSys reports preserved/skipped counts. No behavior change to any tested function: suite still 233/233 on cases v16 / goldens v17.
   v0.1629 - Tag Sort Sampler rebuilt per Lynn's testing feedback: ~46 checkbox-ish items across 12 top-level parents, nesting now FIVE levels deep (great-great-grandchildren), every parent has 3-4 children mixing tagged and untagged, and NOTHING starts pre-sorted -- child lists are deliberately scrambled and untagged items sit in FIRST/middle positions (never already at the end) so the sort visibly moves things. Several sibling groups share the same primary tag (including three @prio3 top-level parents) to verify stable ordering, and plain paragraphs are interspersed between three separate item groups to verify consolidation around stationary text. Also one Sort-by-tag refinement the new sampler exposed: separator blank lines now join the sorted region ONLY when they sit between two region lines -- a blank run trailing stationary content (e.g. a paragraph between item groups) stays in place with that content instead of traveling into the consolidated list as a stray gap (was visible in double-spacing-OFF mode when groups merged across paragraphs). Two new test cases lock the rule (cases v16, 233 total; goldens v17). Note the v0.1628 migration flag is unchanged, so a device that already ran the v0.1628 migration keeps the OLD sampler (delete it and use Settings, Reinstall Sample Notes, to get this one).
   v0.1628 - NEW: "Sort by tag" in the More menu (works in BOTH Typing and R&R modes) sorts checkbox-ish items to match the note's [tag order] line, keyed by each item's FIRST tag; children travel with their parent and are sorted among themselves; untagged items sink to the bottom of their own sibling list (after a confirm dialog); all items consolidate at the position of the first item while every other line stays put; sorting only selected lines works via the Select Lines tool OR a live text selection (a new snapshot in openMoreMenu captures the selection before the menu's existing selection-clearing destroys it). PURE-PERMUTATION design agreed with Lynn: the result is exactly the original lines reordered -- nothing added/removed/edited -- and three sanity checks (line count, checkbox-ish count, full multiset comparison) refuse to touch the note and log to the system log on any mismatch. Blank-line handling honors the double-spacing setting (ON: separator blanks pooled and redistributed one-per-seam; OFF: blanks glue to the item they followed). Original preserved TWICE before applying: snapshotNoteBeforeOp ring + a visible backup note named with an em-dash "before sort N" suffix (always numbered, never overwritten, same folder). Structural lines are never treated as items: the [tag order] line and horizontal rules (the same pattern notePreview already skips) stay in place -- detection itself is ONLY the canonical isChecklistLine(), never reimplemented. New "Tag Sort Sampler" demo note (createInitialNotes for fresh installs + a one-time STORAGE-FLAG-gated migration for existing installs, flag not name so deleting it sticks) showcasing the locked built-in tag roster (@inbox @prio0 @asap @prio1-9 @prioSomeday @prioUnset primaries; @next @today @inProgress @mightBeDone @waiting @wontDo @done secondaries). New test files: cases v15 (+21 cases = 231), goldens v16.
@@ -314,6 +325,21 @@ body.ui-small {
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* Selective text-selection opt-ins — override the body-level none */
+/* v0.1635 (Android paste investigation): Android draws its selection
+   handles + paste popup in an OS compositor layer that consults the
+   field's ANCESTOR chain -- with body defaulting to user-select:none,
+   the input,textarea opt-in below covers the field itself but not its
+   ancestors, and long-press in an EMPTY field (exactly how a fresh
+   Quick Add / Edit Paragraph is pasted into) is the fragile path where
+   Android gives up silently while iOS's callout doesn't care. Opt the
+   two dialog boxes and their input wraps back to text. -webkit-user-
+   select inherits, so descendants follow; dialog labels becoming
+   cosmetically selectable is acceptable collateral. */
+#quick-add-box, #quick-add-input-wrap, #quick-add-input,
+#edit-block-dialog, #edit-block-input-wrap, #edit-block-input {
+  user-select: text;
+  -webkit-user-select: text;
+}
 /* Note editor and viewer: always selectable */
 #note-editor,
 #note-viewer,
@@ -3198,6 +3224,45 @@ body.has-mouse .font-face-arrow { display: block; }
 }
 .find-nav-btn:active { background: var(--accent); color: white; }
 @media (hover: hover) { .find-nav-btn:hover { background: var(--accent); color: white; } }
+#find-replace-row {
+  flex: 0 0 100%;   /* own wrapped line inside the find bar */
+  display: none;    /* v0.1632: only "Find and replace" shows the row */
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+#find-bar.replace-mode #find-replace-row { display: flex; }
+/* Replacing edits the note — hidden entirely on view-only notes */
+body.view-only-mode #find-replace-row { display: none; }
+#find-replace-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  outline: none;
+}
+#find-replace-input:focus { border-color: var(--accent); }
+.find-replace-btn {
+  background: var(--fg2);
+  border: none;
+  color: var(--bg);
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  font-size: var(--font-ui);
+  font-weight: 600;
+}
+.find-replace-btn:disabled { opacity: 0.4; cursor: default; }
+.find-replace-btn:active:not(:disabled) { background: var(--accent); color: white; }
+@media (hover: hover) { .find-replace-btn:hover:not(:disabled) { background: var(--accent); color: white; } }
 .find-nav-btn:disabled { opacity: 0.3; pointer-events: none; }
 #find-close-btn {
   background: var(--bg3);
@@ -4087,6 +4152,16 @@ body.has-mouse .toolbar-drag-handle.dragging {
   background: rgba(59,130,246,0.25);
   border-radius: 3px;
   outline: 2px solid rgba(59,130,246,0.55);
+  outline-offset: -1px;
+}
+/* v0.1641: pending range-select anchor (long-pressed, waiting for the
+   tap that picks the other end) — dashed amber outline layered over the
+   normal blue selection styling above (this rule comes after it in the
+   stylesheet so it wins the shared `outline` property), a deliberately
+   different color+style from ordinary selection so the "this one's
+   special, still waiting" state reads as clearly different at a glance. */
+.viewer-line.range-anchor-pending {
+  outline: 2px dashed rgb(217,119,6);
   outline-offset: -1px;
 }
 /* Pulsing blue glow on select-blocks-btn when user needs to select lines first */
@@ -5227,6 +5302,30 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   .qa-line-pick .viewer-line:hover { background: rgba(128,128,128,0.08); }
 }
 
+/* v0.1640: "CSS scroll shadows" — the well-known zero-JS technique for
+   showing a scrollable region has more content in a direction, without
+   a scroll-position listener. Two solid fade gradients are pinned to the
+   CONTENT (background-attachment: local, so they scroll away once
+   there's nothing left to hide behind them) and two soft shadow
+   gradients are pinned to the VIEWPORT (background-attachment: scroll,
+   so they stay put) — sitting right behind the fades, the shadows are
+   only actually visible at an edge once its matching fade has scrolled
+   out of the way, i.e. exactly when there's more content past that
+   edge. bg-color matches .confirm-box's own background (var(--bg-dialog)
+   falling back to var(--bg)) so the fade blends in seamlessly. */
+.qa-scroll-fade {
+  background-color: var(--bg-dialog, var(--bg));
+  background-image:
+    linear-gradient(var(--bg-dialog, var(--bg)) 30%, transparent),
+    linear-gradient(transparent, var(--bg-dialog, var(--bg)) 70%),
+    radial-gradient(farthest-side at 50% 0, rgba(0,0,0,0.18), transparent),
+    radial-gradient(farthest-side at 50% 100%, rgba(0,0,0,0.18), transparent);
+  background-repeat: no-repeat;
+  background-position: top, bottom, top, bottom;
+  background-size: 100% 24px, 100% 24px, 100% 10px, 100% 10px;
+  background-attachment: local, local, scroll, scroll;
+}
+
 /* ===== QUICK-ADD POSITION SELECTOR ===== */
 /* Flat tile grid for quick-add position */
 .qa-pos-row {
@@ -5930,6 +6029,11 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
     </button>
+    <div id="find-replace-row">
+      <input type="search" id="find-replace-input" placeholder="Replace with…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button class="find-replace-btn" id="find-replace-btn" title="Replace current match">Replace</button>
+      <button class="find-replace-btn" id="find-replace-all-btn" title="Replace all matches">All</button>
+    </div>
   </div>
 
   <!-- Second toolbar — always at top, below note header -->
@@ -6597,6 +6701,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span style="pointer-events:none">Open note</span>
   </button>
+  <button class="context-menu-item" id="ctx-rename-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0">
+      <path d="M17 3a2.83 2.83 0 014 4L7.5 20.5 2 22l1.5-5.5z"/>
+    </svg>
+    <span style="pointer-events:none">Rename note</span>
+  </button>
   <button class="context-menu-item" id="ctx-favorite-btn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
     <span id="ctx-favorite-label" style="pointer-events:none">Add to Favorites</span>
@@ -6903,6 +7013,24 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
     <span class="more-label" style="pointer-events:none;flex:1">Find in note</span>
+  </button>
+  <button id="more-find-replace-btn" style="
+    display:none;align-items:center;gap:12px;
+    width:100%;padding:13px 18px;
+    background:none;border:none;
+    color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);
+    text-align:left;cursor:pointer;
+    touch-action:manipulation;
+    user-select:none;-webkit-user-select:none;
+    box-sizing:border-box;
+  ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <circle cx="10" cy="10" r="7" style="pointer-events:none"/>
+      <line x1="19.5" y1="19.5" x2="15" y2="15" style="pointer-events:none"/>
+      <polyline points="15 4 19 4 19 8" style="pointer-events:none"/>
+      <polyline points="9 20 5 20 5 16" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Find and replace</span>
   </button>
   <button id="more-share-btn" style="
     display:flex;align-items:center;gap:12px;
@@ -7219,7 +7347,20 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 <!-- ===== QUICK ADD MODAL ===== -->
 <div class="confirm-overlay" id="quick-add-overlay" role="dialog" aria-modal="true">
   <div class="confirm-box" id="quick-add-box" style="padding-top:10px">
-    <div class="confirm-title" style="margin-bottom:10px">Add text to note</div>
+    <div class="confirm-title" style="margin-bottom:10px;flex-shrink:0">Add text to note</div>
+    <!-- v0.1638: scrollable middle region — title above and the button
+         row below (.confirm-btns) are pinned via flex-shrink:0, so they
+         can never get clipped by the 80vh cap on .confirm-box (which has
+         overflow:hidden and no scroll region of its own) regardless of
+         how tall the content gets, collapsible section open or not.
+         Same pattern .confirm-msg already uses for plain confirm dialogs.
+         v0.1639: padding-right + equal negative margin-right gives the
+         native scrollbar its own 16px lane outside the content (it was
+         overlapping the Paste button/textarea before) without narrowing
+         the dialog's visual width. padding-bottom adds trailing space so
+         the last visible row — checkbox or not — never sits flush
+         against the scroll edge. -->
+    <div id="quick-add-scroll" class="qa-scroll-fade" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;padding-right:16px;margin-right:-16px;padding-bottom:16px">
     <!-- Position selector -->
     <div class="qa-pos-row">
       <button class="qa-pos-btn" id="qa-pos-top" type="button">Top</button>
@@ -7237,31 +7378,68 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <textarea id="quick-add-input" rows="4" placeholder="Type text to add…" spellcheck="true"
         style="width:100%;font-family:var(--font-note);font-size:var(--font-size-editor);background:var(--bg2);color:var(--fg);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;resize:none;outline:none;box-sizing:border-box;line-height:var(--line-height);transition:border-color 0.2s"></textarea>
     </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
-      <input type="checkbox" id="quick-add-blank-line-before" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
-      Add a blank line before the new text
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
-      <input type="checkbox" id="quick-add-blank-line" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
-      Add a blank line after the new text
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
-      <input type="checkbox" id="quick-add-horiz-rule" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
-      Add a dividing line after the new text
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
-      <input type="checkbox" id="quick-add-hyphen" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
-      Start each line with a hyphen (- )
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
-      <input type="checkbox" id="quick-add-checkbox" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
-      <span>Start each line as a checkbox&nbsp;
-        <svg style="width:1.1em;height:1.1em;vertical-align:middle;margin-bottom:0.1em" viewBox="0 0 18 18" fill="none">
-          <rect x="1.5" y="1.5" width="15" height="15" rx="3" fill="none" stroke="var(--fg)" stroke-width="1.8" opacity="0.45"/>
-        </svg>
-      </span>
-    </label>
-    <div class="confirm-btns" style="margin-top:6px;align-items:center">
+    <!-- v0.1636: explicit Paste — Android's OS paste popup provably never
+         appears in this dialog (see changelog); the button also removes
+         the platform-specific paste gesture for senior users everywhere. -->
+    <div style="display:flex;justify-content:flex-end;margin-top:6px">
+      <button class="qa-pos-btn" id="qa-paste-btn" type="button" title="Paste clipboard text at the cursor">Paste</button>
+    </div>
+    <!-- v0.1638: "More options" — collapses the six checkboxes below
+         (blank-line-before/-after, dividing line, hyphen, checkbox
+         marker, and the v0.1637 tag-sort toggle) out of view by default,
+         per Lynn (always starts collapsed for now; may revisit sticky
+         later). Reuses the app's existing .settings-section /
+         .settings-section-chevron / .settings-section-body CSS (same
+         look as Settings/Help — those rules aren't scoped to
+         #settings-sheet) but with its OWN toggle handler below, not the
+         Settings screen's section-persistence system (sectionStates,
+         jump-nav, search-expand) — that machinery is built for a whole
+         navigable settings sheet and isn't a fit for one dialog toggle.
+         Header is fully tappable (not just the right ~70px zone Settings
+         uses) since this is a single small on/off control, not
+         browsable content. -->
+    <div class="settings-section" id="quick-add-more-options" style="margin-top:10px">
+      <div class="settings-section-header" id="quick-add-more-options-header" style="cursor:pointer;padding:10px 2px">
+        <div class="settings-label" style="font-size:0.95em">More options</div>
+        <svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="settings-section-body" style="padding:0 2px 2px">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+          <input type="checkbox" id="quick-add-blank-line-before" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          Add a blank line before the new text
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+          <input type="checkbox" id="quick-add-blank-line" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          Add a blank line after the new text
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+          <input type="checkbox" id="quick-add-horiz-rule" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          Add a dividing line after the new text
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+          <input type="checkbox" id="quick-add-hyphen" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          Start each line with a hyphen
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+          <input type="checkbox" id="quick-add-checkbox" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          Start each line as a checkbox
+        </label>
+        <!-- v0.1637: only shown when the note already has both an
+             existing @tag and a [tag order] line (checked in
+             openQuickAdd via the existing _getNoteTags /
+             findTagOrderLine functions -- no new detection here). Extra
+             top margin (vs. the 8px above) sets it apart from the five
+             spacing/marker toggles above -- a related-but-different
+             kind of setting, per Lynn, without the visual weight of a
+             full divider line. -->
+        <label id="quick-add-tagsort-row" style="display:none;align-items:center;gap:8px;margin-top:18px;cursor:pointer;font-size:0.92em;color:var(--fg2)">
+          <input type="checkbox" id="quick-add-tagsort" style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          Insert tagged items in sorted order
+        </label>
+      </div>
+    </div>
+    </div>
+    <div class="confirm-btns" style="margin-top:6px;align-items:center;flex-shrink:0">
       <button id="quick-add-tag-btn" aria-label="Insert tag" title="Insert tag" style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
       <button id="quick-add-mic-btn" aria-label="Dictate"
         style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:none;align-items:center;justify-content:center;flex-shrink:0">
@@ -9069,6 +9247,10 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div id="edit-block-input-wrap" style="position:relative">
       <textarea id="edit-block-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Block text…" rows="3"></textarea>
     </div>
+    <!-- v0.1636: explicit Paste — same rationale as Quick Add's. -->
+    <div style="display:flex;justify-content:flex-end;margin-top:6px">
+      <button class="qa-pos-btn" id="eb-paste-btn" type="button" title="Paste clipboard text at the cursor">Paste</button>
+    </div>
     <p id="edit-block-tip">Editing a single line or paragraph — line breaks are not allowed.</p>
     <div id="edit-block-btns">
       <button id="edit-block-tag-btn" aria-label="Insert tag" title="Insert tag" style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
@@ -9863,7 +10045,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1630';
+const APP_VERSION = '0.1641';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11164,6 +11346,9 @@ const DEFAULT_SETTINGS = {
   plusBlankLineBefore: false, // whether to add a blank line before inserted text
   plusHyphen: false,    // whether to prepend "- " to each non-blank line
   plusCheckbox: false,   // whether to prepend "[ ] " to each non-blank line
+  plusSortedByTag: false, // v0.1637: whether Add Text to Note inserts new
+                           // tagged checkbox-ish items in [tag order] sorted
+                           // position instead of the chosen top/bottom/etc.
   checkStrikethrough: true,  // whether checking a checkbox also strikes through the line text
   checkSoundEnabled: false,  // whether a sound plays when a single item is directly tapped and becomes checked
   checkSound: 'pop',         // which synthesized sound to play: 'click', 'pop', 'ding', or 'chime'
@@ -11327,7 +11512,7 @@ const SETTING_BUCKETS = {
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
   confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, checkAnimation: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
-  plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR, plusSortedByTag: SETTING_BUCKETS_NOTE_BEHAVIOR,
   quietMode: SETTING_BUCKETS_NOTE_BEHAVIOR, showSpeakBtn: SETTING_BUCKETS_NOTE_BEHAVIOR, skipListMarkers: SETTING_BUCKETS_NOTE_BEHAVIOR, smartIndentBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColor: SETTING_BUCKETS_NOTE_BEHAVIOR,
   speakBtnIconOnly: SETTING_BUCKETS_NOTE_BEHAVIOR, speakInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speechPause: SETTING_BUCKETS_NOTE_BEHAVIOR, speechRate: SETTING_BUCKETS_NOTE_BEHAVIOR, tagScope: SETTING_BUCKETS_NOTE_BEHAVIOR,
   voiceURI: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -11537,6 +11722,15 @@ var deletingLine = false;
 var selectMode = false;      // whether block-select mode is active
 var isAllSelected = false;   // whether select-all is currently active
 var selectedBlocks = new Set(); // set of line indices (data-line values) currently selected
+// v0.1641: mobile/desktop range-select for Select Lines mode (per Lynn,
+// chat 13). _rangeAnchor: line index long-pressed as the pending range
+// start, or null; consumed by the very next ordinary tap (see the
+// note-viewer click handler). _lastSelectTapLine: line index of the most
+// recent select-mode tap, used only for desktop shift-click range-extend
+// (the familiar file-manager convention) — independent of _rangeAnchor
+// since a real Shift key is never present on a touch tap.
+var _rangeAnchor = null;
+var _lastSelectTapLine = null;
 var _moreMenuSelSnapshot = null; // v0.1628: text selection captured at More-menu OPEN — openMoreMenu
                                  // deliberately clears the live selection right after (Android
                                  // selection-handle compositor fix), so any selection-scoped menu
@@ -12441,7 +12635,15 @@ document.addEventListener('touchcancel', function(e) { _activeTouches = e.touche
 // document-wide via _activeTouches at fire time), move-cancel,
 // touchend/touchcancel cleanup.
 // opts: { delay: ms, moveThreshold: px (0 = any movement cancels),
-//         onFire: function(startX, startY) }
+//         onFire: function(startX, startY, delegateTarget),
+//         selector: optional CSS selector (v0.1641) — when given, `el` is
+//         treated as a DELEGATION ROOT (e.g. a container whose children
+//         are re-rendered often, like note-viewer's .viewer-line rows)
+//         instead of a single fixed target. A touch only arms the timer
+//         if it started on a descendant matching `selector`; that
+//         descendant is passed to onFire as the 3rd argument. Omitting
+//         `selector` reproduces the original single-element behavior
+//         exactly (existing call sites are unaffected). }
 // Returns a state object: .fired is true if the long-press fired during
 // the current/most-recent touch (reset on next single-finger touchstart);
 // .cancel() cancels any pending timer.
@@ -12449,11 +12651,16 @@ function attachLongPress(el, opts) {
   var state = { fired: false };
   var timer = null;
   var startX = 0, startY = 0;
+  var fireTarget = null;
   function cancel() {
     if (timer) { clearTimeout(timer); timer = null; }
   }
   el.addEventListener('touchstart', function(e) {
     if (e.touches.length > 1) { cancel(); return; } // pinch, never a long-press
+    if (opts.selector) {
+      fireTarget = e.target.closest(opts.selector);
+      if (!fireTarget) { cancel(); return; } // touch didn't start on a matching descendant
+    }
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     state.fired = false;
@@ -12464,7 +12671,7 @@ function attachLongPress(el, opts) {
       // DIFFERENT element, so this element's touchstart never saw it.
       if (_activeTouches > 1) return;
       state.fired = true;
-      opts.onFire(startX, startY);
+      opts.onFire(startX, startY, fireTarget);
     }, opts.delay);
   }, { passive: true });
   el.addEventListener('touchmove', function(e) {
@@ -13479,6 +13686,53 @@ function scrollToSearchMatch(term) {
 }
 
 
+// v0.1633: iOS (including iPadOS, which masquerades as MacIntel but
+// exposes touch points) needs to be detected because iOS WebKit only
+// shows the virtual keyboard for a focus() that runs SYNCHRONOUSLY
+// inside the user's tap gesture. Async focus (setTimeout, promises,
+// animation callbacks) sets the caret but deliberately suppresses the
+// keyboard — Apple's anti-popup policy. Android and desktop honor async
+// focus, which is why the name dialogs "worked everywhere but iOS".
+function _isIOSDevice() {
+  try {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  } catch (e) { return false; }
+}
+
+// v0.1636: explicit Paste for the Quick Add / Edit Paragraph dialogs.
+// Exists because Android's OS paste popup provably never appears in
+// these dialogs (see the v0.1635/0.1636 changelog entries -- genuine
+// long-presses reach the textarea and the OS still shows nothing), and
+// because an explicit button removes the platform-specific "secret
+// handshake" for this app's senior audience everywhere. Must be called
+// from inside a user gesture (the button click) -- the async Clipboard
+// API requires one.
+function pasteIntoDialogInput(taId) {
+  var ta = document.getElementById(taId);
+  if (!ta) return;
+  if (!navigator.clipboard || !navigator.clipboard.readText) {
+    showToast('Clipboard access is not available in this browser', false);
+    logDebugAction('Dialog paste button: Clipboard API unavailable for ' + taId);
+    return;
+  }
+  navigator.clipboard.readText().then(function(text) {
+    if (!text) { showToast('The clipboard is empty', false); return; }
+    var s = ta.selectionStart, e = ta.selectionEnd;
+    ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+    var p = s + text.length;
+    ta.focus();
+    try { ta.setSelectionRange(p, p); } catch (eSel) {}
+    // Real input event: dirty-tracking, smart features, and the Bold
+    // Cursor all update through their normal listeners.
+    try { ta.dispatchEvent(new Event('input', { bubbles: true })); } catch (eEvt) {}
+    logDebugAction('Dialog paste button: inserted ' + text.length + ' chars into ' + taId);
+  }).catch(function(err) {
+    logDebugAction('Dialog paste button FAILED for ' + taId + ': ' + err);
+    showToast('Could not read the clipboard.\n\nYour browser may have blocked clipboard access for this site \u2014 check the site permissions (Clipboard) and try again.', true);
+  });
+}
+
 function showFolderNameDialog(existingName, callback) {
   var overlay  = document.getElementById('folder-name-overlay');
   var input    = document.getElementById('folder-name-input');
@@ -13491,7 +13745,16 @@ function showFolderNameDialog(existingName, callback) {
   logDebugAction(existingName ? 'Opened Rename Folder' : 'Opened New Folder');
   input.value = existingName || '';
   overlay.style.display = 'flex';
-  setTimeout(function() { input.focus(); input.select(); }, 50);
+  if (_isIOSDevice()) {
+    // Must stay INSIDE the tap gesture's synchronous call stack or iOS
+    // will not raise the virtual keyboard — see _isIOSDevice() above.
+    input.focus();
+    input.select();
+  } else {
+    // Android/Windows: original path, untouched — async focus works
+    // there and the small delay lets the overlay finish rendering.
+    setTimeout(function() { input.focus(); input.select(); }, 50);
+  }
   function finish(save) {
     var name = input.value.trim();
     if (save && name) {
@@ -16149,6 +16412,10 @@ function renderBlockSelections() {
   viewer.querySelectorAll('.viewer-line').forEach(function(div) {
     var idx = parseInt(div.dataset.line, 10);
     div.classList.toggle('block-selected', selectedBlocks.has(idx));
+    // v0.1641: distinct dashed-outline styling while this line is the
+    // pending range-select anchor (between a long-press and the tap that
+    // completes or cancels the range).
+    div.classList.toggle('range-anchor-pending', _rangeAnchor === idx);
   });
 }
 
@@ -16556,6 +16823,8 @@ function stripForShare(content) {
 
 function clearSelectedBlocks() {
   selectedBlocks.clear();
+  _rangeAnchor = null;
+  _lastSelectTapLine = null;
   if (typeof moveMode !== 'undefined' && moveMode) exitMoveMode();
   renderBlockSelections();
   // Reset select-all state whenever selection is cleared
@@ -19784,6 +20053,10 @@ function init() {
     downloadJSON({ version: APP_VERSION, exportDate: new Date().toISOString(), notes: { [n.id]: n } }, 'remember-' + safeName + '.json');
   })(document.getElementById('ctx-export-btn'));
   ctxAction(openNote)(document.getElementById('ctx-open-btn'));
+  // Rename note (v0.1633): same sheet the in-note title tap opens —
+  // the ctx tap gesture carries through openRenameDialog to the
+  // synchronous iOS focus, so the keyboard comes up here too.
+  ctxAction(function(id) { openRenameDialog(id); })(document.getElementById('ctx-rename-btn'));
   ctxAction(duplicateNote)(document.getElementById('ctx-duplicate-btn'));
   ctxAction(confirmDeleteNote)(document.getElementById('ctx-delete-btn'));
   ctxAction(function(id) {
@@ -21432,30 +21705,49 @@ function makeImportFolderName(label) {
     goHome();
   });
   var _renameSnapshot = '';
+  var _renameTargetNoteId = null; // v0.1633: which note the open rename sheet edits
   function updateRenameSaveBtn() {
     var input = document.getElementById('rename-input');
     var btn   = document.getElementById('rename-save-btn');
     var dirty = input.value.trim() !== _renameSnapshot;
     btn.classList.toggle('dimmed', !dirty);
   }
-  function openRenameDialog() {
-    logDebugAction('Opened Rename note');
-    var currentName = document.getElementById('note-title').textContent.trim();
+  function openRenameDialog(noteId) {
+    // v0.1633: optional noteId targets a note from the home-screen
+    // context menu; no argument keeps the original in-note behavior
+    // (current note, name read live from the title element).
+    _renameTargetNoteId = noteId || currentNoteId;
+    logDebugAction(noteId && noteId !== currentNoteId ? 'Opened Rename note (context menu)' : 'Opened Rename note');
+    var currentName;
+    if (noteId && noteId !== currentNoteId) {
+      if (!notes[noteId]) return;
+      currentName = (notes[noteId].name || '').trim();
+    } else {
+      currentName = document.getElementById('note-title').textContent.trim();
+    }
     var input = document.getElementById('rename-input');
     input.value = currentName;
     _renameSnapshot = currentName; // snapshot for dirty tracking
     document.getElementById('rename-overlay').classList.add('open');
     document.getElementById('rename-sheet').classList.add('open');
     updateRenameSaveBtn(); // set initial dimmed state
-    var isAuto = currentNoteId && notes[currentNoteId] && notes[currentNoteId].autoNamed;
-    setTimeout(function() {
+    var isAuto = _renameTargetNoteId && notes[_renameTargetNoteId] && notes[_renameTargetNoteId].autoNamed;
+    var _renamePlaceCaret = function() {
       input.focus();
       if (isAuto) {
         input.select();
       } else {
         input.setSelectionRange(input.value.length, input.value.length);
       }
-    }, 50);
+    };
+    if (_isIOSDevice()) {
+      // Synchronous focus inside the tap gesture — the only way iOS
+      // raises the virtual keyboard. See _isIOSDevice().
+      _renamePlaceCaret();
+    } else {
+      // Android/Windows: original path, untouched.
+      setTimeout(_renamePlaceCaret, 50);
+    }
   }
 
   document.getElementById('rename-btn').addEventListener('mousedown', function(e) {
@@ -21507,7 +21799,7 @@ function makeImportFolderName(label) {
       return;
     }
     // Check for duplicate
-    if (noteNameExists(newName, currentNoteId)) {
+    if (noteNameExists(newName, _renameTargetNoteId)) {
       showConfirm(
         'Duplicate Name',
         'Another note is already called "' + newName + '". Keep this name anyway?',
@@ -21524,13 +21816,19 @@ function makeImportFolderName(label) {
 
   function applyRename(newName) {
     logDebugAction('Saved Rename note: "' + newName + '"');
-    document.getElementById('note-title').textContent = newName;
-    if (currentNoteId && notes[currentNoteId]) {
-      notes[currentNoteId].name = newName;
+    var target = _renameTargetNoteId || currentNoteId;
+    // Only touch the note screen's title element when renaming the note
+    // that is actually open in it.
+    if (target === currentNoteId) {
+      document.getElementById('note-title').textContent = newName;
+    }
+    if (target && notes[target]) {
+      notes[target].name = newName;
       // User explicitly saved a name — always lock it (autoNamed = false)
-      notes[currentNoteId].autoNamed = false;
+      notes[target].autoNamed = false;
       saveNotes();
     }
+    renderNotesList(); // home-screen list shows the new name immediately
     document.getElementById('rename-overlay').classList.remove('open');
     document.getElementById('rename-sheet').classList.remove('open');
   }
@@ -22542,6 +22840,9 @@ function makeImportFolderName(label) {
     // Sort by tag (v0.1628): BOTH modes by design (Lynn's call) — needs
     // items and at least one tag to be meaningful; hidden when locked.
     { id: 'more-sort-by-tag-btn',     show: function(s) { return !s.quietMode && !s.viewOnly && s.hasCbs && s.hasTags; } },
+    // Find and replace (v0.1632): edit operation, so never on view-only
+    // notes. (Plain "Find in note" stays a static, always-visible item.)
+    { id: 'more-find-replace-btn',    show: function(s) { return !s.viewOnly; } },
     // ── R&R mode + extra per-item setting gate (override applies the gate) ──
     // Tap to Edit no longer has a static More menu entry (more-tap-to-edit-btn
     // was removed) — per the stage-3 redesign it is dynamic-only now, since
@@ -23699,7 +24000,37 @@ function makeImportFolderName(label) {
       // making the mirror narrower than the real element by 2x the
       // border width. offsetWidth (content+padding+border) is the
       // W3C-correct match for border-box's own definition of 'width'.
-      'width:' + ed.offsetWidth + 'px'
+      // v0.1634 REFINEMENT of that fix: offsetWidth is right ONLY while
+      // there is no visible scrollbar. Quick Add / Edit Paragraph are
+      // fixed-height SELF-SCROLLING textareas -- a long paragraph
+      // summons a scrollbar, which (Android/desktop classic scrollbars)
+      // consumes interior width, so the REAL text wraps in a narrower
+      // box than a scrollbar-less mirror sized to offsetWidth; the wrap
+      // error compounds with every line, exactly matching the reported
+      // long-paragraph drift. clientWidth EXCLUDES any scrollbar, so
+      // clientWidth + the two border widths is the correct border-box
+      // width in all cases -- and is mathematically IDENTICAL to
+      // offsetWidth whenever no scrollbar exists (short text, overlay-
+      // scrollbar iOS, the main note editor), i.e. zero regression risk.
+      'width:' + (ed.clientWidth +
+        (parseFloat(cs.borderLeftWidth) || 0) +
+        (parseFloat(cs.borderRightWidth) || 0)) + 'px',
+      // v0.1634: copy every remaining wrap-affecting property FROM the
+      // textarea's computed style rather than omitting or hardcoding it
+      // -- mirroring truth can only converge. The copied overflow-wrap
+      // deliberately lands AFTER (and therefore overrides) the older
+      // hardcoded word-wrap:break-word in the cssText cascade.
+      'overflow-wrap:' + (cs.overflowWrap || cs.wordWrap || 'break-word'),
+      'word-break:' + cs.wordBreak,
+      'hyphens:' + (cs.hyphens || cs.webkitHyphens || 'none'),
+      '-webkit-hyphens:' + (cs.webkitHyphens || cs.hyphens || 'none'),
+      'font-style:' + cs.fontStyle,
+      'font-stretch:' + cs.fontStretch,
+      'font-variant-ligatures:' + (cs.fontVariantLigatures || 'normal'),
+      'font-kerning:' + (cs.fontKerning || 'auto'),
+      'font-feature-settings:' + (cs.fontFeatureSettings || 'normal'),
+      'text-indent:' + cs.textIndent,
+      'text-rendering:' + (cs.textRendering || 'auto')
     ].concat(_bcPaddingProps).concat(_bcBorderProps);
     if (window._bcShowMirror) {
       var edRectDbg = ed.getBoundingClientRect();
@@ -28972,6 +29303,8 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   var _qaPendingHyphen  = false;
   var _qaPendingCheckbox  = false;
   var _qaPendingHorizRule  = false;
+  var _qaPendingTagSort  = false; // v0.1637: carried through the before/after line-pick flow
+  var _qaTagSortAvailable = false; // v0.1637: was the checkbox even shown for this note, this open
   var _qaPendingWasEditMode = false;  // true if we were in edit mode when Add was tapped
 
   function _qaSetMode(mode, targetLine, targetText) {
@@ -29008,6 +29341,28 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     if (blBeforeBox) blBeforeBox.checked = !!settings.plusBlankLineBefore;
     hyphenBox.checked = !!settings.plusHyphen;
     checkboxBox.checked = !!settings.plusCheckbox;
+    // v0.1638: "More options" always starts collapsed on open, per Lynn
+    // ("for starters" -- may become sticky in a later build).
+    var moreOptions = document.getElementById('quick-add-more-options');
+    if (moreOptions) moreOptions.classList.remove('open');
+    var scrollWrap = document.getElementById('quick-add-scroll');
+    if (scrollWrap) scrollWrap.scrollTop = 0;
+    // v0.1637: "Insert tagged items in sorted order" -- only shown when
+    // the CURRENT note already has both a real @tag (_getNoteTags, which
+    // already excludes the [tag order] line's own tags) and a pre-
+    // existing [tag order] line (findTagOrderLine). Both reused as-is --
+    // no new tag/tag-order detection here. Whether the note is already
+    // fully sorted is deliberately NOT checked (per Lynn).
+    var tagSortRow = document.getElementById('quick-add-tagsort-row');
+    var tagSortBox = document.getElementById('quick-add-tagsort');
+    _qaTagSortAvailable = false;
+    if (currentNoteId && notes[currentNoteId]) {
+      var _qaContent = notes[currentNoteId].content || '';
+      _qaTagSortAvailable = findTagOrderLine(_qaContent.split('\n')) !== -1 &&
+        _getNoteTags(_qaContent).length > 0;
+    }
+    if (tagSortRow) tagSortRow.style.display = _qaTagSortAvailable ? 'flex' : 'none';
+    if (tagSortBox) tagSortBox.checked = _qaTagSortAvailable && !!settings.plusSortedByTag;
     overlay.classList.add('open');
     overlay.classList.add('centered');
     // Set default mode from passed-in mode or setting
@@ -29034,6 +29389,11 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     var addHyphen    = document.getElementById('quick-add-hyphen').checked;
     var addCheckbox  = document.getElementById('quick-add-checkbox').checked;
     var addHorizRule = (document.getElementById('quick-add-horiz-rule') || {}).checked || false;
+    // v0.1637: only meaningful when the row was actually shown this open
+    // (_qaTagSortAvailable, set in openQuickAdd) -- the checkbox itself
+    // is forced unchecked+hidden otherwise, but this guards defensively.
+    var addTagSort = _qaTagSortAvailable &&
+      (document.getElementById('quick-add-tagsort') || {}).checked || false;
     // Checkbox takes priority over hyphen if both somehow set
     if (addCheckbox) addHyphen = false;
 
@@ -29063,6 +29423,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       _qaPendingHyphen = addHyphen;
       _qaPendingCheckbox = addCheckbox;
       _qaPendingHorizRule = addHorizRule;
+      _qaPendingTagSort = addTagSort;
       _qaPendingWasEditMode = !isViewMode;
       closeQuickAdd();
       // Switch to view mode so viewer lines are visible and tappable
@@ -29080,7 +29441,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
 
     // No visible text but only a dividing line — insert directly
     if (!hasVisibleText && addHorizRule && totalBlankLines === 0) {
-      doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule);
+      doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule, addTagSort);
       return;
     }
 
@@ -29091,16 +29452,16 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
         'Add blank lines?',
         'You didn\'t enter any text. Do you want to add ' + totalBlankLines + ' blank ' + lineWord + '?',
         'Add blank lines',
-        function() { doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule); },
+        function() { doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule, addTagSort); },
         false, 'Cancel', null, 'centered'
       );
       return;
     }
 
-    doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule);
+    doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule, addTagSort);
   }
 
-  function doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule) {
+  function doInsert(lines, addBlankLine, addBlankLineBefore, addHyphen, addCheckbox, addHorizRule, addTagSort) {
     if (!currentNoteId || !notes[currentNoteId]) { closeQuickAdd(); return; }
 
     settings.plusBlankLine = addBlankLine;
@@ -29108,6 +29469,11 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     settings.plusHyphen    = addHyphen;
     settings.plusCheckbox  = addCheckbox;
     settings.plusHorizRule = addHorizRule || false;
+    // Only overwrite the sticky preference when the checkbox was actually
+    // shown for this note (_qaTagSortAvailable) -- otherwise adding text
+    // to a note with no [tag order] line would silently reset the
+    // preference for the next note that DOES have one.
+    if (_qaTagSortAvailable) settings.plusSortedByTag = addTagSort;
     saveSettings();
     _qaLastMode = _qaMode; // remember position for next open this session
 
@@ -29178,85 +29544,178 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       }
     }
 
-    // ── Splice position + content ── unified across every mode (top,
-    // bottom, before, after, rule) via computeChecklistInsertion's
-    // spliceStart/deleteCount, instead of each mode separately building
-    // newContent through a mix of string concatenation and array
-    // splicing. deleteCount can be 1 when the smart pipeline found its
-    // checklist neighbor by peeking through an existing blank line that
-    // needs consuming — e.g. "rule" mode with a single blank already
-    // sitting after the divider: without consuming it here, the smart
-    // pipeline's own freshly-added blank would end up doubled up right
-    // alongside it (a real reported bug).
-    var processedLines;
-    var _smartApplied = false;
-    var _finalSpliceStart, _finalDeleteCount;
-    if (nearIdx !== null && hasVisibleText) {
-      var _ciResult = computeChecklistInsertion(currentLines, nearIdx, nearRole, rawBlock, {
-        smartBlankOn: smartBlankOn,
-        forceLeadingBlank: forceLeadingBlank
-      });
-      _finalSpliceStart = _ciResult.spliceStart;
-      _finalDeleteCount = _ciResult.deleteCount;
-      if (_ciResult.applies) {
-        processedLines = _ciResult.lines;
-        _smartApplied = true;
-      } else if (_insertedIsCheckboxish) {
-        // Not adjacent to an existing checklist context (or the typed
-        // block wasn't homogeneous) — still apply a flat default indent
-        // to the forced checklist lines, same fallback as before.
-        var _defIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
-        var _defPrefix = _defIndentSpaces > 0 ? ' '.repeat(_defIndentSpaces) : '';
-        processedLines = rawBlock.map(function(l) { return l.trim() === '' ? l : _defPrefix + l; });
+    // ── v0.1637: "Insert tagged items in sorted order" ──────────────
+    // Only takes effect when checked, there's visible text, and the note
+    // has a [tag order] line (buildTagOrderMap -- reused, not
+    // reimplemented). Splits rawBlock into items that get placed at
+    // their sorted position vs. everything else (untagged, unmatched
+    // tag, blank, or plain-text lines), which falls back to the position
+    // chosen above -- silently, per Lynn, whether that's because the
+    // checkbox was off, the note has no [tag order] line, or a given
+    // line just has no usable tag.
+    var _tagSortApplied = false;
+    var newContent, insertStartIdx, insertedCount;
+
+    if (addTagSort && hasVisibleText) {
+      var _tsInfo = buildTagOrderMap(currentLines);
+      if (_tsInfo) {
+        var _tsGroups = [];
+        var _tsGroupByKey = {};
+        var fallbackLines = [];
+        rawBlock.forEach(function(l) {
+          // Checkbox-ish detection ONLY via the canonical isChecklistLine()
+          // chain -- never reimplemented here or in _qaTagSortTarget.
+          if (l.trim() === '' || !isChecklistLine(l)) { fallbackLines.push(l); return; }
+          var tag = primaryTagOfLine(l);
+          var target = (tag != null && (tag in _tsInfo.orderMap))
+            ? _qaTagSortTarget(currentLines, tag, _tsInfo.orderMap) : null;
+          if (!target) { fallbackLines.push(l); return; }
+          var key = target.idx + ':' + target.role;
+          if (!_tsGroupByKey[key]) {
+            _tsGroupByKey[key] = { idx: target.idx, role: target.role, itemLines: [] };
+            _tsGroups.push(_tsGroupByKey[key]);
+          }
+          _tsGroupByKey[key].itemLines.push(l);
+        });
+
+        if (_tsGroups.length > 0) {
+          _tagSortApplied = true;
+          var _tsOps = _tsGroups.map(function(g) {
+            return { idx: g.idx, role: g.role, itemLines: g.itemLines, isFallback: false };
+          });
+          // Fallback op: only when there's real leftover content to
+          // place -- per Lynn, the blank-line/divider checkboxes only
+          // apply to this leftover content, never to the sorted items.
+          var _fbHasVisible = fallbackLines.some(function(l) { return l.trim().length > 0; });
+          if (_fbHasVisible) {
+            _tsOps.push({ idx: nearIdx, role: nearRole, itemLines: fallbackLines,
+              isFallback: true, forceLeadingBlank: forceLeadingBlank });
+          }
+          // Process bottom-to-top (largest anchor index first): an
+          // insertion never shifts the index of anything ABOVE it, so
+          // every op's anchor index -- computed once, up front, against
+          // the original note -- stays valid without any manual
+          // reindexing. (This is the point Lynn flagged explicitly.)
+          _tsOps.sort(function(a, b) { return b.idx - a.idx; });
+
+          var _tsWorking = currentLines.slice();
+          _tsOps.forEach(function(op) {
+            var _r = computeChecklistInsertion(_tsWorking, op.idx, op.role, op.itemLines, {
+              smartBlankOn: smartBlankOn,
+              forceLeadingBlank: !!op.forceLeadingBlank
+            });
+            var _opLines = _r.lines;
+            if (op.isFallback) {
+              if (!_r.applies && _insertedIsCheckboxish) {
+                var _fbIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
+                var _fbPrefix = _fbIndentSpaces > 0 ? ' '.repeat(_fbIndentSpaces) : '';
+                _opLines = op.itemLines.map(function(l) { return l.trim() === '' ? l : _fbPrefix + l; });
+              }
+              var _fbSmartOwns = _r.applies && smartBlankOn;
+              if (!_fbSmartOwns) {
+                if (addBlankLine && !(_opLines.length && _opLines[_opLines.length - 1].trim() === '')) {
+                  _opLines = _opLines.concat(['']);
+                }
+                if (addBlankLineBefore && !(_opLines.length && _opLines[0].trim() === '')) {
+                  _opLines = [''].concat(_opLines);
+                }
+              }
+              if (addHorizRule) _opLines = _opLines.concat(['- - - - -']);
+            }
+            _tsWorking.splice.apply(_tsWorking, [_r.spliceStart, _r.deleteCount].concat(_opLines));
+            // Every op is processed in final bottom-to-top order, so the
+            // LAST one applied (smallest anchor index) is the only one
+            // whose spliceStart is still accurate in the finished
+            // document -- nothing gets inserted above it afterward.
+            insertStartIdx = _r.spliceStart;
+            insertedCount = _opLines.length;
+          });
+          newContent = _tsWorking.join('\n');
+        }
+      }
+    }
+
+    if (!_tagSortApplied) {
+      // ── Splice position + content ── unified across every mode (top,
+      // bottom, before, after, rule) via computeChecklistInsertion's
+      // spliceStart/deleteCount, instead of each mode separately building
+      // newContent through a mix of string concatenation and array
+      // splicing. deleteCount can be 1 when the smart pipeline found its
+      // checklist neighbor by peeking through an existing blank line that
+      // needs consuming — e.g. "rule" mode with a single blank already
+      // sitting after the divider: without consuming it here, the smart
+      // pipeline's own freshly-added blank would end up doubled up right
+      // alongside it (a real reported bug).
+      var processedLines;
+      var _smartApplied = false;
+      var _finalSpliceStart, _finalDeleteCount;
+      if (nearIdx !== null && hasVisibleText) {
+        var _ciResult = computeChecklistInsertion(currentLines, nearIdx, nearRole, rawBlock, {
+          smartBlankOn: smartBlankOn,
+          forceLeadingBlank: forceLeadingBlank
+        });
+        _finalSpliceStart = _ciResult.spliceStart;
+        _finalDeleteCount = _ciResult.deleteCount;
+        if (_ciResult.applies) {
+          processedLines = _ciResult.lines;
+          _smartApplied = true;
+        } else if (_insertedIsCheckboxish) {
+          // Not adjacent to an existing checklist context (or the typed
+          // block wasn't homogeneous) — still apply a flat default indent
+          // to the forced checklist lines, same fallback as before.
+          var _defIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
+          var _defPrefix = _defIndentSpaces > 0 ? ' '.repeat(_defIndentSpaces) : '';
+          processedLines = rawBlock.map(function(l) { return l.trim() === '' ? l : _defPrefix + l; });
+        } else {
+          processedLines = rawBlock;
+        }
+      } else if (nearIdx !== null) {
+        // No visible text (inserting blank lines only) — the smart
+        // pipeline never applies here (matches prior behavior); just use
+        // the plain mode-based position.
+        _finalSpliceStart = nearRole === 'leading' ? nearIdx + 1 : nearIdx;
+        _finalDeleteCount = 0;
+        processedLines = rawBlock;
       } else {
+        // Defensive fallback — shouldn't normally happen.
+        _finalSpliceStart = currentLines.length;
+        _finalDeleteCount = 0;
         processedLines = rawBlock;
       }
-    } else if (nearIdx !== null) {
-      // No visible text (inserting blank lines only) — the smart
-      // pipeline never applies here (matches prior behavior); just use
-      // the plain mode-based position.
-      _finalSpliceStart = nearRole === 'leading' ? nearIdx + 1 : nearIdx;
-      _finalDeleteCount = 0;
-      processedLines = rawBlock;
-    } else {
-      // Defensive fallback — shouldn't normally happen.
-      _finalSpliceStart = currentLines.length;
-      _finalDeleteCount = 0;
-      processedLines = rawBlock;
-    }
 
-    // ── Manual "Add dividing line" checkboxes — only when the smart
-    // checklist pipeline ISN'T already managing blank lines for this
-    // insertion (a homogeneous checklist block, with double-spacing on,
-    // adjacent to an existing checklist item). In that specific case the
-    // smart pipeline's seam decisions are authoritative: a manual
-    // checkbox left checked from a previous, unrelated plain-paragraph
-    // insertion must never add a blank line the user doesn't want
-    // inside their list — they shouldn't have to remember to uncheck it
-    // every time. Outside that case (plain/mixed content, or double-
-    // spacing off), the manual checkboxes behave exactly as before,
-    // still guarding against doubling a blank that's already there.
-    var _smartOwnsBlankLines = _smartApplied && smartBlankOn;
-    if (hasVisibleText && !_smartOwnsBlankLines) {
-      if (addBlankLine && !(processedLines.length && processedLines[processedLines.length - 1].trim() === '')) {
-        processedLines = processedLines.concat(['']);
+      // ── Manual "Add dividing line" checkboxes — only when the smart
+      // checklist pipeline ISN'T already managing blank lines for this
+      // insertion (a homogeneous checklist block, with double-spacing on,
+      // adjacent to an existing checklist item). In that specific case the
+      // smart pipeline's seam decisions are authoritative: a manual
+      // checkbox left checked from a previous, unrelated plain-paragraph
+      // insertion must never add a blank line the user doesn't want
+      // inside their list — they shouldn't have to remember to uncheck it
+      // every time. Outside that case (plain/mixed content, or double-
+      // spacing off), the manual checkboxes behave exactly as before,
+      // still guarding against doubling a blank that's already there.
+      var _smartOwnsBlankLines = _smartApplied && smartBlankOn;
+      if (hasVisibleText && !_smartOwnsBlankLines) {
+        if (addBlankLine && !(processedLines.length && processedLines[processedLines.length - 1].trim() === '')) {
+          processedLines = processedLines.concat(['']);
+        }
+        if (addBlankLineBefore && !(processedLines.length && processedLines[0].trim() === '')) {
+          processedLines = [''].concat(processedLines);
+        }
       }
-      if (addBlankLineBefore && !(processedLines.length && processedLines[0].trim() === '')) {
-        processedLines = [''].concat(processedLines);
-      }
-    }
-    // addHorizRule applies regardless of whether there is text, and
-    // regardless of the checklist pipeline — a divider isn't itself a
-    // checklist item, so it's appended after all of the above.
-    if (addHorizRule) processedLines = processedLines.concat(['- - - - -']);
+      // addHorizRule applies regardless of whether there is text, and
+      // regardless of the checklist pipeline — a divider isn't itself a
+      // checklist item, so it's appended after all of the above.
+      if (addHorizRule) processedLines = processedLines.concat(['- - - - -']);
 
-    var insertText = processedLines.join('\n');
-    var toInsert = insertText.split('\n');
-    var newLinesArr = currentLines.slice();
-    newLinesArr.splice.apply(newLinesArr, [_finalSpliceStart, _finalDeleteCount].concat(toInsert));
-    var newContent = newLinesArr.join('\n');
-    var insertStartIdx = _finalSpliceStart;
-    var insertedCount = toInsert.length;
+      var insertText = processedLines.join('\n');
+      var toInsert = insertText.split('\n');
+      var newLinesArr = currentLines.slice();
+      newLinesArr.splice.apply(newLinesArr, [_finalSpliceStart, _finalDeleteCount].concat(toInsert));
+      newContent = newLinesArr.join('\n');
+      insertStartIdx = _finalSpliceStart;
+      insertedCount = toInsert.length;
+    }
 
     var ed = document.getElementById('note-editor');
     pushUndo(); // save pre-insertion state so Undo restores it
@@ -29383,7 +29842,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     // Now do the actual insert with the stored text
     _qaMode = mode;
     _qaTargetLine = lineIndex;
-    doInsert(_qaPendingLines, _qaPendingBlankLine, _qaPendingBlankLineBefore, _qaPendingHyphen, _qaPendingCheckbox, _qaPendingHorizRule);
+    doInsert(_qaPendingLines, _qaPendingBlankLine, _qaPendingBlankLineBefore, _qaPendingHyphen, _qaPendingCheckbox, _qaPendingHorizRule, _qaPendingTagSort);
     // Restore previous edit mode if needed
     if (wasEdit) {
       setTimeout(function() {
@@ -29475,6 +29934,15 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     if (this.checked) document.getElementById('quick-add-hyphen').checked = false;
   });
 
+  // v0.1638: "More options" toggle — a standalone handler (NOT the
+  // Settings screen's delegated #settings-sheet listener / sectionStates
+  // persistence; see the HTML comment above the section for why). Just
+  // flips the shared .settings-section.open class this dialog reuses
+  // for its chevron-rotate + show/hide CSS.
+  document.getElementById('quick-add-more-options-header').addEventListener('click', function() {
+    document.getElementById('quick-add-more-options').classList.toggle('open');
+  });
+
   // Click outside quick-add box to cancel (with confirmation if dirty)
   document.getElementById('quick-add-overlay').addEventListener('click', function(e) {
     if (e.target === this) {
@@ -29563,6 +30031,88 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     }
     _siClear();
   });
+
+  // v0.1634 DIAGNOSTIC for Lynn's Android report: paste does nothing in
+  // Quick Add / Edit Paragraph on Android (PWA and browser) while iOS
+  // works. Code inspection PROVED no app-side interceptor exists on
+  // these textareas (no paste/beforeinput preventDefault path can reach
+  // a paste, no readonly/touch-action/user-select problems, the Bold
+  // Cursor mark is pointer-events:none) -- so per this project's
+  // instrument-don't-guess rule, trace the whole paste path instead of
+  // guessing a fix. Every stage logs; the absence of lines is itself
+  // the answer (failure is then in the OS gesture/popup layer, before
+  // any DOM event fires). Passive listeners only -- nothing here can
+  // change behavior.
+  ['quick-add-input', 'edit-block-input'].forEach(function(_pdId) {
+    var _pdEl = document.getElementById(_pdId);
+    if (!_pdEl) return;
+    var _pdLastLen = -1;
+    _pdEl.addEventListener('paste', function(e) {
+      var t = '';
+      try { t = (e.clipboardData && e.clipboardData.getData('text/plain')) || ''; } catch (ePd) { t = '<getData threw: ' + ePd + '>'; }
+      logDebugAction('paste-diag[' + _pdId + ']: paste event, clipboard text len=' +
+        (typeof t === 'string' ? t.length : t) + ' defaultPrevented=' + e.defaultPrevented);
+    });
+    _pdEl.addEventListener('beforeinput', function(e) {
+      if (e.inputType && e.inputType.indexOf('insert') === 0) {
+        logDebugAction('paste-diag[' + _pdId + ']: beforeinput type=' + e.inputType +
+          ' dataLen=' + (e.data ? e.data.length : 0) + ' defaultPrevented=' + e.defaultPrevented);
+      }
+      _pdLastLen = this.value.length;
+    });
+    _pdEl.addEventListener('input', function(e) {
+      var d = this.value.length - (_pdLastLen === -1 ? this.value.length : _pdLastLen);
+      // Only log meaningful jumps (a paste is almost never 1 char) to
+      // keep normal typing out of the debug log.
+      if (Math.abs(d) > 1 || (e && e.inputType === 'insertFromPaste')) {
+        logDebugAction('paste-diag[' + _pdId + ']: input type=' + (e && e.inputType) +
+          ' valueLen ' + _pdLastLen + ' -> ' + this.value.length);
+      }
+      _pdLastLen = -1;
+    });
+    _pdEl.addEventListener('compositionstart', function() {
+      logDebugAction('paste-diag[' + _pdId + ']: compositionstart');
+    });
+    _pdEl.addEventListener('compositionend', function(e) {
+      logDebugAction('paste-diag[' + _pdId + ']: compositionend dataLen=' + (e.data ? e.data.length : 0));
+    });
+    // v0.1635 GESTURE-level diagnostics: Lynn's report says the paste
+    // POPUP never appears, so the event tracer above never fires — by
+    // design its silence pointed at the OS layer. These fire from the
+    // raw gesture itself, popup or no popup, so any Android attempt
+    // produces SOME log trail. touchend logs press duration: a long-
+    // press shows as 500ms+. contextmenu is what Android fires for a
+    // text-field long-press — logged, never preventDefaulted.
+    var _pdTouchStartAt = 0;
+    _pdEl.addEventListener('touchstart', function(e) {
+      _pdTouchStartAt = Date.now();
+      logDebugAction('paste-diag[' + _pdId + ']: touchstart touches=' + e.touches.length +
+        ' valueLen=' + this.value.length + ' focused=' + (document.activeElement === this));
+    }, { passive: true });
+    _pdEl.addEventListener('touchend', function() {
+      logDebugAction('paste-diag[' + _pdId + ']: touchend pressMs=' +
+        (_pdTouchStartAt ? Date.now() - _pdTouchStartAt : -1));
+    }, { passive: true });
+    _pdEl.addEventListener('contextmenu', function(e) {
+      logDebugAction('paste-diag[' + _pdId + ']: contextmenu fired (defaultPrevented=' + e.defaultPrevented + ')');
+      // deliberately NOT preventing default — the OS menu is wanted here
+    });
+    _pdEl.addEventListener('focus', function() {
+      logDebugAction('paste-diag[' + _pdId + ']: focus (valueLen=' + this.value.length + ')');
+    });
+  });
+
+  // v0.1636: explicit Paste buttons for both dialogs. mousedown
+  // preventDefault keeps the textarea focused (and its caret position
+  // intact) through the button press -- the same pattern every toolbar
+  // button in this app uses.
+  [['qa-paste-btn', 'quick-add-input'], ['eb-paste-btn', 'edit-block-input']].forEach(function(pair) {
+    var btn = document.getElementById(pair[0]);
+    if (!btn) return;
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    btn.addEventListener('click', function() { pasteIntoDialogInput(pair[1]); });
+  });
+
   updateViewOnlyBtns = function() {
     var crossoutBtn   = document.getElementById('crossout-mode-btn');
     var clearBtn      = document.getElementById('clear-strikethroughs-btn');
@@ -29865,12 +30415,32 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     closeMoreMenu();
     openFind();
   });
+  document.getElementById('more-find-replace-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-find-replace-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    openFindReplace();
+  });
   document.getElementById('find-close-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('find-close-btn').addEventListener('click', function() { closeFind(); });
   document.getElementById('find-prev-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('find-prev-btn').addEventListener('click', function() { findPrev(); });
   document.getElementById('find-next-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('find-next-btn').addEventListener('click', function() { findNext(); });
+  document.getElementById('find-replace-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('find-replace-btn').addEventListener('click', function() { runReplaceCurrent(); });
+  document.getElementById('find-replace-all-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('find-replace-all-btn').addEventListener('click', function() { runReplaceAll(); });
+  document.getElementById('find-replace-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Typing mode with a changed, not-yet-searched query: run the
+      // search first (same rule as Enter in the find field), otherwise
+      // replace the current match.
+      if (!isViewMode && _findQuery !== (document.getElementById('find-input').value || '')) { runFind(); }
+      else { runReplaceCurrent(); }
+    }
+    if (e.key === 'Escape') { closeFind(); }
+  });
   document.getElementById('find-input').addEventListener('input', function() {
     // Search-as-you-type only in R&R mode. In typing mode, the match
     // highlight uses the SAME textarea the person is typing the search
@@ -29902,12 +30472,19 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     }
     if (e.key === 'Escape') { closeFind(); }
   });
-  // Keyboard shortcut: Cmd/Ctrl+F
+  // Keyboard shortcuts: Cmd/Ctrl+F = Find, Cmd/Ctrl+H = Find and replace
   document.addEventListener('keydown', function(e) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
       if (document.getElementById('note-screen').classList.contains('active')) {
         e.preventDefault();
         if (_findActive) { closeFind(); } else { openFind(); }
+      }
+    }
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
+      if (document.getElementById('note-screen').classList.contains('active') &&
+          !document.body.classList.contains('view-only-mode')) {
+        e.preventDefault();
+        if (_findActive && _findReplaceMode) { closeFind(); } else { openFindReplace(); }
       }
     }
   });
@@ -30692,10 +31269,77 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       showToast('Tap \u2195 Move again to exit move mode', false);
       return;
     }
+    // v0.1641: desktop/trackpad shift-click range-extend (per Lynn) — a
+    // real Shift key is never present on a touch tap, so this can never
+    // fire from mobile use; it's a pure addition for mouse/trackpad
+    // environments (e.g. iPad + trackpad, or testing in a desktop
+    // browser). Extends from the last line involved in ANY select-mode
+    // tap, matching the familiar file-manager shift-click convention.
+    if (e.shiftKey && _lastSelectTapLine !== null) {
+      var slo = Math.min(_lastSelectTapLine, lineIndex), shi = Math.max(_lastSelectTapLine, lineIndex);
+      for (var si = slo; si <= shi; si++) selectedBlocks.add(si);
+      _lastSelectTapLine = lineIndex;
+      _rangeAnchor = null;
+      renderBlockSelections();
+      updateViewOnlyBtns();
+      return;
+    }
+    // v0.1641: mobile range-select, step 2 of 2 (step 1 is the long-press
+    // listener below, which sets _rangeAnchor). A pending anchor is
+    // consumed by the very next ordinary tap, whichever line it lands on.
+    // Tapping the anchor itself cancels range mode and falls through to
+    // an ordinary toggle on it — a second way to back out besides
+    // long-pressing it again.
+    if (_rangeAnchor !== null) {
+      var anchor = _rangeAnchor;
+      _rangeAnchor = null;
+      if (lineIndex !== anchor) {
+        var lo = Math.min(anchor, lineIndex), hi = Math.max(anchor, lineIndex);
+        for (var i = lo; i <= hi; i++) selectedBlocks.add(i);
+        _lastSelectTapLine = lineIndex;
+        renderBlockSelections();
+        updateViewOnlyBtns();
+        return;
+      }
+    }
     toggleBlockSelection(lineIndex);
+    _lastSelectTapLine = lineIndex;
     // Recheck arrow visibility and indent/dedent visibility after selection change
     updateViewOnlyBtns();
   });
+
+  // v0.1641: mobile range-select, step 1 of 2 — long-press a line in
+  // Select Lines mode to mark it as the pending range anchor (added to
+  // the selection immediately, shown with the dashed amber outline),
+  // then tap any other line to select everything between them inclusive
+  // (step 2, in the click handler above). Delegated via attachLongPress's
+  // selector option so it survives note re-renders with no re-attaching.
+  var _rangeLp = attachLongPress(document.getElementById('note-viewer'), {
+    delay: 600,
+    moveThreshold: 10,
+    selector: '.viewer-line',
+    onFire: function(x, y, lineDiv) {
+      if (!selectMode || moveMode) return;
+      var lineIndex = parseInt(lineDiv.dataset.line, 10);
+      if (isNaN(lineIndex)) return;
+      _rangeAnchor = lineIndex;
+      selectedBlocks.add(lineIndex);
+      renderBlockSelections();
+      updateViewOnlyBtns();
+      showToast('Now tap the line at the other end of the range', false);
+    }
+  });
+  // Swallow the synthesized click that browsers (notably iOS Safari) fire
+  // after an unprevented touchend, following the SAME pattern already
+  // used for note-item long-press — without this, that synthetic click
+  // would hit the click handler above immediately after onFire, see
+  // lineIndex === _rangeAnchor (the line just long-pressed), and cancel
+  // the range mode it had just armed.
+  document.getElementById('note-viewer').addEventListener('touchend', function(e) {
+    if (_rangeLp.fired) { e.preventDefault(); }
+  }, { passive: false });
+
+
 
   // Confirm dialog
   document.getElementById('confirm-cancel-btn').addEventListener('click', function() {
@@ -32630,15 +33274,23 @@ var _findMatches    = [];  // array of {lineIndex, matchIndex, startOffset, leng
 var _findCurrent    = -1;  // index into _findMatches
 var _findQuery      = '';
 var _findActive     = false;
+var _findReplaceMode = false; // v0.1632: true when opened via "Find and replace"
 
-function openFind() {
-  logDebugAction('Opened Find in note');
+function openFind(keepReplaceMode) {
+  // v0.1632: openFind() alone is always find-only; openFindReplace()
+  // passes keepReplaceMode=true after setting _findReplaceMode, so every
+  // pre-existing openFind() call site stays find-only automatically.
+  if (!keepReplaceMode) _findReplaceMode = false;
+  logDebugAction(_findReplaceMode ? 'Opened Find and replace' : 'Opened Find in note');
   // No longer forces R&R mode — Find now has a simple typing-mode path
   // too (see runFind()/setCurrentMatch()), for people using
   // noteEditingMode:'typing' with R&R mode disabled entirely.
   _findActive = true;
   var bar = document.getElementById('find-bar');
-  if (bar) bar.classList.add('open');
+  if (bar) {
+    bar.classList.add('open');
+    bar.classList.toggle('replace-mode', _findReplaceMode);
+  }
   var input = document.getElementById('find-input');
   if (input) {
     input.value = _findQuery;
@@ -32650,16 +33302,31 @@ function openFind() {
   runFind();
 }
 
+function openFindReplace() {
+  // "Find and replace" (v0.1632): the same bar with the replace row
+  // shown. The menu item is already hidden on view-only notes; this
+  // runtime guard covers the Cmd/Ctrl+H path and any future caller.
+  if (document.body.classList.contains('view-only-mode')) {
+    showToast('This note is view only', false);
+    return;
+  }
+  _findReplaceMode = true;
+  openFind(true);
+}
+
 function closeFind() {
   logDebugAction('Closed Find in note');
   _findActive = false;
+  _findReplaceMode = false;
   _findQuery = '';
   _findMatches = [];
   _findCurrent = -1;
   var bar = document.getElementById('find-bar');
-  if (bar) bar.classList.remove('open');
+  if (bar) bar.classList.remove('open', 'replace-mode');
   var input = document.getElementById('find-input');
   if (input) input.value = '';
+  var repInput = document.getElementById('find-replace-input');
+  if (repInput) repInput.value = '';
   var findBtn = document.getElementById('find-btn');
   if (findBtn) findBtn.classList.remove('active');
   // Re-render viewer without highlights — only relevant in R&R mode;
@@ -32693,15 +33360,10 @@ function runFind(skipJump) {
   }
 
   // Find all matches in content (case-insensitive) — shared between both
-  // modes; this part never depended on rendering at all.
-  var lower = content.toLowerCase();
-  var q     = _findQuery.toLowerCase();
-  var pos   = 0;
-  var matchPositions = []; // {start, end} in content string
-  while ((pos = lower.indexOf(q, pos)) !== -1) {
-    matchPositions.push({ start: pos, end: pos + q.length });
-    pos += q.length;
-  }
+  // modes; this part never depended on rendering at all. v0.1631: the
+  // scan itself moved verbatim into findMatchPositions() so Replace uses
+  // the IDENTICAL definition of a match.
+  var matchPositions = findMatchPositions(content, _findQuery); // {start, end} in content string
 
   if (matchPositions.length === 0) {
     if (isViewMode) {
@@ -32861,6 +33523,116 @@ function updateFindUI() {
   }
   if (prevBtn) prevBtn.disabled = total === 0 || _findCurrent <= 0;
   if (nextBtn) nextBtn.disabled = total === 0 || _findCurrent >= total - 1;
+  var repBtn    = document.getElementById('find-replace-btn');
+  var repAllBtn = document.getElementById('find-replace-all-btn');
+  if (repBtn)    repBtn.disabled    = total === 0 || _findCurrent < 0;
+  if (repAllBtn) repAllBtn.disabled = total === 0;
+}
+
+
+// ── Replace (v0.1631) ──────────────────────────────────────────────────────
+function findMatchPositions(content, query) {
+  // The ONE definition of a Find match — extracted verbatim from
+  // runFind()'s original inline scan so Find highlighting and Replace can
+  // never disagree. Case-insensitive, LITERAL text (never a regex —
+  // characters like . * ( ) match themselves only). Returns ordered,
+  // non-overlapping {start, end} offsets into content.
+  var out = [];
+  if (!query || !String(query).trim()) return out;
+  var lower = String(content == null ? '' : content).toLowerCase();
+  var q     = String(query).toLowerCase();
+  var pos   = 0;
+  while ((pos = lower.indexOf(q, pos)) !== -1) {
+    out.push({ start: pos, end: pos + q.length });
+    pos += q.length;
+  }
+  return out;
+}
+
+function applyReplaceAll(content, query, replacement) {
+  // Pure + harness-testable: replace every case-insensitive literal
+  // occurrence of query with replacement. Positions are precomputed and
+  // applied back-to-front, so a replacement that itself contains the
+  // query (cat -> cats) can never loop or re-match, and everything
+  // outside the matches is preserved byte-for-byte.
+  var c = String(content == null ? '' : content);
+  var r = String(replacement == null ? '' : replacement);
+  var positions = findMatchPositions(c, query);
+  for (var i = positions.length - 1; i >= 0; i--) {
+    c = c.slice(0, positions[i].start) + r + c.slice(positions[i].end);
+  }
+  return { content: c, count: positions.length };
+}
+
+function runReplaceCurrent() {
+  if (document.body.classList.contains('view-only-mode')) { showToast('This note is view only', false); return; }
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  if (!_findQuery.trim() || _findCurrent < 0 || !_findMatches.length) {
+    showToast('No current match to replace', false);
+    return;
+  }
+  var note    = notes[currentNoteId];
+  var content = note.content || '';
+  // Recompute offsets from content: R&R mode's _findMatches holds DOM
+  // <mark> elements, not offsets — but both modes' match lists are built
+  // from this same ordered scan, so _findCurrent indexes it 1:1.
+  var positions = findMatchPositions(content, _findQuery);
+  if (_findCurrent >= positions.length) {
+    // Content changed under us (shouldn't happen, but never guess) —
+    // refresh the search instead of replacing the wrong text.
+    runFind(true);
+    updateFindUI();
+    return;
+  }
+  var mp = positions[_findCurrent];
+  var repInput = document.getElementById('find-replace-input');
+  var replacement = repInput ? repInput.value : '';
+  pushUndo();
+  var newContent = content.slice(0, mp.start) + replacement + content.slice(mp.end);
+  note.content = newContent;
+  note.editedAt = Date.now();
+  var ed = document.getElementById('note-editor');
+  if (ed) ed.value = newContent;
+  saveNotes();
+  logDebugAction('Find: replaced match ' + (_findCurrent + 1) + ' of ' + positions.length);
+  // Land on the first match AFTER the replaced region (standard replace
+  // behavior; immune to a replacement that contains the query).
+  var boundary = mp.start + replacement.length;
+  runFind(true);
+  var newPositions = findMatchPositions(newContent, _findQuery);
+  var nextIdx = -1;
+  for (var i = 0; i < newPositions.length; i++) {
+    if (newPositions[i].start >= boundary) { nextIdx = i; break; }
+  }
+  if (nextIdx === -1 && newPositions.length) nextIdx = newPositions.length - 1;
+  if (nextIdx !== -1) setCurrentMatch(nextIdx);
+  updateFindUI();
+}
+
+function runReplaceAll() {
+  if (document.body.classList.contains('view-only-mode')) { showToast('This note is view only', false); return; }
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  if (!_findQuery.trim() || !_findMatches.length) {
+    showToast('No matches to replace', false);
+    return;
+  }
+  var note     = notes[currentNoteId];
+  var content  = note.content || '';
+  var repInput = document.getElementById('find-replace-input');
+  var r = applyReplaceAll(content, _findQuery, repInput ? repInput.value : '');
+  if (!r.count) { showToast('No matches to replace', false); return; }
+  // Bulk edit — preserve the original twice, like other bulk operations.
+  snapshotNoteBeforeOp(currentNoteId, 'Replace all');
+  pushUndo();
+  note.content = r.content;
+  note.editedAt = Date.now();
+  var ed = document.getElementById('note-editor');
+  if (ed) ed.value = r.content;
+  saveNotes();
+  logDebugAction('Find: replaced all ' + r.count + ' match(es)');
+  runFind(true);
+  updateFindUI();
+  showToast('Replaced ' + r.count + ' occurrence' + (r.count === 1 ? '' : 's'), false);
 }
 
 // ===== HR / DIVIDER HELPERS =====
@@ -34023,6 +34795,47 @@ function primaryTagOfLine(line) {
   if (/^\[tag order\]/.test(s.trim())) return null;
   var m = s.match(/@([a-zA-Z0-9_-]+)/);
   return m ? m[1] : null;
+}
+
+// buildTagOrderMap(lines) -- shared [tag order] parser (v0.1637). Returns
+// { tocIdx, orderMap } (orderMap: {tagName: sortIndex}, first occurrence
+// wins) or null if no [tag order] line exists. Reuses findTagOrderLine();
+// does not reimplement tag-order-line detection.
+function buildTagOrderMap(lines) {
+  var tocIdx = findTagOrderLine(lines);
+  if (tocIdx === -1) return null;
+  var orderMap = {};
+  (lines[tocIdx].match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t, i) {
+    var tag = t.slice(1);
+    if (!(tag in orderMap)) orderMap[tag] = i;
+  });
+  return { tocIdx: tocIdx, orderMap: orderMap };
+}
+
+// _qaTagSortTarget(lines, newTag, orderMap) -- Add Text to Note's
+// "insert tagged items in sorted order" (v0.1637). Finds where a NEW
+// item with primary tag `newTag` belongs among the EXISTING `lines`,
+// per Lynn's rule: before the first existing checkbox-ish item whose own
+// primary tag is equal-or-later in [tag order], or after the last
+// matching-tag item if none sort later, or null (caller falls back to
+// the dialog's chosen position) if nothing in `lines` qualifies.
+// Checkbox-ish detection is ONLY the canonical isChecklistLine() chain
+// (never reimplemented here); primary tag is ONLY primaryTagOfLine().
+// Structural exclusions mirror computeChecklistTagSort exactly: the
+// [tag order] line itself and horizontal rules are never targets.
+function _qaTagSortTarget(lines, newTag, orderMap) {
+  var lastIdx = -1;
+  for (var i = 0; i < lines.length; i++) {
+    var trimmed = lines[i].trim();
+    if (/^\[tag order\]/.test(trimmed)) continue;
+    if (/^(-\s*){3,}$/.test(trimmed)) continue; // horizontal rule -- structural, never a target
+    if (!isChecklistLine(lines[i])) continue;
+    var pt = primaryTagOfLine(lines[i]);
+    if (pt == null || !(pt in orderMap)) continue;
+    if (orderMap[pt] >= orderMap[newTag]) return { idx: i, role: 'trailing' };
+    lastIdx = i;
+  }
+  return lastIdx !== -1 ? { idx: lastIdx, role: 'leading' } : null;
 }
 
 function computeChecklistTagSort(lines, startIdx, endIdx, doubleSpace) {
