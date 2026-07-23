@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1641 -->
+<!-- Remember App - Version 0.1650 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1641
+  Version 0.1650
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,15 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1650 - REVERTED v0.1649 (dictation-newline smart indent), per Lynn's on-device test: it occasionally worked, but when it did, dictation got stuck silently buffering words until she manually toggled the mic off/on -- an active regression to dictation itself, worse than not having the feature at all. Likely cause: this app already recognizes 'insertFromSpeech' as a real inputType (see the beforeinput handler that predates this feature), confirming dictation keeps its own live session state tied to the field while listening -- the feature's raw `ed.value = ...` reassignment is a fundamentally different operation from a real keystroke and likely desynced that session. Not something to keep guessing at blind in the sandbox; a future attempt, if wanted, should try document.execCommand('insertText', ...) instead, which goes through the same insertion path a real keystroke uses -- but that too would need an on-device test, not just code existing. Suite unchanged: 277/277.
+  v0.1649 - NEW (experimental): smart indent / auto continue / continueList now also fires for DICTATED "new line" pauses, per Lynn -- the existing keydown-based smart indent only ever saw a real Enter keypress, and iOS dictation inserts a newline directly with no corresponding keydown, so it was invisible to that path. Separate, narrowly-scoped 'input' listener on the main note editor (not the Edit Paragraph dialog, at least for now): only continues the list if (a) exactly one bare newline appeared with nothing else changed in the same edit, and (b) nothing further arrives during a 500ms pause window afterward, per Lynn's explicit request (she pauses after saying "new line"; continuous dictation through it should not trigger this). Two independent guards against the real risk this design is built around -- corrupting a multi-line PASTE by splicing list markers into the middle of it: inputType exclusion (insertFromPaste/insertFromDrop/delete*/history*/insertReplacementText all skip outright) plus a strict value-diff requiring the ENTIRE change to be exactly one inserted '\n', which any real paste fails regardless of inputType. Verified in the sandbox with synthetic input events covering all three cases (isolated newline continues correctly; a dispatched insertFromPaste multi-line block is completely untouched; a newline immediately followed by more input cancels the pending continuation) -- but this is the one feature this session that could NOT be verified end-to-end, since genuine iOS dictation event timing/shape can't be simulated here; on-device testing is what actually confirms it works, not this code existing. Suite unchanged: 277/277 (no new pure-function cases -- this is DOM-event-driven, not a testable pure function, same as the existing keydown smart indent).
+  v0.1648 - FIX: numbered-list child items weren't restarting at 1, per Lynn's bug report -- confirmed via both the Indent/Unindent toolbar buttons (applyIndentToSelectedBlocks(), which just prepends/removes literal leading spaces -- no bug found there) and manually typing leading spaces in the textarea, both hitting the same root cause: computeOrderedListNumbers() honored whatever digit was already typed when starting ANY new nesting level, not just a genuinely fresh run -- so indenting an existing "4. Fourth" (digit left unchanged) kept showing "4." instead of restarting at "1." like every other outliner/word processor. Fixed: the typed start number is now honored ONLY when the stack was completely empty before the push (a real fresh run, e.g. "5. 5. 5." at the very top of a list, or the first item after a paragraph break); a new level nested under an existing parent always starts at 1, full stop. 3 new cases (v21) covering Lynn's exact scenario, the still-working fresh-run start-number case, and a return-then-renest case; existing 274 cases didn't happen to cover this gap. Suite: 277/277.
+  v0.1647 - NEW: "Numbered List Sampler" built-in sample note (fixed id note-ordered-list-sampler, lives in the Sample Notes folder), demonstrating v0.1646's numbered-list auto-renumbering: basic sequential renumbering, typed-digits-after-the-first-are-ignored, three-level nesting with resume-not-restart, both '.'/')' punctuation styles, a paragraph breaking one list into two, bold/italic/link formatting inside list items, and a live spot to try smart indent (auto continue). Installed both on fresh install and via Settings > Reinstall Sample Notes (createInitialNotes() is the same function behind both) -- follows the if (!notes[id]) guard pattern the most recently added samples (poem/fun/dyslexia/why-remember) already use, which is inherently reinstall-safe: since it never reassigns an id that already exists, a rename or edit survives Reinstall automatically with no dependency on the separate snapshot/restore wrapper older fixed-id samples need. Verified directly: created once, renamed, reinstalled -- rename survived, no duplicate. Suite unchanged: 274/274 on cases v20 / goldens v21.
+  v0.1646 - NEW: numbered (ordered) markdown lists, "Option 2" per Lynn's own framing: 1./1) markers now auto-renumber in R&R view (only the first item of a run sets the start number, matching standard markdown/Word/Google Docs behavior -- "5. 5. 5." displays "5. 6. 7.", and deleting/reordering a middle item just works without retyping everything below it), WITH nesting (independent counter per indent depth, resuming -- not restarting -- a shallower level after a deeper sub-list ends). Deliberately NOT wired into isMarkerLineRaw/isCheckboxRaw -- the shared classifier Collapsible Outline/Move mode/indent-dedent/sort-by-tag/tag-sort-insert all depend on -- so numbered items don't collapse/move/tag yet ("Option 3", deferred by Lynn's explicit choice, not forgotten: computeOrderedListNumbers()/getOrderedListMarker() are their own single-source-of-truth pair, mirroring the isMarkerLineRaw/findTagOrderLine pattern, specifically so teaching isMarkerLineRaw to recognize these lines later is a small addition, not a rewrite). Rendering reuses getDefaultMarkColor() for the marker color (same default-color philosophy as bullets/checkboxes) and inherits inline bold/link formatting for free (the marker-replace happens on the already-formatted line, same technique bullets use). ALSO: smart indent (aka auto continue / continueList / continue list -- see the extensive alias comments added to getSmartIndentPrefix() and both its keydown call sites, since a prior build in this same chat incorrectly claimed this feature didn't exist at all -- it does, for bullets/checkboxes, and now for numbers too) now continues numbered lists on Enter, incrementing THIS line's own typed number by 1 -- deliberately independent of the view-mode cross-line renumbering, since typing mode always shows literal typed digits. Same empty-item-ends-the-list behavior as bullets (an empty "9. " does not continue), and _siCheckAndClear() needed zero changes -- it already tracked prefix length generically, not specific characters. New cases v20 (+18: getOrderedListMarker, computeOrderedListNumbers, and the numbered branch of getSmartIndentPrefix) / goldens v21, all hand-verified against the design before acceptance. Suite: 274/274.
+  v0.1645 - NEW: [text](url) markdown links now render as a clean clickable link showing just the text, in R&R (view) mode only -- per Lynn, following up on the paste-bold fix. Typing mode is untouched (it's just the raw textarea, never routed through urlsToLinks). Implemented as a placeholder-extraction pass in urlsToLinks(), the SAME established technique already used for markdown images and inline code spans: runs after code-span extraction (so link-looking syntax typed literally inside a code span stays literal) and before bold/italic (link text isn't re-processed for nested markdown, matching how image alt text is already handled). No lookbehind used (unsupported before Safari 16.4) -- unneeded anyway since image syntax is already consumed into placeholders by the time this pass runs, so it can't double-match. Display-text character class excludes both [ and ] (not just ]) -- caught during testing against Lynn's actual pasted citation-list text, where a doubled bracket like "[[1](url), [2](url)]" (a common AI-citation wrapping convention, not standard markdown) would otherwise swallow the stray outer bracket into the first link's visible text; the fix leaves that outer bracket as harmless literal punctuation next to a clean link instead. Bare https:// URLs and markdown images are unaffected (verified: bare-URL autolinking, image rendering, checkbox lines, and [tag order] lines all produce identical output to before). Suite unchanged: 256/256 on cases v19 / goldens v20.
+  v0.1644 - FIX: pasting rich HTML (e.g. an AI-generated response or webpage) that contains both formatting AND at least one link silently lost ALL bold/italic, reported by Lynn. Root cause, confirmed by direct testing (not the leading-# theory she suspected -- verified that's unrelated: isHeadingRaw/getHeadingLevel are evaluated fresh per line with no shared state, so a heading or bare # cannot affect unrelated bold elsewhere): the paste handler's extractText() -- which only engages at all when the pasted HTML contains a <a href> link -- walked the DOM and kept plain textContent for every element except <a>, discarding <b>/<strong>/<i>/<em> entirely rather than re-encoding them as the app's own **bold**/*italic* markup. Fixed by mapping those four tags to their markup wrapper (nested tags compose naturally: <strong><em> -> ***text***); everything else extractText already did (link handling, block-tag newlines) is unchanged. Note: [text](url)-style markdown links are still NOT specially rendered -- urlsToLinks only auto-links bare URLs it finds in text, so a citation like "[1](https://...)" still shows the raw URL next to literal bracket punctuation rather than a clean "1" link; that's a separate, larger ask Lynn raised but didn't request yet. Suite unchanged: 256/256 on cases v19 / goldens v20.
+  v0.1643 - Removed the "PASTE DIAG" toast + logSys block from the main note editor's native paste handler, per Lynn: pasting text containing links (e.g. from a webpage) popped a persistent, tap-to-copy toast listing every link found, with no remaining purpose. It dated to v0.1530/1531, investigating iOS's popup-Paste percent-encoding behavior; that investigation was superseded by v0.1636's explicit Paste button, which bypasses this handler's link branch entirely via navigator.clipboard.readText(). It only ever observed and never changed paste behavior, so removing it changes nothing about how paste actually works -- only that it now completes silently. _diagChecksum/_diagSample helpers untouched (still used by the separate, silent COPY-PLAIN/COPY-SPEECH diagnostics elsewhere). Suite unchanged: 256/256 on cases v19 / goldens v20.
+  v0.1642 - FIX: init() crashed entirely on iOS 12 Safari, reported by Lynn testing an old iPhone. Cause: window.matchMedia(...).addEventListener('change', ...) for system dark-mode detection -- addEventListener() on a MediaQueryList wasn't added until Safari 14/iOS 14; iOS 12 only has the older addListener() method. Since nothing caught the throw at that point, EVERY listener registered later in init() (every toolbar button, context menu, dialog) silently never got wired up -- far bigger than just dark-mode switching, which is presumably why it "seemed to work" but was actually missing most interactivity underneath. Fixed with a feature-detected fallback: addEventListener when available, else the older addListener. Not a general iOS-12 compatibility audit -- just this one reported, confirmed crash; other legacy-Safari gaps may still exist and aren't ruled out. Suite unchanged: 256/256 on cases v19 / goldens v20.
   v0.1641 - R&R Select Lines mode gets range-select, per Lynn's request for a way to select many lines without requiring a drag (senior-user constraint). TWO independent additions, both purely additive -- ordinary tap-to-toggle is completely unchanged, so scattered/non-contiguous selection still works exactly as before: (1) Mobile: long-press a line to mark it the pending range anchor (added to the selection immediately, shown with a dashed amber outline via new .range-anchor-pending CSS) -- delegated through attachLongPress()'s new optional `selector` param (backward compatible, all 3 existing call sites unaffected) so it survives note re-renders with no re-attaching needed. The very next ordinary tap, on any line, selects everything between the anchor and that line inclusive; tapping the anchor itself cancels range mode and falls through to a normal toggle. The iOS synthesized click that follows a long-press's touchend is swallowed via the SAME e.preventDefault()-on-fired pattern note-item long-press already uses -- without it, that synthetic click would immediately cancel the range mode it had just armed. (2) Desktop/trackpad: shift-click extends from the last line involved in any select-mode tap, matching the standard file-manager convention -- real Shift is never present on a touch tap, so this is a pure addition invisible to mobile use. Overshooting a range needs no special undo: any extra lines come out with ordinary individual taps, same as scattered selection always has. Deliberately NOT built yet (per Lynn, ship the basic version first and see if it's needed): re-long-pressing to redraw/redo a range rather than trim it manually. Suite unchanged: 256/256 on cases v19 / goldens v20.
   v0.1640 - Add Text to Note dialog: (1) removed the "(- )" and example checkbox glyph from the end of the hyphen/checkbox marker labels -- both were purely illustrative and wrapped confusingly onto their own line at large font sizes; the checkbox label's now-unneeded wrapper <span> was removed along with it. (2) Added a scroll-shadow indicator to the scrollable middle region (.qa-scroll-fade, new CSS class) using the well-known zero-JS "CSS scroll shadows" technique: two solid fade gradients pinned to the CONTENT (background-attachment: local) sit in front of two soft shadow gradients pinned to the VIEWPORT (background-attachment: scroll) -- a shadow only becomes visible at an edge once its fade has scrolled out of the way, i.e. exactly when there's more content past that edge, with no scroll-position listener needed. Suite unchanged: 247/247 on cases v18 / goldens v19.
   v0.1639 - Add Text to Note dialog polish, per Lynn's first-look feedback on v0.1638's scrollable middle region: (1) the native scrollbar was overlapping the Paste button and textarea -- gave #quick-add-scroll its own 16px lane via padding-right + equal negative margin-right, which relocates the scrollbar without narrowing the dialog's visual width; (2) added padding-bottom so the last visible row (checkbox or not) never sits flush against the scroll edge. Suite unchanged: 247/247 on cases v18 / goldens v19.
@@ -4010,6 +4019,7 @@ body.has-mouse .toolbar-drag-handle.dragging {
    alone doesn't reliably center a bullet glyph against surrounding text across
    fonts, so nudge it up slightly as well. */
 .viewer-bullet-char { display: inline-block; vertical-align: middle; line-height: 1; transform: translateY(-0.05em); }
+.viewer-ordered-marker { font-variant-numeric: tabular-nums; } /* v0.1646: steady width as numbers change length (9. vs 10.) */
 /* v0.1627: CSS-drawn square for the third-level multi-level bullet,
    replacing the font-glyph U+25AA. Sized proportionally to font-size so
    it scales with the user's text-size setting the same way the
@@ -10045,7 +10055,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1641';
+const APP_VERSION = '0.1650';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14845,6 +14855,24 @@ function urlsToLinks(text, addLineWrappers) {
       code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</code>');
     return 'REMEMBCODE' + idx + 'END';
   });
+  // v0.1645: [text](url) markdown links, per Lynn — R&R (view) mode only;
+  // typing mode is untouched since it just shows the raw textarea, never
+  // routed through this function. Runs AFTER code spans (so link-looking
+  // syntax typed literally inside a code span stays literal, not
+  // linkified) and BEFORE the bold/italic passes below (so link text
+  // isn't re-processed — matches how image alt text is handled, kept
+  // deliberately simple/consistent rather than resolving nested markdown
+  // inside link text). No lookbehind used (Safari didn't support it until
+  // 16.4) — safe without one anyway, since by this point any `![text](url)`
+  // image syntax has already been consumed into a REMEMBIMG placeholder
+  // above, so a plain `[text](url)` pass here can't double-match it.
+  var _linkPlaceholders = [];
+  preprocessed = preprocessed.replace(/\[([^\[\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, function(m, text, url) {
+    var idx = _linkPlaceholders.length;
+    _linkPlaceholders.push('<a href="' + url + '" target="_blank" rel="noopener noreferrer">'
+      + text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</a>');
+    return 'REMEMBLINK' + idx + 'END';
+  });
   // Build tag→color map early (needed for pill coloring which runs before addLineWrappers)
   var _tagColorMap = {};
   var _tagColorIdx = 0;
@@ -14976,6 +15004,12 @@ function urlsToLinks(text, addLineWrappers) {
       return _codePlaceholders[parseInt(idx)] || '';
     });
   }
+  // Restore [text](url) markdown-link placeholders — same timing requirement
+  if (_linkPlaceholders.length > 0) {
+    escaped = escaped.replace(/REMEMBLINK(\d+)END/g, function(m, idx) {
+      return _linkPlaceholders[parseInt(idx)] || '';
+    });
+  }
   if (addLineWrappers) {
     var renderedLines = escaped.split('\n');
     var _rawLines = text.split('\n');
@@ -15032,6 +15066,9 @@ function urlsToLinks(text, addLineWrappers) {
         _sectionDepth.push(_curDepth);
       });
     }
+    // v0.1646: numbered-list renumbering pre-pass — see
+    // computeOrderedListNumbers()'s own header comment for the full plan.
+    var _orderedListNumbers = computeOrderedListNumbers(_rawLines);
     // _tagColorMap / _getTagColor / _TAG_COLORS built at top of urlsToLinks (before line processing)
     function _isPureTagLineLocal(line) {
       return /^\s*(@[a-zA-Z0-9_-]+\s*)+$/.test(line) || /^\[tag order\]/.test(line.trim());
@@ -15098,6 +15135,32 @@ function urlsToLinks(text, addLineWrappers) {
       // the headingIndent setting's level-hierarchy-based depth, same
       // as before this whitespace-recognition fix.
       var rawLine = rawForHr;
+      // v0.1646: numbered (ordered) markdown lists — render-only (Option
+      // 2; see computeOrderedListNumbers()'s header comment). Checked
+      // before headings/bullets: a digit-led line can never collide with
+      // '#' or '-*+', so order doesn't matter for correctness, but
+      // keeping this near the top keeps it self-contained. `line` at
+      // this point already has bold/italic/link/etc rendering applied
+      // (those passes ran on the whole note before splitting into
+      // lines) — only the leading whitespace + raw digit marker need
+      // replacing, matching the technique bullets use just below.
+      // Indentation here is a simple, independent inline padding-left —
+      // deliberately NOT the shared list-continuation-indent flex system
+      // bullets/checkboxes use, since that system keys off
+      // isCheckboxRaw(), which numbered lines intentionally don't
+      // participate in yet.
+      var _olEntry = _orderedListNumbers[i];
+      if (_olEntry) {
+        var _olMarkerMatch = rawLine.match(/^([ \t]*)\d+[.)] /);
+        var _olIndentSpaces = _olMarkerMatch ? _olMarkerMatch[1].length : 0;
+        var _olIndentLevel = Math.floor(_olIndentSpaces / (settings.indentSpaces || 4));
+        var _olPad = _olIndentLevel > 0 ? ' style="padding-left:' + (_olIndentLevel * _viw) + 'em"' : '';
+        var _olContent = line.replace(/^[ \t]*\d+[.)] /, '');
+        return '<div class="viewer-line" data-line="' + i + '"' + _olPad + '>'
+          + '<span class="viewer-ordered-marker" style="color:' + getDefaultMarkColor() + '">'
+          + _olEntry.number + _olEntry.punct + '</span> '
+          + (_olContent || '&nbsp;') + '</div>';
+      }
       if (isHeadingRaw(rawLine)) {
         var level = getHeadingLevel(rawLine);
         var _hMarkerMatch = rawLine.match(/^(\s*#{1,6}\s+)/);
@@ -16011,6 +16074,15 @@ function createNewNote() {
 }
 
 // ===== SMART INDENT HELPER =====
+// Also known as: auto continue, autoContinue, continue list, continueList
+// -- "smart indent" is this app's own name for the feature (Lynn coined
+// it before learning the more common industry names); search terms
+// added here in v0.1646 specifically so a future Claude session grepping
+// for "auto continue"/"autoContinue"/"continue list"/"continueList" (the
+// names most other apps and docs use for "pressing Enter after a list
+// item automatically starts the next one") lands on this function
+// instead of concluding the feature doesn't exist, the way v0.1645
+// mistakenly did.
 // Given the text of the current line (from line-start to cursor position),
 // returns the prefix to repeat on the next line, or null if smart indent
 // should not apply.
@@ -16018,6 +16090,11 @@ function createNewNote() {
 // Returns the prefix to insert on the next line. A checkbox always
 // continues as a fresh unchecked box (color preserved if present); a
 // plain marker (no checkbox) continues with the same marker character.
+// v0.1646: numbered (ordered) lists ("1. "/"1) ") also continue now, but
+// unlike bullets/checkboxes they INCREMENT rather than repeat — see the
+// dedicated comment on that branch below for why this deliberately does
+// NOT consult computeOrderedListNumbers() (the view-mode renumbering
+// pre-pass).
 function getSmartIndentPrefix(lineText) {
   // Strip formatting wrappers so we can see through bold/italic/highlight/color
   // to find the checkbox/hyphen marker. Keep leading whitespace intact.
@@ -16027,6 +16104,21 @@ function getSmartIndentPrefix(lineText) {
   stripped = stripped.replace(/^([ \t]*)\*(.*?)\*$/, '$1$2');   // italic
   stripped = stripped.replace(/^([ \t]*)~~(.*?)~~$/, '$1$2');  // strikethrough
   stripped = stripped.replace(/^([ \t]*)\{[a-z0-9]+\}(.*?)\{\/[a-z0-9]+\}$/, '$1$2'); // color
+  // v0.1646: numbered list AUTO CONTINUE / CONTINUE LIST. Checked before
+  // the bullet/checkbox pattern below (a digit-led line never matches
+  // that one anyway, so order is just for readability). Increments THIS
+  // line's own typed number by 1 for the next line ("3. " -> "4. ") —
+  // deliberately does NOT consult the rest of the note the way view-mode
+  // renumbering does: typing mode always shows literal typed digits, so
+  // "what comes next while actively typing this line" is simply "one
+  // more than what's typed here," full stop. Same trailing-\S
+  // requirement as the bullet pattern below (an empty "3. " with nothing
+  // typed after it does NOT continue — Enter on an empty item ends the
+  // list, matching the existing bullet/checkbox behavior exactly).
+  var mOl = stripped.match(/^([ \t]*)(\d+)([.)])( +)\S/);
+  if (mOl) {
+    return mOl[1] + (parseInt(mOl[2], 10) + 1) + mOl[3] + ' ';
+  }
   // Match: WS, marker (-/*/+), WS, optional checkbox bracket + WS, then content
   var m = stripped.match(/^([ \t]*)([-*+])([ \t]+)(?:(\[\s*[xX]?\s*(?::[a-z]+)?\s*\])([ \t]+))?\S/);
   if (!m) return null;
@@ -19977,9 +20069,22 @@ function init() {
   initHorizScrollGuard();
 
   // System dark mode changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+  // v0.1642: iOS 12 Safari's MediaQueryList only supports the older
+  // addListener() API — addEventListener() on a media query wasn't added
+  // until Safari 14 (iOS 14). Without this fallback, the call below
+  // THROWS, which aborts init() right here — every listener registered
+  // LATER in init() (every toolbar button, context menu, dialog) then
+  // silently never gets wired up, not just dark-mode switching. Reported
+  // by Lynn testing on an iPhone running iOS 12.
+  var _darkModeMql = window.matchMedia('(prefers-color-scheme: dark)');
+  var _onDarkModeChange = function() {
     if (settings.theme === 'auto') applySettings();
-  });
+  };
+  if (typeof _darkModeMql.addEventListener === 'function') {
+    _darkModeMql.addEventListener('change', _onDarkModeChange);
+  } else if (typeof _darkModeMql.addListener === 'function') {
+    _darkModeMql.addListener(_onDarkModeChange); // iOS < 14 / Safari < 14
+  }
 
   // Voices async load
   if (window.speechSynthesis) {
@@ -24623,6 +24728,9 @@ function makeImportFolderName(label) {
       var pos = ed.selectionStart;
       var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
       var lineText = val.substring(lineStart, pos);
+      // Smart indent (aka auto continue / autoContinue / continue list /
+      // continueList — see getSmartIndentPrefix()'s header comment) fires
+      // here, on Enter in the main note editor.
       var prefix = getSmartIndentPrefix(lineText);
       if (prefix !== null) {
         e.preventDefault();
@@ -25045,6 +25153,28 @@ function makeImportFolderName(label) {
     }
     scheduleSave();
   });
+
+  // v0.1650: REVERTED the v0.1649 dictation-newline smart-indent feature
+  // after Lynn's on-device test. It occasionally worked, but when it did,
+  // it left dictation stuck buffering words silently until she manually
+  // toggled the mic off/on -- a real, active regression to dictation
+  // itself, not just a nonfunctional nice-to-have. Likely cause: this
+  // app already recognizes 'insertFromSpeech' as a real inputType (see
+  // the beforeinput handler just below, which predates this feature) --
+  // dictation clearly carries its own live session state tied to the
+  // field while listening, and setting `ed.value = ...` wholesale (as
+  // this feature did) is a fundamentally different operation from a real
+  // keystroke; it likely desynced whatever internal buffer/position
+  // tracking that session was keeping. This couldn't be verified or
+  // fixed with any confidence in the sandbox -- genuine iOS dictation
+  // session behavior isn't something to keep guessing at blind, given
+  // the failure mode is worse than doing nothing. If revisited, a next
+  // attempt should try inserting via document.execCommand('insertText',
+  // ...) instead of a raw .value assignment -- that path goes through
+  // the same insertion mechanism a real keystroke uses and is less
+  // likely to conflict with a live composition/dictation session -- but
+  // that is unverified here too and would need the same on-device test.
+
   // Capture content just before any input so we have a pre-deletion snapshot
   document.getElementById('note-editor').addEventListener('beforeinput', function(e) {
     this._preDeleteSnapshot = this.value;
@@ -25060,48 +25190,16 @@ function makeImportFolderName(label) {
 
     // Check if clipboard has HTML content with links
     var html = e.clipboardData && e.clipboardData.getData('text/html');
-    // ── DIAGNOSTIC (v0.1530) ────────────────────────────────────────────
-    // Investigating: iOS's native popup "Paste" menu sometimes inserts
-    // percent-encoded text (%20 for spaces, %0A for newlines) even though
-    // Remember's own Copy/Paste toolbar buttons never do. Our own toolbar
-    // Paste button uses navigator.clipboard.readText() (plain text only)
-    // and never reaches this handler's link branch — so if this IS the
-    // culprit, it must be the OS synthesizing an HTML clipboard flavor
-    // (with an auto-detected link) for what was copied as plain text.
-    // This block only OBSERVES and logs; it changes no behavior.
-    try {
-      var plainTextDiag = e.clipboardData && e.clipboardData.getData('text/plain');
-      // DIAGNOSTIC (v0.1531): checksum form, directly comparable to the
-      // COPY-PLAIN/COPY-SPEECH DIAG lines logged at copy time.
-      logSys('PASTE DIAG @ ' + Date.now() + ': hasHTML=' + (!!html) + ' ' +
-        (plainTextDiag ? _diagChecksum(plainTextDiag) + ' ' + _diagSample(plainTextDiag) : '(empty)'));
-      if (html) {
-        var _diagTmp = document.createElement('div');
-        _diagTmp.innerHTML = html;
-        var _diagLinks = _diagTmp.querySelectorAll('a[href]');
-        if (_diagLinks.length > 0) {
-          var _diagLines = [];
-          _diagLinks.forEach(function(a, i) {
-            var _href = a.getAttribute('href') || '';
-            var _text = a.textContent || '';
-            var _decoded = '(decode failed)';
-            try { _decoded = decodeURIComponent(_href); } catch(eDecode) {}
-            _diagLines.push('  [' + i + '] href="' + _href.slice(0, 200) +
-              '" text="' + _text.slice(0, 80).replace(/\n/g, '\\n') +
-              '" decodedHref="' + _decoded.slice(0, 200) + '"');
-          });
-          var _diagMsg = 'PASTE DIAG: ' + _diagLinks.length + ' link(s) found in pasted HTML:\n' +
-            _diagLines.join('\n');
-          logSys(_diagMsg);
-          // Persistent, tap-to-copy toast so this is visible immediately,
-          // not just in the log — per request, for real-time inspection.
-          showToast(_diagMsg, true);
-        }
-      }
-    } catch (eDiag) {
-      logSys('PASTE DIAG: logging itself threw: ' + eDiag);
-    }
-    // ── END DIAGNOSTIC ──────────────────────────────────────────────────
+    // v0.1643: removed the "PASTE DIAG" toast + logSys block that used to
+    // live here (added v0.1530/1531 to investigate iOS's popup-Paste
+    // percent-encoding behavior; that investigation was superseded by
+    // v0.1636's explicit Paste button, which bypasses this handler's link
+    // branch entirely via navigator.clipboard.readText()). It only ever
+    // observed and never changed paste behavior, but its persistent,
+    // tap-to-copy toast fired on every link-containing HTML paste, which
+    // Lynn reported as clutter with no remaining purpose. _diagChecksum/
+    // _diagSample are still used by the separate, silent (no toast)
+    // COPY-PLAIN/COPY-SPEECH diagnostics elsewhere — not touched.
     if (!html) {
       // Plain text paste — convert tabs to spaces
       var plainText = e.clipboardData && e.clipboardData.getData('text/plain');
@@ -25145,7 +25243,20 @@ function makeImportFolderName(label) {
     // Has links — intercept and convert to plain text with URLs preserved
     e.preventDefault();
 
-    // Walk all nodes, converting <a> to "text (url)", keeping other text
+    // Walk all nodes, converting <a> to "text\nurl", <b>/<strong> to
+    // **text**, <i>/<em> to *text* (the app's own inline markup, verified
+    // against urlsToLinks — nested tags compose naturally: <strong><em>
+    // becomes ***text***), keeping other text as plain textContent.
+    // v0.1644 FIX, per Lynn: this function previously discarded ALL HTML
+    // formatting except links — any paste whose clipboard HTML flavor had
+    // real <strong>/<b> (e.g. copying a formatted AI response or webpage
+    // that also contains at least one link, which is what routes the
+    // paste through this function at all — see the links.length check
+    // above) silently lost its bold, regardless of anything else in the
+    // text. A stray leading "#" was NOT the cause — confirmed directly:
+    // isHeadingRaw/getHeadingLevel are evaluated fresh per line with no
+    // shared state, so a heading (or a bare "#" that isn't even
+    // recognized as one) cannot affect unrelated bold elsewhere.
     function extractText(node) {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent;
       if (node.nodeName === 'A') {
@@ -25158,10 +25269,17 @@ function makeImportFolderName(label) {
       }
       // Block elements get a newline after them
       var blockTags = { P:1, DIV:1, BR:1, LI:1, H1:1, H2:1, H3:1, H4:1, H5:1, H6:1, TR:1 };
+      // Inline styles the app's own markup can actually represent — only
+      // these two; anything else (underline, color, font size, etc.)
+      // still falls through to plain text, same as before, since there's
+      // no equivalent markup to preserve it with.
+      var inlineWrap = { B: '**', STRONG: '**', I: '*', EM: '*' };
       var result = '';
       for (var i = 0; i < node.childNodes.length; i++) {
         result += extractText(node.childNodes[i]);
       }
+      var wrap = inlineWrap[node.nodeName];
+      if (wrap && result !== '') result = wrap + result + wrap;
       if (blockTags[node.nodeName]) result += '\n';
       return result;
     }
@@ -29978,6 +30096,9 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       var pos = ed.selectionStart;
       var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
       var lineText = val.substring(lineStart, pos);
+      // Smart indent (aka auto continue / autoContinue / continue list /
+      // continueList) — same shared getSmartIndentPrefix() as the main
+      // note editor, here for the Edit Paragraph dialog's textarea.
       var prefix = getSmartIndentPrefix(lineText);
       if (prefix !== null) {
         e.preventDefault();
@@ -33160,6 +33281,89 @@ function createInitialNotes() {
     };
   }
 
+  var orderedListSamplerId = 'note-ordered-list-sampler';
+  if (!notes[orderedListSamplerId]) {
+    var orderedListSamplerContent = [
+      'Basic auto-renumbering — try deleting the "Second item" line below (in',
+      'typing mode) and look at R&R mode again. Third/Fourth will renumber to',
+      '2/3 automatically, no retyping needed.',
+      '',
+      '1. First item',
+      '2. Second item',
+      '3. Third item',
+      '4. Fourth item',
+      '',
+      'Typed numbers don\'t have to be right — only the FIRST item\'s number is',
+      'honored as the starting point. Every item below it is auto-incremented',
+      'regardless of what digit you actually typed. This block is typed as',
+      '"5. 5. 5. 5." on every line:',
+      '',
+      '5. Alpha',
+      '5. Beta',
+      '5. Gamma',
+      '5. Delta',
+      '',
+      'Nesting — child levels, made with Tab (4 spaces). Notice the sub-list',
+      'restarts at 1, and Fourth (the parent level) correctly resumes at 4',
+      'after the nested list ends, instead of restarting:',
+      '',
+      '1. First',
+      '2. Second',
+      '    1. Second, child one',
+      '    2. Second, child two',
+      '    3. Second, child three',
+      '3. Third',
+      '    1. Third, child one',
+      '        1. Third, child one, grandchild one',
+      '        2. Third, child one, grandchild two',
+      '    2. Third, child two',
+      '4. Fourth',
+      '',
+      'Punctuation styles — both "." and ")" are recognized, and each keeps its',
+      'own style rather than being converted to match the other:',
+      '',
+      '1. Uses a period',
+      '2. Also a period',
+      '',
+      '1) Uses a parenthesis',
+      '2) Also a parenthesis',
+      '',
+      'A paragraph in the middle breaks a list into two separate lists — the',
+      'second one restarts at whatever its own first item says, since there\'s',
+      'no way to know it\'s meant to be "the same list continuing":',
+      '',
+      '1. Before the break',
+      '2. Still before the break',
+      '',
+      'This plain paragraph breaks the list above.',
+      '',
+      '1. This is a NEW list — restarts at 1',
+      '2. Second item of the new list',
+      '',
+      'Formatting inside list items still works normally, same as any other',
+      'line — bold, italic, and links:',
+      '',
+      '1. This item has **bold text** in it',
+      '2. This item has *italic text* in it',
+      '3. This item has a [clean link](https://example.com) in it',
+      '',
+      'Smart indent (auto continue) — place your cursor at the end of any line',
+      'below and press Enter, in typing mode. Try it on "Try me" — you should',
+      'see "9. " appear automatically on the next line, no typing needed.',
+      'Pressing Enter again on an EMPTY numbered line ends the list instead of',
+      'continuing it forever, same as it already works for checkboxes/bullets:',
+      '',
+      '8. Try me',
+      '',
+      '',
+    ].join('\n');
+    notes[orderedListSamplerId] = {
+      id: orderedListSamplerId, name: 'Numbered List Sampler', content: orderedListSamplerContent,
+      autoNamed: false, createdAt: now + 17, editedAt: now + 17, viewedAt: now + 17,
+      folderId: sampleFolderId
+    };
+  }
+
   // Save EVERYTHING created above — folders, every sample note (including
   // the 8 theme-illustrating notes and "Why Remember?" created after this
   // point used to be saved), and the folder assignments — together, in
@@ -34801,6 +35005,86 @@ function primaryTagOfLine(line) {
 // { tocIdx, orderMap } (orderMap: {tagName: sortIndex}, first occurrence
 // wins) or null if no [tag order] line exists. Reuses findTagOrderLine();
 // does not reimplement tag-order-line detection.
+// ===== NUMBERED (ORDERED) MARKDOWN LISTS -- Option 2 (v0.1646) =====
+// Deliberately NOT wired into isMarkerLineRaw/isCheckboxRaw (the shared
+// classifier nearly every checklist/outline feature -- Collapsible
+// Outline, Move mode, indent/dedent, sort-by-tag, the tag-sort insert
+// feature -- depends on). Per Lynn: numbered lists get render-time
+// auto-renumbering and nesting now (matching how virtually every
+// markdown app renumbers on delete/insert/reorder), but do NOT yet
+// participate in any of those other outline features -- that's the
+// deliberately deferred "Option 3" phase. Kept as its own pair of
+// single-source-of-truth functions (mirroring the isMarkerLineRaw /
+// findTagOrderLine pattern already used elsewhere) specifically so that,
+// when Option 3 work begins, teaching isMarkerLineRaw to also recognize
+// these lines is a small, deliberate addition, not a rewrite.
+
+// getOrderedListMarker(line) -- parses a single line for the standard
+// markdown ordered-list marker: optional leading whitespace, one or more
+// digits, then '.' or ')' (both valid per CommonMark), then exactly one
+// space, then content (content itself may be empty -- isMarkerLineRaw
+// doesn't require content after '- ' either, so this matches that same
+// convention). Returns {indent, number, punct} or null.
+function getOrderedListMarker(line) {
+  var s = String(line == null ? '' : line);
+  var m = s.match(/^([ \t]*)(\d+)([.)]) /);
+  if (!m) return null;
+  return { indent: m[1].length, number: parseInt(m[2], 10), punct: m[3] };
+}
+
+// computeOrderedListNumbers(lines) -- returns an array, one entry per
+// line, of {number, punct} (the number to DISPLAY, not necessarily what
+// was typed) or null for non-ordered-list lines. Auto-renumbers
+// sequentially within each contiguous run, matching standard markdown
+// behavior: only the FIRST item of a run sets the starting number (so
+// "5. / 5. / 5." displays as "5. / 6. / 7."), and every item after that
+// has its own typed digit ignored entirely -- this is what makes
+// deleting or reordering a middle item "just work" without retyping
+// every number below it, the whole point of the feature. Nesting uses a
+// simple stack keyed by indent width: a deeper indent starts a new
+// counter; returning to a shallower indent RESUMES that level's own
+// counter rather than restarting it (matching Word/Google Docs' default
+// multilevel-list behavior), as long as the run was never broken. A
+// blank line does not break a run (loose-list tolerance, matching how
+// double-spaced checklists are already treated elsewhere in this app);
+// any other real content does, discarding all pending counters.
+// v0.1648 FIX, per Lynn's bug report: the typed start number is now
+// honored ONLY for a genuinely fresh run (the stack was completely empty
+// right before this push -- e.g. "5. 5. 5." at the very start of a list,
+// or the first item after a paragraph break). A NEW, DEEPER level under
+// an EXISTING parent always starts at 1, full stop, ignoring whatever
+// digit happens to be typed there. Previously this wasn't distinguished
+// -- indenting an existing item (e.g. "4. Fourth", 4 leading spaces
+// added, digit unchanged) to make it a child kept showing "4." instead
+// of restarting at "1.", both via the Indent/Unindent toolbar buttons
+// (applyIndentToSelectedBlocks(), which just prepends/removes literal
+// spaces -- no bug there) and via manually typing leading spaces in the
+// textarea -- confirming the bug was purely in this renumbering logic,
+// not in either indent mechanism. Nobody should have to retype a line's
+// number as "1" before indenting it just to get the child list to start
+// where every other outliner/word processor already starts it.
+function computeOrderedListNumbers(lines) {
+  var result = new Array(lines.length).fill(null);
+  var stack = []; // [{indent, count}], shallowest first
+  for (var i = 0; i < lines.length; i++) {
+    var m = getOrderedListMarker(lines[i]);
+    if (!m) {
+      if (lines[i] != null && lines[i].trim() === '') continue; // blank: doesn't break the run
+      stack = [];
+      continue;
+    }
+    while (stack.length && stack[stack.length - 1].indent > m.indent) stack.pop();
+    if (stack.length && stack[stack.length - 1].indent === m.indent) {
+      stack[stack.length - 1].count++;
+    } else {
+      var startAt = stack.length === 0 ? m.number : 1;
+      stack.push({ indent: m.indent, count: startAt });
+    }
+    result[i] = { number: stack[stack.length - 1].count, punct: m.punct };
+  }
+  return result;
+}
+
 function buildTagOrderMap(lines) {
   var tocIdx = findTagOrderLine(lines);
   if (tocIdx === -1) return null;
