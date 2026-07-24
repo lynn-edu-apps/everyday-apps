@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1658 -->
+<!-- Remember App - Version 0.1663 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1658
+  Version 0.1663
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,11 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1663 - REPLACED v0.1662's hover-peek entirely, per Lynn's on-device feedback: even a 40px proximity zone along the full height of the note's right edge interfered with normal typing and clicking there. New approach: a small, ALWAYS-VISIBLE edge tab (#scratch-pad-edge-tab) -- no proximity detection of any kind, so there's nothing left to accidentally trigger while editing. Positioned at right:10px (clear of the app's global 6px thin scrollbar, which sits flush at the true edge), and deliberately NOT a plain bar/pill shape, per Lynn's explicit concern about it reading as a scrollbar drag handle -- uses the common bordered-rectangle-with-divider "toggle side panel" icon instead (same one VS Code and others use), which no scrollbar styling convention resembles. Independent of #note-fab's existing hide-while-typing rule (#note-screen.keyboard-open #note-fab {display:none}) -- confirmed by direct test that the tab stays visible while actively typing, unlike the FAB, satisfying Lynn's explicit "both Typing and R&R mode" requirement. Visibility is reactive via two mechanisms rather than a poll/mousemove loop: a body.scratch-pad-disabled class toggled in applySettings() (which already runs on load and after every settings save) for the disable-scratch-pad setting, and a MutationObserver on the panel's own class attribute to hide the tab while the panel is open (nothing to invite a click toward at that point) and restore it when closed. Cleaned up several now-stale .peek references left over in openScratchPad()/closeScratchPad()/the handle's click handler from the mechanism this replaced -- including reverting the handle's click from an open/close toggle back to close-only, since without a peek state the handle is fully off-screen (and therefore unclickable) whenever the panel is closed, so the toggle's open branch could never actually fire. Verified directly: hover-capable gating, click-to-open, the MutationObserver hiding/restoring the tab around the panel's open state, the disabled-setting reactive hide, and continued visibility while actively typing. Suite unchanged: 307/307.
+  v0.1662 - REPLACED v0.1651's mouse click-zone for opening the scratch pad with a hover-peek, per Lynn's on-device feedback: the 12px click zone was "extremely hard to find." Now, getting the mouse within 40px of the note content pane's right edge slides just the handle into view (Windows auto-hide-taskbar style, her own reference) via a new .peek CSS class -- a big, easy-to-notice sliver to aim for instead of a precise hidden target. Moving away without clicking hides it again; clicking the peeking handle opens the pad the rest of the way (the handle's click handler is now a toggle -- open if not fully open, close if it is -- rather than v0.1651's close-only). Both proximity-to-edge and hovering the peeking sliver itself are checked off the SAME mousemove event, so no separate enter/leave listeners were needed on the panel. Gated on disableScratchPad and (hover: hover), same as before. FOUND AND FIXED a real risk while building this: .peek's CSS rule is declared after .open's, so if both classes were ever present simultaneously .peek would incorrectly win the cascade (equal specificity, later rule wins), leaving the pad looking stuck mid-peek instead of fully open -- fixed by having openScratchPad() (the one function every open path already goes through) explicitly clear .peek, rather than trusting cascade order or patching every call site individually. Verified the full interaction in the sandbox with mocked element geometry (jsdom can't compute real CSS transforms): approaching the edge triggers peek, moving away cancels it, clicking while peeking opens fully with .peek correctly cleared, clicking again closes. Suite unchanged: 307/307.
+  v0.1661 - FIX: crash using Add Text to Note's "Insert tagged items in sorted order" checkbox in Typing mode, per Lynn's bug report -- "TypeError: undefined is not an object (evaluating 'newLinesArr.slice')". Root cause: newLinesArr is only ever assigned inside the "if (!_tagSortApplied)" branch of doInsert(); when the tag-sort insert path ran instead (exactly when that checkbox is on), it stayed undefined, and the Typing-mode scroll-into-view code further down referenced it unconditionally, outside that branch -- var's function-scoping meant the reference didn't throw a ReferenceError, just silently stayed undefined until .slice() was called on it. Only hit in Typing mode because R&R mode's own scroll-into-view code path doesn't reference newLinesArr at all. FIX: derive the lines array from newContent instead (split on newline) -- both the tag-sort and non-tag-sort branches populate newContent, so this works correctly regardless of which path ran, and is exactly equivalent to the old behavior for the non-tag-sort case since newContent was always just newLinesArr.join('\n') there anyway. Verified two ways: confirmed no other unsafe references to newLinesArr remain outside its own declaration block; and reproduced the exact bug through the real UI (Quick Add dialog, tag-sort checkbox, save) -- no crash, and the new item correctly sorted into place next to the existing item sharing its tag. Suite unchanged: 307/307.
+  v0.1660 - Added "Filter by tag" as a second item in the v0.1659 tag-filter-indicator long-press menu, per Lynn -- just another entry point to the identical bottom sheet the More menu's own "Filter by tag" already opens. Extracted the shared open logic into a new openTagFilterSheet(), now used by all three entry points (More menu item, toolbar button, and this new long-press menu item) instead of two near-duplicate inline copies, so they can't drift apart from each other. Verified directly: clicking the new menu item opens the bottom sheet and closes the long-press menu correctly. Suite unchanged: 307/307.
+  v0.1659 - NEW: long-press the tag-filter-indicator (upper toolbar, shown when a tag filter is active) to open a small "Clear filter" menu, per Lynn -- she often sets a filter by mistake tapping a tag in the note editor and wanted a faster way to clear it than opening the full filter dialog. Mirrors the app's existing #cb-longpress-menu (checkbox chevron long-press) shape exactly -- own id/CSS block rather than a shared class, matching how #note-item-context-menu and #cb-longpress-menu already each keep their own near-identical block -- and reuses attachLongPress() plus the same iOS synthesized-click-swallow pattern used for Select Lines range-select. Only shows when a filter is actually active (same guard the existing single-tap pause-toggle handler already used), positioned near the touch point and clamped to the viewport, dismissed by tapping outside (consolidated into the SAME existing outside-tap listeners the checkbox menu already used, rather than adding two more document-level listeners). Extracted the clearing logic itself into a new clearTagFilterState() function, shared by both the long-press menu and the existing Clear filter button in the full filter dialog, so they can't drift out of sync. Verified directly: clicking the new menu's Clear button correctly empties _tagFilterState; long-press with no active filter correctly shows nothing; long-press with an active filter correctly shows the menu at the right position. Suite unchanged: 307/307.
   v0.1658 - NEW: the delete guard dialog now reads differently when the deletion was actually a cut, per Lynn -- the old wording ("You deleted a lot of text" / "Go ahead and delete" / "Undo deletion") was scary and misleading when the text was already safely on the clipboard. Root cause of the inconsistent "Cut to clipboard" toast she noticed: the app's own scissor button always wrote to the clipboard explicitly, but there was no listener anywhere for the browser's NATIVE cut event, which fires for the OS/browser popup-menu Cut and any keyboard shortcut -- those cuts were completely invisible to the app. Added a native 'cut' listener on note-editor (sets a shared, short-lived _lastCutAt timestamp) alongside the scissor button now setting the same flag directly (its own primary path uses writeClipboardSafe + setRangeText, not the native cut command, so the listener alone wouldn't have seen it). The delete guard's existing 600ms-delayed check consumes this flag (2-second window, generous enough to survive that delay, tight enough not to misattribute a later unrelated delete) and swaps in reassuring wording when it applies: "You cut a lot of text" / "...it's on your clipboard, ready to paste..." / "Go ahead and remove it" / "Undo the cut" -- same button roles as before, still avoiding the earlier "keep the deletion" oxymoron trap. Verified end-to-end in the sandbox: plain deletion still shows the original wording unchanged; both the native-cut path and the scissor-button path correctly show the new wording. Suite unchanged: 307/307.
   v0.1657 - FIX (probable): pinch-zoom getting stuck disabled on iOS PWA, per Lynn's bug report -- confirmed root cause by inspection of the existing v0.1580 dynamic-viewport-cap mechanism (caps maximum-scale to 1 while a text field is focused, to suppress iOS's auto-zoom-on-small-font-focus, restoring it ~350ms after focusout). iOS can suspend a backgrounded PWA WHILE a text field is focused -- backgrounding mid-typing is completely normal -- without ever firing focusout for it; document.activeElement can still report that field focused once the app resumes even though the keyboard is gone, so the cap-restore logic (which only listens for focusout) never runs and stays stuck capped indefinitely. Matches Lynn's report closely: fixed by entering/exiting Typing mode (produces a fresh, genuine focusout), described as happening after backgrounding, no periodic timer anywhere in the file that would explain a spontaneous ~10-second self-fix (more likely how long it took to notice a fix from something she'd just done). FIX: a new visibilitychange listener inside the same IIFE (kept separate from the existing, unrelated v0.1507 visibilitychange handler, which only fires on 'hidden' for select-mode/speech and doesn't share this one's private state) re-derives the truth directly from document.activeElement on resume, instead of trusting whatever stale cap state predates the suspension. Verified the logic in the sandbox (stuck-capped state + focus genuinely moved away -> visibilitychange correctly force-restores immediately; focus still genuinely on a field -> correctly stays capped, unchanged behavior) -- but flagged as "probable", not confirmed, since an actual iOS suspend-without-focusout cycle can't be simulated here; this is the one thing only an on-device test after real backgrounding can fully confirm. Suite unchanged: 307/307.
   v0.1656 - NEW: two fonts added, per Lynn -- Atkinson Hyperlegible Next (added alongside the existing default Atkinson Hyperlegible, not replacing it, so she can compare and remove the original later if she decides to) and Mulish, both requested by name. Both are genuine Google Fonts variable fonts, confirmed exact weight-axis ranges before adding (Next: 200-800, ExtraLight-ExtraBold; Mulish: 200-1000) rather than guessing -- added to the single shared Google Fonts @import URL every other font in this app already loads from (one more family= clause each, same variable-range syntax Inter already uses), plus a quick-pick pill, an <option> in all 4 font dropdowns, and a {min,max} entry in the weight-range registry (the same object shape Inter/Google Sans Flex already use, since both are real variable fonts, not discrete static weights). No structural changes -- this followed the exact existing per-font list pattern throughout. Suite unchanged: 307/307.
@@ -1051,6 +1056,23 @@ body.hide-note-preview .note-item-preview {
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
   overflow: hidden;
   min-width: 180px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* v0.1659: tag-filter-indicator long-press menu, per Lynn -- same shape
+   as #cb-longpress-menu above (own id, not a shared class, matching how
+   #note-item-context-menu/#cb-longpress-menu already each keep their own
+   near-identical block rather than being merged). */
+#tag-filter-longpress-menu {
+  display: none;
+  position: fixed;
+  z-index: 10003;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  overflow: hidden;
+  min-width: 160px;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -5149,6 +5171,46 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   overflow: hidden;
 }
 #scratch-panel.open { transform: translateX(0); }
+/* v0.1663: REPLACES v0.1662's hover-peek (per Lynn's on-device
+   feedback: the 40px-wide, full-height proximity zone interfered with
+   normal typing/clicking near the right edge of the note). This is a
+   small, ALWAYS-VISIBLE edge tab instead -- no proximity detection at
+   all, so there's nothing to accidentally trigger while editing.
+   Positioned clear of the app's global thin scrollbar (::-webkit-
+   scrollbar { width: 6px } at the true edge) with a few px of margin,
+   and deliberately NOT a plain bar/pill shape -- per Lynn's explicit
+   ask to avoid it reading as a scrollbar drag handle -- it's a small
+   rounded button with a distinct "panel toggle" icon (a bordered
+   rectangle with a divider, not a flat thumb shape), which no
+   scrollbar-styling convention uses. Independent of #note-fab's
+   existing hide-while-typing rule (#note-screen.keyboard-open #note-fab
+   { display:none }) -- Lynn wants this usable in both Typing and R&R
+   modes, so it can't share that behavior. */
+#scratch-pad-edge-tab {
+  display: none;
+  position: fixed;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 40px;
+  z-index: 149; /* just below #scratch-panel (150), above ordinary note content */
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.18);
+  color: var(--fg2);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+#scratch-pad-edge-tab:hover { opacity: 1; background: var(--bg3); }
+body.note-screen-active:not(.scratch-pad-disabled) #scratch-pad-edge-tab.hover-capable { display: flex; }
+body.scratch-pad-disabled #scratch-pad-edge-tab,
+#scratch-pad-edge-tab.panel-open { display: none !important; }
 #scratch-panel-handle {
   flex-shrink: 0;
   width: 32px;
@@ -6785,6 +6847,23 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   </button>
 </div>
 
+<!-- v0.1659: long-press #tag-filter-indicator to clear an accidental tag
+     filter, per Lynn -- she often sets one by mistake by tapping a tag
+     in the note editor. -->
+<div id="tag-filter-longpress-menu">
+  <button class="context-menu-item" id="tf-lp-clear-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    <span style="pointer-events:none">Clear filter</span>
+  </button>
+  <!-- v0.1660: second item, per Lynn -- just another entry point to the
+       same bottom sheet the More menu's "Filter by tag" already opens. -->
+  <button class="context-menu-item" id="tf-lp-filter-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none;flex-shrink:0"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+    <span style="pointer-events:none">Filter by tag</span>
+  </button>
+</div>
+
+
 
 <!-- ===== FOLDER NAME DIALOG ===== -->
 <div class="modal-overlay" id="folder-name-overlay" style="z-index:300;display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
@@ -7361,6 +7440,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <span id="scratch-page-num">1</span>
   </button>
 </div>
+
+<!-- v0.1663: always-visible mouse-only edge tab to open the scratch pad
+     (replaces v0.1662's hover-peek). Icon is a bordered rectangle with a
+     divider near one edge -- the common "toggle side panel" icon used
+     elsewhere (VS Code and others) -- deliberately NOT a plain bar/pill,
+     since that would read as a scrollbar drag handle, per Lynn's
+     explicit concern. -->
+<button id="scratch-pad-edge-tab" aria-label="Open scratch pad" title="Scratch pad">
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;pointer-events:none">
+    <rect x="2.5" y="3.5" width="15" height="13" rx="2"/>
+    <line x1="12.5" y1="3.5" x2="12.5" y2="16.5"/>
+  </svg>
+</button>
 
 <!-- ===== TOOLBAR HELP POPUP ===== -->
 <div id="toolbar-help-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:300;align-items:center;justify-content:center;padding:16px;">
@@ -10171,7 +10263,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1658';
+const APP_VERSION = '0.1663';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13260,6 +13352,10 @@ function playCheckSound() {
 
 function applySettings() {
   applyBoldCursorSetting(); // v0.1595: safe pre-init() -- assigned stub is a no-op until init() runs
+  // v0.1663: reactive body class for the scratch-pad edge tab's CSS
+  // visibility (applySettings() runs on load AND after every settings
+  // save, so this stays in sync without extra plumbing).
+  document.body.classList.toggle('scratch-pad-disabled', !!settings.disableScratchPad);
   var _nem = settings.noteEditingMode || 'both';
   document.body.classList.toggle('typing-mode-only', _nem === 'typing');
   document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
@@ -22019,31 +22115,31 @@ function makeImportFolderName(label) {
       openScratchPad();
     }, { passive: true });
 
-    // v0.1651: mouse equivalent, per Lynn — a swipe gesture doesn't
-    // translate to a mouse, so a plain click in a thin zone right at the
-    // edge of the note content pane opens the pad instead. Gated on
-    // `(hover: hover)`, the same media feature this app already uses
-    // throughout for "this is a mouse/trackpad, not a touch-only device"
-    // (see the many existing @media (hover: hover) CSS rules) — so this
-    // never adds an extra tap target on phones/tablets that don't have
-    // one. Measures against the note content pane's own right edge
-    // (getBoundingClientRect) rather than the whole window, in case a
-    // future desktop layout ever puts something else to the right of it;
-    // falls back to window.innerWidth if that element isn't found.
-    var MOUSE_OPEN_EDGE_ZONE = 12;
+    // v0.1663 REPLACES v0.1662's hover-peek entirely, per Lynn's on-
+    // device feedback: even a 40px proximity zone along the full height
+    // of the right edge interfered with normal typing/clicking there.
+    // This is a small, ALWAYS-VISIBLE edge tab instead (see its own CSS
+    // comment for the full reasoning, including how it avoids reading
+    // as a scrollbar drag handle) -- no proximity detection at all, so
+    // there is nothing left to accidentally trigger while editing.
     var _hasHoverMouse = window.matchMedia && window.matchMedia('(hover: hover)').matches;
-    if (_hasHoverMouse) {
-      document.getElementById('note-screen').addEventListener('click', function(e) {
-        if (settings.disableScratchPad) return;
-        if (!document.body.classList.contains('note-screen-active')) return;
+    var _edgeTab = document.getElementById('scratch-pad-edge-tab');
+    if (_hasHoverMouse && _edgeTab) {
+      _edgeTab.classList.add('hover-capable'); // CSS gate: only ever shown when this class is present
+      _edgeTab.addEventListener('click', function() {
         if (_anyDialogOpen()) return;
-        if (panel.classList.contains('open')) return;
-        var contentArea = document.getElementById('note-content-area');
-        var rightEdge = contentArea ? contentArea.getBoundingClientRect().right : window.innerWidth;
-        if (e.clientX < rightEdge - MOUSE_OPEN_EDGE_ZONE - 1) return;
-        if (e.clientX > rightEdge + 1) return; // outside the pane entirely
         openScratchPad();
       });
+      // Keep the tab hidden while the panel itself is open (nothing to
+      // invite a click toward at that point) -- checked at the handful
+      // of moments the panel's own open state can change, rather than a
+      // continuous mousemove/poll loop the way the peek version needed.
+      var _updateEdgeTab = function() {
+        _edgeTab.classList.toggle('panel-open', panel.classList.contains('open'));
+      };
+      _updateEdgeTab();
+      var _edgeTabObserver = new MutationObserver(_updateEdgeTab);
+      _edgeTabObserver.observe(panel, { attributes: true, attributeFilter: ['class'] });
     }
 
     // Close gesture: swipe right starting on the handle itself
@@ -22068,12 +22164,15 @@ function makeImportFolderName(label) {
     }, { passive: true });
 
     // v0.1651: mouse equivalent — a plain click on the handle closes the
-    // pad. Same (hover: hover) gate as the open zone above; on a touch
-    // device this listener still exists but is harmless; the swipe
-    // gesture above already handles touch closing, and a tap that isn't
-    // a swipe just does nothing extra here since touchend for a simple
-    // tap has |dx| below CLOSE_SWIPE_MIN, so both can coexist safely —
-    // this only actually acts on devices with a real mouse.
+    // pad. (v0.1663: reverted to close-only from v0.1662's open/close
+    // toggle -- that toggle existed to let a click on the PEEKING handle
+    // open the pad; now that the peek mechanism is gone, the handle is
+    // fully off-screen, and therefore unclickable, whenever the panel is
+    // closed, so that branch could never actually fire. Opening now
+    // happens only via the new edge tab.) Same (hover: hover) gate as
+    // before; harmless on touch devices, where the swipe gesture above
+    // already handles closing and a plain tap never reaches the swipe-
+    // distance threshold.
     if (_hasHoverMouse) {
       handle.addEventListener('click', function(e) {
         if (_anyDialogOpen()) return;
@@ -27386,15 +27485,18 @@ function makeImportFolderName(label) {
     updatePauseBtn();
   });
 
-  // Clear filter
-  document.getElementById('tag-filter-clear').addEventListener('click', function() {
+  // v0.1659: shared clear logic -- also used by the new tag-filter-
+  // indicator long-press menu, so both stay in sync automatically.
+  function clearTagFilterState() {
     _tagFilterState = {};
     buildTagChips();
     updateTagFilterExpression();
     applyTagFilter();
     updateTagFilterIndicator();
     updatePauseBtn();
-  });
+  }
+  // Clear filter
+  document.getElementById('tag-filter-clear').addEventListener('click', clearTagFilterState);
 
   // ── Has tags (three-state: all -> tagged -> untagged -> all) ──────────────
   function cycleTagPresenceFilter() {
@@ -27422,10 +27524,10 @@ function makeImportFolderName(label) {
     cycleTagPresenceFilter();
   });
 
-  // Open/close
-  document.getElementById('more-tag-filter-btn').addEventListener('click', function() {
-    closeMoreMenu();
-    closeAllBars();
+  // v0.1660: shared by the More menu item, toolbar button, and the new
+  // tag-filter-indicator long-press menu item below -- all three open
+  // the identical bottom sheet, so this keeps them from drifting apart.
+  function openTagFilterSheet() {
     if (!isViewMode) setViewMode(true);
     setTimeout(function() {
       logDebugAction('Opened tag-filter-bar');
@@ -27434,20 +27536,19 @@ function makeImportFolderName(label) {
       updatePauseBtn();
       document.getElementById('tag-filter-bar').classList.add('visible');
     }, isViewMode ? 0 : 80);
+  }
+  // Open/close
+  document.getElementById('more-tag-filter-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    closeAllBars();
+    openTagFilterSheet();
   });
   var _tagFilterToolbarBtn = document.getElementById('tag-filter-btn');
   if (_tagFilterToolbarBtn) {
     _tagFilterToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
     _tagFilterToolbarBtn.addEventListener('click', function() {
       closeAllBars();
-      if (!isViewMode) setViewMode(true);
-      setTimeout(function() {
-        logDebugAction('Opened tag-filter-bar');
-        buildTagChips();
-        updateTagFilterExpression();
-        updatePauseBtn();
-        document.getElementById('tag-filter-bar').classList.add('visible');
-      }, isViewMode ? 0 : 80);
+      openTagFilterSheet();
     });
   }
   document.getElementById('tag-picker-close').addEventListener('click', function() {
@@ -29620,10 +29721,16 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     if (_cbLpMenu && _cbLpMenu.style.display !== 'none') {
       if (!_cbLpMenu.contains(e.target)) closeCbMenu();
     }
+    if (_tfLpMenu && _tfLpMenu.style.display !== 'none') {
+      if (!_tfLpMenu.contains(e.target)) closeTfMenu();
+    }
   }, { passive: true });
   document.addEventListener('mousedown', function(e) {
     if (_cbLpMenu && _cbLpMenu.style.display !== 'none') {
       if (!_cbLpMenu.contains(e.target)) closeCbMenu();
+    }
+    if (_tfLpMenu && _tfLpMenu.style.display !== 'none') {
+      if (!_tfLpMenu.contains(e.target)) closeTfMenu();
     }
   });
   document.getElementById('cb-check-all-btn').addEventListener('click', function() {
@@ -29634,6 +29741,56 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     closeCbMenu();
     if (_cbLpLineIdx >= 0) checkUncheckChildren(_cbLpLineIdx, false);
   });
+
+  // v0.1659: tag-filter-indicator long-press menu, per Lynn ("I often
+  // set a tag filter by mistake... I want to long press on the filter
+  // indicator... and see a mini pop-up that lets me clear the filter").
+  // Same show/position/close shape as the checkbox menu just above, its
+  // own id/vars rather than sharing state with it (different trigger,
+  // different content, same visual pattern).
+  var _tfLpMenu = document.getElementById('tag-filter-longpress-menu');
+  function closeTfMenu() {
+    if (_tfLpMenu) _tfLpMenu.style.display = 'none';
+  }
+  function showTfMenu(x, y) {
+    if (!_tfLpMenu) return;
+    var mw = 180, mh = 96;
+    var left = Math.min(x, window.innerWidth - mw - 8);
+    var top = Math.min(y + 8, window.innerHeight - mh - 8);
+    _tfLpMenu.style.left = Math.max(8, left) + 'px';
+    _tfLpMenu.style.top = Math.max(8, top) + 'px';
+    _tfLpMenu.style.display = 'block';
+  }
+  document.getElementById('tf-lp-clear-btn').addEventListener('click', function() {
+    closeTfMenu();
+    clearTagFilterState();
+  });
+  document.getElementById('tf-lp-filter-btn').addEventListener('click', function() {
+    closeTfMenu();
+    closeAllBars();
+    openTagFilterSheet();
+  });
+  var _tfIndEl = document.getElementById('tag-filter-indicator');
+  if (_tfIndEl) {
+    var _tfLp = attachLongPress(_tfIndEl, {
+      delay: 500,
+      moveThreshold: 10,
+      onFire: function(x, y) {
+        // Only worth showing if there's actually a filter to clear —
+        // matches the existing single-tap handler's own same guard.
+        if (Object.keys(_tagFilterState).length === 0) return;
+        showTfMenu(x, y);
+      }
+    });
+    // Swallow the synthesized click that follows a fired long-press's
+    // touchend (same established pattern used elsewhere in this file --
+    // see the Select Lines range-anchor long-press) -- without this, that
+    // synthetic click would immediately hit the existing single-tap
+    // pause-toggle handler right after the menu opens.
+    _tfIndEl.addEventListener('touchend', function(e) {
+      if (_tfLp.fired) { e.preventDefault(); }
+    }, { passive: false });
+  }
 
   // ===== CHECKBOX TAP TO TOGGLE =====
   document.getElementById('note-viewer').addEventListener('click', function(e) {
@@ -30401,8 +30558,16 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
         var area = document.getElementById('note-content-area');
         if (!area || !ed) return;
         var savedSel = { start: ed.selectionStart, end: ed.selectionEnd };
-        // Calculate the character offset of the insertion start
-        var _charOffset = newLinesArr.slice(0, insertStartIdx).join('\n').length +
+        // Calculate the character offset of the insertion start.
+        // v0.1661 FIX, per Lynn's bug report: newLinesArr is only ever
+        // assigned inside the "if (!_tagSortApplied)" branch further up
+        // -- when the tag-sort insert path ran instead (the "Insert
+        // tagged items in sorted order" checkbox she had on), it stayed
+        // undefined here, throwing exactly the reported TypeError. Both
+        // branches populate `newContent` though, so deriving the lines
+        // array from that instead works correctly regardless of which
+        // path actually ran.
+        var _charOffset = newContent.split('\n').slice(0, insertStartIdx).join('\n').length +
                           (insertStartIdx > 0 ? 1 : 0);
         ed.setSelectionRange(_charOffset, _charOffset);
         var insertedY = getCursorY(ed);
