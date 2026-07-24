@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1667 -->
+<!-- Remember App - Version 0.1668 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1667
+  Version 0.1668
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1668 - REAL FIX for the Android missing-lines bug, per Lynn's explicit instruction not to assume a timing/race issue -- her second log proved it wasn't one: byte-identical numbers (ed.offsetHeight=5880, ed.scrollHeight=6030) across two completely separate occurrences, even after v0.1667's 6 retries over ~900ms changed nothing at all. A deterministic mismatch that never moves means something is computing the SAME wrong answer every time, not still settling. Root cause, found by recognizing this codebase already diagnosed the identical bug class once before (v0.1634, a different pair of dialogs): "Android/desktop classic scrollbars consume interior width" -- iOS's overlay scrollbar doesn't, which is exactly why this never reproduced there. Applied to resizeEditor() specifically: its shrink-to-1px-then-grow trick can momentarily make note-content-area's scrollbar (overflow-y: auto) disappear while the textarea is briefly 1px tall, widening the space available to it right as scrollHeight gets measured -- text wraps into fewer lines than it truly needs at that artificially wider width, the textarea's height gets pinned to that too-small number, and once content is tall again the scrollbar reappears, narrowing the true width back down -- so the real rendering needs MORE room than the pinned height allows, and the excess is clipped. Identical every time resizeEditor() runs, exactly why retrying it changed nothing. FIX: scrollbar-gutter: stable on #note-content-area permanently reserves the scrollbar's width whether or not it's currently shown, so the available width can never change mid-measurement again. The v0.1667 retry loop and diagnostic logging are left in place -- no longer needed as a blind guess-and-retry, but now a useful confirmation signal: if this fix is right, the next Android log should show attempt=0, OK. Honest limitation, same as the iOS keyboard fixes: jsdom cannot render real CSS layout or scrollbars, so this cannot be verified end-to-end in the sandbox -- confidence here comes from the mechanism matching a previously-confirmed bug in this exact codebase and explaining every detail of Lynn's evidence precisely, not from a passing test. Suite unchanged: 316/316.
   v0.1667 - Android missing-lines bug: Lynn's actual debug log (not another guess) pinpointed the real mechanism precisely. area.scrollTop WAS correctly at its max (5545.6 of 5545) -- the outer container's scrolling was never the problem. But ed.offsetHeight (5880) was 150px SHORTER than ed.scrollHeight (6030): the textarea itself was rendered too short for its own content, so even scrolling the outer container all the way down couldn't reveal text clipped inside an inner element sized wrong. This confirms resizeEditor() (height='1px' then height=scrollHeight) was the right idea all along -- the v0.1664/v0.1665 attempts just didn't retry it for long enough: her log shows the mismatch STILL present at exactly the 150ms mark her single retry fired at, meaning Android's post-keyboard-dismiss reflow (text rewrapping as the viewport settles) was still in progress past that point. FIX: replaced the single fixed-delay retry with a self-correcting loop that keeps calling resizeEditor() every 150ms, re-measuring fresh each time, until offsetHeight actually catches up to scrollHeight -- capped at 6 attempts (~900ms) so it can't run forever if something else keeps scrollHeight a moving target. The final attempt logs once, tagged OK or STILL-SHORT with the attempt count, so the next log shows directly whether this actually closed the gap rather than needing another guess. Verified the loop's safety property directly in the sandbox with a mismatch engineered to never resolve: terminates at exactly attempt 6, logs exactly once (no spam), correctly tagged STILL-SHORT -- confirmed no infinite-loop risk either way this turns out on Lynn's next test. Suite unchanged: 316/316.
   v0.1666 - FIX for the iOS tap-near-bottom issue, per Lynn's own on-device diagnosis (correct): v0.1665 computed the right scroll target via _tpadEnsureCaretVisible(), but its final `area.scrollTop = newScroll` assignment gets silently clamped by the browser to whatever's actually scrollable -- with little or no room below the note's last line, a perfectly correct target could never actually be reached, no matter how right the math was. Fixed with a two-layer approach, per her exact framing ("add padding" + "maybe you're not measuring the keyboard height correctly"): (1) a CSS fallback, #note-screen.keyboard-open #note-content-area { padding-bottom: 320px }, scoped to keyboard-open only so it adds no space at any other time and never touches the note's actual saved content; (2) a new shared function, _applyKeyboardScrollRoom(), measures the REAL keyboard height (window.innerHeight - visualViewport.height) and overrides the CSS guess with the actual number, called immediately before every _tpadEnsureCaretVisible() scroll attempt (all 3 call sites: tap-to-edit, caret-nudge buttons, trackpad-drag-heal). The inline override is explicitly cleared (paddingBottom = '') in the EMTIP-exit blur handler, since an inline style would otherwise persist regardless of the keyboard-open class once the keyboard actually closes. Verified precisely in the sandbox with a mocked keyboard height: computed padding matched the expected formula exactly (340px for an 800/500 viewport split), and confirmed it correctly clears on a genuine .blur() (not just a synthetic blur event, which doesn't itself move document.activeElement -- caught and corrected that exact test-setup mistake before trusting the result). Suite unchanged: 316/316.
   v0.1665 - Two things from Lynn. (1) FIX (higher confidence than usual, since this reuses an existing, proven mechanism rather than a new theory): tapping one of the last lines of a long note to start editing left that line covered by the keyboard, requiring a dismiss-and-retap to actually see and type on it -- a long-standing issue. Root cause: the tap-to-edit handler already had multiple delayed pinToolbars() calls to handle the keyboard settling at the TOP of the screen, but nothing ever scrolled the tapped CURSOR clear of the keyboard at the BOTTOM. _tpadEnsureCaretVisible() -- the keyboard-aware, visualViewport-based scroll function already used successfully elsewhere for trackpad-drag caret healing -- was simply never wired up to this call site. Added at the same 100/350/600ms delayed timing already used for pinToolbars(), for the same reason: visualViewport.height doesn't yet reflect the keyboard's real height at the instant of the tap, so only the delayed calls (once the keyboard has actually finished animating in) compute against trustworthy numbers. Verified the code path resolves and executes without error at all three delays; the actual on-screen scroll positioning still needs on-device confirmation, since jsdom can't compute real layout. (2) Android missing-lines bug: v0.1664's resizeEditor() attempt did NOT fix it, confirmed on-device. Rather than guess a third time, replaced it with real diagnostic logging (kept the resizeEditor() calls themselves, harmless either way) -- captures area.scrollTop/scrollHeight/clientHeight, computed maxScroll, the textarea's own offsetHeight/scrollHeight, and visualViewport's height/offsetTop, all in one line 150ms after the keyboard closes. The actual numbers from Lynn's next Android repro will show directly which measurement is wrong, rather than more speculation. Suite unchanged: 316/316.
@@ -3912,6 +3913,29 @@ body.has-mouse .toolbar-drag-handle.dragging {
   /* padding-top is set dynamically by pinToolbars() to equal combined toolbar heights */
   /* left/right user margin added via CSS variables;
      env() terms clear the iPhone landscape notch/corners — see .note-header */
+  /* v0.1668 FIX, per Lynn's on-device diagnosis and her own explicit
+     instruction not to assume a timing/race issue: her actual log showed
+     byte-IDENTICAL numbers across two separate occurrences even after 6
+     retries spaced 150ms apart -- ruling out "still settling" outright.
+     Real, deterministic mechanism, matching a bug this exact codebase
+     already diagnosed once before for a different pair of dialogs
+     (v0.1634, "Android/desktop classic scrollbars consume interior
+     width"): resizeEditor()'s shrink-to-1px-then-grow trick can
+     momentarily make THIS container's scrollbar (overflow-y: auto,
+     classic/width-reserving on Android, unlike iOS's overlay scrollbar)
+     disappear while the textarea is briefly 1px tall -- widening the
+     space available to it right as scrollHeight gets measured, wrapping
+     text into fewer lines than it actually needs. The textarea's height
+     then gets pinned to that too-small number; once content is tall
+     again the scrollbar reappears, narrowing the true available width
+     back down, so the real rendering needs MORE room at that narrower
+     width than the pinned height allows -- the excess is clipped. This
+     happens identically every time resizeEditor() runs, which is
+     exactly why retrying it changed nothing. Fix: scrollbar-gutter:
+     stable permanently reserves the scrollbar's width whether or not
+     it's currently shown, so the available width can never change
+     mid-measurement. */
+  scrollbar-gutter: stable;
   padding: 0 calc(16px + var(--note-margin-right) + env(safe-area-inset-right, 0px)) 16px calc(22px + var(--note-margin-left) + env(safe-area-inset-left, 0px));
   overflow-y: auto;
   overflow-x: hidden;
@@ -10278,7 +10302,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1667';
+const APP_VERSION = '0.1668';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
