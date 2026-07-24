@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1664 -->
+<!-- Remember App - Version 0.1665 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1664
+  Version 0.1665
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1665 - Two things from Lynn. (1) FIX (higher confidence than usual, since this reuses an existing, proven mechanism rather than a new theory): tapping one of the last lines of a long note to start editing left that line covered by the keyboard, requiring a dismiss-and-retap to actually see and type on it -- a long-standing issue. Root cause: the tap-to-edit handler already had multiple delayed pinToolbars() calls to handle the keyboard settling at the TOP of the screen, but nothing ever scrolled the tapped CURSOR clear of the keyboard at the BOTTOM. _tpadEnsureCaretVisible() -- the keyboard-aware, visualViewport-based scroll function already used successfully elsewhere for trackpad-drag caret healing -- was simply never wired up to this call site. Added at the same 100/350/600ms delayed timing already used for pinToolbars(), for the same reason: visualViewport.height doesn't yet reflect the keyboard's real height at the instant of the tap, so only the delayed calls (once the keyboard has actually finished animating in) compute against trustworthy numbers. Verified the code path resolves and executes without error at all three delays; the actual on-screen scroll positioning still needs on-device confirmation, since jsdom can't compute real layout. (2) Android missing-lines bug: v0.1664's resizeEditor() attempt did NOT fix it, confirmed on-device. Rather than guess a third time, replaced it with real diagnostic logging (kept the resizeEditor() calls themselves, harmless either way) -- captures area.scrollTop/scrollHeight/clientHeight, computed maxScroll, the textarea's own offsetHeight/scrollHeight, and visualViewport's height/offsetTop, all in one line 150ms after the keyboard closes. The actual numbers from Lynn's next Android repro will show directly which measurement is wrong, rather than more speculation. Suite unchanged: 316/316.
   v0.1664 - Two things from Lynn. (1) NEW: a little extra bottom padding in R&R mode, so the last couple of lines aren't hard to interact with near the iPhone's Siri/edge-swipe zone or the FAB. Dynamic, not flat: new pure functions countTrailingBlankLines() and computeExtraBottomPaddingPx() only top a note UP to ~2 blank lines' worth of bottom space -- a note that already ends in several blank lines gets little or nothing extra, so this never piles more empty space on space that's already there. Applied as an inline padding-bottom on #note-viewer, recomputed on every renderViewer() call; typing mode (#note-editor, a separate element) is untouched by design, matching her request being R&R-specific. (2) FIX ATTEMPT (Android): for her report that the final ~3 lines of a long note could go completely missing after dismissing the keyboard (EMTIP -> EMNI) -- not reproducible on iOS, reappearing only by switching to R&R and back. Found a real, curious gap: resizeEditor() (which re-measures the textarea's height AND re-derives the scroll container's position from CURRENT viewport conditions) is called at roughly 30 other places in this file whenever layout or content changes, but was never called in the keyboard-dismiss blur handler -- only pinToolbars() was. Best-supported hypothesis: Android actually shrinks the visual viewport while the keyboard is up (unlike iOS's overlay-style keyboard), so measurements taken during that shrunk state go stale once the keyboard closes and the viewport grows back, with nothing to refresh them. Added resizeEditor() calls at the same timing as the existing pinToolbars() re-checks (immediate + 150ms). Flagged honestly: this is a plausible fix based on how the surrounding code already behaves, not a confirmed root cause -- there is no way to reproduce a real Android keyboard resize event in this sandbox, so on-device testing of this exact scenario is what actually confirms or refutes it. 9 new cases (v25)/goldens (v26) for the padding functions, hand-verified. Suite: 316/316.
   v0.1663 - REPLACED v0.1662's hover-peek entirely, per Lynn's on-device feedback: even a 40px proximity zone along the full height of the note's right edge interfered with normal typing and clicking there. New approach: a small, ALWAYS-VISIBLE edge tab (#scratch-pad-edge-tab) -- no proximity detection of any kind, so there's nothing left to accidentally trigger while editing. Positioned at right:10px (clear of the app's global 6px thin scrollbar, which sits flush at the true edge), and deliberately NOT a plain bar/pill shape, per Lynn's explicit concern about it reading as a scrollbar drag handle -- uses the common bordered-rectangle-with-divider "toggle side panel" icon instead (same one VS Code and others use), which no scrollbar styling convention resembles. Independent of #note-fab's existing hide-while-typing rule (#note-screen.keyboard-open #note-fab {display:none}) -- confirmed by direct test that the tab stays visible while actively typing, unlike the FAB, satisfying Lynn's explicit "both Typing and R&R mode" requirement. Visibility is reactive via two mechanisms rather than a poll/mousemove loop: a body.scratch-pad-disabled class toggled in applySettings() (which already runs on load and after every settings save) for the disable-scratch-pad setting, and a MutationObserver on the panel's own class attribute to hide the tab while the panel is open (nothing to invite a click toward at that point) and restore it when closed. Cleaned up several now-stale .peek references left over in openScratchPad()/closeScratchPad()/the handle's click handler from the mechanism this replaced -- including reverting the handle's click from an open/close toggle back to close-only, since without a peek state the handle is fully off-screen (and therefore unclickable) whenever the panel is closed, so the toggle's open branch could never actually fire. Verified directly: hover-capable gating, click-to-open, the MutationObserver hiding/restoring the tab around the panel's open state, the disabled-setting reactive hide, and continued visibility while actively typing. Suite unchanged: 307/307.
   v0.1662 - REPLACED v0.1651's mouse click-zone for opening the scratch pad with a hover-peek, per Lynn's on-device feedback: the 12px click zone was "extremely hard to find." Now, getting the mouse within 40px of the note content pane's right edge slides just the handle into view (Windows auto-hide-taskbar style, her own reference) via a new .peek CSS class -- a big, easy-to-notice sliver to aim for instead of a precise hidden target. Moving away without clicking hides it again; clicking the peeking handle opens the pad the rest of the way (the handle's click handler is now a toggle -- open if not fully open, close if it is -- rather than v0.1651's close-only). Both proximity-to-edge and hovering the peeking sliver itself are checked off the SAME mousemove event, so no separate enter/leave listeners were needed on the panel. Gated on disableScratchPad and (hover: hover), same as before. FOUND AND FIXED a real risk while building this: .peek's CSS rule is declared after .open's, so if both classes were ever present simultaneously .peek would incorrectly win the cascade (equal specificity, later rule wins), leaving the pad looking stuck mid-peek instead of fully open -- fixed by having openScratchPad() (the one function every open path already goes through) explicitly clear .peek, rather than trusting cascade order or patching every call site individually. Verified the full interaction in the sandbox with mocked element geometry (jsdom can't compute real CSS transforms): approaching the edge triggers peek, moving away cancels it, clicking while peeking opens fully with .peek correctly cleared, clicking again closes. Suite unchanged: 307/307.
@@ -10264,7 +10265,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1664';
+const APP_VERSION = '0.1665';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -24388,6 +24389,30 @@ function makeImportFolderName(label) {
     setTimeout(pinToolbars, 100);
     setTimeout(pinToolbars, 350);
     setTimeout(pinToolbars, 600);
+    // v0.1665 FIX, per Lynn's long-standing report: tapping one of the
+    // last lines of a long note to start editing left that line covered
+    // by the keyboard -- she had to dismiss the keyboard and tap again
+    // before she could actually see and type on it. Root cause: this
+    // handler pinned the TOP toolbars for the keyboard's arrival, but
+    // never scrolled the tapped CURSOR position clear of the keyboard at
+    // the BOTTOM -- nothing here called the keyboard-aware
+    // _tpadEnsureCaretVisible() that already exists for exactly this
+    // (used elsewhere for trackpad-drag healing). Same delayed-retry
+    // timing as the pinToolbars() calls just above, for the same reason:
+    // visualViewport.height doesn't yet reflect the keyboard's real
+    // height at the instant of the tap (before it starts animating in),
+    // so an immediate call alone would compute against stale,
+    // keyboard-closed dimensions -- these are what remain correct once
+    // the keyboard has actually finished opening.
+    (function() {
+      var _tapArea = document.getElementById('note-content-area');
+      function _ensureTapCaretVisible() {
+        _tpadEnsureCaretVisible(getCursorY(ed), _tapArea);
+      }
+      setTimeout(_ensureTapCaretVisible, 100);
+      setTimeout(_ensureTapCaretVisible, 350);
+      setTimeout(_ensureTapCaretVisible, 600);
+    })();
     // NOTE FOR CLAUDE: The auto-paste-prompt on new note focus has been removed.
     // We were calling navigator.clipboard.readText() here on first focus of a new
     // empty note, then asking 'Do you want to paste?' if the clipboard had content.
@@ -25162,29 +25187,34 @@ function makeImportFolderName(label) {
         // be 0 again, so toolbars return to their normal top position.
         pinToolbars();
         setTimeout(pinToolbars, 150);
-        // v0.1664: per Lynn's Android bug report -- the final few lines of
-        // a long note could go completely missing after dismissing the
-        // keyboard (EMTIP -> EMNI), only reappearing by switching to R&R
-        // and back. Not reproducible on iOS. resizeEditor() is called at
-        // roughly 30 other places in this file whenever layout or content
-        // changes -- it re-measures the textarea's height AND re-derives
-        // note-content-area's scroll position from the current viewport --
-        // but was never called here. Best-supported hypothesis: Android
-        // (unlike iOS's keyboard-as-overlay) actually SHRINKS the visual
-        // viewport while the keyboard is up, so area.clientHeight measured
-        // during that shrunk state differs genuinely from its value once
-        // the keyboard closes and the viewport grows back; without a fresh
-        // resizeEditor() call afterward, the textarea's height and the
-        // container's scrollTop can go stale relative to the new, larger
-        // viewport. This is a plausible fix based on how the surrounding
-        // code already behaves, not a confirmed root cause -- there's no
-        // way to reproduce a real Android keyboard resize event in this
-        // sandbox to prove it. Same timing as the pinToolbars() re-checks
-        // just above, on the theory that layout needs a beat to settle
-        // after the keyboard animation before either measurement is
-        // trustworthy.
+        // v0.1664 attempted a fix here (extra resizeEditor() calls) for
+        // Lynn's Android report -- the final few lines of a long note
+        // going missing after dismissing the keyboard, only reappearing
+        // by switching to R&R and back, not reproducible on iOS. That
+        // attempt did NOT fix it, confirmed on-device. Rather than guess
+        // a third time, v0.1665 adds real diagnostic logging instead --
+        // the actual numbers from Lynn's next Android repro will show
+        // directly which measurement is wrong (stuck scrollTop past the
+        // real max, a too-small scrollHeight/clientHeight, a textarea
+        // height that never grew back), rather than more speculation.
+        // The resizeEditor() calls are left in as harmless, since
+        // removing an unconfirmed-but-not-clearly-wrong change for its
+        // own sake isn't worth doing.
         resizeEditor();
-        setTimeout(resizeEditor, 150);
+        setTimeout(function() {
+          resizeEditor();
+          var _diagArea = document.getElementById('note-content-area');
+          var _diagVv = window.visualViewport;
+          logDebugAction('EMNI-resize-diag: area.scrollTop=' + _diagArea.scrollTop +
+            ' area.scrollHeight=' + _diagArea.scrollHeight +
+            ' area.clientHeight=' + _diagArea.clientHeight +
+            ' maxScroll=' + (_diagArea.scrollHeight - _diagArea.clientHeight) +
+            ' ed.offsetHeight=' + noteEditor.offsetHeight +
+            ' ed.scrollHeight=' + noteEditor.scrollHeight +
+            ' vv.height=' + (_diagVv ? _diagVv.height : 'n/a') +
+            ' vv.offsetTop=' + (_diagVv ? _diagVv.offsetTop : 'n/a') +
+            ' window.innerHeight=' + window.innerHeight);
+        }, 150);
       }
     }, 300);
   });
