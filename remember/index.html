@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1669 -->
+<!-- Remember App - Version 0.1674 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1669
+  Version 0.1674
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,11 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1674 - Folder entry vertical padding tightened further, per Lynn's iteration feedback: 8px -> 6px top/bottom (now matching note items exactly). Horizontal padding and note items untouched. Suite unchanged: 316/316.
+  v0.1673 - Reduced vertical padding on the Home Screen notes list entries, per Lynn, to test alongside v0.1672 -- explicitly a first pass, expecting iteration once she can see it. Note items: 8px -> 6px top/bottom. Folder items: 13px -> 8px top/bottom -- confirmed by inspection they had noticeably more vertical padding than note items to begin with (13px vs 8px), matching her own observation, so tightened proportionally more to close that gap rather than an equal reduction on both. Horizontal padding on both left untouched. Suite unchanged: 316/316.
+  v0.1672 - NEW: two font weight settings, per Lynn's accessibility pass -- "Note & Folder Name Weight" and "Note Preview Weight", App Theme bucket, each placed directly under its corresponding font SIZE setting as requested. Neither existed before (confirmed by inspection -- note/folder names were HARDCODED font-weight: 600/700 respectively, with no setting at all; the preview line just inherited the note editor's own weight with no independent control). Reused the existing variable-font weight-snapping infrastructure (getNearestSupportedWeight/isVariableWeightFont/FONT_WEIGHT_SUPPORT, same system added for Inter/Atkinson Hyperlegible Next/Mulish) rather than building parallel logic -- new updateNotesListNameFontWeightStep()/updateNotesListPreviewFontWeightStep() mirror the existing updateNoteFontWeightStep() exactly, switching each slider's step between fine (10, variable fonts) and coarse (100, static fonts) based on whichever font that slider actually applies to, wired into both the notes-list-specific font selects AND the general UI/note font selects (since these sliders fall back to the general font when their own override is unset). CAUGHT AND FIXED a real default-regression risk before shipping: Note & Folder Name Weight's natural fallback (matching its font/size siblings) would have been settings.uiFontWeight, but note/folder names are deliberately semibold today as a visual-hierarchy choice independent of body text weight -- falling back to the general UI weight (usually 400) would have visibly lightened everyone's note names the moment this shipped. Fallback is 600 instead, exactly matching today's unchanged default. Folder names now share the SAME weight variable as note names (matching how Font and Size already treat both identically, and Lynn's own "note & folder" combined naming) -- flagged clearly in comments that this collapses their previously-different hardcoded defaults (700 vs 600) into one shared value unless the new setting is changed. Verified end-to-end: default values exactly match the old hardcoded look (no regression); setting values apply correctly to the CSS variables; Settings dialog sliders correctly sync to saved values on open; live preview boxes correctly reflect configured weights. Suite unchanged: 316/316.
+  v0.1671 - NEW: "Get fresh copy" for sample notes, per Lynn -- creates a brand-new, independent note from a sample's CURRENT content, without ever touching an existing edited/renamed copy, so she can compare the two side by side (the thing she used to try doing by renaming a folder, which wouldn't actually have worked -- Reinstall's own "already exists" check looks anywhere, not just inside the Sample Notes folder). Two entry points: a "Get fresh copy of this sample" More menu item (shown only when the CURRENTLY OPEN note's id is a recognized sample -- new SAMPLE_NOTE_IDS registry, same manual-sync discipline as FONT_WEIGHT_SUPPORT/SETTING_BUCKETS), and a "Get Fresh Copy of a Sample Note..." picker in Settings next to Reinstall, for when you're not currently viewing one. The fresh copy lands in the exact same folder situation the sample is CURRENTLY in (top level or Sample Notes), per Lynn's explicit design call -- mirrors wherever you're looking at it now rather than a hardcoded original location. Content-sourcing needed no refactor of createInitialNotes()'s ~20 individual sample definitions: getFreshSampleCopy() momentarily deletes the target from `notes` (in memory only), calls the EXISTING createInitialNotes() unmodified (its own if-not-exists guard now sees it "missing" and recreates it fresh), captures the result, then immediately restores whatever was there before -- doubling up on a safety net that function already had (its own v0.1630 snapshot/restore pass). New name includes the app version (e.g. "A Quiet Evening (v0.1671)") so copies taken over time stay distinguishable. Confirmation is a new #dismissible-notice element -- deliberately separate from the existing toast per Lynn's explicit request for something requiring an actual tap on an X to close, not an auto-timeout or a stray tap anywhere on it, since a folder path needs a moment to actually read. Verified directly: fresh content correct while the user's edited original is completely untouched (both name and content); the no-folder and in-folder notice wording; the notice's close button; new note gets a distinct id and the same folderId as the original; SAMPLE_NOTE_IDS correctly distinguishes samples from ordinary notes. Suite unchanged: 316/316.
+  v0.1670 - NEW: numbered-list child levels now display as a full decimal path (1, 1.1, 1.1.1, ...) instead of a bare local count repeating "1, 2, 3" at every depth -- per Lynn's explicit choice after discussing the common conventions (legal/classic outline a/i lettering, alternating case, decimal). Decimal was chosen specifically to avoid Roman numerals entirely, since those would have needed new pronunciation logic in the speech feature; digits and periods need none. R&R mode only, as always -- typing mode still shows exactly whatever digits were typed, unchanged. computeOrderedListNumbers()'s `number` field is now always the full joined path string rather than just the current level's local count -- the per-depth counter stack the function already tracked for the "resume, don't restart" behavior turned out to hold exactly the data a decimal path needs, so this was really just "join the whole stack" instead of "use only its last entry", not a new mechanism. A nice side effect on the two existing bug-fix scenarios (indenting an item with a leftover digit, and renesting after a return to a shallower level): they now show something MORE informative than before (3.1, 2.1) instead of a bare, context-free 1. Updated 8 existing test goldens to reflect this intentional behavior change, each hand-verified against the design (including the exact 1.1.1 grandchild example this was built around) before acceptance. Also updated the Numbered List Sampler's own descriptive text to explain decimal paths instead of the old local-count wording -- note this only affects fresh installs/reinstalls-after-deletion, since the sample note's own reinstall-safe guard (if a note with this id doesn't already exist) intentionally never touches an existing copy someone may have edited. Suite: 316/316.
   v0.1669 - Applied the v0.1668 Android scrollbar-width fix to Add Text to Note (#quick-add-input) and Edit Paragraph (#edit-block-input), per Lynn's explicit request -- both are self-scrolling textareas (overflow-y: auto, fixed/max height) whose scrollbar toggles on/off as content crosses that threshold, the same mechanism that clipped the main editor's last lines. scrollbar-gutter: stable added to both, permanently reserving the scrollbar's width so its presence can never change the available width mid-measurement -- relevant to these dialogs' own Bold Cursor mirror positioning (v0.1601/v0.1634 already fixed a related but distinct width bug here: the mirror using offsetWidth instead of clientWidth). Confirmed via grep this is a clean, additive change -- no existing rule on either selector previously set scrollbar-gutter. Suite unchanged: 316/316.
   v0.1668 - REAL FIX for the Android missing-lines bug, per Lynn's explicit instruction not to assume a timing/race issue -- her second log proved it wasn't one: byte-identical numbers (ed.offsetHeight=5880, ed.scrollHeight=6030) across two completely separate occurrences, even after v0.1667's 6 retries over ~900ms changed nothing at all. A deterministic mismatch that never moves means something is computing the SAME wrong answer every time, not still settling. Root cause, found by recognizing this codebase already diagnosed the identical bug class once before (v0.1634, a different pair of dialogs): "Android/desktop classic scrollbars consume interior width" -- iOS's overlay scrollbar doesn't, which is exactly why this never reproduced there. Applied to resizeEditor() specifically: its shrink-to-1px-then-grow trick can momentarily make note-content-area's scrollbar (overflow-y: auto) disappear while the textarea is briefly 1px tall, widening the space available to it right as scrollHeight gets measured -- text wraps into fewer lines than it truly needs at that artificially wider width, the textarea's height gets pinned to that too-small number, and once content is tall again the scrollbar reappears, narrowing the true width back down -- so the real rendering needs MORE room than the pinned height allows, and the excess is clipped. Identical every time resizeEditor() runs, exactly why retrying it changed nothing. FIX: scrollbar-gutter: stable on #note-content-area permanently reserves the scrollbar's width whether or not it's currently shown, so the available width can never change mid-measurement again. The v0.1667 retry loop and diagnostic logging are left in place -- no longer needed as a blind guess-and-retry, but now a useful confirmation signal: if this fix is right, the next Android log should show attempt=0, OK. Honest limitation, same as the iOS keyboard fixes: jsdom cannot render real CSS layout or scrollbars, so this cannot be verified end-to-end in the sandbox -- confidence here comes from the mechanism matching a previously-confirmed bug in this exact codebase and explaining every detail of Lynn's evidence precisely, not from a passing test. Suite unchanged: 316/316.
   v0.1667 - Android missing-lines bug: Lynn's actual debug log (not another guess) pinpointed the real mechanism precisely. area.scrollTop WAS correctly at its max (5545.6 of 5545) -- the outer container's scrolling was never the problem. But ed.offsetHeight (5880) was 150px SHORTER than ed.scrollHeight (6030): the textarea itself was rendered too short for its own content, so even scrolling the outer container all the way down couldn't reveal text clipped inside an inner element sized wrong. This confirms resizeEditor() (height='1px' then height=scrollHeight) was the right idea all along -- the v0.1664/v0.1665 attempts just didn't retry it for long enough: her log shows the mismatch STILL present at exactly the 150ms mark her single retry fired at, meaning Android's post-keyboard-dismiss reflow (text rewrapping as the viewport settles) was still in progress past that point. FIX: replaced the single fixed-delay retry with a self-correcting loop that keeps calling resizeEditor() every 150ms, re-measuring fresh each time, until offsetHeight actually catches up to scrollHeight -- capped at 6 attempts (~900ms) so it can't run forever if something else keeps scrollHeight a moving target. The final attempt logs once, tagged OK or STILL-SHORT with the attempt count, so the next log shows directly whether this actually closed the gap rather than needing another guess. Verified the loop's safety property directly in the sandbox with a mismatch engineered to never resolve: terminates at exactly attempt 6, logs exactly once (no spam), correctly tagged STILL-SHORT -- confirmed no infinite-loop risk either way this turns out on Lynn's next test. Suite unchanged: 316/316.
@@ -885,7 +890,7 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
   background: var(--notes-list-entry-bg, var(--bg2));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 6px 12px; /* v0.1673: vertical 8px->6px, first pass per Lynn -- expect iteration */
   margin-bottom: 6px;
   cursor: pointer;
   display: flex;
@@ -914,7 +919,7 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
      applySettings()'s "Notes list fonts" block for the fallback chain. */
   font-family: var(--notes-list-name-font, var(--font-body));
   font-size: var(--notes-list-name-size, 1em);
-  font-weight: 600;
+  font-weight: var(--notes-list-name-weight, 600);
   color: var(--fg);
   line-height: 1.3;
   /* v0.1545: was a body-class-toggled pair of rulesets (1 line vs a
@@ -941,7 +946,7 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
      applySettings()'s "Notes list fonts" block for the fallback chain. */
   font-family: var(--notes-list-preview-font, var(--font-note));
   font-size: var(--notes-list-preview-size, var(--font-size-editor));
-  font-weight: var(--font-weight-editor);
+  font-weight: var(--notes-list-preview-weight, var(--font-weight-editor));
   color: var(--note-preview-color, var(--fg2));
   margin-top: 1px;
   line-height: 1.3;
@@ -1544,7 +1549,7 @@ polyline.cb-draw-anim {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 13px 16px;
+  padding: 6px 16px; /* v0.1674: vertical 8px->6px, further tightening per Lynn -- iteration 2 */
   background: var(--bg-card, var(--bg2));
   border-radius: var(--radius);
   cursor: pointer;
@@ -1570,10 +1575,19 @@ polyline.cb-draw-anim {
 }
 .folder-item-name {
   /* v0.1546: shares notesListNoteNameFont/Size with .note-item-name — same
-     variables, so folder and note names always match visually. */
+     variables, so folder and note names always match visually.
+     v0.1672: now ALSO shares notesListNoteNameFontWeight for the same
+     reason — matches the existing "Note & Folder" naming/precedent
+     exactly. Worth knowing: folders were previously hardcoded 100
+     heavier than notes (700 vs 600); sharing one weight setting means
+     that distinction is gone by default (both now 600 unless the new
+     setting is changed) rather than preserved as a fallback -- CSS custom
+     properties don't support a different fallback per source the way a
+     hardcoded value could, and JS always supplies a concrete value here,
+     so a local per-selector fallback would never actually be reached. */
   font-family: var(--notes-list-name-font, var(--font-body));
   font-size: var(--notes-list-name-size, var(--font-ui));
-  font-weight: 700;
+  font-weight: var(--notes-list-name-weight, 600);
   color: var(--fg);
   /* v0.1545: shares wrapNoteNames with .note-item-name (same
      --wrap-note-names-lines variable) — folders and notes wrap together,
@@ -5807,6 +5821,50 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   -webkit-user-select: text;
 }
 
+/* v0.1671: "must tap × to dismiss" notice -- see its own HTML comment
+   for why this is a separate element from #debug-toast rather than an
+   extra mode on it: changing the shared toast's core dismiss behavior
+   (auto-timeout, tap-anywhere) would affect every other place that
+   already relies on it. */
+#dismissible-notice {
+  font-family: var(--font-body);
+  position: fixed;
+  top: 140px;
+  left: 12px;
+  right: 12px;
+  background: #3a3a3a;
+  color: #fff;
+  padding: 12px 14px 12px 16px;
+  border-radius: 14px;
+  font-size: 0.85em;
+  font-weight: 500;
+  z-index: 99999;
+  display: none;
+  align-items: flex-start;
+  gap: 10px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  line-height: 1.5;
+}
+body:not(.dark) #dismissible-notice { background: #2a2a2a; }
+body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,255,255,0.2); }
+#dismissible-notice.show { display: flex; opacity: 1; }
+#dismissible-notice-text { flex: 1; white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text; }
+#dismissible-notice-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.4em;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  touch-action: manipulation;
+  opacity: 0.8;
+}
+#dismissible-notice-close:hover { opacity: 1; }
+
 /* Speaking highlight */
 .speak-highlight {
   /* Applied to a full viewer-line div, not an inline word */
@@ -5866,6 +5924,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
 <!-- ===== DEBUG TOAST ===== -->
 <div id="debug-toast"></div>
+<!-- v0.1671: "must tap to dismiss" notice, per Lynn -- distinct from the
+     existing toast (which auto-dismisses or dismisses on any tap): this
+     one requires an explicit × tap, specifically so a folder path long
+     enough to need a moment to read can't vanish from an accidental tap
+     or a timeout before that moment's up. Used by "Get fresh copy of
+     this sample". -->
+<div id="dismissible-notice" role="status">
+  <span id="dismissible-notice-text"></span>
+  <button id="dismissible-notice-close" aria-label="Dismiss">&times;</button>
+</div>
 
 <!-- ===== UPDATE BANNER ===== -->
 <div id="update-banner" role="alert">
@@ -7371,6 +7439,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span class="more-label" id="more-tag-filter-label" style="pointer-events:none;flex:1">Filter by tag</span>
   </button>
+  <!-- v0.1671: shown only when the CURRENT note's id is a recognized
+       built-in sample (SAMPLE_NOTE_IDS) -- lets Lynn compare her edited/
+       renamed copy against what the sample currently looks like, without
+       any risk to her existing copy. -->
+  <button id="more-fresh-sample-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" style="pointer-events:none"/>
+      <polyline points="14 2 14 8 20 8" style="pointer-events:none"/>
+      <line x1="12" y1="18" x2="12" y2="12" style="pointer-events:none"/>
+      <line x1="9" y1="15" x2="15" y2="15" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Get fresh copy of this sample</span>
+  </button>
   <button id="more-calendar-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
     <span class="more-label" style="pointer-events:none;flex:1;">Add to Calendar</span>
@@ -7863,6 +7944,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <input type="range" class="settings-range" id="notes-list-name-size-range" min="14" max="40" step="1" value="20">
         <span class="range-val" id="notes-list-name-size-val">Default</span>
       </div>
+      <!-- v0.1672: per Lynn (accessibility pass) -->
+      <div class="settings-row range-row">
+        <div class="settings-row-label">Note &amp; Folder Name Weight <span style="font-weight:400;font-size:0.85em;color:var(--fg3)">(100=thin, 400=regular, 900=black)</span></div>
+        <input type="range" class="settings-range" id="notes-list-name-weight-range" min="100" max="900" step="100" value="600">
+        <span class="range-val" id="notes-list-name-weight-val">600</span>
+      </div>
       <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
         <div style="font-size:0.78em;color:var(--fg3);user-select:none;-webkit-user-select:none">Preview</div>
         <div id="notes-list-preview-preview" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">This is what your note preview text will look like.</div>
@@ -7896,6 +7983,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <div class="settings-row-label">Note Preview Size</div>
         <input type="range" class="settings-range" id="notes-list-preview-size-range" min="12" max="72" step="1" value="20">
         <span class="range-val" id="notes-list-preview-size-val">Default</span>
+      </div>
+      <!-- v0.1672: per Lynn (accessibility pass) -->
+      <div class="settings-row range-row">
+        <div class="settings-row-label">Note Preview Weight <span style="font-weight:400;font-size:0.85em;color:var(--fg3)">(100=thin, 400=regular, 900=black)</span></div>
+        <input type="range" class="settings-range" id="notes-list-preview-weight-range" min="100" max="900" step="100" value="400">
+        <span class="range-val" id="notes-list-preview-weight-val">400</span>
       </div>
 
       <div class="settings-subsection-title" style="margin-top:10px">Longer Help &amp; Documentation Text</div>
@@ -9503,9 +9596,28 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="reset-row" style="margin-top:0;padding-bottom:32px">
       <button class="reset-defaults-btn" id="reinstall-samples-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Reinstall Sample Notes</button>
     </div>
+    <!-- v0.1671: separate from Reinstall -- this always ADDS a brand-new,
+         independent note from a sample's current content, never touching
+         any existing copy, so no confirmation dialog is needed the way
+         Reinstall's is (nothing here can be undone-worthy). -->
+    <div class="reset-row" style="margin-top:0;padding-bottom:32px">
+      <button class="reset-defaults-btn" id="fresh-sample-picker-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Get Fresh Copy of a Sample Note…</button>
     </div>
     </div>
     </div>
+    </div>
+</div>
+
+<!-- v0.1671: sample picker for "Get Fresh Copy of a Sample Note" -->
+<div id="fresh-sample-picker-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:10050;align-items:center;justify-content:center">
+  <div style="background:var(--bg);border-radius:14px;width:min(92vw,420px);max-height:70vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);overflow:hidden">
+    <div style="padding:16px 18px 8px;font-weight:600;font-size:1.05em">Get Fresh Copy of a Sample Note</div>
+    <div style="padding:0 18px 8px;font-size:0.85em;color:var(--fg2)">Creates a brand-new note from the sample's current content — your existing copy, if you have one, is never touched.</div>
+    <div id="fresh-sample-picker-list" style="overflow-y:auto;padding:4px 0 8px"></div>
+    <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+      <button id="fresh-sample-picker-cancel-btn" class="btn btn-ghost">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <!-- SAVE AS THEME -->
@@ -10318,7 +10430,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1669';
+const APP_VERSION = '0.1674';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11593,6 +11705,13 @@ const DEFAULT_SETTINGS = {
   notesListNoteNameFontSize: null,
   notesListPreviewFont: '',
   notesListPreviewFontSize: null,
+  // v0.1672: NEW, per Lynn (accessibility pass) -- fallback is NOT the
+  // general uiFontWeight/fontWeight the way Font/Size fall back to their
+  // general counterparts; see applySettings()'s own comment on why (the
+  // existing hardcoded 600/700 note-vs-folder default had to be
+  // preserved, not silently lightened, for anyone who never touches this).
+  notesListNoteNameFontWeight: null,
+  notesListPreviewFontWeight: null,
   showNotePreview: true,     // show first-line content preview below note name in list
   speakInQuiet: false,
   alwaysSpeakWholeNote: false,
@@ -11822,7 +11941,7 @@ const SETTING_BUCKETS = {
   darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL,
   globalViewOnly: SETTING_BUCKETS_GENERAL, lastSuffix: SETTING_BUCKETS_GENERAL, lightBgColor: SETTING_BUCKETS_GENERAL, lightFgColor: SETTING_BUCKETS_GENERAL, lightNotePreviewColor: SETTING_BUCKETS_GENERAL,
   lightNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, listMarginLeft: SETTING_BUCKETS_GENERAL, listMarginRight: SETTING_BUCKETS_GENERAL, matchGeneralNotesListEntryColors: SETTING_BUCKETS_GENERAL, noteEditingMode: SETTING_BUCKETS_GENERAL,
-  notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
+  notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListNoteNameFontWeight: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFontWeight: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
   rulerEnabled: SETTING_BUCKETS_GENERAL, showLineNumbers: SETTING_BUCKETS_GENERAL, showNoteFab: SETTING_BUCKETS_GENERAL, showNotePreview: SETTING_BUCKETS_GENERAL, showOopsBtn: SETTING_BUCKETS_GENERAL,
   showThemeIndicator: SETTING_BUCKETS_GENERAL, showToolbarCollapseTab: SETTING_BUCKETS_GENERAL, sortBy: SETTING_BUCKETS_GENERAL, sortDesc: SETTING_BUCKETS_GENERAL, sortGroupByDate: SETTING_BUCKETS_GENERAL,
   theme: SETTING_BUCKETS_GENERAL, timeFormat: SETTING_BUCKETS_GENERAL, todaySuffix: SETTING_BUCKETS_GENERAL, toolbarPlacement: SETTING_BUCKETS_GENERAL, toolbarOrder: SETTING_BUCKETS_GENERAL,
@@ -13146,6 +13265,20 @@ function updateNoteFontWeightStep() {
   if (!r) return;
   r.step = isVariableWeightFont(settings.noteFont) ? '10' : '100';
 }
+// v0.1672: same reasoning as updateNoteFontWeightStep() above, for the
+// two new notes-list weight sliders -- each checks whatever font its OWN
+// slider actually applies to (the notesList override if set, else the
+// same fallback chain the font/size settings already use).
+function updateNotesListNameFontWeightStep() {
+  var r = document.getElementById('notes-list-name-weight-range');
+  if (!r) return;
+  r.step = isVariableWeightFont(settings.notesListNoteNameFont || settings.font) ? '10' : '100';
+}
+function updateNotesListPreviewFontWeightStep() {
+  var r = document.getElementById('notes-list-preview-weight-range');
+  if (!r) return;
+  r.step = isVariableWeightFont(settings.notesListPreviewFont || settings.noteFont || settings.font) ? '10' : '100';
+}
 
 // ===== CHECK-OFF SOUND =====
 // Plays a brief synthesized sound when a SINGLE checkbox/hyphen item is
@@ -13591,6 +13724,19 @@ function applySettings() {
   document.documentElement.style.setProperty('--notes-list-name-size', (settings.notesListNoteNameFontSize || settings.uiFontSize) + 'px');
   document.documentElement.style.setProperty('--notes-list-preview-font', settings.notesListPreviewFont || settings.noteFont || settings.font);
   document.documentElement.style.setProperty('--notes-list-preview-size', (settings.notesListPreviewFontSize || settings.editorFontSize) + 'px');
+  // v0.1672: NEW weight settings, per Lynn (accessibility pass). Preview
+  // falls back to the note editor's own weight, same pattern its font/
+  // size siblings already use (the preview line visually represents note
+  // body text). Name does NOT fall back to the general UI weight, even
+  // though that matches its font/size siblings' pattern -- note/folder
+  // names are deliberately semibold (600) today as a visual-hierarchy
+  // choice, independent of body text weight (usually 400); falling back
+  // to uiFontWeight would have visibly lightened everyone's note names
+  // the moment this shipped, for anyone who never touches the new
+  // setting. 600 is the fallback instead, matching today's unchanged
+  // default exactly.
+  document.documentElement.style.setProperty('--notes-list-name-weight', settings.notesListNoteNameFontWeight || 600);
+  document.documentElement.style.setProperty('--notes-list-preview-weight', settings.notesListPreviewFontWeight || settings.fontWeight || 400);
 
   // Help dialog line/paragraph spacing (v0.1555) -- see .help-body CSS
   // comment. Only consumed there; nothing else references these.
@@ -19422,12 +19568,25 @@ function openSettings() {
   var _nlnsVal = document.getElementById('notes-list-name-size-val');
   if (_nlnsRange) _nlnsRange.value = settings.notesListNoteNameFontSize || settings.uiFontSize;
   if (_nlnsVal) _nlnsVal.textContent = settings.notesListNoteNameFontSize ? (settings.notesListNoteNameFontSize + 'px') : 'Default';
+  // v0.1672: name/preview weight sliders, per Lynn (accessibility pass).
+  // See applySettings()'s comment for why the fallback is 600, not
+  // settings.uiFontWeight -- preserves today's unchanged look by default.
+  var _nlnwRange = document.getElementById('notes-list-name-weight-range');
+  var _nlnwVal = document.getElementById('notes-list-name-weight-val');
+  if (_nlnwRange) _nlnwRange.value = settings.notesListNoteNameFontWeight || 600;
+  if (_nlnwVal) _nlnwVal.textContent = settings.notesListNoteNameFontWeight || 600;
+  updateNotesListNameFontWeightStep();
   var _nlpfSel = document.getElementById('notes-list-preview-font-select');
   if (_nlpfSel) _nlpfSel.value = settings.notesListPreviewFont || '';
   var _nlpsRange = document.getElementById('notes-list-preview-size-range');
   var _nlpsVal = document.getElementById('notes-list-preview-size-val');
   if (_nlpsRange) _nlpsRange.value = settings.notesListPreviewFontSize || settings.editorFontSize;
   if (_nlpsVal) _nlpsVal.textContent = settings.notesListPreviewFontSize ? (settings.notesListPreviewFontSize + 'px') : 'Default';
+  var _nlpwRange = document.getElementById('notes-list-preview-weight-range');
+  var _nlpwVal = document.getElementById('notes-list-preview-weight-val');
+  if (_nlpwRange) _nlpwRange.value = settings.notesListPreviewFontWeight || settings.fontWeight || 400;
+  if (_nlpwVal) _nlpwVal.textContent = settings.notesListPreviewFontWeight || settings.fontWeight || 400;
+  updateNotesListPreviewFontWeightStep();
   updateNotesListFontPreviews();
 
   // v0.1555: Help-content line/paragraph spacing
@@ -19917,11 +20076,13 @@ function updateNotesListFontPreviews() {
   if (namePrev) {
     namePrev.style.fontFamily = settings.notesListNoteNameFont || settings.font;
     namePrev.style.fontSize = (settings.notesListNoteNameFontSize || settings.uiFontSize) + 'px';
+    namePrev.style.fontWeight = settings.notesListNoteNameFontWeight || 600;
   }
   var previewPrev = document.getElementById('notes-list-preview-preview');
   if (previewPrev) {
     previewPrev.style.fontFamily = settings.notesListPreviewFont || settings.noteFont || settings.font;
     previewPrev.style.fontSize = (settings.notesListPreviewFontSize || settings.editorFontSize) + 'px';
+    previewPrev.style.fontWeight = settings.notesListPreviewFontWeight || settings.fontWeight || 400;
   }
 }
 
@@ -20001,6 +20162,20 @@ function showToast(msg, persistent, noCopyOnTap) {
       });
     }
   };
+}
+
+// v0.1671: "must tap × to dismiss" notice -- see the HTML/CSS comments
+// on #dismissible-notice for why this is deliberately separate from
+// showToast() rather than another mode on it. No auto-timeout, and
+// tapping the notice body does nothing -- only the × button closes it,
+// specifically so something worth reading for a moment (like a folder
+// path) can't vanish before that moment's up.
+function showDismissibleNotice(msg) {
+  var el = document.getElementById('dismissible-notice');
+  var textEl = document.getElementById('dismissible-notice-text');
+  if (!el || !textEl) return;
+  textEl.textContent = msg;
+  el.classList.add('show');
 }
 
 // Apply copy/cut/paste overflow policy for small screens with large icons
@@ -23463,6 +23638,8 @@ function makeImportFolderName(label) {
     { id: 'more-show-tags-btn',       show: function(s) { return s.rrMode && s.hasTags; } },
     { id: 'more-line-numbers-btn',    show: function(s) { return s.rrMode; } },
     { id: 'more-tag-filter-btn',      show: function(s) { return s.rrMode && s.hasTags; } },
+    // ── Any mode: current note is a recognized built-in sample ──────────────
+    { id: 'more-fresh-sample-btn',    show: function() { return SAMPLE_NOTE_IDS.indexOf(currentNoteId) !== -1; } },
     // ── Edit / typing mode (not quiet, not view-only) ───────────────────────
     { id: 'more-insert-tag-btn',      show: function(s) { return !s.quietMode && !s.viewOnly; } },
     { id: 'more-tag-order-btn',       show: function(s) { return !s.quietMode && !s.viewOnly && s.hasTags; } },
@@ -26051,6 +26228,7 @@ function makeImportFolderName(label) {
       if (uiwv) uiwv.textContent = snappedUiWeight;
     }
     updateUiFontWeightStep();
+    updateNotesListNameFontWeightStep();
     updateFontPreview();
     applySettings();
     updateSaveBtnState();
@@ -26084,6 +26262,7 @@ function makeImportFolderName(label) {
       applySettings();
     }
     updateNoteFontWeightStep();
+    updateNotesListPreviewFontWeightStep();
     updateSaveBtnState();
   });
   // Font size range
@@ -26103,6 +26282,19 @@ function makeImportFolderName(label) {
   // v0.1546/1547: Profiles & Note Styles Phase A, build 4
   document.getElementById('notes-list-name-font-select').addEventListener('change', function() {
     settings.notesListNoteNameFont = this.value;
+    // v0.1672: same snapping as the general font selects -- see their
+    // comment for why (a static font can't render an in-between weight
+    // a variable font's slider may have left behind).
+    var curNameWeight = parseInt(settings.notesListNoteNameFontWeight) || 600;
+    var snappedNameWeight = getNearestSupportedWeight(this.value || settings.font, curNameWeight);
+    if (snappedNameWeight !== curNameWeight) {
+      settings.notesListNoteNameFontWeight = snappedNameWeight;
+      var nlnwr = document.getElementById('notes-list-name-weight-range');
+      var nlnwv = document.getElementById('notes-list-name-weight-val');
+      if (nlnwr) nlnwr.value = snappedNameWeight;
+      if (nlnwv) nlnwv.textContent = snappedNameWeight;
+    }
+    updateNotesListNameFontWeightStep();
     applySettings();
     updateNotesListFontPreviews();
     updateSaveBtnState();
@@ -26116,6 +26308,16 @@ function makeImportFolderName(label) {
   });
   document.getElementById('notes-list-preview-font-select').addEventListener('change', function() {
     settings.notesListPreviewFont = this.value;
+    var curPrevWeight = parseInt(settings.notesListPreviewFontWeight) || parseInt(settings.fontWeight) || 400;
+    var snappedPrevWeight = getNearestSupportedWeight(this.value || settings.noteFont || settings.font, curPrevWeight);
+    if (snappedPrevWeight !== curPrevWeight) {
+      settings.notesListPreviewFontWeight = snappedPrevWeight;
+      var nlpwr = document.getElementById('notes-list-preview-weight-range');
+      var nlpwv = document.getElementById('notes-list-preview-weight-val');
+      if (nlpwr) nlpwr.value = snappedPrevWeight;
+      if (nlpwv) nlpwv.textContent = snappedPrevWeight;
+    }
+    updateNotesListPreviewFontWeightStep();
     applySettings();
     updateNotesListFontPreviews();
     updateSaveBtnState();
@@ -26156,6 +26358,22 @@ function makeImportFolderName(label) {
     settings.fontWeight = parseInt(this.value);
     document.getElementById('note-font-weight-val').textContent = this.value;
     applySettings();
+    updateSaveBtnState();
+  });
+
+  // v0.1672: new weight sliders, per Lynn (accessibility pass)
+  document.getElementById('notes-list-name-weight-range').addEventListener('input', function() {
+    settings.notesListNoteNameFontWeight = parseInt(this.value);
+    document.getElementById('notes-list-name-weight-val').textContent = this.value;
+    applySettings();
+    updateNotesListFontPreviews();
+    updateSaveBtnState();
+  });
+  document.getElementById('notes-list-preview-weight-range').addEventListener('input', function() {
+    settings.notesListPreviewFontWeight = parseInt(this.value);
+    document.getElementById('notes-list-preview-weight-val').textContent = this.value;
+    applySettings();
+    updateNotesListFontPreviews();
     updateSaveBtnState();
   });
 
@@ -26679,6 +26897,35 @@ function makeImportFolderName(label) {
       },
       false, 'Cancel', null, 'centered'
     );
+  });
+
+  // v0.1671: Get Fresh Copy of a Sample Note picker -- lists every
+  // recognized sample by its currently-known name; picking one creates
+  // a brand-new note from that sample's CURRENT content and closes the
+  // picker. No confirmation needed here (unlike Reinstall) since this
+  // only ever adds a note, never touches an existing one.
+  document.getElementById('fresh-sample-picker-btn').addEventListener('click', function() {
+    var list = document.getElementById('fresh-sample-picker-list');
+    list.innerHTML = '';
+    SAMPLE_NOTE_IDS.forEach(function(id) {
+      var label = notes[id] ? notes[id].name : id;
+      var btn = document.createElement('button');
+      btn.className = 'context-menu-item';
+      btn.style.width = '100%';
+      btn.textContent = label;
+      btn.addEventListener('click', function() {
+        document.getElementById('fresh-sample-picker-overlay').style.display = 'none';
+        createFreshSampleNote(id);
+      });
+      list.appendChild(btn);
+    });
+    document.getElementById('fresh-sample-picker-overlay').style.display = 'flex';
+  });
+  document.getElementById('fresh-sample-picker-cancel-btn').addEventListener('click', function() {
+    document.getElementById('fresh-sample-picker-overlay').style.display = 'none';
+  });
+  document.getElementById('fresh-sample-picker-overlay').addEventListener('click', function(e) {
+    if (e.target === this) this.style.display = 'none';
   });
 
   // Reset to defaults
@@ -27693,6 +27940,13 @@ function makeImportFolderName(label) {
     closeAllBars();
     openTagFilterSheet();
   });
+  var _freshSampleBtn = document.getElementById('more-fresh-sample-btn');
+  if (_freshSampleBtn) {
+    _freshSampleBtn.addEventListener('click', function() {
+      closeMoreMenu();
+      if (currentNoteId) createFreshSampleNote(currentNoteId);
+    });
+  }
   var _tagFilterToolbarBtn = document.getElementById('tag-filter-btn');
   if (_tagFilterToolbarBtn) {
     _tagFilterToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
@@ -29052,6 +29306,13 @@ function makeImportFolderName(label) {
 
   var _tbHelpOverlay = document.getElementById('toolbar-help-overlay');
   var _tbHelpBody = document.getElementById('toolbar-help-body');
+  // v0.1671: dismissible-notice close button -- see showDismissibleNotice()
+  var _dismissNoticeClose = document.getElementById('dismissible-notice-close');
+  if (_dismissNoticeClose) {
+    _dismissNoticeClose.addEventListener('click', function() {
+      document.getElementById('dismissible-notice').classList.remove('show');
+    });
+  }
   document.getElementById('toolbar-help-btn').addEventListener('click', function() {
     if (_tbHelpBody) _tbHelpBody.innerHTML = _buildToolbarHelpContent();
     if (_tbHelpOverlay) { _tbHelpOverlay.style.display = 'flex'; }
@@ -32652,6 +32913,83 @@ function _tagSortSamplerContent() {
 }
 
 // Named function so it can be called from Settings > Reinstall Sample Notes
+// v0.1671: registry of every fixed-id sample note createInitialNotes()
+// manages (NOT the Welcome note -- its id is a fresh makeId() each
+// install, not a stable fixed id, so it has no fixed identity for "Get
+// Fresh Copy" to look up). Used by "Get fresh copy of this sample" (More
+// menu, shown only when the CURRENT note's id is in this list) and the
+// Settings picker (lists every entry here by its CURRENT name). Same
+// discipline as FONT_WEIGHT_SUPPORT/SETTING_BUCKETS: keep this in sync
+// by hand -- add a new sample's id here in the same build that adds it
+// to createInitialNotes(), or it simply won't be offered a fresh copy.
+var SAMPLE_NOTE_IDS = [
+  'note-read-me-first', 'note-color-sampler', 'note-heading-sampler',
+  'note-outline-sampler', 'note-tag-sampler', 'note-tag-cb-diagnostic',
+  'note-code-sampler', 'note-image-sampler', 'note-bullet-sampler',
+  'note-tag-sort-sampler', 'note-boat-checklist-today', 'note-sample-evening',
+  'note-sample-checklist', 'note-sample-cosy', 'note-sample-article',
+  'note-sample-taskmaster', 'note-sample-dyslexia', 'note-sample-poem',
+  'note-sample-fun', 'note-why-remember', 'note-ordered-list-sampler'
+];
+
+// getFreshSampleCopy(sampleId) -- returns {name, content, folderId,
+// themeId} computed by the CURRENT running code for a given sample id,
+// regardless of whatever an existing copy currently contains, WITHOUT
+// touching that existing copy at all. Works by momentarily deleting the
+// sample from `notes` (in memory only, nothing saved/rendered in
+// between), calling the existing createInitialNotes() unmodified -- its
+// own `if (!notes[id])` guard now sees it "missing" and recreates it
+// fresh -- capturing that result, then immediately restoring whatever
+// was there before (or removing it again if it didn't exist). This
+// needed no changes to createInitialNotes() itself, and doubles up on a
+// safety net that function already has: its own v0.1630 snapshot/restore
+// pass (see its own header comment) means calling it again is already
+// safe by design, even before this function's own explicit restore.
+function getFreshSampleCopy(sampleId) {
+  if (SAMPLE_NOTE_IDS.indexOf(sampleId) === -1) return null;
+  var existed = Object.prototype.hasOwnProperty.call(notes, sampleId);
+  var saved = notes[sampleId];
+  delete notes[sampleId];
+  var fresh = null;
+  try {
+    createInitialNotes();
+    var f = notes[sampleId];
+    if (f) fresh = { name: f.name, content: f.content, folderId: f.folderId || null, themeId: f.themeId || null };
+  } finally {
+    if (existed) notes[sampleId] = saved; else delete notes[sampleId];
+  }
+  return fresh;
+}
+
+// v0.1671: creates an independent, brand-new note from a sample's
+// CURRENT (not the user's possibly-edited) content -- per Lynn's
+// request to compare her edited/renamed copy against what a sample
+// currently looks like, without risking her existing copy at all. Lands
+// in the exact same folder situation (or lack of one) as the sample
+// currently is in -- see getFreshSampleCopy()'s own comment for why that
+// mirrors "wherever you're looking at it now" rather than a hardcoded
+// original location. Named with the app version so multiple fresh
+// copies taken over time stay distinguishable from each other.
+function createFreshSampleNote(sampleId) {
+  var fresh = getFreshSampleCopy(sampleId);
+  if (!fresh) {
+    showToast("Couldn't create a fresh copy of that sample", false);
+    return;
+  }
+  var newId = makeId();
+  var newName = fresh.name + ' (v' + APP_VERSION + ')';
+  var now = Date.now();
+  notes[newId] = {
+    id: newId, name: newName, content: fresh.content, autoNamed: false,
+    createdAt: now, editedAt: now, viewedAt: now,
+    folderId: fresh.folderId, themeId: fresh.themeId || undefined
+  };
+  saveNotes();
+  renderNotesList();
+  var folderPath = fresh.folderId ? getFolderPathString(fresh.folderId) : '';
+  showDismissibleNotice('Created "' + newName + '"' + (folderPath ? ' in ' + folderPath : ' at the top level'));
+}
+
 function createInitialNotes() {
   var now = Date.now();
 
@@ -34120,9 +34458,11 @@ function createInitialNotes() {
       '5. Gamma',
       '5. Delta',
       '',
-      'Nesting — child levels, made with Tab (4 spaces). Notice the sub-list',
-      'restarts at 1, and Fourth (the parent level) correctly resumes at 4',
-      'after the nested list ends, instead of restarting:',
+      'Nesting — child levels, made with Tab (4 spaces). Each level shows',
+      'the full path (2.1, 2.1.1, and so on), not just a bare local count —',
+      'so you always know exactly where an item sits without tracing back',
+      'up through its parents. Notice Fourth (the parent level) correctly',
+      'resumes at 4 after the nested lists end, instead of restarting:',
       '',
       '1. First',
       '2. Second',
@@ -35914,6 +36254,21 @@ function getOrderedListMarker(line) {
 // not in either indent mechanism. Nobody should have to retype a line's
 // number as "1" before indenting it just to get the child list to start
 // where every other outliner/word processor already starts it.
+// v0.1670: child levels now display as a full decimal path (1, 1.1,
+// 1.1.1, ...) instead of a bare local count repeating "1, 2, 3" at every
+// depth, per Lynn's explicit choice after discussing the common
+// conventions (legal/classic outline a/i lettering, alternating case,
+// decimal). Decimal was chosen specifically because it needs no new
+// pronunciation logic for the speech feature (digits and periods only --
+// this app already reads plain numbers everywhere), scales to any depth
+// without running out of symbols the way letters/Roman numerals do, and
+// is more informative at a glance (2.3.1 tells you exactly where you are
+// without tracing back up through parent levels). `number` is now always
+// the full joined path string (e.g. "1", "1.2", "2.3.1"), not just the
+// current level's local count -- the stack this function already tracked
+// for the "resume, don't restart" behavior turns out to hold exactly the
+// data a decimal path needs; this is really just "join the whole stack"
+// instead of "use only its last entry".
 function computeOrderedListNumbers(lines) {
   var result = new Array(lines.length).fill(null);
   var stack = []; // [{indent, count}], shallowest first
@@ -35931,7 +36286,8 @@ function computeOrderedListNumbers(lines) {
       var startAt = stack.length === 0 ? m.number : 1;
       stack.push({ indent: m.indent, count: startAt });
     }
-    result[i] = { number: stack[stack.length - 1].count, punct: m.punct };
+    var path = stack.map(function(s) { return s.count; }).join('.');
+    result[i] = { number: path, punct: m.punct };
   }
   return result;
 }
