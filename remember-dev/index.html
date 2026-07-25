@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1664 -->
+<!-- Remember App - Version 0.1681 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1664
+  Version 0.1681
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,23 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1681 - FIX: black bar with an inert, left-aligned X stuck visible at the very top of every screen, per Lynn's bug report and screenshot -- confirmed by directly inspecting computed styles, not guessed. Root cause was a pre-existing, much OLDER bug than it first appeared: a "comment out this dead CSS" block near .toolbar-scroll-cap (predating this session) had its explanatory note and its code-disabling wrapper written as what should have been two separate comments, but the first was never closed before the second opened. CSS comments don't nest, so from that point until some later, unrelated stray close-marker happened to re-close it, EVERYTHING in between was silently being treated as one giant comment -- which is what actually swallowed #dismissible-notice's and .custom-tooltip's real declarations (added in v0.1671/v0.1677), explaining exactly why the bug only became visible starting in v0.1677 even though its root cause is unrelated to that build and much older. With display:none/position:fixed silently never applying, the div rendered with browser defaults (block, static) at its actual DOM position near the very top of the page; with flex layout also never applying, the close button landed at the start of the row instead of the end, explaining the left-aligned X; and since the button's own handler only ever removed a 'show' class the element never had in the first place, tapping it correctly did nothing. Closed the original explanatory comment properly, restoring correct nesting for everything downstream. Caught two of my OWN mistakes while fixing this: (1) my first attempt only patched a second, misdiagnosed instance of the same symptom rather than the true upstream source, caught by re-testing computed styles directly rather than trusting that the CSS merely reading as syntactically fine meant it was fixed; (2) my own explanatory comment about this bug used the literal comment-delimiter characters as quoted example text, which would have silently reintroduced the exact same bug in a real browser (comments have no escaping mechanism) -- caught by writing a small comment-balance scanner and running it across every style block, rather than trusting a visual read-through. Verified with that scanner (zero unclosed comments anywhere) AND directly via computed styles (both elements now correctly default to hidden/fixed, and correctly switch to visible/flex when actually triggered). Suite unchanged: 316/316.
+  v0.1680 - Two quiet mode changes, per Lynn. (1) Moved the Quiet Mode / Exit Quiet Mode More menu item (internally "Reading Mode") to right after Scroll to bottom -- was after Select all. Pure HTML reorder; the More menu has no separate ordering array, just DOM order. (2) FIX: note title showing BOTH an ellipsis on line 1 AND wrapped text leaking out underneath the divider in quiet mode, reported with Wrap Note Title set to 1 line, on iPhone. Root cause, confirmed by reading the actual CSS: the base .note-inline-title rule uses the -webkit-line-clamp technique (display: -webkit-box + -webkit-line-clamp + overflow:hidden) to truncate to N lines with an ellipsis. Quiet mode's override only ever reset overflow/white-space/text-overflow -- display: -webkit-box and -webkit-line-clamp stayed fully active underneath, so quiet mode ended up in a broken hybrid: line-clamp still truncating line 1 with its own ellipsis (never touched), while the overridden overflow:visible let the rest of the wrapped text leak out below instead of being hidden the way line-clamp requires. Fixed by undoing the WHOLE technique (display: block, -webkit-line-clamp: unset, -webkit-box-orient: unset), not just patching the symptom -- quiet mode now gets genuinely normal, unclamped wrapping with no ellipsis at all, matching what the rest of that rule already intended. Caught and fixed a comment-closing mistake in my own first pass at this edit before it shipped. Verified directly via computed style: normal mode still shows display:-webkit-box with line-clamp active as before; quiet mode now shows display:block with line-clamp fully off. Suite unchanged: 316/316.
+  v0.1679 - NEW: bottom scroll shadow on the note editor, per Lynn -- shown only when there's more note content below to scroll to, gone entirely once truly at the end. Corrected mid-build after Lynn clarified: NOT the gradient-fade-to-background-color technique .qa-scroll-fade/#more-menu-fade use elsewhere in this app (she was explicit she doesn't want that here) -- a genuine plain box-shadow instead, the same kind .note-bottom-bar's own shadow already uses (which she'd said she liked in the previous build). inset + negative spread confines it to a thin band right at the edge rather than washing over the whole scroll area. Same shape as the existing horizontal TOOLBAR SCROLL ARROWS block: a scroll listener recomputes on every scroll, and a ResizeObserver on whichever of #note-editor/#note-viewer is currently rendering catches content-height changes (switching Typing/R&R mode, opening a different note, font size changes, typing itself) automatically, rather than needing to hook this into every individual render call site by hand. window._updateNoteScrollShadow exported the same way window._updateToolbarArrows already is, for any future call site that wants to force a recheck. Verified all four scenarios directly: shadow shown at the top with more below, correctly gone at the exact scrolled-to-bottom position, shown again when scrolled partway, and correctly never shown at all for a note short enough that no scrolling is possible in the first place. Suite unchanged: 316/316.
+  v0.1678 - Two toolbar fixes, per Lynn's Chromebook report. (1) FIX (probable, not visually confirmed): thin sliver of scrolled note text visible in the gap between the two stacked toolbar bars. pinToolbars() positions the lower bar using the header's measured height (offsetHeight), which rounds to whole pixels -- a well-known source of hairline gaps when precisely stacking two fixed-position elements, if the actual rendered layout lands on a fractional pixel. Switched both measurements to getBoundingClientRect().height (sub-pixel-precise) instead -- confirmed safe everywhere else these two variables are used (all px-string concatenation or plain arithmetic, both fine with fractional values). Flagged honestly: a strong, well-supported hypothesis given the symptom, not something visually confirmable without a real screen. (2) FIX (confirmed): the top header bar and the lower toolbar each had their OWN separate box-shadow -- correct for the header when it's the sole visible bar (toolbar collapsed), but when both bars are visible the header's shadow lands at the seam BETWEEN them rather than at the toolbar block's true bottom edge, where the lower bar's own (the one Lynn likes) already does the job. Header's shadow now only applies when toolbar-collapsed. Verified directly: header box-shadow is 'none' with both bars visible, correctly restored to its normal value once collapsed. Suite unchanged: 316/316.
+  v0.1677 - NEW: custom tooltips app-wide, per Lynn's Chromebook accessibility report -- REPLACE native browser title-attribute tooltips entirely (confirmed by inspection: 322 title attributes, zero custom tooltip system before this). Native tooltips are positioned by the OS relative to the cursor (so a large accessibility cursor sits right on top), use a fixed OS font size, and offer no wrap control -- none of which a web page can touch at all; that's why a dedicated setting couldn't have worked before this. New system: a single shared tooltip element + one pair of delegated mouseover/mouseout listeners on document (not per-element -- automatically covers every current and future title-bearing element with no extra wiring), mouse-only via the same (hover: hover) gate used throughout this app, so touch devices are completely unaffected. Anchored to the hovered ELEMENT (above it, flipping below if there's no room, clamped to viewport edges) rather than the cursor -- solves the large-cursor-covers-it problem at the root, not just by moving it a bit. Native tooltip suppressed for the hover's duration (title moved to data-tooltip-pending and restored on mouseout) so the two can never show simultaneously. Real CSS font-size tied to a new Tooltip Size setting (independent of every other size setting, with its own live preview bubble in Settings, right under UI Font Weight) plus real word-wrap with a sane max-width instead of one long strip on a big screen. Colors deliberately theme-matched rather than the common "always dark" convention several major design systems use -- reuses --bg3/--fg/--border, the same tokens every other subtle elevated surface in this app already uses, per Lynn's explicit preference against a black tooltip in light mode and the discussion of common conventions (always-dark, theme-matched, classic pale-yellow) beforehand. Verified the complete lifecycle directly: native tooltip correctly suppressed on hover, custom tooltip correctly appears after the delay with correct text and clamped position, title correctly restored and tooltip correctly hidden on mouseout; Settings slider and its live preview bubble both correctly reflect the configured size. Suite unchanged: 316/316.
+  v0.1676 - NEW: "Read Last Opened Note" action/shortcut, per Lynn -- Read Last Note has always meant most recently EDITED, not most recently viewed; these can genuinely differ (view one note, then edit a different one). Generalized the ?action=open/speak handler to also accept ?action=speakopened, differing only in which timestamp field the "no name given" fallback sorts by (viewedAt vs editedAt, falling back to editedAt if viewedAt is unset, same convention the notes-list's own sort-by-opened already uses) -- everything else (name/id lookup, opening the note, showing the Speak banner) is identical to the existing speak action. Shares v0.1675's Debug Log exclusion. Also updated the manifest.json family (all three variants -- base/stable/dev, which only differ in branding/version) with launch_handler: navigate-existing, per Lynn's report that using the "Open Remember" app shortcut while the PWA was already open spawned a second, independent window whose changes didn't sync with the first -- confirmed this is real, well-documented PWA/browser behavior (each window is its own separate JS process with its own in-memory notes object, only reconciled through shared localStorage at load time, not live between windows) rather than anything specific this app was doing wrong, and confirmed launch_handler is the standards-track fix for exactly this: an existing window now gets navigated to the shortcut's target URL instead of a new one being opened, which naturally re-runs this app's existing ?action= handling with zero other code changes needed, since it's a real navigation/reload rather than requiring a new window.launchQueue consumer. Help text also updated: corrected terminology (this is called App Shortcuts, not an Android-specific feature) and documented actual current platform support (Android/ChromeOS long-press, Windows/Mac right-click via Chrome or Edge, not supported on iOS/Safari), plus the new Read Last Opened Note entry. Verified directly: engineered edited-time and viewed-time to point at two DIFFERENT notes and confirmed speak/speakopened each correctly picked their own, both still correctly excluding the debug log. Suite unchanged: 316/316.
+  v0.1675 - FIX: "Read Last Note" (?action=speak/open with no name) always opened the Debug Log instead of a real note, per Lynn's bug report. Root cause: the Debug Log is stored as a genuine note (findOrCreateDebugLogNote()) whose editedAt updates on every single logged line -- far more often than any real note gets edited -- so it permanently won the "most recently edited" sort this fallback used. It's already deliberately excluded from the home list, search, and export-all via its own isDebugLog flag (see that function's own comment) -- this call site was simply missed when that exclusion list was built. Fixed the same way (filter out isDebugLog before sorting), plus two related spots with the identical gap found while fixing this one: the sibling ?action=copy Siri Shortcut's own "no name given" fallback, and findNoteByName() (used whenever a name IS given, e.g. if a Shortcut happened to pass "Debug Log" as the search term). Confirms for the record: Read Last Note has always meant most recently EDITED, not most recently opened/viewed -- unchanged, just no longer shadowed by the Debug Log. Verified directly: engineered the exact bug trigger (debug log's editedAt set higher than any real note) and confirmed the fix now correctly picks a real note instead; confirmed findNoteByName('Debug Log') now correctly returns null. Suite unchanged: 316/316.
+  v0.1674 - Folder entry vertical padding tightened further, per Lynn's iteration feedback: 8px -> 6px top/bottom (now matching note items exactly). Horizontal padding and note items untouched. Suite unchanged: 316/316.
+  v0.1673 - Reduced vertical padding on the Home Screen notes list entries, per Lynn, to test alongside v0.1672 -- explicitly a first pass, expecting iteration once she can see it. Note items: 8px -> 6px top/bottom. Folder items: 13px -> 8px top/bottom -- confirmed by inspection they had noticeably more vertical padding than note items to begin with (13px vs 8px), matching her own observation, so tightened proportionally more to close that gap rather than an equal reduction on both. Horizontal padding on both left untouched. Suite unchanged: 316/316.
+  v0.1672 - NEW: two font weight settings, per Lynn's accessibility pass -- "Note & Folder Name Weight" and "Note Preview Weight", App Theme bucket, each placed directly under its corresponding font SIZE setting as requested. Neither existed before (confirmed by inspection -- note/folder names were HARDCODED font-weight: 600/700 respectively, with no setting at all; the preview line just inherited the note editor's own weight with no independent control). Reused the existing variable-font weight-snapping infrastructure (getNearestSupportedWeight/isVariableWeightFont/FONT_WEIGHT_SUPPORT, same system added for Inter/Atkinson Hyperlegible Next/Mulish) rather than building parallel logic -- new updateNotesListNameFontWeightStep()/updateNotesListPreviewFontWeightStep() mirror the existing updateNoteFontWeightStep() exactly, switching each slider's step between fine (10, variable fonts) and coarse (100, static fonts) based on whichever font that slider actually applies to, wired into both the notes-list-specific font selects AND the general UI/note font selects (since these sliders fall back to the general font when their own override is unset). CAUGHT AND FIXED a real default-regression risk before shipping: Note & Folder Name Weight's natural fallback (matching its font/size siblings) would have been settings.uiFontWeight, but note/folder names are deliberately semibold today as a visual-hierarchy choice independent of body text weight -- falling back to the general UI weight (usually 400) would have visibly lightened everyone's note names the moment this shipped. Fallback is 600 instead, exactly matching today's unchanged default. Folder names now share the SAME weight variable as note names (matching how Font and Size already treat both identically, and Lynn's own "note & folder" combined naming) -- flagged clearly in comments that this collapses their previously-different hardcoded defaults (700 vs 600) into one shared value unless the new setting is changed. Verified end-to-end: default values exactly match the old hardcoded look (no regression); setting values apply correctly to the CSS variables; Settings dialog sliders correctly sync to saved values on open; live preview boxes correctly reflect configured weights. Suite unchanged: 316/316.
+  v0.1671 - NEW: "Get fresh copy" for sample notes, per Lynn -- creates a brand-new, independent note from a sample's CURRENT content, without ever touching an existing edited/renamed copy, so she can compare the two side by side (the thing she used to try doing by renaming a folder, which wouldn't actually have worked -- Reinstall's own "already exists" check looks anywhere, not just inside the Sample Notes folder). Two entry points: a "Get fresh copy of this sample" More menu item (shown only when the CURRENTLY OPEN note's id is a recognized sample -- new SAMPLE_NOTE_IDS registry, same manual-sync discipline as FONT_WEIGHT_SUPPORT/SETTING_BUCKETS), and a "Get Fresh Copy of a Sample Note..." picker in Settings next to Reinstall, for when you're not currently viewing one. The fresh copy lands in the exact same folder situation the sample is CURRENTLY in (top level or Sample Notes), per Lynn's explicit design call -- mirrors wherever you're looking at it now rather than a hardcoded original location. Content-sourcing needed no refactor of createInitialNotes()'s ~20 individual sample definitions: getFreshSampleCopy() momentarily deletes the target from `notes` (in memory only), calls the EXISTING createInitialNotes() unmodified (its own if-not-exists guard now sees it "missing" and recreates it fresh), captures the result, then immediately restores whatever was there before -- doubling up on a safety net that function already had (its own v0.1630 snapshot/restore pass). New name includes the app version (e.g. "A Quiet Evening (v0.1671)") so copies taken over time stay distinguishable. Confirmation is a new #dismissible-notice element -- deliberately separate from the existing toast per Lynn's explicit request for something requiring an actual tap on an X to close, not an auto-timeout or a stray tap anywhere on it, since a folder path needs a moment to actually read. Verified directly: fresh content correct while the user's edited original is completely untouched (both name and content); the no-folder and in-folder notice wording; the notice's close button; new note gets a distinct id and the same folderId as the original; SAMPLE_NOTE_IDS correctly distinguishes samples from ordinary notes. Suite unchanged: 316/316.
+  v0.1670 - NEW: numbered-list child levels now display as a full decimal path (1, 1.1, 1.1.1, ...) instead of a bare local count repeating "1, 2, 3" at every depth -- per Lynn's explicit choice after discussing the common conventions (legal/classic outline a/i lettering, alternating case, decimal). Decimal was chosen specifically to avoid Roman numerals entirely, since those would have needed new pronunciation logic in the speech feature; digits and periods need none. R&R mode only, as always -- typing mode still shows exactly whatever digits were typed, unchanged. computeOrderedListNumbers()'s `number` field is now always the full joined path string rather than just the current level's local count -- the per-depth counter stack the function already tracked for the "resume, don't restart" behavior turned out to hold exactly the data a decimal path needs, so this was really just "join the whole stack" instead of "use only its last entry", not a new mechanism. A nice side effect on the two existing bug-fix scenarios (indenting an item with a leftover digit, and renesting after a return to a shallower level): they now show something MORE informative than before (3.1, 2.1) instead of a bare, context-free 1. Updated 8 existing test goldens to reflect this intentional behavior change, each hand-verified against the design (including the exact 1.1.1 grandchild example this was built around) before acceptance. Also updated the Numbered List Sampler's own descriptive text to explain decimal paths instead of the old local-count wording -- note this only affects fresh installs/reinstalls-after-deletion, since the sample note's own reinstall-safe guard (if a note with this id doesn't already exist) intentionally never touches an existing copy someone may have edited. Suite: 316/316.
+  v0.1669 - Applied the v0.1668 Android scrollbar-width fix to Add Text to Note (#quick-add-input) and Edit Paragraph (#edit-block-input), per Lynn's explicit request -- both are self-scrolling textareas (overflow-y: auto, fixed/max height) whose scrollbar toggles on/off as content crosses that threshold, the same mechanism that clipped the main editor's last lines. scrollbar-gutter: stable added to both, permanently reserving the scrollbar's width so its presence can never change the available width mid-measurement -- relevant to these dialogs' own Bold Cursor mirror positioning (v0.1601/v0.1634 already fixed a related but distinct width bug here: the mirror using offsetWidth instead of clientWidth). Confirmed via grep this is a clean, additive change -- no existing rule on either selector previously set scrollbar-gutter. Suite unchanged: 316/316.
+  v0.1668 - REAL FIX for the Android missing-lines bug, per Lynn's explicit instruction not to assume a timing/race issue -- her second log proved it wasn't one: byte-identical numbers (ed.offsetHeight=5880, ed.scrollHeight=6030) across two completely separate occurrences, even after v0.1667's 6 retries over ~900ms changed nothing at all. A deterministic mismatch that never moves means something is computing the SAME wrong answer every time, not still settling. Root cause, found by recognizing this codebase already diagnosed the identical bug class once before (v0.1634, a different pair of dialogs): "Android/desktop classic scrollbars consume interior width" -- iOS's overlay scrollbar doesn't, which is exactly why this never reproduced there. Applied to resizeEditor() specifically: its shrink-to-1px-then-grow trick can momentarily make note-content-area's scrollbar (overflow-y: auto) disappear while the textarea is briefly 1px tall, widening the space available to it right as scrollHeight gets measured -- text wraps into fewer lines than it truly needs at that artificially wider width, the textarea's height gets pinned to that too-small number, and once content is tall again the scrollbar reappears, narrowing the true width back down -- so the real rendering needs MORE room than the pinned height allows, and the excess is clipped. Identical every time resizeEditor() runs, exactly why retrying it changed nothing. FIX: scrollbar-gutter: stable on #note-content-area permanently reserves the scrollbar's width whether or not it's currently shown, so the available width can never change mid-measurement again. The v0.1667 retry loop and diagnostic logging are left in place -- no longer needed as a blind guess-and-retry, but now a useful confirmation signal: if this fix is right, the next Android log should show attempt=0, OK. Honest limitation, same as the iOS keyboard fixes: jsdom cannot render real CSS layout or scrollbars, so this cannot be verified end-to-end in the sandbox -- confidence here comes from the mechanism matching a previously-confirmed bug in this exact codebase and explaining every detail of Lynn's evidence precisely, not from a passing test. Suite unchanged: 316/316.
+  v0.1667 - Android missing-lines bug: Lynn's actual debug log (not another guess) pinpointed the real mechanism precisely. area.scrollTop WAS correctly at its max (5545.6 of 5545) -- the outer container's scrolling was never the problem. But ed.offsetHeight (5880) was 150px SHORTER than ed.scrollHeight (6030): the textarea itself was rendered too short for its own content, so even scrolling the outer container all the way down couldn't reveal text clipped inside an inner element sized wrong. This confirms resizeEditor() (height='1px' then height=scrollHeight) was the right idea all along -- the v0.1664/v0.1665 attempts just didn't retry it for long enough: her log shows the mismatch STILL present at exactly the 150ms mark her single retry fired at, meaning Android's post-keyboard-dismiss reflow (text rewrapping as the viewport settles) was still in progress past that point. FIX: replaced the single fixed-delay retry with a self-correcting loop that keeps calling resizeEditor() every 150ms, re-measuring fresh each time, until offsetHeight actually catches up to scrollHeight -- capped at 6 attempts (~900ms) so it can't run forever if something else keeps scrollHeight a moving target. The final attempt logs once, tagged OK or STILL-SHORT with the attempt count, so the next log shows directly whether this actually closed the gap rather than needing another guess. Verified the loop's safety property directly in the sandbox with a mismatch engineered to never resolve: terminates at exactly attempt 6, logs exactly once (no spam), correctly tagged STILL-SHORT -- confirmed no infinite-loop risk either way this turns out on Lynn's next test. Suite unchanged: 316/316.
+  v0.1666 - FIX for the iOS tap-near-bottom issue, per Lynn's own on-device diagnosis (correct): v0.1665 computed the right scroll target via _tpadEnsureCaretVisible(), but its final `area.scrollTop = newScroll` assignment gets silently clamped by the browser to whatever's actually scrollable -- with little or no room below the note's last line, a perfectly correct target could never actually be reached, no matter how right the math was. Fixed with a two-layer approach, per her exact framing ("add padding" + "maybe you're not measuring the keyboard height correctly"): (1) a CSS fallback, #note-screen.keyboard-open #note-content-area { padding-bottom: 320px }, scoped to keyboard-open only so it adds no space at any other time and never touches the note's actual saved content; (2) a new shared function, _applyKeyboardScrollRoom(), measures the REAL keyboard height (window.innerHeight - visualViewport.height) and overrides the CSS guess with the actual number, called immediately before every _tpadEnsureCaretVisible() scroll attempt (all 3 call sites: tap-to-edit, caret-nudge buttons, trackpad-drag-heal). The inline override is explicitly cleared (paddingBottom = '') in the EMTIP-exit blur handler, since an inline style would otherwise persist regardless of the keyboard-open class once the keyboard actually closes. Verified precisely in the sandbox with a mocked keyboard height: computed padding matched the expected formula exactly (340px for an 800/500 viewport split), and confirmed it correctly clears on a genuine .blur() (not just a synthetic blur event, which doesn't itself move document.activeElement -- caught and corrected that exact test-setup mistake before trusting the result). Suite unchanged: 316/316.
+  v0.1665 - Two things from Lynn. (1) FIX (higher confidence than usual, since this reuses an existing, proven mechanism rather than a new theory): tapping one of the last lines of a long note to start editing left that line covered by the keyboard, requiring a dismiss-and-retap to actually see and type on it -- a long-standing issue. Root cause: the tap-to-edit handler already had multiple delayed pinToolbars() calls to handle the keyboard settling at the TOP of the screen, but nothing ever scrolled the tapped CURSOR clear of the keyboard at the BOTTOM. _tpadEnsureCaretVisible() -- the keyboard-aware, visualViewport-based scroll function already used successfully elsewhere for trackpad-drag caret healing -- was simply never wired up to this call site. Added at the same 100/350/600ms delayed timing already used for pinToolbars(), for the same reason: visualViewport.height doesn't yet reflect the keyboard's real height at the instant of the tap, so only the delayed calls (once the keyboard has actually finished animating in) compute against trustworthy numbers. Verified the code path resolves and executes without error at all three delays; the actual on-screen scroll positioning still needs on-device confirmation, since jsdom can't compute real layout. (2) Android missing-lines bug: v0.1664's resizeEditor() attempt did NOT fix it, confirmed on-device. Rather than guess a third time, replaced it with real diagnostic logging (kept the resizeEditor() calls themselves, harmless either way) -- captures area.scrollTop/scrollHeight/clientHeight, computed maxScroll, the textarea's own offsetHeight/scrollHeight, and visualViewport's height/offsetTop, all in one line 150ms after the keyboard closes. The actual numbers from Lynn's next Android repro will show directly which measurement is wrong, rather than more speculation. Suite unchanged: 316/316.
   v0.1664 - Two things from Lynn. (1) NEW: a little extra bottom padding in R&R mode, so the last couple of lines aren't hard to interact with near the iPhone's Siri/edge-swipe zone or the FAB. Dynamic, not flat: new pure functions countTrailingBlankLines() and computeExtraBottomPaddingPx() only top a note UP to ~2 blank lines' worth of bottom space -- a note that already ends in several blank lines gets little or nothing extra, so this never piles more empty space on space that's already there. Applied as an inline padding-bottom on #note-viewer, recomputed on every renderViewer() call; typing mode (#note-editor, a separate element) is untouched by design, matching her request being R&R-specific. (2) FIX ATTEMPT (Android): for her report that the final ~3 lines of a long note could go completely missing after dismissing the keyboard (EMTIP -> EMNI) -- not reproducible on iOS, reappearing only by switching to R&R and back. Found a real, curious gap: resizeEditor() (which re-measures the textarea's height AND re-derives the scroll container's position from CURRENT viewport conditions) is called at roughly 30 other places in this file whenever layout or content changes, but was never called in the keyboard-dismiss blur handler -- only pinToolbars() was. Best-supported hypothesis: Android actually shrinks the visual viewport while the keyboard is up (unlike iOS's overlay-style keyboard), so measurements taken during that shrunk state go stale once the keyboard closes and the viewport grows back, with nothing to refresh them. Added resizeEditor() calls at the same timing as the existing pinToolbars() re-checks (immediate + 150ms). Flagged honestly: this is a plausible fix based on how the surrounding code already behaves, not a confirmed root cause -- there is no way to reproduce a real Android keyboard resize event in this sandbox, so on-device testing of this exact scenario is what actually confirms or refutes it. 9 new cases (v25)/goldens (v26) for the padding functions, hand-verified. Suite: 316/316.
   v0.1663 - REPLACED v0.1662's hover-peek entirely, per Lynn's on-device feedback: even a 40px proximity zone along the full height of the note's right edge interfered with normal typing and clicking there. New approach: a small, ALWAYS-VISIBLE edge tab (#scratch-pad-edge-tab) -- no proximity detection of any kind, so there's nothing left to accidentally trigger while editing. Positioned at right:10px (clear of the app's global 6px thin scrollbar, which sits flush at the true edge), and deliberately NOT a plain bar/pill shape, per Lynn's explicit concern about it reading as a scrollbar drag handle -- uses the common bordered-rectangle-with-divider "toggle side panel" icon instead (same one VS Code and others use), which no scrollbar styling convention resembles. Independent of #note-fab's existing hide-while-typing rule (#note-screen.keyboard-open #note-fab {display:none}) -- confirmed by direct test that the tab stays visible while actively typing, unlike the FAB, satisfying Lynn's explicit "both Typing and R&R mode" requirement. Visibility is reactive via two mechanisms rather than a poll/mousemove loop: a body.scratch-pad-disabled class toggled in applySettings() (which already runs on load and after every settings save) for the disable-scratch-pad setting, and a MutationObserver on the panel's own class attribute to hide the tab while the panel is open (nothing to invite a click toward at that point) and restore it when closed. Cleaned up several now-stale .peek references left over in openScratchPad()/closeScratchPad()/the handle's click handler from the mechanism this replaced -- including reverting the handle's click from an open/close toggle back to close-only, since without a peek state the handle is fully off-screen (and therefore unclickable) whenever the panel is closed, so the toggle's open branch could never actually fire. Verified directly: hover-capable gating, click-to-open, the MutationObserver hiding/restoring the tab around the panel's open state, the disabled-setting reactive hide, and continued visibility while actively typing. Suite unchanged: 307/307.
   v0.1662 - REPLACED v0.1651's mouse click-zone for opening the scratch pad with a hover-peek, per Lynn's on-device feedback: the 12px click zone was "extremely hard to find." Now, getting the mouse within 40px of the note content pane's right edge slides just the handle into view (Windows auto-hide-taskbar style, her own reference) via a new .peek CSS class -- a big, easy-to-notice sliver to aim for instead of a precise hidden target. Moving away without clicking hides it again; clicking the peeking handle opens the pad the rest of the way (the handle's click handler is now a toggle -- open if not fully open, close if it is -- rather than v0.1651's close-only). Both proximity-to-edge and hovering the peeking sliver itself are checked off the SAME mousemove event, so no separate enter/leave listeners were needed on the panel. Gated on disableScratchPad and (hover: hover), same as before. FOUND AND FIXED a real risk while building this: .peek's CSS rule is declared after .open's, so if both classes were ever present simultaneously .peek would incorrectly win the cascade (equal specificity, later rule wins), leaving the pad looking stuck mid-peek instead of fully open -- fixed by having openScratchPad() (the one function every open path already goes through) explicitly clear .peek, rather than trusting cascade order or patching every call site individually. Verified the full interaction in the sandbox with mocked element geometry (jsdom can't compute real CSS transforms): approaching the edge triggers peek, moving away cancels it, clicking while peeking opens fully with .peek correctly cleared, clicking again closes. Suite unchanged: 307/307.
@@ -363,6 +380,12 @@ body.ui-small {
   user-select: text;
   -webkit-user-select: text;
 }
+/* v0.1669: same reasoning as #edit-block-input's own rule and
+   #note-content-area (v0.1668) -- quick-add-input is a self-scrolling
+   textarea (rows="4", grows to whatever the browser's default overflow
+   behavior gives it once content exceeds that) whose scrollbar can
+   toggle on/off as content crosses that threshold. */
+#quick-add-input { scrollbar-gutter: stable; }
 /* Note editor and viewer: always selectable */
 #note-editor,
 #note-viewer,
@@ -874,7 +897,7 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
   background: var(--notes-list-entry-bg, var(--bg2));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 6px 12px; /* v0.1673: vertical 8px->6px, first pass per Lynn -- expect iteration */
   margin-bottom: 6px;
   cursor: pointer;
   display: flex;
@@ -903,7 +926,7 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
      applySettings()'s "Notes list fonts" block for the fallback chain. */
   font-family: var(--notes-list-name-font, var(--font-body));
   font-size: var(--notes-list-name-size, 1em);
-  font-weight: 600;
+  font-weight: var(--notes-list-name-weight, 600);
   color: var(--fg);
   line-height: 1.3;
   /* v0.1545: was a body-class-toggled pair of rulesets (1 line vs a
@@ -930,7 +953,7 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
      applySettings()'s "Notes list fonts" block for the fallback chain. */
   font-family: var(--notes-list-preview-font, var(--font-note));
   font-size: var(--notes-list-preview-size, var(--font-size-editor));
-  font-weight: var(--font-weight-editor);
+  font-weight: var(--notes-list-preview-weight, var(--font-weight-editor));
   color: var(--note-preview-color, var(--fg2));
   margin-top: 1px;
   line-height: 1.3;
@@ -1390,6 +1413,22 @@ body.reading-mode #more-btn {
 /* Keep the note title readable, wrap it, use full width (no rename btn) */
 body.reading-mode #note-title {
   opacity: 1;
+  /* v0.1680 FIX, per Lynn's bug report (iPhone): the base .note-inline-
+     title rule uses the -webkit-line-clamp technique (display:
+     -webkit-box + -webkit-line-clamp + overflow:hidden) to truncate to N
+     lines with an ellipsis. This override only ever reset overflow/
+     white-space/text-overflow below -- display: -webkit-box and
+     -webkit-line-clamp stayed fully active, so quiet mode ended up in a
+     broken hybrid: line-clamp still truncating line 1 with an ellipsis
+     (its own mechanism, untouched), while overflow:visible let the rest
+     of the wrapped text leak out underneath anyway instead of being
+     hidden the way line-clamp expects. Undoing the WHOLE technique --
+     not just patching its visible symptoms -- means quiet mode gets
+     normal, unclamped text wrapping with no ellipsis at all, matching
+     what the rest of this rule already intended. */
+  display: block;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
@@ -1533,7 +1572,7 @@ polyline.cb-draw-anim {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 13px 16px;
+  padding: 6px 16px; /* v0.1674: vertical 8px->6px, further tightening per Lynn -- iteration 2 */
   background: var(--bg-card, var(--bg2));
   border-radius: var(--radius);
   cursor: pointer;
@@ -1559,10 +1598,19 @@ polyline.cb-draw-anim {
 }
 .folder-item-name {
   /* v0.1546: shares notesListNoteNameFont/Size with .note-item-name — same
-     variables, so folder and note names always match visually. */
+     variables, so folder and note names always match visually.
+     v0.1672: now ALSO shares notesListNoteNameFontWeight for the same
+     reason — matches the existing "Note & Folder" naming/precedent
+     exactly. Worth knowing: folders were previously hardcoded 100
+     heavier than notes (700 vs 600); sharing one weight setting means
+     that distinction is gone by default (both now 600 unless the new
+     setting is changed) rather than preserved as a fallback -- CSS custom
+     properties don't support a different fallback per source the way a
+     hardcoded value could, and JS always supplies a concrete value here,
+     so a local per-selector fallback would never actually be reached. */
   font-family: var(--notes-list-name-font, var(--font-body));
   font-size: var(--notes-list-name-size, var(--font-ui));
-  font-weight: 700;
+  font-weight: var(--notes-list-name-weight, 600);
   color: var(--fg);
   /* v0.1545: shares wrapNoteNames with .note-item-name (same
      --wrap-note-names-lines variable) — folders and notes wrap together,
@@ -2214,6 +2262,15 @@ body.edit-block-mode #note-viewer .viewer-line:not(.blank-viewer-line) { cursor:
   padding: 8px 10px;
   outline: none;
   overflow-y: auto;
+  /* v0.1669: same fix as #note-content-area (v0.1668), per Lynn's
+     request to apply the Android learning here too -- this is a self-
+     scrolling textarea (min-height 12em, max-height 60vh) whose
+     scrollbar toggles on/off as content crosses that threshold, same
+     mechanism that clipped the main editor's last lines. Reserves the
+     scrollbar's width permanently so its presence can never change the
+     available width mid-measurement, whether that's the Bold Cursor
+     mirror or anything else reading this element's layout. */
+  scrollbar-gutter: stable;
   resize: none;
   min-height: 12em;
   max-height: 60vh;
@@ -3035,6 +3092,13 @@ body.has-mouse .font-face-arrow { display: block; }
   z-index: 30;
   box-shadow: var(--shadow);
 }
+/* v0.1678 FIX, per Lynn: the header's own shadow is meant to separate it
+   from whatever's below -- correct when it's the only visible bar
+   (toolbar collapsed), but redundant (and visually landing at the seam
+   BETWEEN the two bars, not at the true bottom of the toolbar block)
+   whenever .note-bottom-bar is also showing, since that bar already has
+   its own shadow at the toolbar block's actual bottom edge. */
+body:not(.toolbar-collapsed) .note-header { box-shadow: none; }
 
 .note-header-row {
   display: grid;
@@ -3499,7 +3563,19 @@ body.hide-toolbar-collapse-tab #toolbar-collapse-tab { display: none !important;
 /* Rounded end-caps that scroll with the toolbar content */
 /* NOTE FOR CLAUDE: toolbar-scroll-cap CSS commented out — alpha testers did not like
    the curved end caps on the lower toolbar. Kept here in case we want to re-add them.
-   The caps were pill-shaped borders (border-radius:999px) on each end of the scroll area.
+   The caps were pill-shaped borders (border-radius:999px) on each end of the scroll area. */
+/* v0.1681 FIX, per Lynn's bug report (a black bar with a left-aligned,
+   inert X, stuck visible at the very top of every screen): this comment
+   was never closed before the one below it opened -- two comment-open
+   markers with only one comment-close marker between them. CSS comments
+   don't nest, so from here until SOME LATER, unrelated stray close
+   marker happened to close it again, EVERYTHING in between -- potentially thousands of lines,
+   including legitimate CSS added long afterward -- was silently being
+   treated as one giant comment. This one specific case is what actually
+   swallowed .custom-tooltip/#dismissible-notice's real declarations
+   (added in v0.1677/v0.1671 respectively), which is why the bug first
+   became visible in v0.1677 even though this root cause itself is much
+   older and unrelated to that build. */
 /*
 .toolbar-scroll-cap {
   flex-shrink: 0;
@@ -3909,9 +3985,42 @@ body.has-mouse .toolbar-drag-handle.dragging {
   /* padding-top is set dynamically by pinToolbars() to equal combined toolbar heights */
   /* left/right user margin added via CSS variables;
      env() terms clear the iPhone landscape notch/corners — see .note-header */
+  /* v0.1668 FIX, per Lynn's on-device diagnosis and her own explicit
+     instruction not to assume a timing/race issue: her actual log showed
+     byte-IDENTICAL numbers across two separate occurrences even after 6
+     retries spaced 150ms apart -- ruling out "still settling" outright.
+     Real, deterministic mechanism, matching a bug this exact codebase
+     already diagnosed once before for a different pair of dialogs
+     (v0.1634, "Android/desktop classic scrollbars consume interior
+     width"): resizeEditor()'s shrink-to-1px-then-grow trick can
+     momentarily make THIS container's scrollbar (overflow-y: auto,
+     classic/width-reserving on Android, unlike iOS's overlay scrollbar)
+     disappear while the textarea is briefly 1px tall -- widening the
+     space available to it right as scrollHeight gets measured, wrapping
+     text into fewer lines than it actually needs. The textarea's height
+     then gets pinned to that too-small number; once content is tall
+     again the scrollbar reappears, narrowing the true available width
+     back down, so the real rendering needs MORE room at that narrower
+     width than the pinned height allows -- the excess is clipped. This
+     happens identically every time resizeEditor() runs, which is
+     exactly why retrying it changed nothing. Fix: scrollbar-gutter:
+     stable permanently reserves the scrollbar's width whether or not
+     it's currently shown, so the available width can never change
+     mid-measurement. */
+  scrollbar-gutter: stable;
   padding: 0 calc(16px + var(--note-margin-right) + env(safe-area-inset-right, 0px)) 16px calc(22px + var(--note-margin-left) + env(safe-area-inset-left, 0px));
   overflow-y: auto;
   overflow-x: hidden;
+  /* v0.1679: bottom scroll shadow, per Lynn -- a genuine box-shadow (like
+     .note-bottom-bar's own, which she explicitly liked), NOT a gradient
+     fade to the background color (the technique .qa-scroll-fade/
+     #more-menu-fade use elsewhere, which she was explicit she does NOT
+     want here). inset + negative spread confines it to a thin band right
+     at the edge rather than washing over the whole box. Toggled by JS
+     (see the "NOTE SCROLL SHADOW" block) only when there's more content
+     below to scroll to -- gone entirely once scrolled to the true end.
+     transition softens the appear/disappear as you reach the bottom. */
+  transition: box-shadow 0.15s ease;
   /* pan-y pinch-zoom: allow vertical pan AND pinch zoom, still exclude
      horizontal pan. WARNING (learned v0.1495->0.1497): touch-action is a
      WHITELIST — bare pan-y silently disables pinch-zoom too, which killed
@@ -3942,6 +4051,20 @@ body.has-mouse .toolbar-drag-handle.dragging {
      further-up ancestor instead, landing in the wrong place entirely. */
   position: relative;
 }
+#note-content-area.has-more-below {
+  box-shadow: inset 0 -8px 6px -6px rgba(0,0,0,0.28);
+}
+/* v0.1666 FIX, per Lynn's on-device diagnosis: area.scrollTop = newScroll
+   in _tpadEnsureCaretVisible() gets silently clamped by the browser to
+   whatever's actually scrollable -- if there's no room below the last
+   line to scroll INTO, a perfectly correct target can never actually be
+   reached, no matter how right the math is. This is a CSS fallback
+   (JS below overrides it with the real, measured keyboard height once
+   available, per Lynn's "maybe the keyboard is taller than you think");
+   scoped to keyboard-open only, so it adds no space at any other time --
+   nothing here ever becomes part of the note's actual saved content,
+   it's purely scroll-room in the rendering. */
+#note-screen.keyboard-open #note-content-area { padding-bottom: 320px; }
 
 #note-editor {
   overflow-x: hidden;
@@ -5753,6 +5876,90 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   -webkit-user-select: text;
 }
 
+/* v0.1677: custom tooltips, per Lynn -- REPLACE native browser
+   title-attribute tooltips (positioned by the OS relative to the cursor,
+   fixed OS font size, no wrapping control -- none of which a web page
+   can touch at all). Anchored to the ELEMENT being hovered, above it, so
+   a large accessibility cursor can never sit on top of it; real CSS
+   font-size tied to its own setting; real word-wrap with a sane max-
+   width instead of one long strip on a big screen. Colors deliberately
+   theme-matched rather than the common "always dark" convention (many
+   apps -- Material Design among them -- use a fixed dark tooltip in
+   both light and dark mode) -- reuses --bg3/--fg/--border, the same
+   tokens every other subtle elevated surface in this app already uses,
+   so it reads as "part of this app" rather than a foreign dark chip
+   landing on a light page. */
+.custom-tooltip {
+  position: fixed;
+  z-index: 100000;
+  background: var(--bg3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: var(--font-body);
+  font-size: var(--tooltip-font-size, 14px);
+  font-weight: 500;
+  line-height: 1.35;
+  max-width: min(320px, 60vw);
+  white-space: normal;
+  word-wrap: break-word;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.22);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+.custom-tooltip.show { opacity: 1; visibility: visible; }
+
+/* v0.1671: "must tap × to dismiss" notice -- see its own HTML comment
+   for why this is a separate element from #debug-toast rather than an
+   extra mode on it: changing the shared toast's core dismiss behavior
+   (auto-timeout, tap-anywhere) would affect every other place that
+   already relies on it. (v0.1681: this rule's own declarations were
+   never actually broken -- they were being silently swallowed by an
+   unrelated, much older unclosed comment far above this point, near
+   .toolbar-scroll-cap; see that comment for the real root cause and fix
+   of Lynn's "black bar with a left-aligned X" bug report.) */
+#dismissible-notice {
+  font-family: var(--font-body);
+  position: fixed;
+  top: 140px;
+  left: 12px;
+  right: 12px;
+  background: #3a3a3a;
+  color: #fff;
+  padding: 12px 14px 12px 16px;
+  border-radius: 14px;
+  font-size: 0.85em;
+  font-weight: 500;
+  z-index: 99999;
+  display: none;
+  align-items: flex-start;
+  gap: 10px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  line-height: 1.5;
+}
+body:not(.dark) #dismissible-notice { background: #2a2a2a; }
+body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,255,255,0.2); }
+#dismissible-notice.show { display: flex; opacity: 1; }
+#dismissible-notice-text { flex: 1; white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text; }
+#dismissible-notice-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.4em;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  touch-action: manipulation;
+  opacity: 0.8;
+}
+#dismissible-notice-close:hover { opacity: 1; }
+
 /* Speaking highlight */
 .speak-highlight {
   /* Applied to a full viewer-line div, not an inline word */
@@ -5812,6 +6019,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
 <!-- ===== DEBUG TOAST ===== -->
 <div id="debug-toast"></div>
+<!-- v0.1671: "must tap to dismiss" notice, per Lynn -- distinct from the
+     existing toast (which auto-dismisses or dismisses on any tap): this
+     one requires an explicit × tap, specifically so a folder path long
+     enough to need a moment to read can't vanish from an accidental tap
+     or a timeout before that moment's up. Used by "Get fresh copy of
+     this sample". -->
+<div id="dismissible-notice" role="status">
+  <span id="dismissible-notice-text"></span>
+  <button id="dismissible-notice-close" aria-label="Dismiss">&times;</button>
+</div>
 
 <!-- ===== UPDATE BANNER ===== -->
 <div id="update-banner" role="alert">
@@ -7096,6 +7313,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     </svg>
     <span class="more-label" style="pointer-events:none;flex:1">Scroll to bottom</span>
   </button>
+  <!-- v0.1680: moved here (was after Select all), per Lynn -->
+  <button id="more-reading-mode-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M2 6h9a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H2z"/>
+      <path d="M22 6h-9a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h9z"/>
+      <line x1="5" y1="10" x2="9" y2="10"/><line x1="5" y1="13" x2="9" y2="13"/><line x1="5" y1="16" x2="8" y2="16"/>
+      <line x1="15" y1="10" x2="19" y2="10"/><line x1="15" y1="13" x2="19" y2="13"/><line x1="15" y1="16" x2="18" y2="16"/>
+    </svg>
+    <span class="more-label" id="more-reading-mode-label" style="pointer-events:none;flex:1">Quiet mode</span>
+  </button>
   <button id="more-overflow-copy-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
     <span class="more-label" style="pointer-events:none;flex:1">Copy</span>
@@ -7161,15 +7388,6 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   <button id="more-select-all-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="8 12 11 15 16 9"/></svg>
     <span class="more-label" id="more-select-all-label" style="pointer-events:none;flex:1">Select all</span>
-  </button>
-  <button id="more-reading-mode-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
-      <path d="M2 6h9a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H2z"/>
-      <path d="M22 6h-9a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h9z"/>
-      <line x1="5" y1="10" x2="9" y2="10"/><line x1="5" y1="13" x2="9" y2="13"/><line x1="5" y1="16" x2="8" y2="16"/>
-      <line x1="15" y1="10" x2="19" y2="10"/><line x1="15" y1="13" x2="19" y2="13"/><line x1="15" y1="16" x2="18" y2="16"/>
-    </svg>
-    <span class="more-label" id="more-reading-mode-label" style="pointer-events:none;flex:1">Quiet mode</span>
   </button>
   <!-- Settings (stage 3, dual-mode) — opens the same Settings dialog
        reachable from the home screen, so the user never has to leave
@@ -7316,6 +7534,19 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
       <line x1="7" y1="7" x2="7.01" y2="7" style="pointer-events:none"/>
     </svg>
     <span class="more-label" id="more-tag-filter-label" style="pointer-events:none;flex:1">Filter by tag</span>
+  </button>
+  <!-- v0.1671: shown only when the CURRENT note's id is a recognized
+       built-in sample (SAMPLE_NOTE_IDS) -- lets Lynn compare her edited/
+       renamed copy against what the sample currently looks like, without
+       any risk to her existing copy. -->
+  <button id="more-fresh-sample-btn" style="display:none;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" style="pointer-events:none"/>
+      <polyline points="14 2 14 8 20 8" style="pointer-events:none"/>
+      <line x1="12" y1="18" x2="12" y2="12" style="pointer-events:none"/>
+      <line x1="9" y1="15" x2="15" y2="15" style="pointer-events:none"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Get fresh copy of this sample</span>
   </button>
   <button id="more-calendar-btn" style="display:none;align-items:center;gap:20px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -7775,6 +8006,23 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <input type="range" class="settings-range" id="ui-font-weight-range" min="100" max="900" step="100" value="400">
         <span class="range-val" id="ui-font-weight-val">400</span>
       </div>
+      <!-- v0.1677: per Lynn -- our own tooltips (replacing native browser
+           title-attribute tooltips, whose font/position/wrap we have no
+           control over at all) need their own size, independent from
+           every other size setting; a Chromebook needed smaller icons/UI
+           than mobile but the native tooltip text was still too small to
+           read for an accessibility-cursor user. -->
+      <div class="settings-row range-row">
+        <div class="settings-row-label">Tooltip Size</div>
+        <input type="range" class="settings-range" id="tooltip-font-size-range" min="12" max="32" step="1" value="14">
+        <span class="range-val" id="tooltip-font-size-val">14px</span>
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div style="font-size:0.78em;color:var(--fg3);user-select:none;-webkit-user-select:none">Preview</div>
+        <div style="display:flex;justify-content:center;padding:10px 0">
+          <div id="tooltip-size-preview" class="custom-tooltip" style="position:static;opacity:1;visibility:visible;transform:none">Bold</div>
+        </div>
+      </div>
       <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
         <div style="font-size:0.78em;color:var(--fg3);user-select:none;-webkit-user-select:none">Preview</div>
         <div id="notes-list-name-preview" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Sample Note Name</div>
@@ -7809,6 +8057,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <input type="range" class="settings-range" id="notes-list-name-size-range" min="14" max="40" step="1" value="20">
         <span class="range-val" id="notes-list-name-size-val">Default</span>
       </div>
+      <!-- v0.1672: per Lynn (accessibility pass) -->
+      <div class="settings-row range-row">
+        <div class="settings-row-label">Note &amp; Folder Name Weight <span style="font-weight:400;font-size:0.85em;color:var(--fg3)">(100=thin, 400=regular, 900=black)</span></div>
+        <input type="range" class="settings-range" id="notes-list-name-weight-range" min="100" max="900" step="100" value="600">
+        <span class="range-val" id="notes-list-name-weight-val">600</span>
+      </div>
       <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
         <div style="font-size:0.78em;color:var(--fg3);user-select:none;-webkit-user-select:none">Preview</div>
         <div id="notes-list-preview-preview" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--fg2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">This is what your note preview text will look like.</div>
@@ -7842,6 +8096,12 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
         <div class="settings-row-label">Note Preview Size</div>
         <input type="range" class="settings-range" id="notes-list-preview-size-range" min="12" max="72" step="1" value="20">
         <span class="range-val" id="notes-list-preview-size-val">Default</span>
+      </div>
+      <!-- v0.1672: per Lynn (accessibility pass) -->
+      <div class="settings-row range-row">
+        <div class="settings-row-label">Note Preview Weight <span style="font-weight:400;font-size:0.85em;color:var(--fg3)">(100=thin, 400=regular, 900=black)</span></div>
+        <input type="range" class="settings-range" id="notes-list-preview-weight-range" min="100" max="900" step="100" value="400">
+        <span class="range-val" id="notes-list-preview-weight-val">400</span>
       </div>
 
       <div class="settings-subsection-title" style="margin-top:10px">Longer Help &amp; Documentation Text</div>
@@ -9449,9 +9709,28 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
     <div class="reset-row" style="margin-top:0;padding-bottom:32px">
       <button class="reset-defaults-btn" id="reinstall-samples-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Reinstall Sample Notes</button>
     </div>
+    <!-- v0.1671: separate from Reinstall -- this always ADDS a brand-new,
+         independent note from a sample's current content, never touching
+         any existing copy, so no confirmation dialog is needed the way
+         Reinstall's is (nothing here can be undone-worthy). -->
+    <div class="reset-row" style="margin-top:0;padding-bottom:32px">
+      <button class="reset-defaults-btn" id="fresh-sample-picker-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Get Fresh Copy of a Sample Note…</button>
     </div>
     </div>
     </div>
+    </div>
+</div>
+
+<!-- v0.1671: sample picker for "Get Fresh Copy of a Sample Note" -->
+<div id="fresh-sample-picker-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:10050;align-items:center;justify-content:center">
+  <div style="background:var(--bg);border-radius:14px;width:min(92vw,420px);max-height:70vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);overflow:hidden">
+    <div style="padding:16px 18px 8px;font-weight:600;font-size:1.05em">Get Fresh Copy of a Sample Note</div>
+    <div style="padding:0 18px 8px;font-size:0.85em;color:var(--fg2)">Creates a brand-new note from the sample's current content — your existing copy, if you have one, is never touched.</div>
+    <div id="fresh-sample-picker-list" style="overflow-y:auto;padding:4px 0 8px"></div>
+    <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+      <button id="fresh-sample-picker-cancel-btn" class="btn btn-ghost">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <!-- SAVE AS THEME -->
@@ -10191,15 +10470,16 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 
         <div class="help-sub" id="help-sub-android-shortcuts">
           <div class="help-sub-header">
-            <span class="help-sub-title">Android home screen shortcuts (long-press)</span>
+            <span class="help-sub-title">App shortcuts (long-press or right-click the icon)</span>
             <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
           <div class="help-sub-body">
-            <p>If you have installed Remember on your Android home screen as a PWA, you can long-press the Remember icon to see quick action shortcuts:</p>
+            <p>If you have installed Remember as a PWA, you can long-press (Android/ChromeOS) or right-click (Windows/Mac, Chrome or Edge) the Remember icon to see quick action shortcuts. Not supported on iOS.</p>
             <p>• <strong>New Note</strong> — creates a new empty note immediately</p>
-            <p>• <strong>Read Last Note</strong> — opens and shows the Speak button for your most recently edited note</p>
+            <p>• <strong>Read Last Note</strong> — opens and shows the Speak button for your most recently <em>edited</em> note</p>
+            <p>• <strong>Read Last Opened Note</strong> — same, but for the note you most recently <em>viewed</em> — not always the same note if you looked at one and edited another</p>
             <p>• <strong>Open Remember</strong> — opens the notes list</p>
-            <p>These shortcuts appear automatically once you have installed Remember as a PWA on Android Chrome. No extra setup needed.</p>
+            <p>These shortcuts appear automatically once Remember is installed as a PWA. No extra setup needed.</p>
           </div>
         </div>
 
@@ -10264,7 +10544,7 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1664';
+const APP_VERSION = '0.1681';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11453,8 +11733,18 @@ function pinToolbars() {
   // matching the home screen header's behavior. 1.02 threshold
   // tolerates floating-point noise in reported scale.
   if (vv && vv.scale > 1.02) offsetTop = 0;
-  _pinnedHeaderH  = header.offsetHeight;
-  _pinnedToolbarH = toolbar.offsetHeight;
+  // v0.1678 FIX, per Lynn's report of a thin sliver of scrolled note text
+  // visible between the two toolbar bars: offsetHeight rounds to whole
+  // pixels, but the actual rendered layout can land on a fractional
+  // pixel -- a well-known source of exactly this kind of hairline gap
+  // when precisely stacking two fixed-position elements. getBoundingClient-
+  // Rect().height is sub-pixel-precise, so the toolbar's computed top now
+  // matches the header's true rendered bottom edge exactly, not a rounded
+  // approximation of it. Every other place these two variables are used
+  // is either px-string concatenation (fractional values are valid CSS)
+  // or plain arithmetic, so this is a safe, drop-in precision upgrade.
+  _pinnedHeaderH  = header.getBoundingClientRect().height;
+  _pinnedToolbarH = toolbar.getBoundingClientRect().height;
 
   // TEMP diagnostic — only logs when keyboard is open to reduce noise
   var ns = document.getElementById('note-screen');
@@ -11539,6 +11829,13 @@ const DEFAULT_SETTINGS = {
   notesListNoteNameFontSize: null,
   notesListPreviewFont: '',
   notesListPreviewFontSize: null,
+  // v0.1672: NEW, per Lynn (accessibility pass) -- fallback is NOT the
+  // general uiFontWeight/fontWeight the way Font/Size fall back to their
+  // general counterparts; see applySettings()'s own comment on why (the
+  // existing hardcoded 600/700 note-vs-folder default had to be
+  // preserved, not silently lightened, for anyone who never touches this).
+  notesListNoteNameFontWeight: null,
+  notesListPreviewFontWeight: null,
   showNotePreview: true,     // show first-line content preview below note name in list
   speakInQuiet: false,
   alwaysSpeakWholeNote: false,
@@ -11550,6 +11847,11 @@ const DEFAULT_SETTINGS = {
   noteFont: "'Atkinson Hyperlegible', sans-serif",  // Note content font
   fontWeight: '400',
   uiFontSize: 20,
+  // v0.1677: custom tooltip font size, per Lynn -- independent of every
+  // other size setting (native browser tooltips have no size setting to
+  // hang this off at all; see the custom-tooltip system this replaces
+  // them with).
+  tooltipFontSize: 14,
   editorFontSize: 20,
   lineHeight: 1.5,          // unitless line-height
   blankLineHeight: 1,       // height of blank viewer-line divs in em; 1 = same as text line
@@ -11768,11 +12070,11 @@ const SETTING_BUCKETS = {
   darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL,
   globalViewOnly: SETTING_BUCKETS_GENERAL, lastSuffix: SETTING_BUCKETS_GENERAL, lightBgColor: SETTING_BUCKETS_GENERAL, lightFgColor: SETTING_BUCKETS_GENERAL, lightNotePreviewColor: SETTING_BUCKETS_GENERAL,
   lightNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, listMarginLeft: SETTING_BUCKETS_GENERAL, listMarginRight: SETTING_BUCKETS_GENERAL, matchGeneralNotesListEntryColors: SETTING_BUCKETS_GENERAL, noteEditingMode: SETTING_BUCKETS_GENERAL,
-  notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
+  notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListNoteNameFontWeight: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFontWeight: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
   rulerEnabled: SETTING_BUCKETS_GENERAL, showLineNumbers: SETTING_BUCKETS_GENERAL, showNoteFab: SETTING_BUCKETS_GENERAL, showNotePreview: SETTING_BUCKETS_GENERAL, showOopsBtn: SETTING_BUCKETS_GENERAL,
   showThemeIndicator: SETTING_BUCKETS_GENERAL, showToolbarCollapseTab: SETTING_BUCKETS_GENERAL, sortBy: SETTING_BUCKETS_GENERAL, sortDesc: SETTING_BUCKETS_GENERAL, sortGroupByDate: SETTING_BUCKETS_GENERAL,
   theme: SETTING_BUCKETS_GENERAL, timeFormat: SETTING_BUCKETS_GENERAL, todaySuffix: SETTING_BUCKETS_GENERAL, toolbarPlacement: SETTING_BUCKETS_GENERAL, toolbarOrder: SETTING_BUCKETS_GENERAL,
-  tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL,
+  tooltipFontSize: SETTING_BUCKETS_GENERAL, tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL,
   uiLineHeight: SETTING_BUCKETS_GENERAL, uiBlankLineHeight: SETTING_BUCKETS_GENERAL,
   // ---- NOTE_APPEARANCE (50) ----
   accentColorNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, blankLineHeight: SETTING_BUCKETS_NOTE_APPEARANCE, charsPerLine: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxColor: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorEnabled: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorWidth: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorColor: SETTING_BUCKETS_NOTE_APPEARANCE,
@@ -13092,6 +13394,20 @@ function updateNoteFontWeightStep() {
   if (!r) return;
   r.step = isVariableWeightFont(settings.noteFont) ? '10' : '100';
 }
+// v0.1672: same reasoning as updateNoteFontWeightStep() above, for the
+// two new notes-list weight sliders -- each checks whatever font its OWN
+// slider actually applies to (the notesList override if set, else the
+// same fallback chain the font/size settings already use).
+function updateNotesListNameFontWeightStep() {
+  var r = document.getElementById('notes-list-name-weight-range');
+  if (!r) return;
+  r.step = isVariableWeightFont(settings.notesListNoteNameFont || settings.font) ? '10' : '100';
+}
+function updateNotesListPreviewFontWeightStep() {
+  var r = document.getElementById('notes-list-preview-weight-range');
+  if (!r) return;
+  r.step = isVariableWeightFont(settings.notesListPreviewFont || settings.noteFont || settings.font) ? '10' : '100';
+}
 
 // ===== CHECK-OFF SOUND =====
 // Plays a brief synthesized sound when a SINGLE checkbox/hyphen item is
@@ -13404,6 +13720,8 @@ function applySettings() {
   document.documentElement.style.setProperty('--font-weight-editor', settings.fontWeight || '400');
   document.documentElement.style.setProperty('--font-weight-ui', settings.uiFontWeight || 400);
   document.documentElement.style.setProperty('--font-weight-heading', Math.max(parseInt(settings.uiFontWeight || 400), 700));
+  // v0.1677: custom tooltip font size
+  document.documentElement.style.setProperty('--tooltip-font-size', (settings.tooltipFontSize || 14) + 'px');
   document.documentElement.style.setProperty('--note-margin-left',  (settings.noteMarginLeft  || 0) + 'px');
   document.documentElement.style.setProperty('--note-margin-right', (settings.noteMarginRight || 0) + 'px');
   // Characters per line: apply max-width in ch units to viewer and editor
@@ -13537,6 +13855,19 @@ function applySettings() {
   document.documentElement.style.setProperty('--notes-list-name-size', (settings.notesListNoteNameFontSize || settings.uiFontSize) + 'px');
   document.documentElement.style.setProperty('--notes-list-preview-font', settings.notesListPreviewFont || settings.noteFont || settings.font);
   document.documentElement.style.setProperty('--notes-list-preview-size', (settings.notesListPreviewFontSize || settings.editorFontSize) + 'px');
+  // v0.1672: NEW weight settings, per Lynn (accessibility pass). Preview
+  // falls back to the note editor's own weight, same pattern its font/
+  // size siblings already use (the preview line visually represents note
+  // body text). Name does NOT fall back to the general UI weight, even
+  // though that matches its font/size siblings' pattern -- note/folder
+  // names are deliberately semibold (600) today as a visual-hierarchy
+  // choice, independent of body text weight (usually 400); falling back
+  // to uiFontWeight would have visibly lightened everyone's note names
+  // the moment this shipped, for anyone who never touches the new
+  // setting. 600 is the fallback instead, matching today's unchanged
+  // default exactly.
+  document.documentElement.style.setProperty('--notes-list-name-weight', settings.notesListNoteNameFontWeight || 600);
+  document.documentElement.style.setProperty('--notes-list-preview-weight', settings.notesListPreviewFontWeight || settings.fontWeight || 400);
 
   // Help dialog line/paragraph spacing (v0.1555) -- see .help-body CSS
   // comment. Only consumed there; nothing else references these.
@@ -19355,6 +19686,15 @@ function openSettings() {
   fsr.value = settings.uiFontSize;
   document.getElementById('ui-font-size-val').textContent = settings.uiFontSize + 'px';
 
+  // v0.1677: tooltip size slider + its own live preview bubble
+  var ttr = document.getElementById('tooltip-font-size-range');
+  var ttVal = settings.tooltipFontSize || 14;
+  if (ttr) ttr.value = ttVal;
+  var ttrVal = document.getElementById('tooltip-font-size-val');
+  if (ttrVal) ttrVal.textContent = ttVal + 'px';
+  var ttPrev = document.getElementById('tooltip-size-preview');
+  if (ttPrev) ttPrev.style.fontSize = ttVal + 'px';
+
   var efsr = document.getElementById('editor-font-size-range');
   efsr.value = settings.editorFontSize;
   document.getElementById('editor-font-size-val').textContent = settings.editorFontSize + 'px';
@@ -19368,12 +19708,25 @@ function openSettings() {
   var _nlnsVal = document.getElementById('notes-list-name-size-val');
   if (_nlnsRange) _nlnsRange.value = settings.notesListNoteNameFontSize || settings.uiFontSize;
   if (_nlnsVal) _nlnsVal.textContent = settings.notesListNoteNameFontSize ? (settings.notesListNoteNameFontSize + 'px') : 'Default';
+  // v0.1672: name/preview weight sliders, per Lynn (accessibility pass).
+  // See applySettings()'s comment for why the fallback is 600, not
+  // settings.uiFontWeight -- preserves today's unchanged look by default.
+  var _nlnwRange = document.getElementById('notes-list-name-weight-range');
+  var _nlnwVal = document.getElementById('notes-list-name-weight-val');
+  if (_nlnwRange) _nlnwRange.value = settings.notesListNoteNameFontWeight || 600;
+  if (_nlnwVal) _nlnwVal.textContent = settings.notesListNoteNameFontWeight || 600;
+  updateNotesListNameFontWeightStep();
   var _nlpfSel = document.getElementById('notes-list-preview-font-select');
   if (_nlpfSel) _nlpfSel.value = settings.notesListPreviewFont || '';
   var _nlpsRange = document.getElementById('notes-list-preview-size-range');
   var _nlpsVal = document.getElementById('notes-list-preview-size-val');
   if (_nlpsRange) _nlpsRange.value = settings.notesListPreviewFontSize || settings.editorFontSize;
   if (_nlpsVal) _nlpsVal.textContent = settings.notesListPreviewFontSize ? (settings.notesListPreviewFontSize + 'px') : 'Default';
+  var _nlpwRange = document.getElementById('notes-list-preview-weight-range');
+  var _nlpwVal = document.getElementById('notes-list-preview-weight-val');
+  if (_nlpwRange) _nlpwRange.value = settings.notesListPreviewFontWeight || settings.fontWeight || 400;
+  if (_nlpwVal) _nlpwVal.textContent = settings.notesListPreviewFontWeight || settings.fontWeight || 400;
+  updateNotesListPreviewFontWeightStep();
   updateNotesListFontPreviews();
 
   // v0.1555: Help-content line/paragraph spacing
@@ -19863,11 +20216,13 @@ function updateNotesListFontPreviews() {
   if (namePrev) {
     namePrev.style.fontFamily = settings.notesListNoteNameFont || settings.font;
     namePrev.style.fontSize = (settings.notesListNoteNameFontSize || settings.uiFontSize) + 'px';
+    namePrev.style.fontWeight = settings.notesListNoteNameFontWeight || 600;
   }
   var previewPrev = document.getElementById('notes-list-preview-preview');
   if (previewPrev) {
     previewPrev.style.fontFamily = settings.notesListPreviewFont || settings.noteFont || settings.font;
     previewPrev.style.fontSize = (settings.notesListPreviewFontSize || settings.editorFontSize) + 'px';
+    previewPrev.style.fontWeight = settings.notesListPreviewFontWeight || settings.fontWeight || 400;
   }
 }
 
@@ -19947,6 +20302,20 @@ function showToast(msg, persistent, noCopyOnTap) {
       });
     }
   };
+}
+
+// v0.1671: "must tap × to dismiss" notice -- see the HTML/CSS comments
+// on #dismissible-notice for why this is deliberately separate from
+// showToast() rather than another mode on it. No auto-timeout, and
+// tapping the notice body does nothing -- only the × button closes it,
+// specifically so something worth reading for a moment (like a folder
+// path) can't vanish before that moment's up.
+function showDismissibleNotice(msg) {
+  var el = document.getElementById('dismissible-notice');
+  var textEl = document.getElementById('dismissible-notice-text');
+  if (!el || !textEl) return;
+  textEl.textContent = msg;
+  el.classList.add('show');
 }
 
 // Apply copy/cut/paste overflow policy for small screens with large icons
@@ -22182,6 +22551,86 @@ function makeImportFolderName(label) {
     }
   })();
 
+  // v0.1677: custom tooltips, per Lynn -- REPLACES native browser
+  // title-attribute tooltips app-wide. See .custom-tooltip's own CSS
+  // comment for the full "why" (position/size/wrap all outside a web
+  // page's control with native tooltips). Mouse-only, same (hover:
+  // hover) convention used throughout this app -- touch devices never
+  // registered this listener at all, so nothing changes for them; native
+  // title tooltips essentially never show via touch anyway in most
+  // mobile browsers. Event delegation on document (one pair of
+  // listeners, not one per element) automatically covers every current
+  // AND future title-bearing element without needing per-element wiring.
+  (function() {
+    if (!(window.matchMedia && window.matchMedia('(hover: hover)').matches)) return;
+
+    var tip = document.createElement('div');
+    tip.className = 'custom-tooltip';
+    tip.id = 'live-custom-tooltip';
+    tip.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(tip);
+
+    var showTimer = null;
+    var currentEl = null;
+    var SHOW_DELAY = 500; // roughly matches native tooltip timing
+    var GAP = 8; // px between the element and the tooltip
+
+    function positionTooltip(el) {
+      var r = el.getBoundingClientRect();
+      var tw = tip.offsetWidth, th = tip.offsetHeight;
+      var left = r.left + r.width / 2 - tw / 2;
+      var top = r.top - th - GAP; // default: above the element
+      if (top < 4) top = r.bottom + GAP; // not enough room above -- flip below
+      if (left < 4) left = 4;
+      if (left + tw > window.innerWidth - 4) left = window.innerWidth - 4 - tw;
+      if (top + th > window.innerHeight - 4) top = window.innerHeight - 4 - th;
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+
+    function hideTooltip() {
+      clearTimeout(showTimer);
+      tip.classList.remove('show');
+    }
+
+    document.addEventListener('mouseover', function(e) {
+      var el = e.target.closest ? e.target.closest('[title]') : null;
+      if (!el || el === currentEl) return;
+      var titleVal = el.getAttribute('title');
+      if (!titleVal) return;
+      // Suppress the native tooltip: move title -> data-tooltip-pending
+      // for the duration of the hover, restored on mouseout below.
+      el.setAttribute('data-tooltip-pending', titleVal);
+      el.removeAttribute('title');
+      currentEl = el;
+      clearTimeout(showTimer);
+      showTimer = setTimeout(function() {
+        if (currentEl !== el || !document.body.contains(el)) return;
+        tip.textContent = titleVal;
+        positionTooltip(el);
+        tip.classList.add('show');
+      }, SHOW_DELAY);
+    });
+
+    document.addEventListener('mouseout', function(e) {
+      var el = e.target.closest ? e.target.closest('[data-tooltip-pending]') : null;
+      if (!el) return;
+      // Only act when truly leaving el, not moving between its children
+      if (el.contains(e.relatedTarget)) return;
+      hideTooltip();
+      var titleVal = el.getAttribute('data-tooltip-pending');
+      el.removeAttribute('data-tooltip-pending');
+      if (titleVal) el.setAttribute('title', titleVal);
+      if (currentEl === el) currentEl = null;
+    });
+
+    // Any scroll/resize while a tooltip is showing could leave it
+    // pointing at a now-stale position -- simplest robust fix is just to
+    // hide it; it'll reappear correctly positioned on the next hover.
+    window.addEventListener('scroll', hideTooltip, true);
+    window.addEventListener('resize', hideTooltip);
+  })();
+
   // Show on first launch
   if (!localStorage.getItem(storeKey('remember_tour_seen')) && !localStorage.getItem(storeKey('remember_notes'))) {
     setTimeout(openTour, 800);
@@ -23409,6 +23858,8 @@ function makeImportFolderName(label) {
     { id: 'more-show-tags-btn',       show: function(s) { return s.rrMode && s.hasTags; } },
     { id: 'more-line-numbers-btn',    show: function(s) { return s.rrMode; } },
     { id: 'more-tag-filter-btn',      show: function(s) { return s.rrMode && s.hasTags; } },
+    // ── Any mode: current note is a recognized built-in sample ──────────────
+    { id: 'more-fresh-sample-btn',    show: function() { return SAMPLE_NOTE_IDS.indexOf(currentNoteId) !== -1; } },
     // ── Edit / typing mode (not quiet, not view-only) ───────────────────────
     { id: 'more-insert-tag-btn',      show: function(s) { return !s.quietMode && !s.viewOnly; } },
     { id: 'more-tag-order-btn',       show: function(s) { return !s.quietMode && !s.viewOnly && s.hasTags; } },
@@ -24130,6 +24581,45 @@ function makeImportFolderName(label) {
     window._updateToolbarArrows = function() { updateArrows(); updateToolbarScrollbar(); };
   })();
 
+  // ===== NOTE SCROLL SHADOW (v0.1679) =====
+  // Bottom box-shadow on #note-content-area, per Lynn -- shown only when
+  // there's more note content below to scroll to, gone once truly at the
+  // end. Deliberately a plain box-shadow (see that CSS rule's own
+  // comment for why, vs. the gradient-fade-to-background technique used
+  // elsewhere in this app, which Lynn was explicit she does NOT want
+  // here). Same shape as the existing horizontal TOOLBAR SCROLL ARROWS
+  // block just above: a scroll listener recomputes on every scroll, and
+  // since content height can also change without scrolling (switching
+  // Typing/R&R mode, opening a different note, font size changes, typing
+  // itself), a ResizeObserver on whichever of #note-editor/#note-viewer
+  // is currently rendering content catches those automatically rather
+  // than needing this hooked into every individual render call site by
+  // hand. window._updateNoteScrollShadow is exported the same way
+  // window._updateToolbarArrows is, for any future call site that wants
+  // to force a recheck directly.
+  (function() {
+    var area = document.getElementById('note-content-area');
+    if (!area) return;
+
+    function updateNoteScrollShadow() {
+      var hasMore = area.scrollHeight - area.scrollTop - area.clientHeight > 2;
+      area.classList.toggle('has-more-below', hasMore);
+    }
+
+    area.addEventListener('scroll', updateNoteScrollShadow, { passive: true });
+
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(updateNoteScrollShadow);
+      var ed = document.getElementById('note-editor');
+      var vw = document.getElementById('note-viewer');
+      if (ed) ro.observe(ed);
+      if (vw) ro.observe(vw);
+    }
+
+    updateNoteScrollShadow();
+    window._updateNoteScrollShadow = updateNoteScrollShadow;
+  })();
+
   // ===== INDENT / DEDENT BUTTONS =====
   // ===== CARET NUDGE BUTTONS (v0.1593) =====
   // Press = one step; press-and-hold repeats (450ms delay, ~11 steps/s).
@@ -24153,6 +24643,7 @@ function makeImportFolderName(label) {
     // now coexist (scrollCursorIntoView, non-vv-aware, many callers;
     // _tpadEnsureCaretVisible, vv-aware) -- consolidation is a candidate
     // follow-up, not done here to keep this fix's blast radius small.
+    _applyKeyboardScrollRoom(document.getElementById('note-content-area'));
     _tpadEnsureCaretVisible(getCursorY(noteEditor), document.getElementById('note-content-area'), true);
   }
   function wireCaretNudge(id, dx, dy) {
@@ -24388,6 +24879,23 @@ function makeImportFolderName(label) {
     setTimeout(pinToolbars, 100);
     setTimeout(pinToolbars, 350);
     setTimeout(pinToolbars, 600);
+    // v0.1666 FIX, per Lynn's on-device diagnosis: the v0.1665 fix
+    // computed the right scroll target, but area.scrollTop assignment
+    // gets silently clamped by the browser to whatever's actually
+    // scrollable -- with little/no room below the note's last line,
+    // that correct target could never actually be reached. See
+    // _applyKeyboardScrollRoom()'s own definition (near
+    // _tpadEnsureCaretVisible, shared by all its call sites) for the fix.
+    (function() {
+      var _tapArea = document.getElementById('note-content-area');
+      function _ensureTapCaretVisible() {
+        _applyKeyboardScrollRoom(_tapArea);
+        _tpadEnsureCaretVisible(getCursorY(ed), _tapArea);
+      }
+      setTimeout(_ensureTapCaretVisible, 100);
+      setTimeout(_ensureTapCaretVisible, 350);
+      setTimeout(_ensureTapCaretVisible, 600);
+    })();
     // NOTE FOR CLAUDE: The auto-paste-prompt on new note focus has been removed.
     // We were calling navigator.clipboard.readText() here on first focus of a new
     // empty note, then asking 'Do you want to paste?' if the clipboard had content.
@@ -25095,6 +25603,28 @@ function makeImportFolderName(label) {
   var _tpadLastSelTime = 0;
   var _tpadLastSel = -1;
   var _tpadDragUntil = 0;
+  // v0.1666 FIX, per Lynn's on-device diagnosis: _tpadEnsureCaretVisible()
+  // below computes the right scroll target, but the plain `area.scrollTop
+  // = newScroll` assignment it ends with gets silently clamped by the
+  // browser to whatever's actually scrollable -- with little/no room
+  // below the note's last line, a perfectly correct target could never
+  // actually be reached, no matter how right the math was. This measures
+  // the REAL keyboard height (window.innerHeight - visualViewport.height
+  // -- "maybe the keyboard is taller than you think" per Lynn) and
+  // applies it as scroll-room on note-content-area BEFORE each scroll
+  // attempt, overriding the CSS fallback (320px, #note-screen.keyboard-
+  // open #note-content-area) with the real number once visualViewport has
+  // caught up. Shared by every _tpadEnsureCaretVisible() call site so
+  // they all get the same real scroll room. Cleared
+  // (area.style.paddingBottom = '') in the EMTIP-exit blur handler -- an
+  // inline style would otherwise persist regardless of the keyboard-open
+  // class once the keyboard closes.
+  function _applyKeyboardScrollRoom(area) {
+    var vv = window.visualViewport;
+    if (!vv) return; // CSS fallback (320px) still applies
+    var kbHeight = Math.max(0, window.innerHeight - vv.height);
+    if (kbHeight > 0) area.style.paddingBottom = (kbHeight + 40) + 'px';
+  }
   // Bring the caret into the VISUAL viewport's usable band (keyboard-
   // aware: with the keyboard open, vv.height is ~half the area's box
   // height and the bottom half sits under the keyboard; the pinned
@@ -25135,6 +25665,7 @@ function makeImportFolderName(label) {
     if (_tpadDragSteps >= 2) _tpadDragUntil = now + 3000;
     // The heal itself: big jump landing mid-drag -> caret visible again.
     if (now < _tpadDragUntil && dsel >= 500) {
+      _applyKeyboardScrollRoom(document.getElementById('note-content-area'));
       _tpadEnsureCaretVisible(getCursorY(noteEditor), document.getElementById('note-content-area'));
     }
   });
@@ -25150,6 +25681,13 @@ function makeImportFolderName(label) {
           _typingSessionStartLen = null;
         }
         noteScreen.classList.remove('keyboard-open');
+        // v0.1666: clear the inline keyboard-scroll-room override applied
+        // by _applyKeyboardScrollRoom() while EMTIP was active -- an
+        // inline style persists regardless of the keyboard-open class, so
+        // without this the huge bottom padding would stay stuck forever
+        // once the keyboard actually closes.
+        var _kbRoomArea = document.getElementById('note-content-area');
+        if (_kbRoomArea) _kbRoomArea.style.paddingBottom = '';
         // Restore collapsed state when keyboard closes
         if (settings.toolbarCollapsed) {
           document.body.classList.add('toolbar-collapsed');
@@ -25162,29 +25700,53 @@ function makeImportFolderName(label) {
         // be 0 again, so toolbars return to their normal top position.
         pinToolbars();
         setTimeout(pinToolbars, 150);
-        // v0.1664: per Lynn's Android bug report -- the final few lines of
-        // a long note could go completely missing after dismissing the
-        // keyboard (EMTIP -> EMNI), only reappearing by switching to R&R
-        // and back. Not reproducible on iOS. resizeEditor() is called at
-        // roughly 30 other places in this file whenever layout or content
-        // changes -- it re-measures the textarea's height AND re-derives
-        // note-content-area's scroll position from the current viewport --
-        // but was never called here. Best-supported hypothesis: Android
-        // (unlike iOS's keyboard-as-overlay) actually SHRINKS the visual
-        // viewport while the keyboard is up, so area.clientHeight measured
-        // during that shrunk state differs genuinely from its value once
-        // the keyboard closes and the viewport grows back; without a fresh
-        // resizeEditor() call afterward, the textarea's height and the
-        // container's scrollTop can go stale relative to the new, larger
-        // viewport. This is a plausible fix based on how the surrounding
-        // code already behaves, not a confirmed root cause -- there's no
-        // way to reproduce a real Android keyboard resize event in this
-        // sandbox to prove it. Same timing as the pinToolbars() re-checks
-        // just above, on the theory that layout needs a beat to settle
-        // after the keyboard animation before either measurement is
-        // trustworthy.
+        // v0.1664 attempted a fix here (extra resizeEditor() calls) for
+        // Lynn's Android report -- did NOT fix it. v0.1665 added
+        // diagnostic logging instead of guessing again. Her actual log
+        // now shows the real mechanism precisely: area.scrollTop WAS
+        // correctly at its max (5545.6 of 5545) -- the outer container's
+        // scrolling was never the problem -- but ed.offsetHeight (5880)
+        // was 150px SHORTER than ed.scrollHeight (6030). The TEXTAREA
+        // ITSELF was rendered too short for its own content, so even
+        // scrolling the outer container all the way down couldn't reveal
+        // text clipped inside an inner element that's the wrong size.
+        // Confirms resizeEditor() (height='1px' then height=scrollHeight)
+        // is the right idea, but the single 150ms-delayed retry wasn't
+        // enough -- the mismatch was STILL there at exactly that mark,
+        // meaning Android's post-keyboard-dismiss reflow (text
+        // rewrapping as the viewport width/height settles) was still in
+        // progress past 150ms. v0.1667: self-correcting retry loop
+        // instead of a fixed single retry -- keeps calling resizeEditor()
+        // every 150ms, re-measuring fresh each time, until offsetHeight
+        // actually catches up to scrollHeight (or a 6-attempt/~900ms
+        // ceiling, so this can't loop forever if something else is
+        // keeping scrollHeight a moving target). Final diagnostic tags
+        // itself OK or STILL-SHORT with the attempt count, so the next
+        // log shows directly whether this actually closed the gap.
         resizeEditor();
-        setTimeout(resizeEditor, 150);
+        (function _settleEditorHeight(attempt) {
+          setTimeout(function() {
+            resizeEditor();
+            var _ed = noteEditor;
+            var _stillShort = _ed.offsetHeight < _ed.scrollHeight - 1;
+            if (_stillShort && attempt < 6) {
+              _settleEditorHeight(attempt + 1);
+              return;
+            }
+            var _diagArea = document.getElementById('note-content-area');
+            var _diagVv = window.visualViewport;
+            logDebugAction('EMNI-resize-diag(attempt=' + attempt + ', ' + (_stillShort ? 'STILL-SHORT' : 'OK') + '): ' +
+              'area.scrollTop=' + _diagArea.scrollTop +
+              ' area.scrollHeight=' + _diagArea.scrollHeight +
+              ' area.clientHeight=' + _diagArea.clientHeight +
+              ' maxScroll=' + (_diagArea.scrollHeight - _diagArea.clientHeight) +
+              ' ed.offsetHeight=' + _ed.offsetHeight +
+              ' ed.scrollHeight=' + _ed.scrollHeight +
+              ' vv.height=' + (_diagVv ? _diagVv.height : 'n/a') +
+              ' vv.offsetTop=' + (_diagVv ? _diagVv.offsetTop : 'n/a') +
+              ' window.innerHeight=' + window.innerHeight);
+          }, 150);
+        })(0);
       }
     }, 300);
   });
@@ -25925,6 +26487,7 @@ function makeImportFolderName(label) {
       if (uiwv) uiwv.textContent = snappedUiWeight;
     }
     updateUiFontWeightStep();
+    updateNotesListNameFontWeightStep();
     updateFontPreview();
     applySettings();
     updateSaveBtnState();
@@ -25958,6 +26521,7 @@ function makeImportFolderName(label) {
       applySettings();
     }
     updateNoteFontWeightStep();
+    updateNotesListPreviewFontWeightStep();
     updateSaveBtnState();
   });
   // Font size range
@@ -25966,6 +26530,16 @@ function makeImportFolderName(label) {
     document.getElementById('ui-font-size-val').textContent = this.value + 'px';
     applySettings();
     updateFontPreview();
+  });
+
+  // v0.1677: tooltip size
+  document.getElementById('tooltip-font-size-range').addEventListener('input', function() {
+    settings.tooltipFontSize = parseInt(this.value);
+    document.getElementById('tooltip-font-size-val').textContent = this.value + 'px';
+    var ttPrev = document.getElementById('tooltip-size-preview');
+    if (ttPrev) ttPrev.style.fontSize = this.value + 'px';
+    applySettings();
+    updateSaveBtnState();
   });
 
   document.getElementById('editor-font-size-range').addEventListener('input', function() {
@@ -25977,6 +26551,19 @@ function makeImportFolderName(label) {
   // v0.1546/1547: Profiles & Note Styles Phase A, build 4
   document.getElementById('notes-list-name-font-select').addEventListener('change', function() {
     settings.notesListNoteNameFont = this.value;
+    // v0.1672: same snapping as the general font selects -- see their
+    // comment for why (a static font can't render an in-between weight
+    // a variable font's slider may have left behind).
+    var curNameWeight = parseInt(settings.notesListNoteNameFontWeight) || 600;
+    var snappedNameWeight = getNearestSupportedWeight(this.value || settings.font, curNameWeight);
+    if (snappedNameWeight !== curNameWeight) {
+      settings.notesListNoteNameFontWeight = snappedNameWeight;
+      var nlnwr = document.getElementById('notes-list-name-weight-range');
+      var nlnwv = document.getElementById('notes-list-name-weight-val');
+      if (nlnwr) nlnwr.value = snappedNameWeight;
+      if (nlnwv) nlnwv.textContent = snappedNameWeight;
+    }
+    updateNotesListNameFontWeightStep();
     applySettings();
     updateNotesListFontPreviews();
     updateSaveBtnState();
@@ -25990,6 +26577,16 @@ function makeImportFolderName(label) {
   });
   document.getElementById('notes-list-preview-font-select').addEventListener('change', function() {
     settings.notesListPreviewFont = this.value;
+    var curPrevWeight = parseInt(settings.notesListPreviewFontWeight) || parseInt(settings.fontWeight) || 400;
+    var snappedPrevWeight = getNearestSupportedWeight(this.value || settings.noteFont || settings.font, curPrevWeight);
+    if (snappedPrevWeight !== curPrevWeight) {
+      settings.notesListPreviewFontWeight = snappedPrevWeight;
+      var nlpwr = document.getElementById('notes-list-preview-weight-range');
+      var nlpwv = document.getElementById('notes-list-preview-weight-val');
+      if (nlpwr) nlpwr.value = snappedPrevWeight;
+      if (nlpwv) nlpwv.textContent = snappedPrevWeight;
+    }
+    updateNotesListPreviewFontWeightStep();
     applySettings();
     updateNotesListFontPreviews();
     updateSaveBtnState();
@@ -26030,6 +26627,22 @@ function makeImportFolderName(label) {
     settings.fontWeight = parseInt(this.value);
     document.getElementById('note-font-weight-val').textContent = this.value;
     applySettings();
+    updateSaveBtnState();
+  });
+
+  // v0.1672: new weight sliders, per Lynn (accessibility pass)
+  document.getElementById('notes-list-name-weight-range').addEventListener('input', function() {
+    settings.notesListNoteNameFontWeight = parseInt(this.value);
+    document.getElementById('notes-list-name-weight-val').textContent = this.value;
+    applySettings();
+    updateNotesListFontPreviews();
+    updateSaveBtnState();
+  });
+  document.getElementById('notes-list-preview-weight-range').addEventListener('input', function() {
+    settings.notesListPreviewFontWeight = parseInt(this.value);
+    document.getElementById('notes-list-preview-weight-val').textContent = this.value;
+    applySettings();
+    updateNotesListFontPreviews();
     updateSaveBtnState();
   });
 
@@ -26553,6 +27166,35 @@ function makeImportFolderName(label) {
       },
       false, 'Cancel', null, 'centered'
     );
+  });
+
+  // v0.1671: Get Fresh Copy of a Sample Note picker -- lists every
+  // recognized sample by its currently-known name; picking one creates
+  // a brand-new note from that sample's CURRENT content and closes the
+  // picker. No confirmation needed here (unlike Reinstall) since this
+  // only ever adds a note, never touches an existing one.
+  document.getElementById('fresh-sample-picker-btn').addEventListener('click', function() {
+    var list = document.getElementById('fresh-sample-picker-list');
+    list.innerHTML = '';
+    SAMPLE_NOTE_IDS.forEach(function(id) {
+      var label = notes[id] ? notes[id].name : id;
+      var btn = document.createElement('button');
+      btn.className = 'context-menu-item';
+      btn.style.width = '100%';
+      btn.textContent = label;
+      btn.addEventListener('click', function() {
+        document.getElementById('fresh-sample-picker-overlay').style.display = 'none';
+        createFreshSampleNote(id);
+      });
+      list.appendChild(btn);
+    });
+    document.getElementById('fresh-sample-picker-overlay').style.display = 'flex';
+  });
+  document.getElementById('fresh-sample-picker-cancel-btn').addEventListener('click', function() {
+    document.getElementById('fresh-sample-picker-overlay').style.display = 'none';
+  });
+  document.getElementById('fresh-sample-picker-overlay').addEventListener('click', function(e) {
+    if (e.target === this) this.style.display = 'none';
   });
 
   // Reset to defaults
@@ -27567,6 +28209,13 @@ function makeImportFolderName(label) {
     closeAllBars();
     openTagFilterSheet();
   });
+  var _freshSampleBtn = document.getElementById('more-fresh-sample-btn');
+  if (_freshSampleBtn) {
+    _freshSampleBtn.addEventListener('click', function() {
+      closeMoreMenu();
+      if (currentNoteId) createFreshSampleNote(currentNoteId);
+    });
+  }
   var _tagFilterToolbarBtn = document.getElementById('tag-filter-btn');
   if (_tagFilterToolbarBtn) {
     _tagFilterToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
@@ -28926,6 +29575,13 @@ function makeImportFolderName(label) {
 
   var _tbHelpOverlay = document.getElementById('toolbar-help-overlay');
   var _tbHelpBody = document.getElementById('toolbar-help-body');
+  // v0.1671: dismissible-notice close button -- see showDismissibleNotice()
+  var _dismissNoticeClose = document.getElementById('dismissible-notice-close');
+  if (_dismissNoticeClose) {
+    _dismissNoticeClose.addEventListener('click', function() {
+      document.getElementById('dismissible-notice').classList.remove('show');
+    });
+  }
   document.getElementById('toolbar-help-btn').addEventListener('click', function() {
     if (_tbHelpBody) _tbHelpBody.innerHTML = _buildToolbarHelpContent();
     if (_tbHelpOverlay) { _tbHelpOverlay.style.display = 'flex'; }
@@ -32240,6 +32896,7 @@ function findNoteByName(name) {
   var needle = normalizeNoteName(name);
   var exact = [], partial = [];
   Object.values(notes).forEach(function(n) {
+    if (n.isDebugLog) return; // v0.1675: same exclusion as the "no name" fallbacks above
     var hay = normalizeNoteName(n.name);
     if (hay === needle) exact.push(n);
     else if (hay.indexOf(needle) !== -1 || needle.indexOf(hay) !== -1) partial.push(n);
@@ -32526,6 +33183,83 @@ function _tagSortSamplerContent() {
 }
 
 // Named function so it can be called from Settings > Reinstall Sample Notes
+// v0.1671: registry of every fixed-id sample note createInitialNotes()
+// manages (NOT the Welcome note -- its id is a fresh makeId() each
+// install, not a stable fixed id, so it has no fixed identity for "Get
+// Fresh Copy" to look up). Used by "Get fresh copy of this sample" (More
+// menu, shown only when the CURRENT note's id is in this list) and the
+// Settings picker (lists every entry here by its CURRENT name). Same
+// discipline as FONT_WEIGHT_SUPPORT/SETTING_BUCKETS: keep this in sync
+// by hand -- add a new sample's id here in the same build that adds it
+// to createInitialNotes(), or it simply won't be offered a fresh copy.
+var SAMPLE_NOTE_IDS = [
+  'note-read-me-first', 'note-color-sampler', 'note-heading-sampler',
+  'note-outline-sampler', 'note-tag-sampler', 'note-tag-cb-diagnostic',
+  'note-code-sampler', 'note-image-sampler', 'note-bullet-sampler',
+  'note-tag-sort-sampler', 'note-boat-checklist-today', 'note-sample-evening',
+  'note-sample-checklist', 'note-sample-cosy', 'note-sample-article',
+  'note-sample-taskmaster', 'note-sample-dyslexia', 'note-sample-poem',
+  'note-sample-fun', 'note-why-remember', 'note-ordered-list-sampler'
+];
+
+// getFreshSampleCopy(sampleId) -- returns {name, content, folderId,
+// themeId} computed by the CURRENT running code for a given sample id,
+// regardless of whatever an existing copy currently contains, WITHOUT
+// touching that existing copy at all. Works by momentarily deleting the
+// sample from `notes` (in memory only, nothing saved/rendered in
+// between), calling the existing createInitialNotes() unmodified -- its
+// own `if (!notes[id])` guard now sees it "missing" and recreates it
+// fresh -- capturing that result, then immediately restoring whatever
+// was there before (or removing it again if it didn't exist). This
+// needed no changes to createInitialNotes() itself, and doubles up on a
+// safety net that function already has: its own v0.1630 snapshot/restore
+// pass (see its own header comment) means calling it again is already
+// safe by design, even before this function's own explicit restore.
+function getFreshSampleCopy(sampleId) {
+  if (SAMPLE_NOTE_IDS.indexOf(sampleId) === -1) return null;
+  var existed = Object.prototype.hasOwnProperty.call(notes, sampleId);
+  var saved = notes[sampleId];
+  delete notes[sampleId];
+  var fresh = null;
+  try {
+    createInitialNotes();
+    var f = notes[sampleId];
+    if (f) fresh = { name: f.name, content: f.content, folderId: f.folderId || null, themeId: f.themeId || null };
+  } finally {
+    if (existed) notes[sampleId] = saved; else delete notes[sampleId];
+  }
+  return fresh;
+}
+
+// v0.1671: creates an independent, brand-new note from a sample's
+// CURRENT (not the user's possibly-edited) content -- per Lynn's
+// request to compare her edited/renamed copy against what a sample
+// currently looks like, without risking her existing copy at all. Lands
+// in the exact same folder situation (or lack of one) as the sample
+// currently is in -- see getFreshSampleCopy()'s own comment for why that
+// mirrors "wherever you're looking at it now" rather than a hardcoded
+// original location. Named with the app version so multiple fresh
+// copies taken over time stay distinguishable from each other.
+function createFreshSampleNote(sampleId) {
+  var fresh = getFreshSampleCopy(sampleId);
+  if (!fresh) {
+    showToast("Couldn't create a fresh copy of that sample", false);
+    return;
+  }
+  var newId = makeId();
+  var newName = fresh.name + ' (v' + APP_VERSION + ')';
+  var now = Date.now();
+  notes[newId] = {
+    id: newId, name: newName, content: fresh.content, autoNamed: false,
+    createdAt: now, editedAt: now, viewedAt: now,
+    folderId: fresh.folderId, themeId: fresh.themeId || undefined
+  };
+  saveNotes();
+  renderNotesList();
+  var folderPath = fresh.folderId ? getFolderPathString(fresh.folderId) : '';
+  showDismissibleNotice('Created "' + newName + '"' + (folderPath ? ' in ' + folderPath : ' at the top level'));
+}
+
 function createInitialNotes() {
   var now = Date.now();
 
@@ -33994,9 +34728,11 @@ function createInitialNotes() {
       '5. Gamma',
       '5. Delta',
       '',
-      'Nesting — child levels, made with Tab (4 spaces). Notice the sub-list',
-      'restarts at 1, and Fourth (the parent level) correctly resumes at 4',
-      'after the nested list ends, instead of restarting:',
+      'Nesting — child levels, made with Tab (4 spaces). Each level shows',
+      'the full path (2.1, 2.1.1, and so on), not just a bare local count —',
+      'so you always know exactly where an item sits without tracing back',
+      'up through its parents. Notice Fourth (the parent level) correctly',
+      'resumes at 4 after the nested lists end, instead of restarting:',
       '',
       '1. First',
       '2. Second',
@@ -35788,6 +36524,21 @@ function getOrderedListMarker(line) {
 // not in either indent mechanism. Nobody should have to retype a line's
 // number as "1" before indenting it just to get the child list to start
 // where every other outliner/word processor already starts it.
+// v0.1670: child levels now display as a full decimal path (1, 1.1,
+// 1.1.1, ...) instead of a bare local count repeating "1, 2, 3" at every
+// depth, per Lynn's explicit choice after discussing the common
+// conventions (legal/classic outline a/i lettering, alternating case,
+// decimal). Decimal was chosen specifically because it needs no new
+// pronunciation logic for the speech feature (digits and periods only --
+// this app already reads plain numbers everywhere), scales to any depth
+// without running out of symbols the way letters/Roman numerals do, and
+// is more informative at a glance (2.3.1 tells you exactly where you are
+// without tracing back up through parent levels). `number` is now always
+// the full joined path string (e.g. "1", "1.2", "2.3.1"), not just the
+// current level's local count -- the stack this function already tracked
+// for the "resume, don't restart" behavior turns out to hold exactly the
+// data a decimal path needs; this is really just "join the whole stack"
+// instead of "use only its last entry".
 function computeOrderedListNumbers(lines) {
   var result = new Array(lines.length).fill(null);
   var stack = []; // [{indent, count}], shallowest first
@@ -35805,7 +36556,8 @@ function computeOrderedListNumbers(lines) {
       var startAt = stack.length === 0 ? m.number : 1;
       stack.push({ indent: m.indent, count: startAt });
     }
-    result[i] = { number: stack[stack.length - 1].count, punct: m.punct };
+    var path = stack.map(function(s) { return s.count; }).join('.');
+    result[i] = { number: path, punct: m.punct };
   }
   return result;
 }
@@ -36890,8 +37642,11 @@ function handleUrlAction() {
         copyFoundId = copyPool[0].id;
       }
     } else {
-      // No name — use most recently edited note
-      var copySorted = Object.values(notes).sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
+      // No name — use most recently edited note. v0.1675 FIX, same root
+      // cause and same fix as the action=speak/open handler above -- see
+      // its own comment.
+      var copySorted = Object.values(notes).filter(function(n) { return !n.isDebugLog; })
+        .sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
       if (copySorted.length) copyFoundId = copySorted[0].id;
     }
 
@@ -36944,7 +37699,7 @@ function handleUrlAction() {
         '</div>';
     }
 
-  } else if (action === 'open' || action === 'speak') {
+  } else if (action === 'open' || action === 'speak' || action === 'speakopened') {
     // Find note by name (case-insensitive partial match) or by id
     var noteName = params.get('name') || '';
     var noteId = params.get('id') || '';
@@ -36955,14 +37710,24 @@ function handleUrlAction() {
     } else if (noteName) {
       foundId = findNoteByName(noteName);
     } else {
-      // No name given — open most recently edited note
-      var sorted = Object.values(notes).sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
+      // No name given — fall back to most recently edited (speak/open) or
+      // most recently opened (speakopened). v0.1676 NEW: 'speakopened',
+      // per Lynn -- Read Last Note has always meant most recently EDITED;
+      // sometimes she wants the note she was just looking at instead,
+      // which isn't the same note if she views one and then edits a
+      // completely different one. Falls back to editedAt if viewedAt
+      // isn't set, same convention the notes-list's own sort-by-opened
+      // already uses. Same v0.1675 Debug Log exclusion as before -- see
+      // that fix's own comment.
+      var sortField = (action === 'speakopened') ? 'viewedAt' : 'editedAt';
+      var sorted = Object.values(notes).filter(function(n) { return !n.isDebugLog; })
+        .sort(function(a,b) { return (b[sortField]||b.editedAt||0)-(a[sortField]||a.editedAt||0); });
       if (sorted.length) foundId = sorted[0].id;
     }
 
     if (foundId) {
       openNote(foundId);
-      if (action === 'speak') {
+      if (action === 'speak' || action === 'speakopened') {
         setTimeout(function() { showTapToSpeakBanner(foundId); }, 1500);
       }
     } else {
