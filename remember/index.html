@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1674 -->
+<!-- Remember App - Version 0.1676 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1674
+  Version 0.1676
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1676 - NEW: "Read Last Opened Note" action/shortcut, per Lynn -- Read Last Note has always meant most recently EDITED, not most recently viewed; these can genuinely differ (view one note, then edit a different one). Generalized the ?action=open/speak handler to also accept ?action=speakopened, differing only in which timestamp field the "no name given" fallback sorts by (viewedAt vs editedAt, falling back to editedAt if viewedAt is unset, same convention the notes-list's own sort-by-opened already uses) -- everything else (name/id lookup, opening the note, showing the Speak banner) is identical to the existing speak action. Shares v0.1675's Debug Log exclusion. Also updated the manifest.json family (all three variants -- base/stable/dev, which only differ in branding/version) with launch_handler: navigate-existing, per Lynn's report that using the "Open Remember" app shortcut while the PWA was already open spawned a second, independent window whose changes didn't sync with the first -- confirmed this is real, well-documented PWA/browser behavior (each window is its own separate JS process with its own in-memory notes object, only reconciled through shared localStorage at load time, not live between windows) rather than anything specific this app was doing wrong, and confirmed launch_handler is the standards-track fix for exactly this: an existing window now gets navigated to the shortcut's target URL instead of a new one being opened, which naturally re-runs this app's existing ?action= handling with zero other code changes needed, since it's a real navigation/reload rather than requiring a new window.launchQueue consumer. Help text also updated: corrected terminology (this is called App Shortcuts, not an Android-specific feature) and documented actual current platform support (Android/ChromeOS long-press, Windows/Mac right-click via Chrome or Edge, not supported on iOS/Safari), plus the new Read Last Opened Note entry. Verified directly: engineered edited-time and viewed-time to point at two DIFFERENT notes and confirmed speak/speakopened each correctly picked their own, both still correctly excluding the debug log. Suite unchanged: 316/316.
+  v0.1675 - FIX: "Read Last Note" (?action=speak/open with no name) always opened the Debug Log instead of a real note, per Lynn's bug report. Root cause: the Debug Log is stored as a genuine note (findOrCreateDebugLogNote()) whose editedAt updates on every single logged line -- far more often than any real note gets edited -- so it permanently won the "most recently edited" sort this fallback used. It's already deliberately excluded from the home list, search, and export-all via its own isDebugLog flag (see that function's own comment) -- this call site was simply missed when that exclusion list was built. Fixed the same way (filter out isDebugLog before sorting), plus two related spots with the identical gap found while fixing this one: the sibling ?action=copy Siri Shortcut's own "no name given" fallback, and findNoteByName() (used whenever a name IS given, e.g. if a Shortcut happened to pass "Debug Log" as the search term). Confirms for the record: Read Last Note has always meant most recently EDITED, not most recently opened/viewed -- unchanged, just no longer shadowed by the Debug Log. Verified directly: engineered the exact bug trigger (debug log's editedAt set higher than any real note) and confirmed the fix now correctly picks a real note instead; confirmed findNoteByName('Debug Log') now correctly returns null. Suite unchanged: 316/316.
   v0.1674 - Folder entry vertical padding tightened further, per Lynn's iteration feedback: 8px -> 6px top/bottom (now matching note items exactly). Horizontal padding and note items untouched. Suite unchanged: 316/316.
   v0.1673 - Reduced vertical padding on the Home Screen notes list entries, per Lynn, to test alongside v0.1672 -- explicitly a first pass, expecting iteration once she can see it. Note items: 8px -> 6px top/bottom. Folder items: 13px -> 8px top/bottom -- confirmed by inspection they had noticeably more vertical padding than note items to begin with (13px vs 8px), matching her own observation, so tightened proportionally more to close that gap rather than an equal reduction on both. Horizontal padding on both left untouched. Suite unchanged: 316/316.
   v0.1672 - NEW: two font weight settings, per Lynn's accessibility pass -- "Note & Folder Name Weight" and "Note Preview Weight", App Theme bucket, each placed directly under its corresponding font SIZE setting as requested. Neither existed before (confirmed by inspection -- note/folder names were HARDCODED font-weight: 600/700 respectively, with no setting at all; the preview line just inherited the note editor's own weight with no independent control). Reused the existing variable-font weight-snapping infrastructure (getNearestSupportedWeight/isVariableWeightFont/FONT_WEIGHT_SUPPORT, same system added for Inter/Atkinson Hyperlegible Next/Mulish) rather than building parallel logic -- new updateNotesListNameFontWeightStep()/updateNotesListPreviewFontWeightStep() mirror the existing updateNoteFontWeightStep() exactly, switching each slider's step between fine (10, variable fonts) and coarse (100, static fonts) based on whichever font that slider actually applies to, wired into both the notes-list-specific font selects AND the general UI/note font selects (since these sliders fall back to the general font when their own override is unset). CAUGHT AND FIXED a real default-regression risk before shipping: Note & Folder Name Weight's natural fallback (matching its font/size siblings) would have been settings.uiFontWeight, but note/folder names are deliberately semibold today as a visual-hierarchy choice independent of body text weight -- falling back to the general UI weight (usually 400) would have visibly lightened everyone's note names the moment this shipped. Fallback is 600 instead, exactly matching today's unchanged default. Folder names now share the SAME weight variable as note names (matching how Font and Size already treat both identically, and Lynn's own "note & folder" combined naming) -- flagged clearly in comments that this collapses their previously-different hardcoded defaults (700 vs 600) into one shared value unless the new setting is changed. Verified end-to-end: default values exactly match the old hardcoded look (no regression); setting values apply correctly to the CSS variables; Settings dialog sliders correctly sync to saved values on open; live preview boxes correctly reflect configured weights. Suite unchanged: 316/316.
@@ -10357,15 +10359,16 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 
         <div class="help-sub" id="help-sub-android-shortcuts">
           <div class="help-sub-header">
-            <span class="help-sub-title">Android home screen shortcuts (long-press)</span>
+            <span class="help-sub-title">App shortcuts (long-press or right-click the icon)</span>
             <svg class="help-sub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
           <div class="help-sub-body">
-            <p>If you have installed Remember on your Android home screen as a PWA, you can long-press the Remember icon to see quick action shortcuts:</p>
+            <p>If you have installed Remember as a PWA, you can long-press (Android/ChromeOS) or right-click (Windows/Mac, Chrome or Edge) the Remember icon to see quick action shortcuts. Not supported on iOS.</p>
             <p>• <strong>New Note</strong> — creates a new empty note immediately</p>
-            <p>• <strong>Read Last Note</strong> — opens and shows the Speak button for your most recently edited note</p>
+            <p>• <strong>Read Last Note</strong> — opens and shows the Speak button for your most recently <em>edited</em> note</p>
+            <p>• <strong>Read Last Opened Note</strong> — same, but for the note you most recently <em>viewed</em> — not always the same note if you looked at one and edited another</p>
             <p>• <strong>Open Remember</strong> — opens the notes list</p>
-            <p>These shortcuts appear automatically once you have installed Remember as a PWA on Android Chrome. No extra setup needed.</p>
+            <p>These shortcuts appear automatically once Remember is installed as a PWA. No extra setup needed.</p>
           </div>
         </div>
 
@@ -10430,7 +10433,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1674';
+const APP_VERSION = '0.1676';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -32627,6 +32630,7 @@ function findNoteByName(name) {
   var needle = normalizeNoteName(name);
   var exact = [], partial = [];
   Object.values(notes).forEach(function(n) {
+    if (n.isDebugLog) return; // v0.1675: same exclusion as the "no name" fallbacks above
     var hay = normalizeNoteName(n.name);
     if (hay === needle) exact.push(n);
     else if (hay.indexOf(needle) !== -1 || needle.indexOf(hay) !== -1) partial.push(n);
@@ -37372,8 +37376,11 @@ function handleUrlAction() {
         copyFoundId = copyPool[0].id;
       }
     } else {
-      // No name — use most recently edited note
-      var copySorted = Object.values(notes).sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
+      // No name — use most recently edited note. v0.1675 FIX, same root
+      // cause and same fix as the action=speak/open handler above -- see
+      // its own comment.
+      var copySorted = Object.values(notes).filter(function(n) { return !n.isDebugLog; })
+        .sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
       if (copySorted.length) copyFoundId = copySorted[0].id;
     }
 
@@ -37426,7 +37433,7 @@ function handleUrlAction() {
         '</div>';
     }
 
-  } else if (action === 'open' || action === 'speak') {
+  } else if (action === 'open' || action === 'speak' || action === 'speakopened') {
     // Find note by name (case-insensitive partial match) or by id
     var noteName = params.get('name') || '';
     var noteId = params.get('id') || '';
@@ -37437,14 +37444,24 @@ function handleUrlAction() {
     } else if (noteName) {
       foundId = findNoteByName(noteName);
     } else {
-      // No name given — open most recently edited note
-      var sorted = Object.values(notes).sort(function(a,b) { return (b.editedAt||0)-(a.editedAt||0); });
+      // No name given — fall back to most recently edited (speak/open) or
+      // most recently opened (speakopened). v0.1676 NEW: 'speakopened',
+      // per Lynn -- Read Last Note has always meant most recently EDITED;
+      // sometimes she wants the note she was just looking at instead,
+      // which isn't the same note if she views one and then edits a
+      // completely different one. Falls back to editedAt if viewedAt
+      // isn't set, same convention the notes-list's own sort-by-opened
+      // already uses. Same v0.1675 Debug Log exclusion as before -- see
+      // that fix's own comment.
+      var sortField = (action === 'speakopened') ? 'viewedAt' : 'editedAt';
+      var sorted = Object.values(notes).filter(function(n) { return !n.isDebugLog; })
+        .sort(function(a,b) { return (b[sortField]||b.editedAt||0)-(a[sortField]||a.editedAt||0); });
       if (sorted.length) foundId = sorted[0].id;
     }
 
     if (foundId) {
       openNote(foundId);
-      if (action === 'speak') {
+      if (action === 'speak' || action === 'speakopened') {
         setTimeout(function() { showTapToSpeakBanner(foundId); }, 1500);
       }
     } else {
