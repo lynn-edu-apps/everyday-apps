@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1685 -->
+<!-- Remember App - Version 0.1693 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1685
+  Version 0.1693
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,14 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1693 - FIX: "Search in notes" on the home screen never found matches inside any folder, per Lynn's bug report -- likely a long-standing bug, not a recent regression. Root cause, confirmed by reading the code directly: the base note list unconditionally filtered to the CURRENT folder level before search was ever applied, so a search from the root only ever checked top-level notes, silently missing everything inside every folder -- confirmed directly with the exact reported scenario (searching "weekly" from the root failed to find "Weekly Errands & Tasks", confirmed to live inside the Sample Notes folder). Fixed by only applying that folder restriction for ordinary browsing -- search now spans every note regardless of folder, exactly as expected. Also added a companion improvement: search results now show their folder path (reusing the exact same getFolderPathString() display the Favorites section already uses), since a match can now surface from anywhere rather than only the folder currently being viewed. Verified directly: search from the root now finds the folder note; its folder path renders correctly; ordinary non-search browsing at the root is completely unaffected and still correctly shows only top-level notes. Suite unchanged: 332/332.
+  v0.1692 - FIX: significant bug where enabling both "Hide bullet/hyphen" and "Skip extra indent on the first level" together clipped some note content invisible off the left edge, per Lynn's detailed report across three sample notes. Root cause: v0.1690's negative margin-left approach was fundamentally fragile -- it assumed #note-content-area's own left padding (as little as 22px, since note-margin-left is a user-configurable setting that can go down to 0) would always be bigger than the 1.45em shift. It usually is, but isn't guaranteed to be, and overflow-x:hidden clips anything pushed past that padding boundary rather than letting it show -- exactly what Lynn saw. A SEPARATE, more clear-cut bug compounded this specifically for the "Weekly Errands" checkboxes: _isListIshLine doesn't distinguish literal '- [ ]' checkboxes from plain bullets/hyphens, so the shift was wrongly applied to checkbox lines too -- but checkboxes render their glyph via the entirely separate checkboxSVG() mechanism with no invisible marker-spacer to reconcile with any of this, so there was nothing to cancel the shift out, pushing the checkbox glyph itself off-screen. Completely redesigned around a rule that can never produce a negative value: reduces padding-left directly (clamped to never go below 0) instead of applying a negative margin to the whole block, with literal checkbox lines now fully excluded from the whole mechanism -- exactly matching Lynn's explicit requirement that checkboxes should never be treated differently here. Level 0 still lands flush (the marker-spacer is omitted there specifically, since there's no padding to reduce from at that level); every deeper level's padding reduction is exactly canceled by the spacer it still renders, landing text at precisely its original position. Confirmed via jsdom's own computed styles that v0.1690's version LOOKED mathematically consistent -- jsdom doesn't do real layout or overflow-clipping, so that check could not have caught this regardless of how carefully it was written; caught this time by checking the container's actual padding value directly rather than trusting computed CSS strings alone. Verified thoroughly: zero negative CSS values anywhere in a mixed bullet+checkbox+nesting test; checkboxes at every level completely unaffected (no style attribute at all where none existed before); bullet/hyphen positions at every level matching their pre-hiding baseline exactly (0.25+1.45=1.7em and 1.95+1.45=3.4em, both matching baseline precisely). Suite unchanged: 332/332.
+  v0.1691 - FIX: "Remind me to export" rendering as an orphan at the very end of the Settings dialog instead of inside a collapsible section, per Lynn's report. Investigated the root cause directly rather than guessing among her several hypotheses: confirmed there was NO unbalanced HTML comment anywhere in the file (ran the same kind of scan checkStyleCommentBalance already does for CSS, adapted for HTML comment open/close markers, found zero issues) -- the actual cause was purely a mis-pasted-location mistake: the row's HTML had been added right next to the always-visible Reset/Reinstall buttons at the very end of the dialog (outside every collapsible accordion section, deliberately, for those particular buttons) rather than alongside its sibling SETTING_BUCKETS_GENERAL settings. Moved into the App Theme section, where Convert tabs/bullets on paste and every other General-bucket setting already live. Verified directly via jsdom: the toggle's nearest .settings-section ancestor is now settings-section-zone-apptheme, not null. Also prompted a new structural check in the test harness (see remember-test-harness-v5.js) specifically so this class of bug gets caught automatically going forward. IRONIC NEAR MISS caught before shipping: my own first draft of THIS changelog entry violated the exact lesson documented in v0.1569's own entry below -- it described the comment scan by writing out the literal HTML comment open/close markers as text, which (since changelog entries live inside this very BUILD CHANGELOG comment block) would have prematurely closed it and rendered everything after as raw visible page text. Caught by testing the actual built file rather than assuming the changelog text was safe just because it was "only a comment". Suite unchanged: 332/332.
+  v0.1690 - FIX: "Skip extra indent on the first level" left an unexpectedly large gap between top-level items and their first child, per Lynn's own correct diagnosis. Root cause: v0.1689 only removed the invisible marker-spacer at the TOP level, shifting just that one level left -- every other level kept its own spacer, so the level-0-to-level-1 gap specifically grew by roughly one whole marker-spacer's width (1.45em) while every OTHER adjacent-level gap stayed unchanged. What Lynn actually wanted (and what makes sense): the entire tree shifts left by the same fixed amount, uniformly, so relative spacing between any two levels stays exactly what it was before hiding markers at all. Fixed by reverting the level-0 special case (the marker-spacer now renders identically at every level again) and instead applying a UNIFORM negative margin-left -- matching / .viewer-hidden-marker's own CSS footprint (1.1em width + 0.35em margin-right = 1.45em) exactly -- to every checkbox-ish line when both settings are on. Top-level items land flush because their own marker-spacer's width exactly cancels the shift; every deeper level's padding-left is completely untouched, so its distance from its own parent is unchanged. Verified numerically, not just visually: captured the baseline padding-left values with no hiding at all (1.7em/3.4em for levels 1/2 at default indent settings), then confirmed the fixed version applies the identical 1.45em margin-left shift to every level while every padding-left value matches the baseline exactly -- meaning every level lands at precisely the same relative position it always had, with level 0 now flush at true zero. Settings row description updated to describe the corrected mechanism. Suite unchanged: 332/332.
+  v0.1689 - Two follow-ups to v0.1688, per Lynn. (1) Reordered Settings rows: "Multi-level bullet styles" (a sub-item of "Bullets for hyphens") had ended up separated from its parent by the two new v0.1688 rows -- moved back to sit directly underneath it, restoring the visual parent/child relationship. "Circular checkboxes" and "Hide bullet/hyphen" now follow after. (2) NEW sub-setting "Skip extra indent on the first level", under Hide bullet/hyphen (shown/hidden and cascade-cleared exactly the way Multi-level bullet styles already is under its own parent -- same established pattern, not a new one). When hiding a checkbox-ish item's marker, TOP-level items now skip the invisible marker-width spacer entirely (text starts flush left, useful for fitting more characters on a small screen) while child/grandchild items are completely unaffected -- their indent comes entirely from the separate, pre-existing _indentLevel/padding-left mechanism, not from the marker span itself, so there was nothing for this setting to need to touch at deeper levels. Determined by whether the line had any leading whitespace at all before its marker (_markerLineMatch's own captured group), not a new detection mechanism. Verified all four scenarios directly: correct final row order in the DOM; top-level item with the new setting on renders with no spacer at all; a nested item with the same setting on is untouched, spacer intact; and with the setting off, top-level goes back to the normal spacer-preserved behavior. Suite unchanged: 332/332.
+  v0.1688 - Two new Note Appearance settings, per Lynn, both near "Bullets for hyphens". (1) "Circular checkboxes": draws checkbox glyphs as circles instead of squares in R&R mode -- purely a shape change. Same '- [ ]'/'- [x]' markdown, same tap behavior, same viewer-checkbox class (every existing click-detection selector keeps working unchanged), same getDefaultMarkColor()/override-color logic bullets already share. r=7.5 matches the square's own 15x15 footprint inside the same 18x18 viewBox exactly -- deliberately medium, not shrunk down the way a small radio button would be, per Lynn's explicit "shouldn't look like radio buttons" call. FOUND AND FIXED a real bug while building this: there's a SEPARATE, hand-built SVG construction path used for instant tap feedback (before the full re-render catches up), completely independent of checkboxSVG() for performance reasons -- fixing only the render function would have left every tap flashing back to a square for one frame, since that path had no idea circular checkboxes existed. Made its shape conditional too, preserving its existing check-off animation-class logic exactly rather than replacing the whole approach. (2) "Hide bullet/hyphen for checkbox-ish items": hides the marker for checkbox-ish lines that use plain bullets/hyphens rather than real '- [ ]' brackets -- those lines keep behaving as checkbox-ish in every other way (tap-to-check, indent, block rules, everything), only their visual marker disappears. Real bracket checkboxes are rendered entirely separately via checkboxSVG() and this setting never touches them, confirmed directly. Gated on the same canonical isCheckboxRaw()-based _isListIshLine already computed for indent/block-rule purposes, not a new detection mechanism. Renders an invisible same-width spacer (matching the checkbox's own ~1.1em+0.35em footprint) rather than collapsing the space entirely, so item text still lines up with checkbox/bullet items elsewhere in the same note. Verified extensively end-to-end: circular vs square SVG shape and color for both checked/unchecked states; the tap-feedback path's fix specifically; hidden-marker rendering for plain bullets; confirmed real checkboxes are completely unaffected by that setting; confirmed turning it back off restores normal marker display. No new harness cases -- matches the established convention that settings-dependent rendering variations (showBulletsForHyphens itself has none either) rely on this kind of direct verification rather than automated golden cases. Suite unchanged: 332/332.
+  v0.1687 - NEW: convert common Unicode bullet characters to this app's own markdown bullet marker ('-', matching every bullet/checkbox this app generates itself throughout -- never '*') when pasting, per Lynn -- pasted bullet lists (Word, Google Docs, a copied AI response) render with an actual bullet GLYPH like •, which Remember's own checkbox/bullet detection never recognized as a real list item. New Settings toggle "Convert bullet characters to markdown on paste", General bucket (sibling to convertTabsOnPaste), default ON matching that same precedent. New pure convertBulletsToMarkdown() handles • ◦ ▪ ▫ ‣ ● ○ ■ -- deliberately narrow: only a LEADING marker (indentation preserved) on each line gets rewritten, nothing else about the paste is touched, a bullet character mid-sentence is left alone, and text that's already valid markdown ('-'/'*'/'+' are never in the character set) is completely unaffected either way. Wired into both existing paste-handling code paths (the simple plain-text path, restructured to trigger on EITHER a tab or a bullet needing conversion rather than tabs alone; and the HTML-parsing path used when a paste also contains links). Verified with a real, simulated paste event end-to-end -- confirmed the app's own isMarkerLineRaw() now recognizes the converted lines as genuine checkbox-ish items, not just visually similar text. 8 new cases (v27)/goldens (v29), each hand-verified. Suite: 332/332.
+  v0.1686 - Two tooltip fixes, per Lynn. (1) FIX: toggle-checkbox and strikethrough tooltips truncating with an ellipsis. The 320px hard cap added alongside v0.1684's no-wrap change was too tight and started clipping real tooltip text on an ordinary desktop screen -- there was no need to keep it that narrow. Changed to a pure viewport-relative max-width (90vw, no fixed cap), which the JS positioning logic's own separate horizontal clamping already keeps on-screen regardless. Confirmed via computed style. (2) FIX: upper toolbar tooltips still landing below the cursor and under a "huge" accessibility cursor, per Lynn's OWN correct diagnosis -- confirmed exactly right by reading the code: positionTooltip() WAS trying to place tooltips above first, but required a full, untouched th+8px of clearance before allowing it -- a threshold nearly every toolbar button fails simply by being close to the top of the screen, flipping them below by default. Two-part fix: tightened the tooltip's own vertical padding (6px->3px) and line-height (1.35->1.2) to reduce its height in the first place, and relaxed the flip threshold to prefer staying above even if that means slightly overlapping the button's own top edge -- explicitly fine per Lynn -- only actually flipping below if more than half the tooltip would be invisible above the true top of the screen. Verified directly against the exact scenario that was failing (a button 50px from the top): the tooltip now correctly stays above (top:22px) instead of flipping below. Suite unchanged: 324/324.
   v0.1685 - NEW: "Collapse toolbar when opening a note" setting, per Lynn -- didn't exist before (confirmed by inspection: the only related thing was toolbarCollapsed, a passive "remember whatever state you last left it in" flag, not a deliberate always-start-collapsed preference). Note Behavior bucket, modeled directly on the existing "Open notes in Read & Revise mode" toggle (defaultViewMode) she referenced as the analog -- same shape, applied at the same point in openNote(). Only forces the collapsed state at the MOMENT a note opens; the existing collapse/expand toggle button is completely untouched during the rest of the session, so the user can freely expand it while working, per her explicit requirement -- it simply collapses again the next time a note opens (this one again, or a different one). Verified all four scenarios directly: collapses on open, manual expand during the session persists correctly, opening a different note re-collapses it, and with the setting off the existing remember-last-state behavior is completely unaffected (no regression). Suite unchanged: 324/324.
   v0.1684 - FIX: tooltip positioning inconsistency, per Lynn's report and her own correct diagnosis -- some tooltips (toggle checkbox, strikethrough, everything on the upper toolbar) appeared BELOW the cursor instead of above, while most stayed above. Confirmed her theory directly before fixing anything: wrapping to 2 lines roughly doubles a tooltip's height, and near the top of the screen -- where every toolbar button lives -- that was often just enough to trip positionTooltip()'s "not enough room above" check, flipping ONLY the longer/wrapping tooltips down while short ones stayed above (tested with a mocked height difference: identical button position, short text stayed at top:14px, longer text flipped to top:88px). Not actually about parentheses, which Lynn suspected but wasn't sure of -- just correlated with length in her examples. FIX, per her own explicit call: removed wrapping entirely (white-space: nowrap) rather than tune the flip threshold, since none of this app's actual tooltip text needs more than one line in practice -- keeps every tooltip's height constant and small, so the flip-below case essentially never triggers for toolbar buttons anymore. Kept max-width + text-overflow: ellipsis as a safety net for any unusually long tooltip text added later, so it truncates cleanly instead of running off the screen edge, rather than removing the safety entirely. Also added the missing tooltip on the Speak button (#speak-btn) -- had an aria-label but no title attribute at all, so it never had one to begin with. Verified the CSS applied correctly via computed style. Suite unchanged: 324/324.
   v0.1683 - NEW: export reminder, per Lynn's design discussion -- notes here aren't cloud-synced, so a lost/stolen/crashed device means real data loss without a recent export. Dismissible notice shown once per session (only if enabled, new Settings toggle "Remind me to export") when a tiered combination of three signals is met: D=days since last full export, N=distinct notes changed since then, C=total characters touched since then (insertions AND deletions summed as they happen, not just net length change, per Lynn's point that deleting-and-retyping is still real at-risk work). A LOT of any single signal warns on its own; small amounts of all three never do. New pure computeExportReminderDecision() -- caught and fixed a real bug in my own first draft before shipping: the long-time tier's N>=1 threshold was far too permissive (fired on literally ANY single edit after 21+ days), contradicting the explicit "don't nag for light editing" goal; raised to N>=2. Also fixed a separate, genuine edge-case bug found while building tests: lastExportAt used a truthy check, which would have treated a legitimate timestamp of exactly 0 the same as "never exported" (unlikely with real Date.now() values, but still incorrect) -- switched to an explicit null check throughout. C is tracked via the main editor's input listener (summing |length delta| per edit) against a dedicated baseline reset whenever a note opens -- deliberately separate from the existing _lastLength the delete-guard already uses for an unrelated purpose, to avoid mixing concerns. N needs no new tracking at all -- computed on demand from each note's existing editedAt against the stored export timestamp. Both reset via a new shared markFullExportDone(), called only after a genuinely successful full export (ZIP/OPML/JSON) -- deliberately NOT called by any single-note export, which only protects that one note. First-run baseline seeding means no existing user gets a surprise nag the moment this ships -- lastExportAt seeds to "now" on first load if never tracked, rather than being treated as infinitely overdue. Verified extensively: all 8 discussed scenarios directly, character tracking accumulating correctly, note-switching NOT miscounted as a giant edit, all three real export functions correctly resetting both trackers, the toggle correctly gating the session-start check, and the toast actually appearing end-to-end with realistic pre-seeded history. 8 new cases (v26)/goldens (v28), each hand-verified. Suite: 324/324.
@@ -4187,6 +4195,12 @@ body.has-mouse .toolbar-drag-handle.dragging {
 /* Literal (non-bulleted) hyphen marker — a single typed space afterward
    looked too tight against the following word. */
 .viewer-hyphen-marker { margin-right: 0.2em; }
+/* v0.1688: invisible same-width spacer used when hideMarkerForChecklistIsh
+   hides a checkbox-ish line's bullet/hyphen -- keeps item text aligned
+   with checkbox/bullet items elsewhere in the same note, rather than
+   shifting left, while showing nothing visible at all. Sized close to
+   .viewer-checkbox's own 1.1em + 0.35em margin footprint. */
+.viewer-hidden-marker { display: inline-block; width: 1.1em; margin-right: 0.35em; }
 /* Fenced code blocks — three line types share one seamless-looking
    background (rounded corners only at the very top/bottom). The whole
    block scrolls horizontally together as ONE unit (.code-fence-scroll-
@@ -5900,26 +5914,28 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 10px;
+  /* v0.1686 FIX, per Lynn: tightened vertical padding (6px->3px) and
+     line-height (1.35->1.2) specifically to reduce the tooltip's total
+     height -- less height needed above a button means more toolbar
+     buttons can actually fit their tooltip above them rather than
+     needing to flip below (see positionTooltip()'s own updated comment
+     for the rest of that fix). */
+  padding: 3px 10px;
   font-family: var(--font-body);
   font-size: var(--tooltip-font-size, 14px);
   font-weight: 500;
-  line-height: 1.35;
-  /* v0.1684 FIX, per Lynn's diagnosis (confirmed by direct testing, not
-     just her theory): wrapping to 2 lines roughly doubles the tooltip's
-     height, and near the top of the screen -- where every toolbar
-     button lives -- that was often just enough to trip
-     positionTooltip()'s "not enough room above" check, flipping ONLY
-     the longer tooltips down below the cursor while short ones stayed
-     above. Since none of this app's actual tooltip text is long enough
-     to need wrapping in practice, per Lynn's own call, removing it
-     keeps every tooltip's height constant and small, so the flip-below
-     case now essentially never triggers for toolbar buttons -- fixing
-     the inconsistency at its root rather than tuning the threshold.
-     max-width + ellipsis stay on as a safety net: any unusually long
-     tooltip text added later truncates cleanly instead of running off
-     the edge of the screen. */
-  max-width: min(320px, 60vw);
+  line-height: 1.2;
+  /* v0.1684 (kept) removed word-wrapping so every tooltip's height stays
+     small and constant -- see that build's own comment for the full
+     reasoning. v0.1686 FIX: the 320px hard cap that came with it was too
+     tight and started truncating real tooltip text with an ellipsis on
+     a normal desktop screen, per Lynn's report -- on a big screen,
+     there's no need to keep it that narrow. Now just viewport-relative
+     (90vw) with no fixed cap, so there's ample room on any real screen
+     size; the JS positioning logic already separately clamps the
+     tooltip's LEFT edge to stay on-screen horizontally, so this max-
+     width's only remaining job is a sane upper bound, not truncation. */
+  max-width: 90vw;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8408,6 +8424,17 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+      <!-- v0.1687: per Lynn -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Convert bullet characters to markdown on paste</div>
+          <div class="settings-row-desc">When pasting text with bullet characters (•, ◦, and similar — common from Word, Google Docs, or a copied AI response), rewrite them to this app's own bullet marker so they become real checkbox-ish items instead of plain text. Turn off to paste bullet characters exactly as copied.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Convert bullet characters to markdown on paste">
+          <input type="checkbox" id="convert-bullets-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Swipe right from left edge to go back</div>
@@ -8557,6 +8584,25 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
             <button id="time-format-12h-btn" style="padding:4px 14px;border:none;background:var(--accent);color:#fff;font-family:var(--font-body);font-size:0.9em;cursor:pointer;touch-action:manipulation">12h</button>
             <button id="time-format-24h-btn" style="padding:4px 14px;border:none;background:var(--bg2);color:var(--fg);font-family:var(--font-body);font-size:0.9em;cursor:pointer;touch-action:manipulation">24h</button>
           </div>
+        </div>
+        <!-- v0.1683: export reminder toggle, per Lynn -- notes here
+             aren't cloud-synced, so a lost/stolen/crashed device means
+             real data loss without a recent export. v0.1691 FIX: was
+             mistakenly placed outside every collapsible section entirely
+             (near the always-visible Reset/Reinstall buttons at the very
+             end of the dialog) -- moved here, alongside its sibling
+             SETTING_BUCKETS_GENERAL settings like Convert tabs/bullets on
+             paste, matching where every other setting in that same
+             bucket already lives. -->
+        <div class="settings-row" style="padding:0 0 20px">
+          <div>
+            <div class="settings-row-label">Remind me to export</div>
+            <div class="settings-row-desc">Shows a dismissible reminder when you open the app if it's been a while, and enough has changed, since your last full export. Doesn't nag for light editing, even after a long time — and warns sooner if you've made a lot of changes recently, even to just one note.</div>
+          </div>
+          <label class="toggle-switch" aria-label="Remind me to export">
+            <input type="checkbox" id="export-reminder-toggle" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
         </div>
       
     </div>
@@ -9256,6 +9302,41 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </label>
         </div>
 
+        <!-- v0.1688: per Lynn -->
+        <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Circular checkboxes (Read &amp; Revise mode)</div>
+          <div class="settings-row-desc">Draw checkboxes as circles instead of squares. Uses the same checkbox/bullet color, works exactly the same way to tap — this only changes how it's drawn. Still ordinary "- [ ]" / "- [x]" markdown behind the scenes.</div>
+          </div>
+        <label class="toggle-switch" aria-label="Circular checkboxes in Read &amp; Revise mode">
+          <input type="checkbox" id="circular-checkboxes-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+        </div>
+
+        <div class="settings-row" id="hide-marker-checklist-ish-row">
+        <div>
+          <div class="settings-row-label">Hide bullet/hyphen for checkbox-ish items (Read &amp; Revise mode)</div>
+          <div class="settings-row-desc">Hide the bullet or hyphen shown for checkbox-ish lines that don't use real "- [ ]" checkbox brackets. Those lines still behave exactly like checkbox-ish items in every other way — this only hides their marker. Real checkboxes (with brackets) are never affected.</div>
+          </div>
+        <label class="toggle-switch" aria-label="Hide bullet or hyphen for checkbox-ish items in Read &amp; Revise mode">
+          <input type="checkbox" id="hide-marker-checklist-ish-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+        </div>
+
+        <!-- v0.1689: per Lynn -->
+      <div class="settings-row" id="skip-first-level-indent-row" style="padding-left:28px;display:none">
+        <div>
+          <div class="settings-row-label">Skip extra indent on the first level</div>
+          <div class="settings-row-desc">Shift the whole list left by the width of the hidden marker — useful for fitting more characters on a line on a small screen. Top-level items land flush at the edge; every deeper level keeps the same spacing from its parent as before.</div>
+          </div>
+        <label class="toggle-switch" aria-label="Skip extra indent on the first level when hiding bullet or hyphen for checkbox-ish items">
+          <input type="checkbox" id="skip-first-level-indent-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+        </div>
+
       
     </div>
     </div>
@@ -9730,19 +9811,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     </div>
 
 
-    <!-- v0.1683: export reminder toggle, per Lynn -- notes here aren't
-         cloud-synced, so a lost/stolen/crashed device means real data
-         loss without a recent export. -->
-    <div class="settings-row" style="padding:0 0 20px">
-      <div>
-        <div class="settings-row-label">Remind me to export</div>
-        <div class="settings-row-desc">Shows a dismissible reminder when you open the app if it's been a while, and enough has changed, since your last full export. Doesn't nag for light editing, even after a long time — and warns sooner if you've made a lot of changes recently, even to just one note.</div>
-      </div>
-      <label class="toggle-switch" aria-label="Remind me to export">
-        <input type="checkbox" id="export-reminder-toggle" checked>
-        <span class="toggle-track"><span class="toggle-thumb"></span></span>
-      </label>
-    </div>
     <div class="reset-row">
       <button class="reset-defaults-btn" id="reset-defaults-btn">Reset All Settings to Defaults</button>
     </div>
@@ -10587,7 +10655,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1685';
+const APP_VERSION = '0.1693';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -10785,6 +10853,24 @@ function _diagSample(s) {
 // capitalization is unrecoverable (iOS lowercases the "scheme"), so
 // "Items:" comes back as "items:" — decoded, loudly toasted, but not
 // case-restored. Both detection functions are pure and harness-tested.
+// v0.1687: converts common Unicode bullet characters at the start of a
+// pasted line into this app's own '-' marker convention (matches every
+// bullet/checkbox this app generates itself throughout -- never '*'),
+// per Lynn's request. Pasted bullet lists (from Word, Google Docs, a
+// copied AI response, etc.) render with an actual bullet GLYPH like •,
+// not real markdown syntax -- so Remember's own checkbox/bullet
+// detection never recognizes them as list items at all. Deliberately
+// narrow: only the leading marker character on each line, nothing else
+// about the paste is touched, and only these specific well-known bullet
+// characters match -- never '-'/'*'/'+' themselves, so text that's
+// already valid markdown is completely unaffected either way.
+var BULLET_CHAR_REGEX_G = /^([ \t]*)[\u2022\u25E6\u25AA\u25AB\u2023\u25CF\u25CB\u25A0]\s+/gm;
+var BULLET_CHAR_REGEX_TEST = /^[ \t]*[\u2022\u25E6\u25AA\u25AB\u2023\u25CF\u25CB\u25A0]\s+/m;
+function convertBulletsToMarkdown(text) {
+  if (!text) return text;
+  return text.replace(BULLET_CHAR_REGEX_G, '$1- ');
+}
+
 function looksLikeAccidentalUrlEncoding(text) {
   if (!text || typeof text !== 'string') return false;
   // Must start with a scheme-shaped word: letter, then letters/digits/+.-, then ':'
@@ -11836,6 +11922,10 @@ const DEFAULT_SETTINGS = {
   globalViewOnly: false,
   toolbarCollapsed: false,
   convertTabsOnPaste: true, // true = tabs→spaces on paste, false = leave as tabs
+  // v0.1687: sibling to convertTabsOnPaste, per Lynn -- true by default,
+  // matching that precedent (a narrow, predictable, always-helpful
+  // transformation, same reasoning that setting already defaults on).
+  convertBulletsOnPaste: true,
   edgeSwipeToHome: true, // swipe right from the left screen edge returns to the notes list
   scratchPadText: '', // content of the experimental side scratch panel, page 1
   scratchPadText2: '', // page 2
@@ -12061,6 +12151,21 @@ const DEFAULT_SETTINGS = {
   marginLineColor: '#c83030',    // legal-pad margin line color (separate from tone, user-pickable)
   marginLineNudge: 0,            // px, shifts both margin lines horizontally together as a unit (positive = right)
   showBulletsForHyphens: false,  // render leading '- ' as bullet • in view mode (only applies to '-'; '*'/'+' always render as a bullet)
+  // v0.1688: two new Note Appearance settings, per Lynn.
+  circularCheckboxes: false, // draw checkbox glyphs as circles instead of squares in R&R mode -- purely visual, same '- [ ]'/'- [x]' markdown, same tap behavior, same color
+  hideMarkerForChecklistIsh: false, // hide the bullet/hyphen glyph for checkbox-ish lines that AREN'T literal '- [ ]' checkboxes -- those are untouched, rendered entirely separately via checkboxSVG()
+  // v0.1689/v0.1690: per Lynn -- sub-setting of hideMarkerForChecklistIsh,
+  // only meaningful when that's on. Shifts the WHOLE checkbox-ish tree
+  // left by a uniform amount (matching the hidden marker's own width),
+  // applied to every level equally -- top-level items land flush at the
+  // true left edge (their own marker-spacer's width exactly cancels the
+  // shift), and every deeper level keeps the SAME spacing from its
+  // parent it always had (see _uniformHideShift in the render loop for
+  // the actual mechanism). v0.1689's first attempt only removed the
+  // spacer at level 0, which left an oversized gap specifically between
+  // level 0 and level 1 -- fixed in v0.1690 per Lynn's own correct
+  // diagnosis.
+  skipFirstLevelIndentWhenHidden: false,
   outlineMode: false,            // collapsible outline mode in Read & Revise
   outlineCollapseOnOpen: false,  // collapse all outline sections when note opens
   quietMode: false,              // open note in quiet mode (set by theme only)
@@ -12127,7 +12232,7 @@ const SETTING_BUCKETS_EXCLUDED = 'excluded';
 
 const SETTING_BUCKETS = {
   // ---- GENERAL (48) ----
-  accentColor: SETTING_BUCKETS_GENERAL, convertTabsOnPaste: SETTING_BUCKETS_GENERAL, darkBgColor: SETTING_BUCKETS_GENERAL, darkFgColor: SETTING_BUCKETS_GENERAL, darkNotePreviewColor: SETTING_BUCKETS_GENERAL,
+  accentColor: SETTING_BUCKETS_GENERAL, convertTabsOnPaste: SETTING_BUCKETS_GENERAL, convertBulletsOnPaste: SETTING_BUCKETS_GENERAL, darkBgColor: SETTING_BUCKETS_GENERAL, darkFgColor: SETTING_BUCKETS_GENERAL, darkNotePreviewColor: SETTING_BUCKETS_GENERAL,
   darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL,
   globalViewOnly: SETTING_BUCKETS_GENERAL, lastSuffix: SETTING_BUCKETS_GENERAL, lightBgColor: SETTING_BUCKETS_GENERAL, lightFgColor: SETTING_BUCKETS_GENERAL, lightNotePreviewColor: SETTING_BUCKETS_GENERAL,
   lightNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, listMarginLeft: SETTING_BUCKETS_GENERAL, listMarginRight: SETTING_BUCKETS_GENERAL, matchGeneralNotesListEntryColors: SETTING_BUCKETS_GENERAL, noteEditingMode: SETTING_BUCKETS_GENERAL,
@@ -12146,7 +12251,7 @@ const SETTING_BUCKETS = {
   marginLineColor: SETTING_BUCKETS_NOTE_APPEARANCE, marginLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNoteAccentColor: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNotePaperColors: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNoteToolbarColors: SETTING_BUCKETS_NOTE_APPEARANCE,
   noteFont: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginLeft: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginRight: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineStyle: SETTING_BUCKETS_NOTE_APPEARANCE,
   ruledLineTone: SETTING_BUCKETS_NOTE_APPEARANCE, rulerColor: SETTING_BUCKETS_NOTE_APPEARANCE, rulerOpacity: SETTING_BUCKETS_NOTE_APPEARANCE, rulerThickness: SETTING_BUCKETS_NOTE_APPEARANCE, showBlockRules: SETTING_BUCKETS_NOTE_APPEARANCE,
-  showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE,
+  showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE, circularCheckboxes: SETTING_BUCKETS_NOTE_APPEARANCE, hideMarkerForChecklistIsh: SETTING_BUCKETS_NOTE_APPEARANCE, skipFirstLevelIndentWhenHidden: SETTING_BUCKETS_NOTE_APPEARANCE,
   tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE,
   // ---- NOTE_BEHAVIOR (35) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -13882,6 +13987,14 @@ function applySettings() {
   if (_outlineCollapseTog) _outlineCollapseTog.checked = !!settings.outlineCollapseOnOpen;
   var _bulletsTog = document.getElementById('bullets-for-hyphens-toggle');
   if (_bulletsTog) _bulletsTog.checked = !!settings.showBulletsForHyphens;
+  var _circCbTog = document.getElementById('circular-checkboxes-toggle');
+  if (_circCbTog) _circCbTog.checked = !!settings.circularCheckboxes;
+  var _hideMarkerTog = document.getElementById('hide-marker-checklist-ish-toggle');
+  if (_hideMarkerTog) _hideMarkerTog.checked = !!settings.hideMarkerForChecklistIsh;
+  var _skipFirstLevelTog = document.getElementById('skip-first-level-indent-toggle');
+  if (_skipFirstLevelTog) _skipFirstLevelTog.checked = !!settings.skipFirstLevelIndentWhenHidden;
+  var _skipFirstLevelRow = document.getElementById('skip-first-level-indent-row');
+  if (_skipFirstLevelRow) _skipFirstLevelRow.style.display = settings.hideMarkerForChecklistIsh ? '' : 'none';
   var _multiLevelTog = document.getElementById('multi-level-bullets-toggle');
   if (_multiLevelTog) _multiLevelTog.checked = !!settings.showMultiLevelBullets;
   var _multiLevelRow = document.getElementById('multi-level-bullets-row');
@@ -15016,7 +15129,15 @@ function renderNotesList() {
     });
   }
 
+  // v0.1693 FIX, per Lynn's bug report: this filter unconditionally
+  // restricted results to the CURRENT folder level, even while
+  // searching -- meaning a search from the root only ever checked top-
+  // level notes, silently missing every note inside any folder. Search
+  // should span every note regardless of which folder it's in; only
+  // ordinary (non-search) browsing should stay restricted to the
+  // current level.
   var allSorted = sortedNoteIds().filter(function(id) {
+    if (_homeSearchTerm) return true;
     return (notes[id].folderId || null) === (currentFolderId || null);
   });
   // Filter by search term if active
@@ -15079,7 +15200,10 @@ function renderNotesList() {
     html += '<div class="notes-pinned-group' + (pinnedCollapsed ? ' collapsed' : '') + '">';
     html += '<div class="notes-pinned-heading">' + pinnedChevron + pinSvg + ' Pinned</div>';
     html += '<div class="notes-pinned-body">';
-    html += pinned.map(function(id) { return noteItemHTML(id, notes[id]); }).join('');
+    html += pinned.map(function(id) {
+      var pathStr = _homeSearchTerm ? getFolderPathString(notes[id].folderId) : null;
+      return noteItemHTML(id, notes[id], pathStr || null);
+    }).join('');
     html += '</div></div>';
   }
 
@@ -15091,7 +15215,10 @@ function renderNotesList() {
     if (pinned.length > 0 && unpinned.length > 0) {
       html += '<div class="notes-plain-heading">Notes</div>';
     }
-    html += unpinned.map(function(id) { return noteItemHTML(id, notes[id]); }).join('');
+    html += unpinned.map(function(id) {
+      var pathStr = _homeSearchTerm ? getFolderPathString(notes[id].folderId) : null;
+      return noteItemHTML(id, notes[id], pathStr || null);
+    }).join('');
   } else {
     // Grouped by date
     var groups = {}; // label -> [ids]
@@ -15125,7 +15252,10 @@ function renderNotesList() {
       html += '<div class="notes-group' + (collapsed ? ' collapsed' : '') + '" data-group="' + escHtml(label) + '">';
       html += '<div class="notes-group-heading">' + chevronSvg + escHtml(label) + '</div>';
       html += '<div class="notes-group-body">';
-      html += groups[label].map(function(id) { return noteItemHTML(id, notes[id]); }).join('');
+      html += groups[label].map(function(id) {
+        var pathStr = _homeSearchTerm ? getFolderPathString(notes[id].folderId) : null;
+        return noteItemHTML(id, notes[id], pathStr || null);
+      }).join('');
       html += '</div></div>';
     });
   }
@@ -15514,20 +15644,37 @@ var MARK_COLOR_PALETTE = {gray:'var(--color-gray)',red:'var(--color-red)',orange
 function getDefaultMarkColor() {
   return MARK_COLOR_PALETTE[settings && settings.checkboxColor] || (settings && settings.customColor) || 'var(--color-gray)';
 }
+// v0.1688: circular checkbox shape, per Lynn -- purely a rendering
+// choice for R&R mode (same viewBox, same .viewer-checkbox class so
+// every existing tap-to-toggle/click-detection selector keeps working
+// unchanged, same getDefaultMarkColor()/override-color logic bullets
+// already share). r=7.5 matches the square's own 15x15 footprint inside
+// the same 18x18 viewBox exactly -- deliberately "medium," not shrunk
+// down the way a typical small radio button would be, and Lynn was
+// explicit these shouldn't read as radio buttons in the first place.
+// Behind the scenes this is still ordinary '- [ ]'/'- [x]' markdown --
+// nothing about detection, storage, or tap behavior changes at all.
 function checkboxSVG(checked, overrideColor) {
   var _cbPalette = MARK_COLOR_PALETTE;
   // overrideColor from [ :red] syntax takes priority over global setting
   var cbColor = (overrideColor && _cbPalette[overrideColor])
     ? _cbPalette[overrideColor]
     : getDefaultMarkColor();
+  var _circular = settings && settings.circularCheckboxes;
   if (checked) {
+    var _checkedShape = _circular
+      ? '<circle cx="9" cy="9" r="7.5" style="fill:' + cbColor + '"/>'
+      : '<rect x="1.5" y="1.5" width="15" height="15" rx="3" style="fill:' + cbColor + '"/>';
     return '<svg class="viewer-checkbox" data-cb="checked" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-      '<rect x="1.5" y="1.5" width="15" height="15" rx="3" style="fill:' + cbColor + '"/>' +
+      _checkedShape +
       '<polyline points="4,9.5 7.5,13 14,5.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
       '</svg>';
   } else {
+    var _uncheckedShape = _circular
+      ? '<circle cx="9" cy="9" r="7.5" fill="none" style="stroke:' + cbColor + '" stroke-width="1.8" opacity="0.6"/>'
+      : '<rect x="1.5" y="1.5" width="15" height="15" rx="3" fill="none" style="stroke:' + cbColor + '" stroke-width="1.8" opacity="0.6"/>';
     return '<svg class="viewer-checkbox" data-cb="unchecked" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-      '<rect x="1.5" y="1.5" width="15" height="15" rx="3" fill="none" style="stroke:' + cbColor + '" stroke-width="1.8" opacity="0.6"/>' +
+      _uncheckedShape +
       '</svg>';
   }
 }
@@ -15979,7 +16126,43 @@ function urlsToLinks(text, addLineWrappers) {
       // their EXACT typed width, never rounded into indent levels — there
       // is no Indent/Dedent-style "step" concept for ad-hoc typed spaces.
       var _totalIndent = (_isListIshLine ? _indentLevel : 0) + _secDepth;
-      var _indentStyle = _totalIndent > 0 ? ' style="padding-left:' + (_totalIndent * _viw) + 'em"' : '';
+      // v0.1692 REDESIGN, per Lynn's report (checkboxes and some
+      // paragraphs clipped invisible off the left edge): the v0.1690
+      // negative-margin approach was fundamentally fragile -- it relied
+      // on #note-content-area's own left padding (as little as 22px,
+      // since note-margin-left is a user-configurable setting that can
+      // go down to 0) always being bigger than the 1.45em shift. It
+      // usually is, but isn't guaranteed to be, and overflow-x:hidden
+      // clips anything pushed past that padding boundary rather than
+      // just shifting it into view -- exactly what Lynn's screen showed.
+      // A jsdom-based computed-style check (used to verify v0.1690)
+      // cannot catch this at all, since jsdom doesn't do real layout or
+      // overflow clipping -- confirmed the actual risk this time by
+      // checking the container's real padding value directly instead.
+      // Redesigned around a rule that can never go negative: reduce
+      // padding-left directly (clamped to never go below 0) instead of
+      // applying a negative margin to the whole block. Also fixes a
+      // SEPARATE real bug found in the same investigation: _isListIshLine
+      // alone doesn't distinguish literal '- [ ]' checkboxes from plain
+      // bullets/hyphens -- checkboxes render their glyph via the
+      // entirely separate checkboxSVG() mechanism and have no invisible
+      // marker-spacer to reconcile with any of this, so they're now
+      // completely excluded, exactly matching Lynn's explicit
+      // requirement that checkboxes should never be treated differently
+      // here at all.
+      var _isLiteralCheckboxLine = /^(\s*)[-*+] \[/.test(rawLine);
+      var _hideShiftActive = settings.hideMarkerForChecklistIsh && settings.skipFirstLevelIndentWhenHidden && _isListIshLine && !_isLiteralCheckboxLine;
+      var _basePaddingLeftEm = _totalIndent * _viw;
+      // Reduce by up to the marker-spacer's own CSS footprint (1.1em
+      // width + 0.35em margin-right = 1.45em), but never past 0 -- at
+      // level 0 there's nothing to reduce (padding is already 0), which
+      // is why the marker-hiding branch below separately omits the
+      // spacer entirely at that level instead; every deeper level's
+      // reduction is exactly canceled by the spacer it still renders,
+      // landing text at precisely the same position it always had.
+      var _hideShiftReduction = _hideShiftActive ? Math.min(_basePaddingLeftEm, 1.45) : 0;
+      var _finalPaddingLeftEm = _basePaddingLeftEm - _hideShiftReduction;
+      var _indentStyle = _finalPaddingLeftEm > 0 ? ' style="padding-left:' + _finalPaddingLeftEm + 'em"' : '';
       // Strip leading spaces from rendered line when applying visual indent
       // as block padding (list-ish lines only — plain paragraphs keep
       // their raw leading whitespace in `line` for the marker-splitting /
@@ -15998,6 +16181,37 @@ function urlsToLinks(text, addLineWrappers) {
       var _markerLineMatch = !/^(\s*)[-*+] \[/.test(rawLine) && rawLine.match(/^(\s*)([-*+]) /);
       if (_markerLineMatch) {
         var _markerChar = _markerLineMatch[2];
+        // v0.1688: hide the bullet/hyphen marker entirely for checkbox-
+        // ish lines, per Lynn -- this branch only ever applies to the
+        // NON-bracket path already established above (_markerLineMatch's
+        // own regex explicitly excludes '- [' / '* [' etc.); literal
+        // '- [ ]'/'- [x]' checkboxes are rendered entirely separately via
+        // checkboxSVG() and are never touched by this setting, exactly
+        // as she specified. Gated on _isListIshLine (the SAME canonical
+        // isCheckboxRaw()-based detection already computed above for
+        // indent/block-rule purposes) so this only hides markers on
+        // lines the app actually treats as checkbox-ish -- not, say, a
+        // plain paragraph that merely starts with a hyphen for some
+        // other reason. Renders an invisible same-width spacer rather
+        // than nothing, so item text still lines up the way it would
+        // next to a shown checkbox/bullet elsewhere in the same note,
+        // instead of shifting left -- UNLESS skipFirstLevelIndentWhenHidden
+        // is also on AND this is a top-level item (no leading whitespace):
+        // v0.1692 REDESIGN restored this level-0 omission (reverted once
+        // in v0.1690, now brought back paired with the SAFER padding-
+        // reduction computed above) -- at level 0 there's no padding-left
+        // to reduce from at all, so the spacer must be omitted there
+        // specifically to land text flush; every deeper level keeps its
+        // spacer, exactly canceling out the padding reduction it got
+        // instead, landing at precisely its original position.
+        if (settings.hideMarkerForChecklistIsh && _isListIshLine) {
+          var _hideMarkerIsTopLevel = _markerLineMatch[1].length === 0;
+          if (settings.skipFirstLevelIndentWhenHidden && _hideMarkerIsTopLevel) {
+            line = line.replace(/^(\s*)[-*+] /, '');
+          } else {
+            line = line.replace(/^(\s*)[-*+] /, '$1<span class="viewer-hidden-marker"></span>');
+          }
+        } else {
         var _bulletOn = _markerChar === '-' ? settings.showBulletsForHyphens : true;
         if (_bulletOn) {
           var _bulletChar = '•'; // default: filled circle
@@ -16050,6 +16264,7 @@ function urlsToLinks(text, addLineWrappers) {
           // Literal hyphen, not converted to a bullet — add a touch of
           // extra breathing room before the next word.
           line = line.replace(/^(\s*)-(\s)/, '$1<span class="viewer-hyphen-marker">-</span>$2');
+        }
         }
       }
       // Paragraph rules: mark non-blank lines immediately before a blank line
@@ -19995,6 +20210,7 @@ function openSettings() {
   if (typeof _updateRuledLineRowVisibility === 'function') _updateRuledLineRowVisibility();
 
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
+  var cbToggle=document.getElementById('convert-bullets-toggle'); if(cbToggle)cbToggle.checked=(settings.convertBulletsOnPaste !== false);
   var esToggle=document.getElementById('edge-swipe-home-toggle'); if(esToggle)esToggle.checked=(settings.edgeSwipeToHome !== false);
   var dspToggle=document.getElementById('disable-scratch-pad-toggle'); if(dspToggle)dspToggle.checked=!!settings.disableScratchPad;
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
@@ -22728,8 +22944,20 @@ function makeImportFolderName(label) {
       var r = el.getBoundingClientRect();
       var tw = tip.offsetWidth, th = tip.offsetHeight;
       var left = r.left + r.width / 2 - tw / 2;
-      var top = r.top - th - GAP; // default: above the element
-      if (top < 4) top = r.bottom + GAP; // not enough room above -- flip below
+      // v0.1686 FIX, per Lynn's own diagnosis (exactly right): this WAS
+      // trying to position above first, but the old threshold (flip
+      // below unless there was a full th+8px of clear space) meant a
+      // button sitting close to the top of the screen -- true of every
+      // toolbar button -- almost always failed that check and got
+      // flipped below, landing the tooltip right under a cursor she'd
+      // set to "huge" for accessibility. She explicitly said a little
+      // overlap with the button's own top edge is fine. Smaller 2px gap
+      // when positioned above (was the shared 8px GAP), and now only
+      // flips below if there's truly no usable room at all -- more than
+      // half the tooltip would be invisible above the true top of the
+      // screen -- rather than requiring full, untouched clearance.
+      var top = r.top - th - 2;
+      if (top < -(th * 0.5)) top = r.bottom + GAP; // truly no room -- flip below
       if (left < 4) left = 4;
       if (left + tw > window.innerWidth - 4) left = window.innerWidth - 4 - tw;
       if (top + th > window.innerHeight - 4) top = window.innerHeight - 4 - th;
@@ -26502,9 +26730,13 @@ function makeImportFolderName(label) {
         showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false);
         return;
       }
-      if (plainText && plainText.indexOf('\t') !== -1 && settings.convertTabsOnPaste !== false) {
+      var _needsTabFix = plainText && plainText.indexOf('\t') !== -1 && settings.convertTabsOnPaste !== false;
+      var _needsBulletFix = plainText && settings.convertBulletsOnPaste !== false && BULLET_CHAR_REGEX_TEST.test(plainText);
+      if (_needsTabFix || _needsBulletFix) {
         e.preventDefault();
-        var converted = plainText.replace(/\t/g, tabReplacement);
+        var converted = plainText;
+        if (_needsTabFix) converted = converted.replace(/\t/g, tabReplacement);
+        if (_needsBulletFix) converted = convertBulletsToMarkdown(converted);
         var ed = document.getElementById('note-editor');
         var start = ed.selectionStart;
         var end = ed.selectionEnd;
@@ -26571,6 +26803,10 @@ function makeImportFolderName(label) {
       .replace(/\t/g, settings.convertTabsOnPaste !== false ? tabReplacement : '\t') // convert tabs to spaces if setting on
       .replace(/\n{3,}/g, '\n\n') // collapse excessive newlines
       .trim();
+    // v0.1687: bullet-glyph conversion, per Lynn -- same as the plain-
+    // text paste path just above; see convertBulletsToMarkdown()'s own
+    // comment.
+    if (settings.convertBulletsOnPaste !== false) converted = convertBulletsToMarkdown(converted);
 
     // Insert at cursor position
     var ed = document.getElementById('note-editor');
@@ -30008,6 +30244,27 @@ function makeImportFolderName(label) {
     updateSaveBtnState();
   });
 
+  var _circCbToggleEl = document.getElementById('circular-checkboxes-toggle');
+  if (_circCbToggleEl) _circCbToggleEl.addEventListener('change', function() {
+    settings.circularCheckboxes = this.checked;
+    updateSaveBtnState();
+  });
+  var _hideMarkerToggleEl = document.getElementById('hide-marker-checklist-ish-toggle');
+  if (_hideMarkerToggleEl) _hideMarkerToggleEl.addEventListener('change', function() {
+    settings.hideMarkerForChecklistIsh = this.checked;
+    var sflRow = document.getElementById('skip-first-level-indent-row');
+    if (sflRow) sflRow.style.display = this.checked ? '' : 'none';
+    if (!this.checked) settings.skipFirstLevelIndentWhenHidden = false;
+    var sflTog = document.getElementById('skip-first-level-indent-toggle');
+    if (sflTog) sflTog.checked = !!settings.skipFirstLevelIndentWhenHidden;
+    updateSaveBtnState();
+  });
+  var _skipFirstLevelToggleEl = document.getElementById('skip-first-level-indent-toggle');
+  if (_skipFirstLevelToggleEl) _skipFirstLevelToggleEl.addEventListener('change', function() {
+    settings.skipFirstLevelIndentWhenHidden = this.checked;
+    updateSaveBtnState();
+  });
+
   var _multiLevelBulletsToggle = document.getElementById('multi-level-bullets-toggle');
   if (_multiLevelBulletsToggle) _multiLevelBulletsToggle.addEventListener('change', function() {
     settings.showMultiLevelBullets = this.checked;
@@ -30264,6 +30521,13 @@ function makeImportFolderName(label) {
     settings.convertTabsOnPaste = this.checked;
     updateSaveBtnState();
   });
+  var _cbToggleEl = document.getElementById('convert-bullets-toggle');
+  if (_cbToggleEl) {
+    _cbToggleEl.addEventListener('change', function() {
+      settings.convertBulletsOnPaste = this.checked;
+      updateSaveBtnState();
+    });
+  }
   document.getElementById('edge-swipe-home-toggle').addEventListener('change', function() {
     settings.edgeSwipeToHome = this.checked;
     updateSaveBtnState();
@@ -30772,23 +31036,37 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     // full re-render follows on the frame after.
     var svgNS = 'http://www.w3.org/2000/svg';
     var _oldSvg = cb; // cb is the .viewer-checkbox SVG that was tapped
-    var _cbRect = _oldSvg.querySelector('rect');
+    // v0.1688: query for either shape -- this optimistic-update path is
+    // a separate, hand-built SVG construction from checkboxSVG() (kept
+    // separate for speed, so a full re-render isn't needed just to show
+    // the tap's result), which would otherwise have no idea circular
+    // checkboxes exist at all and briefly flash back to a square shape
+    // for one frame after every tap.
+    var _circularNow = settings && settings.circularCheckboxes;
+    var _cbShapeEl = _oldSvg.querySelector('rect, circle');
     // Read the color from the existing SVG — use fill (checked) or stroke
-    // (unchecked) from the rect's inline style, falling back to the
+    // (unchecked) from the shape's inline style, falling back to the
     // computed CSS variable if not set inline.
-    var _cbColor = (_cbRect && (_cbRect.style.fill || _cbRect.style.stroke)) ||
+    var _cbColor = (_cbShapeEl && (_cbShapeEl.style.fill || _cbShapeEl.style.stroke)) ||
                    'var(--color-gray)';
     var _newSvg = document.createElementNS(svgNS, 'svg');
     _newSvg.setAttribute('class', 'viewer-checkbox');
     _newSvg.setAttribute('viewBox', '0 0 18 18');
     _newSvg.setAttribute('fill', 'none');
     _newSvg.setAttribute('xmlns', svgNS);
-    var _newRect = document.createElementNS(svgNS, 'rect');
-    _newRect.setAttribute('x', '1.5'); _newRect.setAttribute('y', '1.5');
-    _newRect.setAttribute('width', '15'); _newRect.setAttribute('height', '15');
-    _newRect.setAttribute('rx', '3');
+    var _newRect;
+    if (_circularNow) {
+      _newRect = document.createElementNS(svgNS, 'circle');
+      _newRect.setAttribute('cx', '9'); _newRect.setAttribute('cy', '9');
+      _newRect.setAttribute('r', '7.5');
+    } else {
+      _newRect = document.createElementNS(svgNS, 'rect');
+      _newRect.setAttribute('x', '1.5'); _newRect.setAttribute('y', '1.5');
+      _newRect.setAttribute('width', '15'); _newRect.setAttribute('height', '15');
+      _newRect.setAttribute('rx', '3');
+    }
     if (!isChecked) {
-      // Becoming checked: filled rect + checkmark
+      // Becoming checked: filled shape + checkmark
       _newSvg.setAttribute('data-cb', 'checked');
       _newRect.style.fill = _cbColor;
       _newSvg.appendChild(_newRect);
@@ -30801,7 +31079,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       if (_anim === 'draw' || _anim === 'both') _check.setAttribute('class', 'cb-draw-anim');
       _newSvg.appendChild(_check);
     } else {
-      // Becoming unchecked: outline rect only
+      // Becoming unchecked: outline shape only
       _newSvg.setAttribute('data-cb', 'unchecked');
       _newRect.setAttribute('fill', 'none');
       _newRect.style.stroke = _cbColor;
