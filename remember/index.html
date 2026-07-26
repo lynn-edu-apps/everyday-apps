@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1681 -->
+<!-- Remember App - Version 0.1685 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1681
+  Version 0.1685
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,10 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1685 - NEW: "Collapse toolbar when opening a note" setting, per Lynn -- didn't exist before (confirmed by inspection: the only related thing was toolbarCollapsed, a passive "remember whatever state you last left it in" flag, not a deliberate always-start-collapsed preference). Note Behavior bucket, modeled directly on the existing "Open notes in Read & Revise mode" toggle (defaultViewMode) she referenced as the analog -- same shape, applied at the same point in openNote(). Only forces the collapsed state at the MOMENT a note opens; the existing collapse/expand toggle button is completely untouched during the rest of the session, so the user can freely expand it while working, per her explicit requirement -- it simply collapses again the next time a note opens (this one again, or a different one). Verified all four scenarios directly: collapses on open, manual expand during the session persists correctly, opening a different note re-collapses it, and with the setting off the existing remember-last-state behavior is completely unaffected (no regression). Suite unchanged: 324/324.
+  v0.1684 - FIX: tooltip positioning inconsistency, per Lynn's report and her own correct diagnosis -- some tooltips (toggle checkbox, strikethrough, everything on the upper toolbar) appeared BELOW the cursor instead of above, while most stayed above. Confirmed her theory directly before fixing anything: wrapping to 2 lines roughly doubles a tooltip's height, and near the top of the screen -- where every toolbar button lives -- that was often just enough to trip positionTooltip()'s "not enough room above" check, flipping ONLY the longer/wrapping tooltips down while short ones stayed above (tested with a mocked height difference: identical button position, short text stayed at top:14px, longer text flipped to top:88px). Not actually about parentheses, which Lynn suspected but wasn't sure of -- just correlated with length in her examples. FIX, per her own explicit call: removed wrapping entirely (white-space: nowrap) rather than tune the flip threshold, since none of this app's actual tooltip text needs more than one line in practice -- keeps every tooltip's height constant and small, so the flip-below case essentially never triggers for toolbar buttons anymore. Kept max-width + text-overflow: ellipsis as a safety net for any unusually long tooltip text added later, so it truncates cleanly instead of running off the screen edge, rather than removing the safety entirely. Also added the missing tooltip on the Speak button (#speak-btn) -- had an aria-label but no title attribute at all, so it never had one to begin with. Verified the CSS applied correctly via computed style. Suite unchanged: 324/324.
+  v0.1683 - NEW: export reminder, per Lynn's design discussion -- notes here aren't cloud-synced, so a lost/stolen/crashed device means real data loss without a recent export. Dismissible notice shown once per session (only if enabled, new Settings toggle "Remind me to export") when a tiered combination of three signals is met: D=days since last full export, N=distinct notes changed since then, C=total characters touched since then (insertions AND deletions summed as they happen, not just net length change, per Lynn's point that deleting-and-retyping is still real at-risk work). A LOT of any single signal warns on its own; small amounts of all three never do. New pure computeExportReminderDecision() -- caught and fixed a real bug in my own first draft before shipping: the long-time tier's N>=1 threshold was far too permissive (fired on literally ANY single edit after 21+ days), contradicting the explicit "don't nag for light editing" goal; raised to N>=2. Also fixed a separate, genuine edge-case bug found while building tests: lastExportAt used a truthy check, which would have treated a legitimate timestamp of exactly 0 the same as "never exported" (unlikely with real Date.now() values, but still incorrect) -- switched to an explicit null check throughout. C is tracked via the main editor's input listener (summing |length delta| per edit) against a dedicated baseline reset whenever a note opens -- deliberately separate from the existing _lastLength the delete-guard already uses for an unrelated purpose, to avoid mixing concerns. N needs no new tracking at all -- computed on demand from each note's existing editedAt against the stored export timestamp. Both reset via a new shared markFullExportDone(), called only after a genuinely successful full export (ZIP/OPML/JSON) -- deliberately NOT called by any single-note export, which only protects that one note. First-run baseline seeding means no existing user gets a surprise nag the moment this ships -- lastExportAt seeds to "now" on first load if never tracked, rather than being treated as infinitely overdue. Verified extensively: all 8 discussed scenarios directly, character tracking accumulating correctly, note-switching NOT miscounted as a giant edit, all three real export functions correctly resetting both trackers, the toggle correctly gating the session-start check, and the toast actually appearing end-to-end with realistic pre-seeded history. 8 new cases (v26)/goldens (v28), each hand-verified. Suite: 324/324.
+  v0.1682 - Diagnostic-only build for Lynn's report that the v0.1679 bottom scroll shadow never appears on iOS PWA. Confirmed directly (not assumed) that the CSS itself is not the problem: manually applying .has-more-below renders the shadow correctly, even on the original v0.1679 build -- so this isn't the comment-corruption bug found in v0.1681 either (that rule wasn't in the affected range). Whatever's wrong is in updateNoteScrollShadow() not correctly detecting "more content below" on-device. Rather than guess a third iOS-specific theory, added real diagnostic logging instead: logs the actual scrollHeight/scrollTop/clientHeight numbers and which trigger fired (scroll vs. content-resize vs. init) whenever the shadow's on/off state actually CHANGES -- won't flood the debug log the way logging every scroll event would. Verified the logging itself fires correctly and captures state transitions with mocked scroll dimensions. Also used the newly-corrected remember-test-harness-v4.js for this build's verification, catching an earlier inconsistency where a real harness update had been made without bumping its own version. Suite: 316/316.
   v0.1681 - FIX: black bar with an inert, left-aligned X stuck visible at the very top of every screen, per Lynn's bug report and screenshot -- confirmed by directly inspecting computed styles, not guessed. Root cause was a pre-existing, much OLDER bug than it first appeared: a "comment out this dead CSS" block near .toolbar-scroll-cap (predating this session) had its explanatory note and its code-disabling wrapper written as what should have been two separate comments, but the first was never closed before the second opened. CSS comments don't nest, so from that point until some later, unrelated stray close-marker happened to re-close it, EVERYTHING in between was silently being treated as one giant comment -- which is what actually swallowed #dismissible-notice's and .custom-tooltip's real declarations (added in v0.1671/v0.1677), explaining exactly why the bug only became visible starting in v0.1677 even though its root cause is unrelated to that build and much older. With display:none/position:fixed silently never applying, the div rendered with browser defaults (block, static) at its actual DOM position near the very top of the page; with flex layout also never applying, the close button landed at the start of the row instead of the end, explaining the left-aligned X; and since the button's own handler only ever removed a 'show' class the element never had in the first place, tapping it correctly did nothing. Closed the original explanatory comment properly, restoring correct nesting for everything downstream. Caught two of my OWN mistakes while fixing this: (1) my first attempt only patched a second, misdiagnosed instance of the same symptom rather than the true upstream source, caught by re-testing computed styles directly rather than trusting that the CSS merely reading as syntactically fine meant it was fixed; (2) my own explanatory comment about this bug used the literal comment-delimiter characters as quoted example text, which would have silently reintroduced the exact same bug in a real browser (comments have no escaping mechanism) -- caught by writing a small comment-balance scanner and running it across every style block, rather than trusting a visual read-through. Verified with that scanner (zero unclosed comments anywhere) AND directly via computed styles (both elements now correctly default to hidden/fixed, and correctly switch to visible/flex when actually triggered). Suite unchanged: 316/316.
   v0.1680 - Two quiet mode changes, per Lynn. (1) Moved the Quiet Mode / Exit Quiet Mode More menu item (internally "Reading Mode") to right after Scroll to bottom -- was after Select all. Pure HTML reorder; the More menu has no separate ordering array, just DOM order. (2) FIX: note title showing BOTH an ellipsis on line 1 AND wrapped text leaking out underneath the divider in quiet mode, reported with Wrap Note Title set to 1 line, on iPhone. Root cause, confirmed by reading the actual CSS: the base .note-inline-title rule uses the -webkit-line-clamp technique (display: -webkit-box + -webkit-line-clamp + overflow:hidden) to truncate to N lines with an ellipsis. Quiet mode's override only ever reset overflow/white-space/text-overflow -- display: -webkit-box and -webkit-line-clamp stayed fully active underneath, so quiet mode ended up in a broken hybrid: line-clamp still truncating line 1 with its own ellipsis (never touched), while the overridden overflow:visible let the rest of the wrapped text leak out below instead of being hidden the way line-clamp requires. Fixed by undoing the WHOLE technique (display: block, -webkit-line-clamp: unset, -webkit-box-orient: unset), not just patching the symptom -- quiet mode now gets genuinely normal, unclamped wrapping with no ellipsis at all, matching what the rest of that rule already intended. Caught and fixed a comment-closing mistake in my own first pass at this edit before it shipped. Verified directly via computed style: normal mode still shows display:-webkit-box with line-clamp active as before; quiet mode now shows display:block with line-clamp fully off. Suite unchanged: 316/316.
   v0.1679 - NEW: bottom scroll shadow on the note editor, per Lynn -- shown only when there's more note content below to scroll to, gone entirely once truly at the end. Corrected mid-build after Lynn clarified: NOT the gradient-fade-to-background-color technique .qa-scroll-fade/#more-menu-fade use elsewhere in this app (she was explicit she doesn't want that here) -- a genuine plain box-shadow instead, the same kind .note-bottom-bar's own shadow already uses (which she'd said she liked in the previous build). inset + negative spread confines it to a thin band right at the edge rather than washing over the whole scroll area. Same shape as the existing horizontal TOOLBAR SCROLL ARROWS block: a scroll listener recomputes on every scroll, and a ResizeObserver on whichever of #note-editor/#note-viewer is currently rendering catches content-height changes (switching Typing/R&R mode, opening a different note, font size changes, typing itself) automatically, rather than needing to hook this into every individual render call site by hand. window._updateNoteScrollShadow exported the same way window._updateToolbarArrows already is, for any future call site that wants to force a recheck. Verified all four scenarios directly: shadow shown at the top with more below, correctly gone at the exact scrolled-to-bottom position, shown again when scrolled partway, and correctly never shown at all for a note short enough that no scrolling is possible in the first place. Suite unchanged: 316/316.
@@ -5901,9 +5905,24 @@ body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255
   font-size: var(--tooltip-font-size, 14px);
   font-weight: 500;
   line-height: 1.35;
+  /* v0.1684 FIX, per Lynn's diagnosis (confirmed by direct testing, not
+     just her theory): wrapping to 2 lines roughly doubles the tooltip's
+     height, and near the top of the screen -- where every toolbar
+     button lives -- that was often just enough to trip
+     positionTooltip()'s "not enough room above" check, flipping ONLY
+     the longer tooltips down below the cursor while short ones stayed
+     above. Since none of this app's actual tooltip text is long enough
+     to need wrapping in practice, per Lynn's own call, removing it
+     keeps every tooltip's height constant and small, so the flip-below
+     case now essentially never triggers for toolbar buttons -- fixing
+     the inconsistency at its root rather than tuning the threshold.
+     max-width + ellipsis stay on as a safety net: any unusually long
+     tooltip text added later truncates cleanly instead of running off
+     the edge of the screen. */
   max-width: min(320px, 60vw);
-  white-space: normal;
-  word-wrap: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   box-shadow: 0 3px 12px rgba(0,0,0,0.22);
   pointer-events: none;
   opacity: 0;
@@ -6220,7 +6239,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </button>
       </div>
       <div class="note-header-right">
-        <button class="btn" id="speak-btn" aria-label="Speak note">
+        <button class="btn" id="speak-btn" aria-label="Speak note" title="Speak note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/>
           </svg>
@@ -9445,6 +9464,17 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+      <!-- v0.1685: per Lynn, analogous to the R&R-mode toggle just above -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Collapse toolbar when opening a note</div>
+          <div class="settings-row-desc">Start with the lower toolbar hidden every time you open a note. You can still expand it whenever you need it — it just starts collapsed again the next time you open a note.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Collapse toolbar when opening a note">
+          <input type="checkbox" id="collapse-toolbar-on-open-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
 
       <div class="settings-row">
         <div>
@@ -9700,6 +9730,19 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     </div>
 
 
+    <!-- v0.1683: export reminder toggle, per Lynn -- notes here aren't
+         cloud-synced, so a lost/stolen/crashed device means real data
+         loss without a recent export. -->
+    <div class="settings-row" style="padding:0 0 20px">
+      <div>
+        <div class="settings-row-label">Remind me to export</div>
+        <div class="settings-row-desc">Shows a dismissible reminder when you open the app if it's been a while, and enough has changed, since your last full export. Doesn't nag for light editing, even after a long time — and warns sooner if you've made a lot of changes recently, even to just one note.</div>
+      </div>
+      <label class="toggle-switch" aria-label="Remind me to export">
+        <input type="checkbox" id="export-reminder-toggle" checked>
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+    </div>
     <div class="reset-row">
       <button class="reset-defaults-btn" id="reset-defaults-btn">Reset All Settings to Defaults</button>
     </div>
@@ -10544,7 +10587,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1681';
+const APP_VERSION = '0.1685';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11852,6 +11895,16 @@ const DEFAULT_SETTINGS = {
   // hang this off at all; see the custom-tooltip system this replaces
   // them with).
   tooltipFontSize: 14,
+  // v0.1683: export reminder, per Lynn -- warns at session start if it's
+  // been long enough AND enough has changed since the last full export,
+  // since notes here aren't cloud-synced and a lost/stolen/crashed
+  // device would mean real data loss. lastExportAt/charsEditedSinceExport
+  // are bookkeeping, not a style preference -- SETTING_BUCKETS_EXCLUDED,
+  // same treatment scratchPadText etc. already get. exportReminderEnabled
+  // is the actual user-facing toggle (General/App Theme bucket).
+  exportReminderEnabled: true,
+  lastExportAt: null, // null = never tracked yet (seeded to "now" on first run after this feature ships, not treated as "infinitely overdue" -- see init())
+  charsEditedSinceExport: 0, // running total of |length delta| per edit, insertions AND deletions both counted, reset to 0 on every full export
   editorFontSize: 20,
   lineHeight: 1.5,          // unitless line-height
   blankLineHeight: 1,       // height of blank viewer-line divs in em; 1 = same as text line
@@ -11910,6 +11963,14 @@ const DEFAULT_SETTINGS = {
   skipListMarkers: true,     // if true, skip list markers, @tags, formatting chars and special bracket tags when speaking
   autoSpeak: false,
   defaultViewMode: false,
+  // v0.1685: force the lower toolbar to start collapsed every time a
+  // note opens, per Lynn -- analogous to defaultViewMode just above,
+  // but for the toolbar's initial state rather than R&R vs typing mode.
+  // Only applies at the moment of opening (see openNote()) -- the
+  // existing collapse/expand toggle is untouched during the session
+  // itself, so the user can freely expand it while working; it simply
+  // re-collapses again the next time a note opens.
+  collapseToolbarOnOpen: false,
   plusPosition: 'top',  // 'top', 'bottom', or 'after-rule' — where + button inserts text
   plusBlankLine: true,  // whether to add a blank line after inserted text
   plusBlankLineBefore: false, // whether to add a blank line before inserted text
@@ -12074,7 +12135,7 @@ const SETTING_BUCKETS = {
   rulerEnabled: SETTING_BUCKETS_GENERAL, showLineNumbers: SETTING_BUCKETS_GENERAL, showNoteFab: SETTING_BUCKETS_GENERAL, showNotePreview: SETTING_BUCKETS_GENERAL, showOopsBtn: SETTING_BUCKETS_GENERAL,
   showThemeIndicator: SETTING_BUCKETS_GENERAL, showToolbarCollapseTab: SETTING_BUCKETS_GENERAL, sortBy: SETTING_BUCKETS_GENERAL, sortDesc: SETTING_BUCKETS_GENERAL, sortGroupByDate: SETTING_BUCKETS_GENERAL,
   theme: SETTING_BUCKETS_GENERAL, timeFormat: SETTING_BUCKETS_GENERAL, todaySuffix: SETTING_BUCKETS_GENERAL, toolbarPlacement: SETTING_BUCKETS_GENERAL, toolbarOrder: SETTING_BUCKETS_GENERAL,
-  tooltipFontSize: SETTING_BUCKETS_GENERAL, tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL,
+  tooltipFontSize: SETTING_BUCKETS_GENERAL, tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL, exportReminderEnabled: SETTING_BUCKETS_GENERAL,
   uiLineHeight: SETTING_BUCKETS_GENERAL, uiBlankLineHeight: SETTING_BUCKETS_GENERAL,
   // ---- NOTE_APPEARANCE (50) ----
   accentColorNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, blankLineHeight: SETTING_BUCKETS_NOTE_APPEARANCE, charsPerLine: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxColor: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorEnabled: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorWidth: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorColor: SETTING_BUCKETS_NOTE_APPEARANCE,
@@ -12089,7 +12150,7 @@ const SETTING_BUCKETS = {
   tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE,
   // ---- NOTE_BEHAVIOR (35) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
-  confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, collapseToolbarOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   insertDateTimeMode: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDateStyle: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDayOfWeek: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeSeconds: SETTING_BUCKETS_NOTE_BEHAVIOR,
   moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, checkAnimation: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR, plusSortedByTag: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -12099,6 +12160,7 @@ const SETTING_BUCKETS = {
   // ---- EXCLUDED (13) ----
   activeHighlightHex: SETTING_BUCKETS_EXCLUDED, customColors: SETTING_BUCKETS_EXCLUDED, debugLoggingEnabled: SETTING_BUCKETS_EXCLUDED, helpSectionStates: SETTING_BUCKETS_EXCLUDED, rulerPosition: SETTING_BUCKETS_EXCLUDED,
   rulerVisible: SETTING_BUCKETS_EXCLUDED, scratchPadPage: SETTING_BUCKETS_EXCLUDED, scratchPadText: SETTING_BUCKETS_EXCLUDED, scratchPadText2: SETTING_BUCKETS_EXCLUDED, scratchPadText3: SETTING_BUCKETS_EXCLUDED,
+  lastExportAt: SETTING_BUCKETS_EXCLUDED, charsEditedSinceExport: SETTING_BUCKETS_EXCLUDED,
   sectionStates: SETTING_BUCKETS_EXCLUDED, toolbarCollapsed: SETTING_BUCKETS_EXCLUDED, settingsScrollPosition: SETTING_BUCKETS_EXCLUDED,
 };
 
@@ -13022,6 +13084,46 @@ var DEBUG_LOG_MAX_LINES = 1000;
 var _debugLogLastDate = null; // day-change tracker; resets per session so each launch gets a date header
 var _debugLogNoteId = null; // cached once found/created, so we don't search every call
 var _lastConfirmTitle = '';  // set by showConfirm(), read when OK/Cancel resolves it
+
+// v0.1683: export reminder decision algorithm, per Lynn's design
+// discussion. Pure function (only reads passed-in args, no globals) --
+// combines three signals so a LOT of any single one can trigger a
+// warning on its own, while small amounts of all three never do:
+//   D = days since last full export
+//   N = distinct notes changed since then (excludes the Debug Log,
+//       same exclusion the "Read Last Note" fix already established)
+//   C = total characters touched since then (insertions AND deletions
+//       summed as they happen, not just net length change -- deleting a
+//       paragraph and retyping something similar-sized is still real,
+//       at-risk work even though the note's final length barely moved)
+// A tiered check rather than one continuous formula, deliberately --
+// easier to reason about, easier to tune later, and maps directly onto
+// the concrete examples from that discussion:
+//   - 14 days, just ONE heavily-edited note -> still warns (via C alone)
+//   - 7 days, five notes, lots of edits -> warns (via N + C together)
+//   - light editing over months -> never warns (never clears any tier)
+function computeExportReminderDecision(notesObj, lastExportAt, charsEditedSinceExport, now) {
+  now = now || Date.now();
+  var MS_PER_DAY = 24 * 60 * 60 * 1000;
+  var daysSince = (lastExportAt != null) ? Math.floor((now - lastExportAt) / MS_PER_DAY) : 0;
+  var notesChanged = 0;
+  Object.keys(notesObj || {}).forEach(function(id) {
+    var n = notesObj[id];
+    if (n && !n.isDebugLog && n.editedAt && lastExportAt != null && n.editedAt > lastExportAt) {
+      notesChanged++;
+    }
+  });
+  var charsEdited = charsEditedSinceExport || 0;
+
+  var shouldWarn = false;
+  if (daysSince >= 3) { // always give at least a few days' grace, no matter what
+    if (daysSince >= 21 && (notesChanged >= 2 || charsEdited >= 200)) shouldWarn = true;
+    else if (daysSince >= 14 && charsEdited >= 500) shouldWarn = true;
+    else if (daysSince >= 7 && notesChanged >= 3 && charsEdited >= 2000) shouldWarn = true;
+  }
+
+  return { shouldWarn: shouldWarn, daysSince: daysSince, notesChanged: notesChanged, charsEdited: charsEdited };
+}
 
 function findOrCreateDebugLogNote() {
   if (_debugLogNoteId && notes[_debugLogNoteId]) return _debugLogNoteId;
@@ -16589,6 +16691,12 @@ function openNote(id, speakDelay) {
   document.getElementById('note-title').textContent = n.name;
   document.getElementById('note-editor').value = n.content || '';
   document.getElementById('note-editor')._lastLength = (n.content || '').length;
+  // v0.1683: separate baseline for the export-reminder's character
+  // tracking -- deliberately NOT reusing _lastLength just above, which
+  // is the delete-guard's own baseline for a completely different
+  // purpose (detecting one big deletion event) and updates on its own
+  // schedule; mixing the two would make both harder to reason about.
+  document.getElementById('note-editor')._exportTrackLength = (n.content || '').length;
   setTimeout(function() {
     var area = document.getElementById('note-content-area');
     if (area) area.scrollTop = 0;
@@ -16629,6 +16737,14 @@ function openNote(id, speakDelay) {
   }
   var _isViewOnly = isViewOnlyNote(id);
   document.body.classList.toggle('view-only-mode', _isViewOnly);
+  // v0.1685: force-collapse the lower toolbar on open, per Lynn -- see
+  // this setting's own DEFAULT_SETTINGS comment for why this only
+  // touches the toolbar's state right here, not the collapse/expand
+  // toggle's own behavior during the rest of the session.
+  if (settings.collapseToolbarOnOpen) {
+    settings.toolbarCollapsed = true;
+    document.body.classList.add('toolbar-collapsed');
+  }
   // Apply small-screen overflow policy when note opens
   applySmallScreenOverflow();
   // Re-apply icon sizes — toolbar may not have been visible when applySettings ran
@@ -18157,6 +18273,18 @@ function buildZipStored(entries) {
   return outBytes;
 }
 
+// v0.1683: shared by all three full-export functions (ZIP, OPML, plain
+// text) -- called only after a genuinely successful export (never on
+// the "nothing to export" early-return paths), resets both signals the
+// export-reminder tracks. Deliberately NOT called by any single-note
+// export -- that only protects the one note, not the whole collection,
+// so it shouldn't reset the clock on everything else.
+function markFullExportDone() {
+  settings.lastExportAt = Date.now();
+  settings.charsEditedSinceExport = 0;
+  saveSettings();
+}
+
 function exportAllNotesZip() {
   var d = new Date();
   var dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -18217,6 +18345,7 @@ function exportAllNotesZip() {
   var bytes = buildZipStored(entries);
   downloadBlob(new Blob([bytes], { type: 'application/zip' }), 'remember-notes-' + dateStr + '.zip');
   logDebugAction('Exported ZIP: ' + entries.length + ' file(s), ' + bytes.length + ' bytes');
+  markFullExportDone();
 }
 
 function downloadText(text, filename, mimeType) {
@@ -18350,6 +18479,7 @@ function exportAllNotesOPML() {
 
   downloadText(lines.join('\n'), 'remember-notes-' + new Date().toISOString().slice(0,10) + '.opml', 'text/x-opml');
   showToast(noteList.length + ' note' + (noteList.length === 1 ? '' : 's') + ' exported as OPML', false);
+  markFullExportDone();
 }
 
 function exportFolder(folderId) {
@@ -18403,6 +18533,7 @@ function exportAllNotes() {
     String(d.getMonth()+1).padStart(2,'0') + '-' +
     String(d.getDate()).padStart(2,'0');
   downloadJSON({ version: APP_VERSION, exportDate: d.toISOString(), notes: exportableNotes, folders: folders, scratchPad: { p1: settings.scratchPadText || '', p2: settings.scratchPadText2 || '', p3: settings.scratchPadText3 || '' } }, 'remember-notes-' + dateStr + '.json');
+  markFullExportDone();
 }
 
 function exportCurrentNote() {
@@ -19803,6 +19934,8 @@ function openSettings() {
   document.getElementById('speech-pause-val').textContent = (pauseVal / 1000).toFixed(1) + 's';
   document.getElementById('speak-checkboxes-toggle').checked = settings.skipListMarkers !== false;
   document.getElementById('default-view-mode-toggle').checked = !!settings.defaultViewMode;
+  var _collapseToolbarOnOpenToggle = document.getElementById('collapse-toolbar-on-open-toggle');
+  if (_collapseToolbarOnOpenToggle) _collapseToolbarOnOpenToggle.checked = !!settings.collapseToolbarOnOpen;
   document.getElementById('check-strikethrough-toggle').checked = settings.checkStrikethrough !== false;
   document.getElementById('check-sound-toggle').checked = !!settings.checkSoundEnabled;
   document.getElementById('check-sound-picker-row').style.display = settings.checkSoundEnabled ? '' : 'none';
@@ -19910,6 +20043,8 @@ function openSettings() {
   var ttRow=document.getElementById('triple-tap-edit-row'); if(ttRow)ttRow.style.display=(settings.noteEditingMode==='rronly'||settings.noteEditingMode==='typing')?'none':'';
   var retainQmToggle = document.getElementById('retain-quiet-mode-toggle');
   if (retainQmToggle) retainQmToggle.checked = !!settings.retainQuietMode;
+  var exportReminderToggle = document.getElementById('export-reminder-toggle');
+  if (exportReminderToggle) exportReminderToggle.checked = settings.exportReminderEnabled !== false;
   var smartIndentBlankToggle = document.getElementById('smart-indent-blank-toggle');
   if (smartIndentBlankToggle) smartIndentBlankToggle.checked = !!settings.smartIndentBlankLine;
   var tripleTapToggleEl = document.getElementById('triple-tap-edit-toggle');
@@ -20853,6 +20988,20 @@ function init() {
   loadState();
   applySettings();
   initHorizScrollGuard();
+
+  // v0.1683: export reminder first-run baseline, per Lynn's design --
+  // if lastExportAt was never tracked (true for every existing user the
+  // very first time this feature ships, not just brand-new installs),
+  // seed it to right now rather than leaving it null/treating it as
+  // infinitely overdue. Avoids an unpleasant surprise nag on someone's
+  // very next launch after updating, for behavior the feature didn't
+  // even exist to track yet -- the reminder only starts counting from
+  // this point forward.
+  if (!settings.lastExportAt) {
+    settings.lastExportAt = Date.now();
+    settings.charsEditedSinceExport = 0;
+    saveSettings();
+  }
 
   // System dark mode changes
   // v0.1642: iOS 12 Safari's MediaQueryList only supports the older
@@ -22634,6 +22783,27 @@ function makeImportFolderName(label) {
   // Show on first launch
   if (!localStorage.getItem(storeKey('remember_tour_seen')) && !localStorage.getItem(storeKey('remember_notes'))) {
     setTimeout(openTour, 800);
+  }
+
+  // v0.1683: export reminder, per Lynn -- checked once per session,
+  // staggered after the first-launch tour's own timing so the two never
+  // compete for attention (in practice they can't overlap anyway: the
+  // tour only shows on a truly fresh install, which by definition has no
+  // export history or edits yet to trigger this). Uses the same "must
+  // tap X to close" notice built for Get Fresh Copy, not the ordinary
+  // toast -- this is worth actually reading, not a quick timeout.
+  if (settings.exportReminderEnabled !== false) {
+    setTimeout(function() {
+      var decision = computeExportReminderDecision(notes, settings.lastExportAt, settings.charsEditedSinceExport, Date.now());
+      if (decision.shouldWarn) {
+        showDismissibleNotice(
+          "It's been " + decision.daysSince + " days and " + decision.notesChanged +
+          ' note' + (decision.notesChanged === 1 ? '' : 's') +
+          " changed since your last export. Since notes here aren't backed up to the cloud, " +
+          'consider exporting soon (Settings \u2192 Export All Notes) in case something happens to this device.'
+        );
+      }
+    }, 1200);
   }
 
   document.getElementById('about-btn').addEventListener('click', function() {
@@ -24601,22 +24771,39 @@ function makeImportFolderName(label) {
     var area = document.getElementById('note-content-area');
     if (!area) return;
 
-    function updateNoteScrollShadow() {
+    // v0.1682: diagnostic logging, per Lynn's report that the shadow
+    // never appears on iOS despite the CSS itself verified working
+    // correctly (manually applying .has-more-below renders the shadow
+    // fine, confirmed even on the original v0.1679 build) -- so
+    // whatever's wrong is in this function not correctly detecting "more
+    // content below" on-device, not the styling. Rather than guess a
+    // third iOS-specific theory, this logs the actual numbers and which
+    // trigger fired (scroll vs content-resize) only when the shadow's
+    // ON/OFF state actually CHANGES, so a real repro won't flood the
+    // debug log the way logging every scroll event would.
+    var _lastHasMore = null;
+    function updateNoteScrollShadow(source) {
       var hasMore = area.scrollHeight - area.scrollTop - area.clientHeight > 2;
       area.classList.toggle('has-more-below', hasMore);
+      if (hasMore !== _lastHasMore) {
+        _lastHasMore = hasMore;
+        logDebugAction('note-scroll-shadow(' + (source || '?') + '): hasMore=' + hasMore +
+          ' scrollHeight=' + area.scrollHeight + ' scrollTop=' + area.scrollTop +
+          ' clientHeight=' + area.clientHeight);
+      }
     }
 
-    area.addEventListener('scroll', updateNoteScrollShadow, { passive: true });
+    area.addEventListener('scroll', function() { updateNoteScrollShadow('scroll'); }, { passive: true });
 
     if (window.ResizeObserver) {
-      var ro = new ResizeObserver(updateNoteScrollShadow);
+      var ro = new ResizeObserver(function() { updateNoteScrollShadow('resize'); });
       var ed = document.getElementById('note-editor');
       var vw = document.getElementById('note-viewer');
       if (ed) ro.observe(ed);
       if (vw) ro.observe(vw);
     }
 
-    updateNoteScrollShadow();
+    updateNoteScrollShadow('init');
     window._updateNoteScrollShadow = updateNoteScrollShadow;
   })();
 
@@ -25650,7 +25837,22 @@ function makeImportFolderName(label) {
         Math.round(oldScroll) + '->' + Math.round(area.scrollTop));
     }
   }
-  noteEditor.addEventListener('input', function() { _tpadInputSinceSel = true; });
+  noteEditor.addEventListener('input', function() {
+    _tpadInputSinceSel = true;
+    // v0.1683: export-reminder character tracking, per Lynn -- sums the
+    // SIZE of each individual edit (insertions and deletions both, via
+    // Math.abs) rather than comparing start-vs-end length once at save
+    // time, since deleting a paragraph and retyping something similar-
+    // sized is still real, at-risk work even though the note's final
+    // length barely moved.
+    var _newLen = noteEditor.value.length;
+    var _prevLen = noteEditor._exportTrackLength;
+    if (typeof _prevLen === 'number') {
+      var _delta = Math.abs(_newLen - _prevLen);
+      if (_delta > 0) settings.charsEditedSinceExport = (settings.charsEditedSinceExport || 0) + _delta;
+    }
+    noteEditor._exportTrackLength = _newLen;
+  });
   document.addEventListener('selectionchange', function() {
     if (document.activeElement !== noteEditor) return;
     if (_tpadInputSinceSel) { _tpadInputSinceSel = false; return; } // typing, not a caret-only move
@@ -27464,6 +27666,13 @@ function makeImportFolderName(label) {
     settings.defaultViewMode = this.checked;
     updateSaveBtnState();
   });
+  var _collapseToolbarOnOpenToggleEl = document.getElementById('collapse-toolbar-on-open-toggle');
+  if (_collapseToolbarOnOpenToggleEl) {
+    _collapseToolbarOnOpenToggleEl.addEventListener('change', function() {
+      settings.collapseToolbarOnOpen = this.checked;
+      updateSaveBtnState();
+    });
+  }
   document.getElementById('check-strikethrough-toggle').addEventListener('change', function() {
     settings.checkStrikethrough = this.checked;
     updateSaveBtnState();
@@ -30288,6 +30497,13 @@ function makeImportFolderName(label) {
     settings.retainQuietMode = this.checked;
     updateSaveBtnState();
   });
+  var _exportReminderToggleEl = document.getElementById('export-reminder-toggle');
+  if (_exportReminderToggleEl) {
+    _exportReminderToggleEl.addEventListener('change', function() {
+      settings.exportReminderEnabled = this.checked;
+      updateSaveBtnState();
+    });
+  }
   document.getElementById('show-note-fab-toggle').addEventListener('change', function() {
     settings.showNoteFab = this.checked;
     var _fab = document.getElementById('note-fab');
