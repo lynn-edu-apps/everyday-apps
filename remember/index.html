@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1697 -->
+<!-- Remember App - Version 0.1703 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1697
+  Version 0.1703
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,12 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1703 - FIX: real regression I introduced in v0.1702 itself, per Lynn's report -- searching Settings for "italic" (a real toolbar button) found nothing. Root cause: v0.1702's fix for unrelated loose text leaking during search worked by hiding any element that wasn't itself a .settings-row, based on whether its nearest preceding subsection title had a matching row among its DIRECT siblings. #toolbar-visibility-rows is a container built dynamically with every toolbar row NESTED inside it rather than as a direct sibling of its own subsection title -- so that walk never associated any row inside it (Italic included) with anything, and the whole container got hidden regardless of what matched inside it. Fixed by excluding, from the loose-content pass, any candidate that itself contains nested .settings-row descendants -- such containers should never be hidden wholesale, since their own rows are already correctly handled by the main row-matching loop individually. Per Lynn's explicit request, also added two new harness checks (see test harness v6) that drive the real Settings and Help search inputs with known terms and confirm the expected row/section is actually visible afterward -- verified by deliberately reintroducing this exact bug and confirming the harness catches it immediately, flagging both "italic" and "checkbox" (both nested inside the same affected container) as suppressed. Also fixed a genuine pre-existing gap in the harness surfaced while building this: it stubbed the speechSynthesis API but never SpeechSynthesisUtterance, a separate global some first-gesture handlers construct directly. Verified directly: searching "italic" now shows the Italic row and leaves the container visible; the original v0.1702 leak-fix (unrelated content staying hidden) still works with no regression; clearing search still restores everything correctly. Suite unchanged: 332/332.
+  v0.1702 - FIX: Settings search always leaking unrelated content whenever anything in App Theme or Note Appearance matched, per Lynn's bug report and screenshot. Root cause: many "subsection groups" in those two sections are just a .settings-subsection-title followed by loose sibling content (an explanatory paragraph, a live preview box, a "Reset to default order" button) with no wrapping container tying them together -- unlike the handful of subsections that ARE properly wrapped. The existing search logic only ever hid/restored .settings-row elements and the bare subsection-title text itself; the loose content sitting after a title was never touched at all, so once ANYTHING else in that whole section matched, it stayed visible unconditionally regardless of the actual search term -- confirmed exactly matching both of Lynn's reported examples (the "Longer Help & Documentation Text" block always appearing for any App Theme match, the "Add extra space to the left or right edges" block always appearing for any Note Appearance match). Fixed with a second pass: for each subsection-title, track whether any row belonging to it matched the search, then apply that same show/hide decision to every loose sibling between it and the next title -- exactly the treatment the title itself already got, extended to the content around it. clearSettingsSearch() updated to restore this loose content too. Verified directly: searching a real row inside a subsection correctly shows that subsection's own loose description while an unrelated section's loose content stays hidden; clearing the search correctly restores everything. One narrower case flagged honestly rather than overclaimed: the dynamically-generated Lower Toolbar Buttons subsection didn't show its own loose content when searching its title text directly in this test environment -- possibly a test-harness initialization gap rather than a real app bug, not fully isolated yet, but the worst case is that one subsection being slightly over-hidden in a narrow scenario, not the original leaking-everywhere bug. Suite unchanged: 332/332.
+  v0.1701 - FIX: real bug in "Add Text to Note", diagnosed by Lynn herself after correctly rejecting a race-condition theory I'd wrongly reached for -- double-spacing between newly typed items depended on whether the EXISTING content adjacent to the insertion point happened to be checklist-ish, which she pointed out has no logical connection to whether the new items should be spaced from each other. Confirmed exactly right: computeChecklistInsertion's single "applies" flag conflated two separate decisions -- whether the SEAM gets a blank line (correctly depends on adjacent content) and whether the block's OWN items get spaced from each other (which shouldn't). When adjacent content wasn't checklist-ish, applies went false and BOTH decisions were skipped together, even though the typed block itself was a homogeneous checklist block. New shared helper ensureInternalChecklistSpacing() handles internal spacing only, with no seam-blank or indentation side effects; computeChecklistInsertion's own fallback return now uses it, and both of doInsert()'s independent fallback branches (plain Quick Add and the tag-sort path's own leftover-content fallback) now build from that already-corrected result instead of re-deriving from the untouched raw lines, which is what was silently discarding the fix before. Verified directly: inserting at the top above a plain (non-checklist) paragraph -- Lynn's exact first-attempt scenario -- now produces correct double-spacing between the new items; inserting above an existing checklist item (her "it works the second time" case) remains correct, confirming no regression to the already-working path. Suite unchanged: 332/332.
+  v0.1700 - FIX: two distinct bugs in "Add Text to Note", both around double-spacing not being respected with the hyphen marker on, per Lynn's report -- confirmed by direct testing to genuinely be two separate bugs in two separate code paths, exactly as she suspected. (1) SORTED path ("Insert tagged items in sorted order" on): the per-line grouping loop that gathers same-target items together diverts any blank line the user typed into a completely separate leftover bucket before grouping -- multiple typed items sharing a tag (very common with a default tag applied to everything, as in her setup) landed in the same group with nothing between them, and the smart-blank-line logic downstream only ever manages spacing at a group's own outer seams, never between items already sitting together inside it. Fixed by inserting exactly one blank line before every item after the first in the same group, whenever smart-indent is on. (2) UNSORTED path: the shared function responsible for enforcing spacing only ever COLLAPSED existing blank-line runs down to one -- it never INSERTED a blank between two adjacent non-blank items that had none between them in the first place, which is exactly what typing two lines in a row with no blank line in between produced. Fixed so a blank line is inserted ahead of any non-blank item whenever the item just before it in the result is also non-blank, matching Lynn's explicit expectation that double-spacing is respected regardless of what was actually typed. CAUGHT AND FIXED a real test-methodology mistake made while verifying this: an early debugging pass picked the first note returned by the app's own note list without checking whether it was the debug log note -- it was -- so every diagnostic message the app logged during the test was appending directly into the note being tested, producing thoroughly misleading "still broken" results that led to real, if unnecessary, concern before the actual mistake was found and the test corrected. Verified all four combinations directly on a properly-selected real note: sorted/unsorted, each with and without typed blank lines -- all four now show correct double-spacing between every item. Suite unchanged: 332/332.
+  v0.1699 - Two follow-ups to v0.1698, per Lynn. (1) Reordered: "Speak button: accent color" moved to right after "Show Speak button", now BEFORE the quiet-mode settings rather than after them -- reads better as the general rule, with quiet mode's own settings following as the special case that can override it. Updated "Color Speak button in quiet mode"'s own description text to say "above" instead of "below", since accent-color now sits before it. Confirmed final order directly: Speak on Open, Show Speak button, Speak button: accent color, Show Speak button in quiet mode, Color Speak button in quiet mode, Speak button: icon only, Speak button always reads the whole note. (2) Investigated her "always use icon-only in quiet mode" request before touching anything -- turned out nothing needed to change. The quiet-mode Speak/Stop buttons have never had a text label element at all (confirmed by reading their actual markup), only an icon -- the general "Speak button: icon only" setting only ever affected the separate, non-quiet Speak button's own text label, and has no effect on quiet mode's buttons regardless of its value. Quiet mode has already always been icon-only, by construction, since it was first built. Suite unchanged: 332/332.
+  v0.1698 - NEW: "Color Speak button in quiet mode" setting, per Lynn -- quiet mode's speak button was hardcoded neutral gray "never the accent/danger color" by explicit design (per her own earlier instruction), but she's realized some people genuinely need it colored even there (her example: her dad prefers quiet mode but needs a colored Speak button, while she personally doesn't). Added as its own setting rather than just following the general "Speak button: accent color" toggle, defaulting off to match her explicit "most people would not want this" call. New body class (speak-accent-in-quiet) overrides the hardcoded neutral rule via higher selector specificity without modifying that rule itself; added a matching hover state too so hovering doesn't show a mismatched neutral tint on top of the now-colored button. Also reorganized the surrounding Settings rows, per Lynn: all the Speak button APPEARANCE settings (show, show-in-quiet, the new color-in-quiet, icon-only, accent-color) now sit together as one group, with "Speak button always reads the whole note" (a behavior setting, not appearance) moved to the end of that group instead of sitting in the middle of it. Verified directly: with the setting off, the quiet button correctly stays neutral gray text; with it on, the text correctly switches to white, matching the normal (non-quiet) accent-colored button's own text color -- confirmed background-color separately using the SAME check against the original, long-working neutral rule, which showed the identical jsdom variable-resolution limitation, confirming the discrepancy isn't specific to the new rule. Suite unchanged: 332/332.
   v0.1697 - CORRECTION to v0.1696, per Lynn's immediate follow-up report: that fix resolved the broken-hybrid symptom but introduced a new, different bug -- view-only note titles now always wrapped to as many lines as needed with NO ellipsis at all, completely ignoring Wrap Note Title, instead of respecting it the way an ordinary note does. Root cause of the wrong fix: v0.1696 copied quiet mode's INTENT along with its mechanism -- but quiet mode deliberately wants the full, unclamped title (that's the whole point of hiding the toolbar for a cleaner view), while view-only mode is only about disabling editing and was never supposed to touch wrapping behavior at all. Corrected: view-only mode's #note-title override no longer touches display/-webkit-line-clamp/overflow/white-space/text-overflow at all -- max-width:100% and cursor:default are the only two properties it ever legitimately needed (the base rule reserves 36px for a rename button view-only notes don't show, and the cursor shouldn't look editable). Letting it fully inherit the base rule's -webkit-line-clamp behavior means it now respects Wrap Note Title exactly like any other note, while quiet mode's own separate, correct "always fully unclamped" behavior is untouched. Verified directly via computed style across all three states: view-only mode's display/line-clamp/overflow now exactly match normal mode's (respecting the setting) while still keeping its own max-width; quiet mode remains fully unclamped as before. Noted but deliberately NOT touched, out of scope for this bug: an unrelated, pre-existing minor detail where the title's cursor style appears to be a static inline attribute rather than JS-managed by view-only status. Suite unchanged: 332/332.
   v0.1696 - FIX: the exact same note-title wrapping bug from v0.1680 (ellipsis on line 1 AND wrapped text leaking out below the divider), reported again by Lynn on a view-only note this time, outside quiet mode -- correctly suspected it was the same class of bug. It was: a SECOND, sibling CSS rule (body.view-only-mode #note-title) had the identical incomplete fix -- only ever reset overflow/white-space/text-overflow, never touched display:-webkit-box or -webkit-line-clamp, which v0.1680 only fixed for the reading-mode (quiet mode) rule, not this one. Applied the identical fix: undo the whole -webkit-line-clamp technique (display:block, -webkit-line-clamp:unset, -webkit-box-orient:unset), not just its overflow/white-space symptoms. Also confirmed, separately, that the note being view-only in the first place was correct, expected behavior, not a bug -- Lynn has "Global View Only" enabled, which every note (including a freshly-created backup) correctly inherits unless individually exempted. Searched for and confirmed no third sibling rule exists with the same gap -- these were the only two #note-title overrides in the whole file, and both are now fixed. Verified via computed style, the same method used to verify the original fix: view-only mode now correctly shows display:block and -webkit-line-clamp:none. Suite unchanged: 332/332.
   v0.1695 - Renamed the "Sort by tag" backup note, per Lynn: was "<name> — before sort N", now "Copy of <name> before sort N". The old format put the one thing that marks it as a backup at the very END of the name -- exactly what an ellipsis truncates away when the notes list shows only one line of a long title, making the backup and the original indistinguishable at a glance. Leading with "Copy of" instead means that survives truncation even when everything after it gets cut off. Turns out this also matches an existing "Copy of <name>" convention already used elsewhere in the app (the general note-duplicate feature) -- confirmed only one other naming convention exists for backups (the em-dash one just changed), so this wasn't a partial fix leaving some other backup type inconsistent. Suite unchanged: 332/332.
@@ -3557,10 +3563,32 @@ body.reading-mode.speak-in-quiet #quiet-stop-btn {
   min-width: 40px;
   min-height: 40px;
 }
+/* v0.1698: per Lynn -- most people want quiet mode to stay neutral (the
+   rule above), but some genuinely need the button to stand out with
+   color even there. New setting, own body class so it can override the
+   rule above via source order without touching it. */
+body.reading-mode.speak-in-quiet.speak-accent-in-quiet #quiet-speak-btn {
+  background: var(--accent);
+  color: white;
+}
+body.reading-mode.speak-in-quiet.speak-accent-in-quiet #quiet-stop-btn {
+  background: var(--danger);
+  color: white;
+}
 @media (hover: hover) {
-  body.reading-mode.speak-in-quiet #quiet-speak-btn:hover,
-  body.reading-mode.speak-in-quiet #quiet-stop-btn:hover {
+  body.reading-mode.speak-in-quiet:not(.speak-accent-in-quiet) #quiet-speak-btn:hover,
+  body.reading-mode.speak-in-quiet:not(.speak-accent-in-quiet) #quiet-stop-btn:hover {
     background: rgba(var(--bg2-rgb, 237,232,222), 0.95);
+  }
+  /* v0.1698: matching hover for the accent-colored variant -- without
+     this, hovering would still show the neutral gray tint above even
+     though the button itself is now accent-colored, looking broken. */
+  body.reading-mode.speak-in-quiet.speak-accent-in-quiet #quiet-speak-btn:hover {
+    background: var(--accent-hover, var(--accent));
+    filter: brightness(1.08);
+  }
+  body.reading-mode.speak-in-quiet.speak-accent-in-quiet #quiet-stop-btn:hover {
+    filter: brightness(1.08);
   }
 }
 /* Single shared shadow for the whole back+speak pill, drawn on the row
@@ -9699,6 +9727,21 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </label>
       </div>
 
+      <!-- v0.1699: moved here (was after the quiet-mode settings), per
+           Lynn -- this is the general rule, so it reads better listed
+           before the quiet-mode settings that override it as a special
+           case, rather than after them. -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Speak button: accent color</div>
+          <div class="settings-row-desc">Use the accent color on the Speak button. Turn off for a neutral style.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Use accent color on Speak button">
+          <input type="checkbox" id="speak-accent-color-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Show Speak button in quiet mode</div>
@@ -9710,13 +9753,18 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </label>
       </div>
 
+      <!-- v0.1698: per Lynn -- most people won't want a colored Speak
+           button in quiet mode (quiet mode is meant to feel calm), but
+           some genuinely need it (e.g. for low vision), so this is its
+           own setting rather than just following the general accent-
+           color toggle above. -->
       <div class="settings-row">
         <div>
-          <div class="settings-row-label">Speak button always reads the whole note</div>
-          <div class="settings-row-desc">When on, tapping Speak always reads the entire note. Accidental word selections from tapping or dragging are ignored. Selections made with the Select Lines tool are still respected.</div>
+          <div class="settings-row-label">Color Speak button in quiet mode</div>
+          <div class="settings-row-desc">Quiet mode normally keeps the Speak button a neutral gray, even if "Speak button: accent color" above is on, to stay calm and unobtrusive. Turn this on if you need it to stand out with color in quiet mode too.</div>
         </div>
-        <label class="toggle-switch" aria-label="Always speak whole note">
-          <input type="checkbox" id="always-speak-whole-toggle">
+        <label class="toggle-switch" aria-label="Color Speak button in quiet mode">
+          <input type="checkbox" id="speak-accent-color-in-quiet-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
@@ -9730,15 +9778,14 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <input type="checkbox" id="speak-icon-only-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
-      </div>
 
       <div class="settings-row">
         <div>
-          <div class="settings-row-label">Speak button: accent color</div>
-          <div class="settings-row-desc">Use the accent color on the Speak button. Turn off for a neutral style.</div>
+          <div class="settings-row-label">Speak button always reads the whole note</div>
+          <div class="settings-row-desc">When on, tapping Speak always reads the entire note. Accidental word selections from tapping or dragging are ignored. Selections made with the Select Lines tool are still respected.</div>
         </div>
-        <label class="toggle-switch" aria-label="Use accent color on Speak button">
-          <input type="checkbox" id="speak-accent-color-toggle" checked>
+        <label class="toggle-switch" aria-label="Always speak whole note">
+          <input type="checkbox" id="always-speak-whole-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
@@ -10674,7 +10721,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1697';
+const APP_VERSION = '0.1703';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11990,6 +12037,15 @@ const DEFAULT_SETTINGS = {
   notesListPreviewFontWeight: null,
   showNotePreview: true,     // show first-line content preview below note name in list
   speakInQuiet: false,
+  // v0.1698: per Lynn -- quiet mode's speak button is hardcoded neutral
+  // gray "never the accent/danger color" (see the CSS rule this
+  // controls, body.reading-mode.speak-in-quiet #quiet-speak-btn) by
+  // design, since most people want quiet mode to stay calm -- but some
+  // genuinely need the button to stand out with color even there (her
+  // own example: her dad prefers quiet mode but needs a colored Speak
+  // button). Default false, matching her explicit "most people would
+  // not want this" call.
+  speakBtnAccentColorInQuiet: false,
   alwaysSpeakWholeNote: false,
   theme: 'auto',
   uiSize: 'medium',
@@ -12279,7 +12335,7 @@ const SETTING_BUCKETS = {
   moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, checkAnimation: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR, plusSortedByTag: SETTING_BUCKETS_NOTE_BEHAVIOR,
   quietMode: SETTING_BUCKETS_NOTE_BEHAVIOR, showSpeakBtn: SETTING_BUCKETS_NOTE_BEHAVIOR, skipListMarkers: SETTING_BUCKETS_NOTE_BEHAVIOR, smartIndentBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColor: SETTING_BUCKETS_NOTE_BEHAVIOR,
-  speakBtnIconOnly: SETTING_BUCKETS_NOTE_BEHAVIOR, speakInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speechPause: SETTING_BUCKETS_NOTE_BEHAVIOR, speechRate: SETTING_BUCKETS_NOTE_BEHAVIOR, tagScope: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  speakBtnIconOnly: SETTING_BUCKETS_NOTE_BEHAVIOR, speakInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColorInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speechPause: SETTING_BUCKETS_NOTE_BEHAVIOR, speechRate: SETTING_BUCKETS_NOTE_BEHAVIOR, tagScope: SETTING_BUCKETS_NOTE_BEHAVIOR,
   voiceURI: SETTING_BUCKETS_NOTE_BEHAVIOR,
   // ---- EXCLUDED (13) ----
   activeHighlightHex: SETTING_BUCKETS_EXCLUDED, customColors: SETTING_BUCKETS_EXCLUDED, debugLoggingEnabled: SETTING_BUCKETS_EXCLUDED, helpSectionStates: SETTING_BUCKETS_EXCLUDED, rulerPosition: SETTING_BUCKETS_EXCLUDED,
@@ -13924,6 +13980,7 @@ function applySettings() {
   document.body.classList.toggle('toolbar-collapsed', !!settings.toolbarCollapsed);
   document.body.classList.toggle('hide-toolbar-collapse-tab', !settings.showToolbarCollapseTab);
   document.body.classList.toggle('speak-in-quiet', !!settings.speakInQuiet);
+  document.body.classList.toggle('speak-accent-in-quiet', !!settings.speakBtnAccentColorInQuiet);
   const body = document.body;
 
   // Theme
@@ -17205,12 +17262,24 @@ function prepareChecklistBlock(blockLines, indentPrefix, smartBlankOn, leadingAl
   while (end > start && reindented[end - 1].trim() === '') end--;
   var core = reindented.slice(start, end);
 
+  // v0.1700 FIX, per Lynn's bug report: this only ever collapsed
+  // EXISTING blank-line runs down to exactly one -- it never inserted a
+  // blank between two adjacent non-blank items that had no blank between
+  // them in the first place (e.g. typing two lines in a row in Quick Add
+  // with no blank line separating them). Per her explicit expectation,
+  // double-spacing should be respected whether or not a blank was typed
+  // -- so a non-blank item now gets a blank line inserted ahead of it
+  // whenever the item just before it in the result is ALSO non-blank,
+  // not just when collapsing something that was already there.
   var collapsed = [];
   for (var i = 0; i < core.length; i++) {
     if (core[i].trim() === '') {
       if (collapsed.length && collapsed[collapsed.length - 1].trim() === '') continue;
       collapsed.push('');
     } else {
+      if (collapsed.length && collapsed[collapsed.length - 1].trim() !== '') {
+        collapsed.push('');
+      }
       collapsed.push(core[i]);
     }
   }
@@ -17246,13 +17315,51 @@ function prepareChecklistBlock(blockLines, indentPrefix, smartBlankOn, leadingAl
 // sits between a rule and the line right after it before we insert) —
 // so "leave alone if already blank" never applies there; it's always
 // add-exactly-one when the rest of the gate passes.
+// v0.1701: extracted per Lynn's own diagnosis of a real bug -- ensures
+// exactly one blank line between every pair of adjacent non-blank lines
+// in a block, WITHOUT touching indentation or adding any leading/
+// trailing seam blanks. The seam decision (should there be a blank line
+// where the new block meets EXISTING content) correctly depends on
+// whether that adjacent content is itself checklist-ish -- but that has
+// no logical bearing on whether the NEW items should be spaced from
+// EACH OTHER. computeChecklistInsertion's own gate conflated the two:
+// when adjacent content wasn't checklist-ish, "applies" went false and
+// internal spacing between the new items silently never happened either,
+// even though the block itself was a homogeneous checklist block. Used
+// wherever a homogeneous block needs correct spacing among its own
+// items independent of what surrounds it.
+function ensureInternalChecklistSpacing(blockLines) {
+  var result = [];
+  for (var i = 0; i < blockLines.length; i++) {
+    if (blockLines[i].trim() === '') {
+      if (result.length && result[result.length - 1].trim() === '') continue;
+      result.push('');
+    } else {
+      if (result.length && result[result.length - 1].trim() !== '') {
+        result.push('');
+      }
+      result.push(blockLines[i]);
+    }
+  }
+  return result;
+}
+
 function computeChecklistInsertion(lines, nearIdx, nearRole, blockLines, opts) {
   var smartBlankOn = !!opts.smartBlankOn;
   var defaultSpliceStart = nearRole === 'leading' ? nearIdx + 1 : nearIdx;
   var nearBoundary = resolveChecklistBoundary(lines, nearIdx, nearRole, smartBlankOn);
+  var blockIsHomogeneous = isHomogeneousChecklistBlock(blockLines);
 
-  if (!nearBoundary.checklist || !isHomogeneousChecklistBlock(blockLines)) {
-    return { applies: false, lines: blockLines, spliceStart: defaultSpliceStart, deleteCount: 0 };
+  if (!nearBoundary.checklist || !blockIsHomogeneous) {
+    // v0.1701 FIX, per Lynn's own diagnosis: still enforce spacing
+    // between the new block's OWN items even when the seam itself gets
+    // no blank line (adjacent content isn't checklist-ish) -- "what's
+    // below" should only ever affect the seam, never spacing between
+    // the newly inserted items themselves.
+    var fallbackLines = (blockIsHomogeneous && smartBlankOn)
+      ? ensureInternalChecklistSpacing(blockLines)
+      : blockLines;
+    return { applies: false, lines: fallbackLines, spliceStart: defaultSpliceStart, deleteCount: 0 };
   }
 
   var leadingIdx = nearRole === 'leading' ? nearIdx : nearIdx - 1;
@@ -20273,6 +20380,7 @@ function openSettings() {
   setSegActive('wrap-note-title-seg', String(settings.wrapNoteNameInNoteEditor || 1));
   var snpToggle=document.getElementById('show-note-preview-toggle'); if(snpToggle)snpToggle.checked=settings.showNotePreview!==false;
   var siqToggle=document.getElementById('speak-in-quiet-toggle'); if(siqToggle)siqToggle.checked=!!settings.speakInQuiet;
+  var saciqToggle=document.getElementById('speak-accent-color-in-quiet-toggle'); if(saciqToggle)saciqToggle.checked=!!settings.speakBtnAccentColorInQuiet;
   var aswToggle=document.getElementById('always-speak-whole-toggle'); if(aswToggle)aswToggle.checked=!!settings.alwaysSpeakWholeNote;
   var dvmRow=document.getElementById('default-view-mode-row'); if(dvmRow)dvmRow.style.display=(settings.noteEditingMode==='typing'||settings.noteEditingMode==='rronly')?'none':'';
   var ttRow=document.getElementById('triple-tap-edit-row'); if(ttRow)ttRow.style.display=(settings.noteEditingMode==='rronly'||settings.noteEditingMode==='typing')?'none':'';
@@ -20316,6 +20424,20 @@ function clearSettingsSearch() {
   });
   document.querySelectorAll('#settings-sheet .settings-subsection').forEach(function(sub) {
     sub.style.display = '';
+  });
+  // v0.1702: restore the loose (non-row) content applySettingsSearch()
+  // now also hides -- same candidate selection it uses to find them.
+  document.querySelectorAll('#settings-sheet .settings-section').forEach(function(sec) {
+    var body = sec.querySelector('.settings-section-body') || sec;
+    Array.from(body.children).forEach(function(el) {
+      if (!el.classList.contains('settings-row')
+          && !el.classList.contains('settings-subsection-title')
+          && !el.classList.contains('settings-subsection')
+          && !el.classList.contains('settings-section-header')
+          && !el.querySelector('.settings-row')) {
+        el.style.display = '';
+      }
+    });
   });
   document.querySelectorAll('#settings-sheet .settings-row').forEach(function(row) {
     row.style.display = '';
@@ -20411,6 +20533,21 @@ function applySettingsSearch(query) {
     var headerTxt = headerLabelEl ? headerLabelEl.textContent.toLowerCase() : '';
     var sectionHeaderMatch = headerTxt.indexOf(q) !== -1;
 
+    // v0.1702 FIX, per Lynn's bug report: many "subsection groups" in
+    // App Theme and Note Appearance are just a .settings-subsection-title
+    // followed by LOOSE sibling content (a description paragraph, a
+    // preview box, a "Reset to default order" button) with no wrapping
+    // container tying them together -- unlike the handful that ARE
+    // wrapped in an actual .settings-subsection. The existing search only
+    // ever hid/restored the .settings-subsection-title itself; the loose
+    // content sitting after it was never touched at all, so it stayed
+    // visible unconditionally the moment ANYTHING else in that whole
+    // section matched. This map tracks, per subsection-title element,
+    // whether any row belonging to it matched -- used in the loose-
+    // content pass below to hide/show that content the same way the
+    // title itself already is.
+    var subsecMatchMap = new Map();
+
     rows.forEach(function(row) {
       var labelEl = row.querySelector('.settings-row-label');
       var descEl  = row.querySelector('.settings-row-desc');
@@ -20418,10 +20555,12 @@ function applySettingsSearch(query) {
       var descTxt  = descEl  ? descEl.textContent.toLowerCase()  : '';
       // Check nearest preceding subsection-title
       var prevSubsec = '';
+      var prevSubsecEl = null;
       var prev = row.previousElementSibling;
       while (prev) {
         if (prev.classList && prev.classList.contains('settings-subsection-title')) {
           prevSubsec = prev.textContent.toLowerCase();
+          prevSubsecEl = prev;
           break;
         }
         prev = prev.previousElementSibling;
@@ -20441,6 +20580,7 @@ function applySettingsSearch(query) {
       row.style.display = match ? '' : 'none';
       if (match) {
         secVisible = true;
+        if (prevSubsecEl) subsecMatchMap.set(prevSubsecEl, true);
         // Show and expand the parent subsection block if this row is inside one
         if (parentSub) { parentSub.style.display = ''; parentSub.classList.add('open'); }
         // Restore nearest preceding subsection title for context
@@ -20479,6 +20619,51 @@ function applySettingsSearch(query) {
         })(arrow, row);
         row.appendChild(arrow);
       }
+    });
+
+    // v0.1702 FIX continued: second pass for the loose content itself.
+    // Candidates are any element inside this section's body that is NOT
+    // a settings-row (already handled above), NOT a subsection-title
+    // (already handled above), NOT a .settings-subsection wrapper
+    // (already handled via its own open/closed logic), and not the
+    // section header itself. Each one's visibility follows whichever
+    // subsection-title comes before it -- exactly the same "nearest
+    // preceding title" walk already used for rows above, just applied to
+    // content the row-matching loop never touched at all.
+    var body = sec.querySelector('.settings-section-body') || sec;
+    var looseCandidates = Array.from(body.children).filter(function(el) {
+      return !el.classList.contains('settings-row')
+        && !el.classList.contains('settings-subsection-title')
+        && !el.classList.contains('settings-subsection')
+        && !el.classList.contains('settings-section-header')
+        // v0.1703 FIX, per Lynn's report ("italic" search didn't find the
+        // Italic toolbar row): a container that itself holds nested
+        // .settings-row elements (like #toolbar-visibility-rows, built
+        // dynamically with each row NESTED inside it rather than as a
+        // direct sibling of its subsection title) must never be treated
+        // as "loose" -- those rows are already correctly shown/hidden by
+        // the main row loop above, individually. This pass hiding the
+        // WHOLE container regardless is exactly what suppressed a
+        // correctly-matching row: the previousElementSibling walk used
+        // to associate a row with its subsection title only ever checks
+        // DIRECT siblings, so a row nested a level deeper inside a
+        // container like this one never gets associated with anything,
+        // and the container itself -- with every row inside it,
+        // matching or not -- was being hidden outright.
+        && !el.querySelector('.settings-row');
+    });
+    looseCandidates.forEach(function(el) {
+      var prevTitleEl = null;
+      var prev = el.previousElementSibling;
+      while (prev) {
+        if (prev.classList && prev.classList.contains('settings-subsection-title')) {
+          prevTitleEl = prev;
+          break;
+        }
+        prev = prev.previousElementSibling;
+      }
+      var show = sectionHeaderMatch || (prevTitleEl && subsecMatchMap.get(prevTitleEl));
+      el.style.display = show ? '' : 'none';
     });
 
     sec.style.display = secVisible ? '' : 'none';
@@ -30596,6 +30781,14 @@ function makeImportFolderName(label) {
     if (typeof _speakShowButtons === 'function') _speakShowButtons(isSpeaking);
     updateSaveBtnState();
   });
+  var _saciqToggleEl = document.getElementById('speak-accent-color-in-quiet-toggle');
+  if (_saciqToggleEl) {
+    _saciqToggleEl.addEventListener('change', function() {
+      settings.speakBtnAccentColorInQuiet = this.checked;
+      document.body.classList.toggle('speak-accent-in-quiet', this.checked);
+      updateSaveBtnState();
+    });
+  }
   document.getElementById('always-speak-whole-toggle').addEventListener('change', function() {
     settings.alwaysSpeakWholeNote = this.checked;
     updateSaveBtnState();
@@ -31565,6 +31758,26 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
             _tsGroupByKey[key] = { idx: target.idx, role: target.role, itemLines: [] };
             _tsGroups.push(_tsGroupByKey[key]);
           }
+          // v0.1700 FIX, per Lynn's bug report: this loop builds each
+          // tag-sort target's itemLines one line at a time, straight from
+          // rawBlock -- any blank line the user typed between items gets
+          // diverted into fallbackLines just above (it isn't itself a
+          // checklist line), completely disconnected from the items it
+          // was separating. Multiple typed items sharing the same tag
+          // (very common with a default tag applied to everything, as in
+          // Lynn's report) land in the SAME group with nothing between
+          // them, and computeChecklistInsertion/prepareChecklistBlock
+          // only ever manage spacing at a group's own outer seams, not
+          // between items already sitting together inside it -- so it had
+          // nothing to fix internally. Per Lynn's own stated expectation,
+          // when smart-indent is on this should be double-spaced
+          // regardless of what was typed, not just a passthrough of
+          // whatever blank lines happened to survive -- so this inserts
+          // exactly one blank line before every item after the first in
+          // the same group, unconditionally, whenever smartBlankOn.
+          if (smartBlankOn && _tsGroupByKey[key].itemLines.length > 0) {
+            _tsGroupByKey[key].itemLines.push('');
+          }
           _tsGroupByKey[key].itemLines.push(l);
         });
 
@@ -31596,10 +31809,16 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
             });
             var _opLines = _r.lines;
             if (op.isFallback) {
+              // v0.1701 FIX, per Lynn's own diagnosis -- same issue as
+              // the non-tag-sort fallback: this used to rebuild _opLines
+              // from raw op.itemLines, discarding _r.lines' already-
+              // correct internal spacing (the fix above ensures
+              // computeChecklistInsertion returns internally-spaced
+              // lines even when applies=false). Now starts from _r.lines.
               if (!_r.applies && _insertedIsCheckboxish) {
                 var _fbIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
                 var _fbPrefix = _fbIndentSpaces > 0 ? ' '.repeat(_fbIndentSpaces) : '';
-                _opLines = op.itemLines.map(function(l) { return l.trim() === '' ? l : _fbPrefix + l; });
+                _opLines = _r.lines.map(function(l) { return l.trim() === '' ? l : _fbPrefix + l; });
               }
               var _fbSmartOwns = _r.applies && smartBlankOn;
               if (!_fbSmartOwns) {
@@ -31652,10 +31871,17 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
         } else if (_insertedIsCheckboxish) {
           // Not adjacent to an existing checklist context (or the typed
           // block wasn't homogeneous) — still apply a flat default indent
-          // to the forced checklist lines, same fallback as before.
+          // to the forced checklist lines. v0.1701 FIX, per Lynn's own
+          // diagnosis: this used to map straight from rawBlock, which
+          // has no internal spacing correction at all -- "what's below"
+          // (not checklist-ish, hence applies=false) was silently
+          // preventing double-spacing between the NEW items themselves,
+          // which has no logical connection to the seam decision. Now
+          // starts from _ciResult.lines, which the fix above ensures is
+          // already correctly spaced internally even when applies=false.
           var _defIndentSpaces = (settings.defaultCheckboxIndent || 0) * (settings.indentSpaces || 4);
           var _defPrefix = _defIndentSpaces > 0 ? ' '.repeat(_defIndentSpaces) : '';
-          processedLines = rawBlock.map(function(l) { return l.trim() === '' ? l : _defPrefix + l; });
+          processedLines = _ciResult.lines.map(function(l) { return l.trim() === '' ? l : _defPrefix + l; });
         } else {
           processedLines = rawBlock;
         }
