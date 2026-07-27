@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1693 -->
+<!-- Remember App - Version 0.1697 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1693
+  Version 0.1697
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,10 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1697 - CORRECTION to v0.1696, per Lynn's immediate follow-up report: that fix resolved the broken-hybrid symptom but introduced a new, different bug -- view-only note titles now always wrapped to as many lines as needed with NO ellipsis at all, completely ignoring Wrap Note Title, instead of respecting it the way an ordinary note does. Root cause of the wrong fix: v0.1696 copied quiet mode's INTENT along with its mechanism -- but quiet mode deliberately wants the full, unclamped title (that's the whole point of hiding the toolbar for a cleaner view), while view-only mode is only about disabling editing and was never supposed to touch wrapping behavior at all. Corrected: view-only mode's #note-title override no longer touches display/-webkit-line-clamp/overflow/white-space/text-overflow at all -- max-width:100% and cursor:default are the only two properties it ever legitimately needed (the base rule reserves 36px for a rename button view-only notes don't show, and the cursor shouldn't look editable). Letting it fully inherit the base rule's -webkit-line-clamp behavior means it now respects Wrap Note Title exactly like any other note, while quiet mode's own separate, correct "always fully unclamped" behavior is untouched. Verified directly via computed style across all three states: view-only mode's display/line-clamp/overflow now exactly match normal mode's (respecting the setting) while still keeping its own max-width; quiet mode remains fully unclamped as before. Noted but deliberately NOT touched, out of scope for this bug: an unrelated, pre-existing minor detail where the title's cursor style appears to be a static inline attribute rather than JS-managed by view-only status. Suite unchanged: 332/332.
+  v0.1696 - FIX: the exact same note-title wrapping bug from v0.1680 (ellipsis on line 1 AND wrapped text leaking out below the divider), reported again by Lynn on a view-only note this time, outside quiet mode -- correctly suspected it was the same class of bug. It was: a SECOND, sibling CSS rule (body.view-only-mode #note-title) had the identical incomplete fix -- only ever reset overflow/white-space/text-overflow, never touched display:-webkit-box or -webkit-line-clamp, which v0.1680 only fixed for the reading-mode (quiet mode) rule, not this one. Applied the identical fix: undo the whole -webkit-line-clamp technique (display:block, -webkit-line-clamp:unset, -webkit-box-orient:unset), not just its overflow/white-space symptoms. Also confirmed, separately, that the note being view-only in the first place was correct, expected behavior, not a bug -- Lynn has "Global View Only" enabled, which every note (including a freshly-created backup) correctly inherits unless individually exempted. Searched for and confirmed no third sibling rule exists with the same gap -- these were the only two #note-title overrides in the whole file, and both are now fixed. Verified via computed style, the same method used to verify the original fix: view-only mode now correctly shows display:block and -webkit-line-clamp:none. Suite unchanged: 332/332.
+  v0.1695 - Renamed the "Sort by tag" backup note, per Lynn: was "<name> — before sort N", now "Copy of <name> before sort N". The old format put the one thing that marks it as a backup at the very END of the name -- exactly what an ellipsis truncates away when the notes list shows only one line of a long title, making the backup and the original indistinguishable at a glance. Leading with "Copy of" instead means that survives truncation even when everything after it gets cut off. Turns out this also matches an existing "Copy of <name>" convention already used elsewhere in the app (the general note-duplicate feature) -- confirmed only one other naming convention exists for backups (the em-dash one just changed), so this wasn't a partial fix leaving some other backup type inconsistent. Suite unchanged: 332/332.
+  v0.1694 - FIX: tag-filter-indicator long-press menu "wanting to close right away", per Lynn's report -- she correctly suspected this got worse once a second button ("Filter by tag") was added alongside the original "Clear filter". Root cause: this menu (and, found proactively while investigating, the checkbox chevron long-press menu -- same two-button shape, same latent risk, not yet reported) was missing a protection the older, larger note-item context menu already established for exactly this failure mode: eating all clicks for 600ms right after the menu opens, to swallow the synthesized click iOS fires shortly after a long-press's touchend. Without it, that delayed synthetic click can land on the newly-opened menu itself -- and the taller the menu, the more likely it lands ON a button rather than empty space, immediately triggering it and closing the menu right after it opened. A 1-button menu had a smaller target to accidentally hit; growing to 2 buttons made the miss far less likely. Added the same proven eat-clicks guard to both menus. Verified through the real long-press mechanism end-to-end, not just the guard in isolation: simulated an actual touch-based long-press opening the menu, confirmed a click landing during the eat window is correctly swallowed (menu stays open, the filter state is untouched), and confirmed a genuine click after that window still closes the menu and fires its action normally. Suite unchanged: 332/332.
   v0.1693 - FIX: "Search in notes" on the home screen never found matches inside any folder, per Lynn's bug report -- likely a long-standing bug, not a recent regression. Root cause, confirmed by reading the code directly: the base note list unconditionally filtered to the CURRENT folder level before search was ever applied, so a search from the root only ever checked top-level notes, silently missing everything inside every folder -- confirmed directly with the exact reported scenario (searching "weekly" from the root failed to find "Weekly Errands & Tasks", confirmed to live inside the Sample Notes folder). Fixed by only applying that folder restriction for ordinary browsing -- search now spans every note regardless of folder, exactly as expected. Also added a companion improvement: search results now show their folder path (reusing the exact same getFolderPathString() display the Favorites section already uses), since a match can now surface from anywhere rather than only the folder currently being viewed. Verified directly: search from the root now finds the folder note; its folder path renders correctly; ordinary non-search browsing at the root is completely unaffected and still correctly shows only top-level notes. Suite unchanged: 332/332.
   v0.1692 - FIX: significant bug where enabling both "Hide bullet/hyphen" and "Skip extra indent on the first level" together clipped some note content invisible off the left edge, per Lynn's detailed report across three sample notes. Root cause: v0.1690's negative margin-left approach was fundamentally fragile -- it assumed #note-content-area's own left padding (as little as 22px, since note-margin-left is a user-configurable setting that can go down to 0) would always be bigger than the 1.45em shift. It usually is, but isn't guaranteed to be, and overflow-x:hidden clips anything pushed past that padding boundary rather than letting it show -- exactly what Lynn saw. A SEPARATE, more clear-cut bug compounded this specifically for the "Weekly Errands" checkboxes: _isListIshLine doesn't distinguish literal '- [ ]' checkboxes from plain bullets/hyphens, so the shift was wrongly applied to checkbox lines too -- but checkboxes render their glyph via the entirely separate checkboxSVG() mechanism with no invisible marker-spacer to reconcile with any of this, so there was nothing to cancel the shift out, pushing the checkbox glyph itself off-screen. Completely redesigned around a rule that can never produce a negative value: reduces padding-left directly (clamped to never go below 0) instead of applying a negative margin to the whole block, with literal checkbox lines now fully excluded from the whole mechanism -- exactly matching Lynn's explicit requirement that checkboxes should never be treated differently here. Level 0 still lands flush (the marker-spacer is omitted there specifically, since there's no padding to reduce from at that level); every deeper level's padding reduction is exactly canceled by the spacer it still renders, landing text at precisely its original position. Confirmed via jsdom's own computed styles that v0.1690's version LOOKED mathematically consistent -- jsdom doesn't do real layout or overflow-clipping, so that check could not have caught this regardless of how carefully it was written; caught this time by checking the container's actual padding value directly rather than trusting computed CSS strings alone. Verified thoroughly: zero negative CSS values anywhere in a mixed bullet+checkbox+nesting test; checkboxes at every level completely unaffected (no style attribute at all where none existed before); bullet/hyphen positions at every level matching their pre-hiding baseline exactly (0.25+1.45=1.7em and 1.95+1.45=3.4em, both matching baseline precisely). Suite unchanged: 332/332.
   v0.1691 - FIX: "Remind me to export" rendering as an orphan at the very end of the Settings dialog instead of inside a collapsible section, per Lynn's report. Investigated the root cause directly rather than guessing among her several hypotheses: confirmed there was NO unbalanced HTML comment anywhere in the file (ran the same kind of scan checkStyleCommentBalance already does for CSS, adapted for HTML comment open/close markers, found zero issues) -- the actual cause was purely a mis-pasted-location mistake: the row's HTML had been added right next to the always-visible Reset/Reinstall buttons at the very end of the dialog (outside every collapsible accordion section, deliberately, for those particular buttons) rather than alongside its sibling SETTING_BUCKETS_GENERAL settings. Moved into the App Theme section, where Convert tabs/bullets on paste and every other General-bucket setting already live. Verified directly via jsdom: the toggle's nearest .settings-section ancestor is now settings-section-zone-apptheme, not null. Also prompted a new structural check in the test harness (see remember-test-harness-v5.js) specifically so this class of bug gets caught automatically going forward. IRONIC NEAR MISS caught before shipping: my own first draft of THIS changelog entry violated the exact lesson documented in v0.1569's own entry below -- it described the comment scan by writing out the literal HTML comment open/close markers as text, which (since changelog entries live inside this very BUILD CHANGELOG comment block) would have prematurely closed it and rendered everything after as raw visible page text. Caught by testing the actual built file rather than assuming the changelog text was safe just because it was "only a comment". Suite unchanged: 332/332.
@@ -1488,8 +1492,23 @@ body.view-only-mode #toolbar-scroll-right {
   display: none !important;
 }
 body.view-only-mode #note-title {
-  white-space: normal; overflow: visible;
-  text-overflow: clip; max-width: 100%; cursor: default;
+  /* v0.1697 CORRECTION, per Lynn's follow-up report: v0.1696 fixed the
+     broken-hybrid symptom but copied quiet mode's INTENT along with its
+     fix, which was wrong here -- quiet mode deliberately wants the full,
+     unclamped title (that's the whole point of it), but view-only mode
+     is only about disabling editing; it was never supposed to override
+     wrapping at all. The result was a new, different bug: the title
+     always wrapped to as many lines as needed with NO ellipsis, ignoring
+     Wrap Note Title entirely, instead of respecting it the way an
+     ordinary note does. Correct fix: don't touch the wrap/clamp
+     mechanism here at all -- max-width and cursor are the only two
+     things this override ever needed (the base .note-inline-title rule
+     reserves 36px for a rename button view-only notes don't show, and
+     the cursor shouldn't look editable) -- letting it fully inherit the
+     base rule's normal -webkit-line-clamp behavior means it respects
+     Wrap Note Title exactly like any other note. */
+  max-width: 100%;
+  cursor: default;
 }
 body.view-only-mode #toolbar-more-hidden-items,
 body.view-only-mode #toolbar-more-dynamic-rule-top,
@@ -10655,7 +10674,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1693';
+const APP_VERSION = '0.1697';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -30864,6 +30883,26 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   // ===== CHEVRON LONG-PRESS MENU — wired per-chevron in applyOutlineMode =====
   var _cbLpLineIdx = -1;
   var _cbLpMenu = document.getElementById('cb-longpress-menu');
+  // v0.1694 FIX, per Lynn's report (tag-filter menu "wants to close right
+  // away" -- worse since it grew from one button to two): missing the
+  // SAME "eat clicks for 600ms after opening" guard the older, larger
+  // note-item context menu already uses for this exact failure mode (see
+  // its own comment above, "Context menu tap guard"). Without it, the
+  // synthesized click that iOS fires after a long-press's touchend can
+  // land on the newly-opened menu itself -- more likely to actually land
+  // ON a button the taller a 2-item menu is, versus a 1-item menu's
+  // smaller footprint, immediately triggering it and closing the menu
+  // right after it opened. Applied proactively to the checkbox chevron
+  // menu too, even though it hasn't been reported -- same shape, same
+  // two buttons, same latent risk.
+  var _cbLpEatClicks = false;
+  var _tfLpEatClicks = false;
+  document.addEventListener('click', function(e) {
+    if (_cbLpEatClicks || _tfLpEatClicks) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }, true);
   function closeCbMenu() {
     if (_cbLpMenu) _cbLpMenu.style.display = 'none';
   }
@@ -30876,6 +30915,8 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     _cbLpMenu.style.left = left + 'px';
     _cbLpMenu.style.top = top + 'px';
     _cbLpMenu.style.display = 'block';
+    _cbLpEatClicks = true;
+    setTimeout(function() { _cbLpEatClicks = false; }, 600);
   }
   document.addEventListener('touchstart', function(e) {
     if (_cbLpMenu && _cbLpMenu.style.display !== 'none') {
@@ -30920,6 +30961,8 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     _tfLpMenu.style.left = Math.max(8, left) + 'px';
     _tfLpMenu.style.top = Math.max(8, top) + 'px';
     _tfLpMenu.style.display = 'block';
+    _tfLpEatClicks = true;
+    setTimeout(function() { _tfLpEatClicks = false; }, 600);
   }
   document.getElementById('tf-lp-clear-btn').addEventListener('click', function() {
     closeTfMenu();
@@ -37393,7 +37436,14 @@ function runSortByTag() {
     }
     // ── Preserve the original TWICE: snapshot ring + visible backup note ──
     snapshotNoteBeforeOp(currentNoteId, 'Sort by tag');
-    var baseName = (note.name || 'Untitled') + ' \u2014 before sort ';
+    // v0.1695: naming changed per Lynn -- "<name> — before sort N" put the
+    // distinguishing part at the END, which is exactly what an ellipsis
+    // truncates away when the notes list shows only one line of a long
+    // title, making the backup and the original look identical at a
+    // glance. Leading with "Copy of" instead means the ONE thing that
+    // marks this as the backup survives truncation even when everything
+    // after it gets cut off.
+    var baseName = 'Copy of ' + (note.name || 'Untitled') + ' before sort ';
     var bn = 1;
     while (noteNameExists(baseName + bn, null)) bn++;
     var backupName = baseName + bn;
