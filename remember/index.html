@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1711 -->
+<!-- Remember App - Version 0.1713 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1711
+  Version 0.1713
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1713 - FOLLOW-UP FIX to v0.1712's floating Save/Cancel/Scroll control, per Lynn's immediate report -- switching to position:fixed there made it scroll up off-screen and bounce during scroll, worse than the sticky behavior it replaced. Investigated the actual DOM structure directly rather than guessing: the control was living nested deep inside the scrolling dialog, in fact inside one of its own collapsible sections (Note Behavior), several levels of nesting down -- not just a direct child of the dialog as assumed in the previous fix. This is a documented iOS Safari/WebKit quirk: a position:fixed element nested inside a scrolling ancestor that also has a transform (the dialog itself, for horizontal centering) doesn't reliably stay fixed on iOS -- it can scroll and bounce along with the container's own content instead of staying anchored in place, despite what the CSS spec says should happen. Fixed properly this time by moving the control to a true sibling of the dialog in the HTML, completely outside it and any collapsible section -- sidesteps the whole class of bug rather than trying to work around it in place. Its own visibility now follows the dialog's existing open/closed state via a plain CSS sibling selector, requiring no new JavaScript at all, since the dialog's own open/close code already toggles the class this relies on. z-index raised to stay above the dialog now that it's a sibling rather than a nested child (previously correct by ordinary DOM stacking, now needs to be explicit). Per Lynn's clarification, still reserves space at the bottom of the dialog's own content so it doesn't PERMANENTLY cover the last buttons when scrolled all the way down -- temporary overlap while actively scrolling past that point is fine and expected. Verified directly: correctly hidden while the dialog is closed, visible and properly fixed-positioned with the correct stacking order once open, and correctly hidden again on close. Suite unchanged: 332/332.
+  v0.1712 - FIX: the Settings dialog's floating Save/Cancel/Scroll control had become inconsistent about actually floating, per Lynn's report -- she'd narrowed it down herself to somewhere around v0.1699 by testing old versions directly, though diffing that exact transition found no changes to the control or its surrounding structure at all. Rather than keep chasing an exact regression point that may be tied to more subtle, content-height-dependent conditions than a single version diff can reveal, addressed the actual request directly: it was built with position:sticky, which only "sticks" while its own scrolling container is actually being scrolled, within that container's own content bounds -- inherently fragile to any change in surrounding content height or structure, which is exactly the kind of thing that degrades subtly over many builds rather than breaking cleanly at one. Per Lynn's explicit request -- always visible, no cleverness about hiding it near the top -- switched to position:fixed, which guarantees this unconditionally rather than depending on scroll state at all. Confirmed the dialog's own existing transform property (used for horizontal centering) correctly makes it the containing block for this fixed-position control, by a standard, well-established CSS rule -- so it stays anchored to the dialog's own bottom-right corner rather than jumping to the full browser viewport. Also added bottom padding scoped specifically to the Settings dialog (not the shared dialog class other dialogs also use), since a fixed-position element is removed from the normal page flow entirely -- without this, the last item in the scrollable content (Reset All Settings to Defaults) would end up hidden behind the control when scrolled all the way down. Verified all four resulting CSS properties directly. Suite unchanged: 332/332.
   v0.1711 - TWO fixes, per Lynn. (1) FIXED: Double Space showed up in typing mode, where it can never actually work. Root cause: unlike Move lines (which it was built to mirror), it only ever had readiness STYLING logic (muting its color when not usable), never an explicit display toggle -- so it stayed visible, just looking disabled, instead of not appearing at all. Also found and fixed the same missing-registration bug show-whitespace-btn had before: it was never added to MODE_GATED_BUTTON_IDS either, which would have let the toolbar-rebuild logic force it back visible regardless of the new display fix. Verified directly: hidden in typing mode, visible in R&R mode. (2) FIXED: a black bar (in reality, an empty dark-background preview container with nothing visible inside it) still appeared when searching "lower toolbar buttons", even after the earlier leaking-content fix. Root cause, found by directly inspecting exactly what stayed visible rather than guessing from the screenshot: #dark-mode-preview reuses the .settings-row class purely for its own internal layout (two rows labeled "Background" and "Text Color"), and the earlier fix for the "italic" bug had exempted ANY container holding nested .settings-row elements from ever being hidden, regardless of whether those nested rows were themselves currently visible -- so when neither of this container's two rows matched the search, they correctly hid, but the wrapper itself (with its own dark background) stayed visible with nothing inside it. A second, related bug surfaced while fixing this and testing multiple searches in sequence: simply excluding a genuine rows-container (like #toolbar-visibility-rows) from the hiding pass whenever it DID have a visible match left its own display completely untouched in that case -- meaning a PREVIOUS search that correctly hid it (nothing matched that time) left it stuck hidden forever after, even once a LATER search had a real match inside it, since nothing ever explicitly set it back to visible. Redesigned so any container holding nested rows always has its own visibility explicitly set on every search call, based on whether it currently has at least one visible row inside -- never simply left alone to potentially carry stale state from an earlier search. Verified directly: the empty preview container correctly hides now; a rows-container with a genuine match stays visible; and the exact sequential-search scenario that surfaced the second bug (searching "italic", then "line spacing", then "checkbox") now correctly finds "Toggle checkbox" every time. Suite unchanged: 332/332.
   v0.1710 - FOUR fixes, per Lynn -- three of them traced back to one root cause. (1) ROOT CAUSE: Double Space and Show Spaces and Tabs were never added to DEFAULT_TOOLBAR_ORDER at all when they were first built. This single omission explained three separate symptoms at once: the Toolbar Help cheat sheet only ever lists buttons present in the user's effective toolbar order, so they never appeared there regardless of being in its own description list; the Settings "Lower Toolbar Buttons" section is built from that same effective order, so they never appeared there either; and their actual position in the real toolbar was essentially undefined, since nothing told the app where they belonged. Confirmed directly that an existing reconciliation mechanism (insertMissingIdsAtDefaultPosition) already handles inserting a new button into a user's customized saved order correctly -- it was never the problem; it depends entirely on the button existing in DEFAULT_TOOLBAR_ORDER in the first place, which these two never did. Fixed by adding both, positioned right after scroll-bottom-btn per Lynn's explicit request -- verified this one change alone resolves all three symptoms: both now appear in the Toolbar Help panel, both now appear in the Settings reorder/hide list, and both land in the correct toolbar position. (2) FIXED: searching Settings for "Lower Toolbar Buttons" (its own subsection title, verbatim) found nothing. Same structural gap as the earlier "italic" search bug, but hitting the matching logic instead of the hiding logic this time: rows built by buildToolbarVisibilityRows() are nested inside a wrapper div, so a plain previousElementSibling walk from any individual row could never reach the title, which is a sibling of the wrapper, not of the rows themselves. Replaced the inline sibling-only walk (used in two places) with a shared helper that also walks up through ancestor containers when a direct sibling search comes up empty. Verified directly: searching "lower toolbar buttons" now correctly shows both a matching row inside the section and the section's own title. Suite unchanged: 332/332.
   v0.1709 - TWO fixes, per Lynn. (1) FIXED: Double Space and Show Spaces and Tabs had been placed INSIDE the crossout-group wrapper div -- visually boxed together with Strikethrough and Clear All Strikethroughs as if they were that button's paired partner, which they're not. Root cause: both were inserted right after clear-strikethroughs-btn without first closing the wrapper div it lives in. Moved both outside the box as separate, standalone buttons; the box itself now contains only its true pair again. Verified directly: crossout-group's only children are crossout-mode-btn and clear-strikethroughs-btn, and neither new button's parent is the group anymore. (2) Updated the Toolbar Help cheat sheet (the ? button's reference list) -- audited it programmatically against the toolbar's own full button registry rather than checking by eye, which found two real gaps: select-all-btn (a genuine lower toolbar button, now documented) and note-fab (deliberately left out -- it's a floating action button, not a lower toolbar button, and its function is already covered by the existing "Quick add" entry, so adding it would have been redundant). Also updated Show Spaces and Tabs' own description, which still said "small gray marks" -- stale since a recent fix made those glyphs prominent, full-strength colored marks rather than muted gray ones. Suite unchanged: 332/332.
@@ -2958,20 +2960,40 @@ body.has-mouse .font-face-arrow { display: block; }
 
 /* ===== SETTINGS FLOATING SAVE/CANCEL FAB ===== */
 #settings-fab {
-  position: sticky;
+  /* v0.1712: switched from position:sticky (which only "sticks" while
+     its own scrolling ancestor is actually being scrolled, within that
+     ancestor's own content bounds -- fragile to surrounding content
+     changes) to position:fixed, per Lynn's explicit request that this
+     always be visible with no cleverness about hiding it near the top.
+     v0.1713 FOLLOW-UP FIX, per Lynn's report that it started scrolling
+     off-screen and bouncing after the v0.1712 change: turned out this
+     was still living nested deep inside the scrolling dialog (in fact
+     inside one of its own collapsible sections) -- a documented iOS
+     Safari/WebKit quirk means position:fixed nested inside a scrolling
+     ancestor that also has a transform (the dialog itself, for
+     horizontal centering) doesn't reliably stay fixed on iOS, scrolling
+     and bouncing with the container's content instead, despite what the
+     CSS spec says should happen. Moved to a true sibling of
+     #settings-sheet in the HTML (see there), completely outside the
+     dialog and any collapsible section -- sidesteps the whole class of
+     bug rather than trying to work around it in place. Hidden by
+     default; the sibling-selector rule below shows it exactly when
+     #settings-sheet has its own .open class, which openSettings()/
+     closeSettings() already toggle -- no new JS needed for visibility. */
+  display: none;
+  position: fixed;
   bottom: 20px;
-  float: right;
-  margin-right: 16px;
-  display: flex;
+  right: 16px;
   gap: 0;
   border-radius: 999px;
   box-shadow: 0 3px 12px rgba(0,0,0,0.25);
   overflow: hidden;
-  z-index: 10;
+  z-index: 102;
   pointer-events: auto;
   user-select: none;
   -webkit-user-select: none;
 }
+#settings-sheet.open ~ #settings-fab { display: flex; }
 #settings-fab-cancel {
   background: var(--bg3);
   border: none;
@@ -4609,7 +4631,14 @@ body:not(.dark) .note-item {
    testers didn't like — likely most noticeable in Settings specifically
    because it's the largest, most content-dense dialog. Scoped to
    #settings-sheet only; every other dialog keeps --bg-dialog unchanged. */
-#settings-sheet { background: var(--bg); }
+/* v0.1712: extra bottom padding, per the switch to position:fixed above
+   -- a fixed-position element is removed from the normal document flow
+   entirely, so without this, the last item in the scrollable content
+   (Reset All Settings to Defaults) would end up hidden behind the FAB
+   when scrolled all the way down. Scoped to #settings-sheet specifically
+   rather than the shared .modal-sheet class, since Settings is the only
+   dialog with this always-visible FAB. */
+#settings-sheet { background: var(--bg); padding-bottom: 84px; }
 /* v0.1557: the Settings dialog's own chrome uses a FIXED font SIZE
    captured from your last SAVED settings (not live in-progress changes),
    to avoid disorienting auto-scroll while a size slider is being dragged.
@@ -9985,16 +10014,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       </div>
     </div>
 
-    <!-- Floating Save/Cancel FAB — sticky at bottom-right as settings scrolls -->
-    <div id="settings-fab">
-      <button id="settings-fab-cancel" title="Cancel" aria-label="Cancel settings">✕</button>
-      <button id="settings-fab-scroll" title="Scroll to top / bottom" aria-label="Scroll settings to top or bottom">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="7 8 12 3 17 8"/><polyline points="7 16 12 21 17 16"/></svg>
-      </button>
-      <button id="settings-fab-save" title="Save" aria-label="Save settings">✓</button>
-    </div>
-
-
     <div class="reset-row">
       <button class="reset-defaults-btn" id="reset-defaults-btn">Reset All Settings to Defaults</button>
     </div>
@@ -10014,6 +10033,29 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     </div>
     </div>
     </div>
+</div>
+
+<!-- v0.1713 FIX, per Lynn's report: this used to live nested deep inside
+     the scrolling settings dialog (in fact inside one of its collapsible
+     sections, several levels deep) -- a documented iOS Safari/WebKit
+     quirk means a position:fixed element nested inside a scrolling
+     ancestor that also has a transform (the dialog itself, for
+     horizontal centering) doesn't reliably stay fixed on iOS: it can
+     scroll and bounce along with the container's own content instead of
+     staying anchored in place, even though the CSS spec says it
+     shouldn't. Moved to a true sibling of #settings-sheet, completely
+     outside the dialog and any collapsible section, which sidesteps the
+     whole class of bug rather than trying to work around it in place.
+     Visibility now follows the dialog's own existing .open class via a
+     plain CSS sibling selector below -- no new JS needed, since
+     openSettings()/closeSettings() already toggle that class exactly
+     when this should show or hide. -->
+<div id="settings-fab">
+  <button id="settings-fab-cancel" title="Cancel" aria-label="Cancel settings">✕</button>
+  <button id="settings-fab-scroll" title="Scroll to top / bottom" aria-label="Scroll settings to top or bottom">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;pointer-events:none;"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="7 8 12 3 17 8"/><polyline points="7 16 12 21 17 16"/></svg>
+  </button>
+  <button id="settings-fab-save" title="Save" aria-label="Save settings">✓</button>
 </div>
 
 <!-- v0.1671: sample picker for "Get Fresh Copy of a Sample Note" -->
@@ -10839,7 +10881,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1711';
+const APP_VERSION = '0.1713';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
