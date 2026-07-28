@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1714 -->
+<!-- Remember App - Version 0.1715 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1714
+  Version 0.1715
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1715 - THREE new pieces, per Lynn. (1) Bold/Italic/Highlight/Strikethrough/Color (made dual-mode last build) are now hidden entirely when settings.noteEditingMode === 'typing' -- with Read & Revise completely disabled in that configuration, there's nowhere for the markdown these buttons insert to ever render, so showing them would just be clutter with no payoff. (2) Their "Lower Toolbar Buttons" placement dropdown now offers only "Neither" as a choice while that same setting is active -- any other choice would be permanently, silently false in that configuration, unlike genuinely R&R-only buttons (Move lines, Heading, etc), whose other placement choices remain true the moment the person switches back to R&R mode within the same session. Deliberately does not touch the user's own underlying stored placement preference -- switching noteEditingMode back to 'both' or 'rronly' restores their original choice automatically, verified directly. (3) NEW: HTML export, a fourth option alongside the existing JSON/Markdown/Plain text choices -- reuses the exact same rendering pipeline Read & Revise mode already uses (urlsToLinks), so no new markdown-conversion logic was written, and no third-party library anywhere in the process. Fonts are loaded live from Google Fonts (the same single combined @import the app itself already uses, reused verbatim rather than risking an incorrectly-narrowed one) -- needs an internet connection to render correctly, matching the simpler, internet-dependent version Lynn chose over a fully self-contained one. CSS is NOT copied wholesale (~260KB, almost all irrelevant to any single note) -- instead, every rule in the live stylesheet is checked against the actually-rendered note content, and only genuinely-used rules are kept, so simple notes produce correspondingly small files and richer ones scale up proportionally; verified directly against both a plain-text note and a richer one using headings/bold/italic/checkboxes/tags. Every CSS custom property currently in use gets resolved to its actual current value and frozen into the export (confirmed no raw var() references survive), so the file correctly reflects whatever theme/colors were active at export time without needing the app's own theme-switching system at all. Checkboxes -- drawn as custom, JS-driven SVGs in the live app, with no native equivalent -- are converted to real, genuinely tappable <input type="checkbox"> elements with their checked state carried over; CAUGHT AND FIXED before shipping: an early version set the .checked DOM PROPERTY, which does not reflect into the serialized HTML attribute at all, so every exported checkbox silently lost its checked state the moment the string was written out -- fixed by setting the actual attribute instead, caught by direct testing of the real output rather than assuming the property would be enough. As discussed with Lynn beforehand, any tapping in the exported file is purely visual/temporary -- a standalone file has no save mechanism, so nothing writes back to the original note. Suite unchanged: 332/332.
   v0.1714 - NEW: Bold, Italic, Highlight, Strikethrough, and Color are now dual-mode, per Lynn -- previously R&R-only (whole-line formatting), now also available in typing mode, operating on the native textarea text selection instead (the same selectionStart/selectionEnd mechanism Indent/Dedent already use). R&R mode's own whole-line behavior is completely unchanged; the buttons simply branch on which mode is active. Bold/Highlight/Strikethrough share one function, since their markers (**, ==, ~~) never collide with each other; Italic gets its own version, since its single-character marker is a substring of Bold's, and every check has to confirm a * is genuinely standalone rather than one half of a **; Color gets its own, since its {color}...{/color} tags are asymmetric in length rather than a symmetric marker. Deliberately conservative throughout, per Lynn's own design: selecting text already wrapped in matching markers toggles them off; selecting text with no markers wraps it fresh; anything ambiguous (a marker on only one side, or an odd count of stray markers inside the selection) shows a toast and changes nothing rather than guessing and silently producing broken or nested markdown. No selection at all inserts an empty marker pair to type into, for Bold/Italic/Highlight/Strikethrough; Color requires an actual selection first, since there's no sensible empty color tag to insert. Color's popover now hides its Checkbox tab in typing mode -- checkbox coloring is a whole-line operation that only makes sense in R&R, exactly as Lynn described. Existing per-button "Lower Toolbar Buttons" hide/show placement choices continue to be respected in both modes -- someone who explicitly hides one of these five still sees it hidden everywhere, not just where it used to be R&R-only. Verified extensively and directly at every layer: the shared marker function (fresh wrap, toggle off via markers just outside the selection, toggle off via markers included IN the selection, no-selection insert, unmatched-marker-nearby warning, odd-internal-marker-count warning); Italic's bold-collision safety specifically (wrapping text already inside a bold span correctly produces italic-inside-bold rather than misreading part of the ** as a lone *, and toggling off an italic span sitting immediately next to a bold one doesn't disturb the bold); Color's tag toggle/re-color/remove/stray-brace-ambiguity paths; then the full click-through for all five buttons in typing mode; then a full regression pass confirming R&R mode's whole-line behavior for all five is completely unchanged. Toolbar Help's own descriptions for all five updated to describe both modes. Suite unchanged: 332/332.
   v0.1713 - FOLLOW-UP FIX to v0.1712's floating Save/Cancel/Scroll control, per Lynn's immediate report -- switching to position:fixed there made it scroll up off-screen and bounce during scroll, worse than the sticky behavior it replaced. Investigated the actual DOM structure directly rather than guessing: the control was living nested deep inside the scrolling dialog, in fact inside one of its own collapsible sections (Note Behavior), several levels of nesting down -- not just a direct child of the dialog as assumed in the previous fix. This is a documented iOS Safari/WebKit quirk: a position:fixed element nested inside a scrolling ancestor that also has a transform (the dialog itself, for horizontal centering) doesn't reliably stay fixed on iOS -- it can scroll and bounce along with the container's own content instead of staying anchored in place, despite what the CSS spec says should happen. Fixed properly this time by moving the control to a true sibling of the dialog in the HTML, completely outside it and any collapsible section -- sidesteps the whole class of bug rather than trying to work around it in place. Its own visibility now follows the dialog's existing open/closed state via a plain CSS sibling selector, requiring no new JavaScript at all, since the dialog's own open/close code already toggles the class this relies on. z-index raised to stay above the dialog now that it's a sibling rather than a nested child (previously correct by ordinary DOM stacking, now needs to be explicit). Per Lynn's clarification, still reserves space at the bottom of the dialog's own content so it doesn't PERMANENTLY cover the last buttons when scrolled all the way down -- temporary overlap while actively scrolling past that point is fine and expected. Verified directly: correctly hidden while the dialog is closed, visible and properly fixed-positioned with the correct stacking order once open, and correctly hidden again on close. Suite unchanged: 332/332.
   v0.1712 - FIX: the Settings dialog's floating Save/Cancel/Scroll control had become inconsistent about actually floating, per Lynn's report -- she'd narrowed it down herself to somewhere around v0.1699 by testing old versions directly, though diffing that exact transition found no changes to the control or its surrounding structure at all. Rather than keep chasing an exact regression point that may be tied to more subtle, content-height-dependent conditions than a single version diff can reveal, addressed the actual request directly: it was built with position:sticky, which only "sticks" while its own scrolling container is actually being scrolled, within that container's own content bounds -- inherently fragile to any change in surrounding content height or structure, which is exactly the kind of thing that degrades subtly over many builds rather than breaking cleanly at one. Per Lynn's explicit request -- always visible, no cleverness about hiding it near the top -- switched to position:fixed, which guarantees this unconditionally rather than depending on scroll state at all. Confirmed the dialog's own existing transform property (used for horizontal centering) correctly makes it the containing block for this fixed-position control, by a standard, well-established CSS rule -- so it stays anchored to the dialog's own bottom-right corner rather than jumping to the full browser viewport. Also added bottom padding scoped specifically to the Settings dialog (not the shared dialog class other dialogs also use), since a fixed-position element is removed from the normal page flow entirely -- without this, the last item in the scrollable content (Reset All Settings to Defaults) would end up hidden behind the control when scrolled all the way down. Verified all four resulting CSS properties directly. Suite unchanged: 332/332.
@@ -10230,6 +10231,17 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <span style="font-size:0.88em;color:var(--fg3);">Formatting markers removed, readable anywhere</span>
       </span>
     </button>
+    <!-- v0.1715: HTML export, per Lynn -- looks like the note does in
+         Read & Revise (bold, colors, checkboxes, etc.), viewable in any
+         browser. Needs an internet connection to load the same fonts
+         the app itself uses. -->
+    <button id="export-fmt-html-btn" style="display:flex;align-items:center;gap:14px;width:100%;padding:14px 20px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+      <span style="font-size:1.5em;line-height:1;flex-shrink:0;">🌐</span>
+      <span style="pointer-events:none;flex:1;">
+        <strong style="display:block;">Web page (.html)</strong>
+        <span style="font-size:0.88em;color:var(--fg3);">Looks like Read &amp; Revise, opens in any browser</span>
+      </span>
+    </button>
   </div>
   <div style="padding:8px 16px 16px;">
     <button class="modal-close-btn-plain" id="export-format-close-btn">Cancel</button>
@@ -10882,7 +10894,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1714';
+const APP_VERSION = '0.1715';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -19301,6 +19313,135 @@ function stripLeadingWhitespaceBeforeHeadingsForExport(content) {
   }).join('\n');
 }
 
+// v0.1715: HTML export, per Lynn's request -- reuses the exact same
+// rendering pipeline R&R mode already uses (urlsToLinks), rather than
+// building any parallel conversion logic. No third-party libraries
+// needed anywhere in this: no markdown library (the app never used one),
+// no CSS/font embedding library either.
+//
+// Font handling: fonts are loaded live from Google Fonts (one combined
+// @import covering every font the app offers, never bundled/self-
+// hosted) -- reused verbatim here rather than trying to build a
+// narrower per-font URL, which would add real risk (missing the exact
+// weight/style variant actually needed) for a modest size saving. This
+// means the exported file needs an internet connection to render fonts
+// correctly, matching what Lynn chose (the simpler, internet-dependent
+// version) over a fully self-contained one.
+//
+// CSS handling: the app's own stylesheet is large (~260KB, mostly
+// irrelevant to a single exported note -- toolbar buttons, Settings
+// dialog, etc.), so this doesn't copy it wholesale. Instead it renders
+// the note first, then walks every CSS rule in the live document and
+// keeps only the ones whose selector actually matches something in the
+// rendered output -- automatically scales to whatever markdown features
+// the note actually uses, without needing a hand-maintained list of
+// "which selectors matter for export."
+//
+// Checkbox handling: R&R mode draws checkboxes as custom SVGs with their
+// own click-handling JS, so a straight copy of that HTML would show
+// checkboxes but never let anyone tap them in a standalone file. These
+// get swapped for real <input type="checkbox"> elements instead, with
+// the checked state carried over from export time -- genuinely tappable
+// in the recipient's own browser, but purely visual/temporary: nothing
+// in a standalone file can save a change back to the original note.
+function _cssSelectorMatchable(sel) {
+  // Strip pseudo-classes/elements (:hover, ::before, etc.) for the
+  // match-check itself -- querySelector can't evaluate most of these
+  // against a static, non-interactive container, but the RULE should
+  // still be included if its base selector matches something (e.g.
+  // .viewer-ws-tab::before is still needed if any .viewer-ws-tab exists).
+  return sel.trim().replace(/::?[a-zA-Z-]+(\([^)]*\))?/g, '').trim();
+}
+function _extractUsedCssForExport(container) {
+  var seen = {};
+  var usedRules = [];
+  Array.from(document.styleSheets).forEach(function(sheet) {
+    var rules;
+    try { rules = sheet.cssRules; } catch (e) { return; }
+    if (!rules) return;
+    Array.from(rules).forEach(function(rule) {
+      if (!rule.selectorText || !rule.style) return; // skip @media/@font-face/@keyframes wrappers etc
+      var selectors = rule.selectorText.split(',');
+      var matchesAny = selectors.some(function(sel) {
+        var cleanSel = _cssSelectorMatchable(sel);
+        if (!cleanSel) return false;
+        try { return container.querySelector(cleanSel) !== null; } catch (e) { return false; }
+      });
+      if (matchesAny && !seen[rule.cssText]) {
+        seen[rule.cssText] = true;
+        usedRules.push(rule.cssText);
+      }
+    });
+  });
+  return usedRules.join('\n');
+}
+function _snapshotCssCustomPropertiesForExport() {
+  var names = {};
+  Array.from(document.styleSheets).forEach(function(sheet) {
+    var rules;
+    try { rules = sheet.cssRules; } catch (e) { return; }
+    if (!rules) return;
+    Array.from(rules).forEach(function(rule) {
+      if (!rule.style) return;
+      for (var i = 0; i < rule.style.length; i++) {
+        var prop = rule.style[i];
+        if (prop.indexOf('--') === 0) names[prop] = true;
+      }
+    });
+  });
+  var cs = getComputedStyle(document.body);
+  var lines = Object.keys(names).map(function(name) {
+    return '  ' + name + ': ' + cs.getPropertyValue(name).trim() + ';';
+  });
+  return ':root {\n' + lines.join('\n') + '\n}';
+}
+function _prepareExportBody(renderedHtml) {
+  var container = document.createElement('div');
+  container.className = 'export-note-body';
+  container.innerHTML = renderedHtml;
+  container.querySelectorAll('svg.viewer-checkbox').forEach(function(svg) {
+    var input = document.createElement('input');
+    input.type = 'checkbox';
+    // v0.1715 FIX, caught by direct testing before shipping: setting the
+    // .checked DOM PROPERTY does not reflect into the serialized HTML
+    // attribute at all when later reading .innerHTML -- it only affects
+    // the live, in-memory element. Needs the actual attribute set
+    // explicitly for the checked state to survive into the exported
+    // HTML string.
+    if (svg.dataset.cb === 'checked') input.setAttribute('checked', 'checked');
+    svg.replaceWith(input);
+  });
+  return container;
+}
+function exportCurrentNoteHtml() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  logDebugAction('Export note as HTML');
+  saveCurrentNote();
+  var n = notes[currentNoteId];
+  var safeName = n.name.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 40);
+
+  var renderedHtml = urlsToLinks(n.content || '', true);
+  var container = _prepareExportBody(renderedHtml);
+  var usedCss = _extractUsedCssForExport(container);
+  var rootVars = _snapshotCssCustomPropertiesForExport();
+  var fontImportMatch = document.documentElement.outerHTML.match(/@import url\('https:\/\/fonts\.googleapis\.com[^']*'\);/);
+  var fontImport = fontImportMatch ? fontImportMatch[0] : '';
+
+  var doc = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>' + escHtml(n.name) + '</title>' +
+    '<style>\n' + fontImport + '\n' + rootVars + '\n' + usedCss + '\n' +
+    'body { background: var(--bg); color: var(--fg); font-family: var(--font-body); margin: 0; padding: 24px 16px; }\n' +
+    '.export-note-title { font-size: 1.4em; font-weight: 700; margin: 0 0 16px; }\n' +
+    '.export-note-body { max-width: 640px; margin: 0 auto; }\n' +
+    '</style></head><body>' +
+    '<div class="export-note-title">' + escHtml(n.name) + '</div>' +
+    container.innerHTML +
+    '</body></html>';
+
+  downloadText(doc, 'remember-' + safeName + '.html', 'text/html');
+}
+
 function exportCurrentNoteMarkdown() {
   if (!currentNoteId || !notes[currentNoteId]) return;
   logDebugAction('Export note as Markdown');
@@ -23218,6 +23359,9 @@ function makeImportFolderName(label) {
   document.getElementById('export-fmt-txt-btn').addEventListener('click', function() {
     _closeExportFmt(); exportCurrentNoteTxt();
   });
+  document.getElementById('export-fmt-html-btn').addEventListener('click', function() {
+    _closeExportFmt(); exportCurrentNoteHtml();
+  });
 
   // ===== ONBOARDING TOUR =====
   var _tourSlides = [
@@ -24137,12 +24281,20 @@ function makeImportFolderName(label) {
   // everything in a note's toolbar+menu can never strand someone --
   // confirmed by locating settings-btn (home header) and the note-item
   // swipe-delete wrapper (home screen) before this build.
+  // v0.1715: per Lynn -- these five are dual-mode (R&R and typing), but
+  // have nowhere to render their markdown at all when Read & Revise is
+  // entirely disabled (settings.noteEditingMode === 'typing'). Shared by
+  // toolbarPlacementCategory() and getToolbarPlacement() below.
+  var TYPING_ONLY_HIDDEN_BUTTON_IDS = ['bold-mode-btn', 'italic-mode-btn',
+    'highlight-mode-btn', 'crossout-mode-btn', 'color-mode-btn'];
   var TOOLBAR_PLACEMENT_OPTIONS = {
     toolbarOnly: ['toolbar', 'neither'],                    // TOOLBAR_ONLY_BUTTON_IDS: no menu fallback exists
     dualMode:    ['toolbar', 'more', 'both', 'neither'],     // DUAL_MODE_BUTTON_IDS: has its own static More row
     normal:      ['toolbar', 'more', 'neither'],             // everyone else: dynamic-only More fallback, no simultaneous "both" row to build
+    neitherOnly: ['neither'],                                // v0.1715: these five, only while noteEditingMode === 'typing' -- any other choice would be permanently, silently false
   };
   function toolbarPlacementCategory(btnId) {
+    if (settings.noteEditingMode === 'typing' && TYPING_ONLY_HIDDEN_BUTTON_IDS.indexOf(btnId) !== -1) return 'neitherOnly';
     if (TOOLBAR_ONLY_BUTTON_IDS.indexOf(btnId) !== -1) return 'toolbarOnly';
     if (DUAL_MODE_BUTTON_IDS.indexOf(btnId) !== -1) return 'dualMode';
     return 'normal';
@@ -24185,6 +24337,13 @@ function makeImportFolderName(label) {
   // Effective placement for one button id: explicit override, else its
   // category default. rowIds[0] is always used for a pair (see callers).
   function getToolbarPlacement(btnId) {
+    if (settings.noteEditingMode === 'typing' && TYPING_ONLY_HIDDEN_BUTTON_IDS.indexOf(btnId) !== -1) {
+      // Deliberately does NOT read/write settings.toolbarPlacement here --
+      // this reflects the CURRENT, mode-forced state without touching the
+      // user's own stored preference, which is restored automatically
+      // the moment noteEditingMode changes back to 'both' or 'rronly'.
+      return 'neither';
+    }
     var p = settings.toolbarPlacement || {};
     return p[btnId] || toolbarPlacementDefault(btnId);
   }
@@ -33112,11 +33271,14 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     // always shown ready there rather than following hasBlocks at all.
     [boldBtn, italicBtn, crossoutBtn, colorBtn, highlightBtn].forEach(function(b) {
       if (!b) return;
-      // v0.1714: now dual-mode, so always eligible to show regardless of
-      // isView -- but still respect a user's own explicit "Neither"
-      // placement choice for the button, rather than unconditionally
-      // forcing it visible.
-      b.style.display = isToolbarPlacementHidden(b.id) ? 'none' : '';
+      // v0.1715: per Lynn -- when Read & Revise is entirely unavailable
+      // (settings.noteEditingMode === 'typing'), these five never have
+      // anywhere for their markdown to actually render, so they're
+      // hidden outright regardless of the button's own placement choice
+      // -- unlike a normal "Neither" hide, this isn't a per-button
+      // preference, it's a consequence of the mode setting itself.
+      var _typingOnlyMode = settings.noteEditingMode === 'typing';
+      b.style.display = (_typingOnlyMode || isToolbarPlacementHidden(b.id)) ? 'none' : '';
       b.style.opacity = '';
       var dualReady = inView ? hasBlocks : true;
       applyButtonReadiness(b, dualReady ? 'ready' : 'intermediate');
