@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1713 -->
+<!-- Remember App - Version 0.1714 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1713
+  Version 0.1714
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1714 - NEW: Bold, Italic, Highlight, Strikethrough, and Color are now dual-mode, per Lynn -- previously R&R-only (whole-line formatting), now also available in typing mode, operating on the native textarea text selection instead (the same selectionStart/selectionEnd mechanism Indent/Dedent already use). R&R mode's own whole-line behavior is completely unchanged; the buttons simply branch on which mode is active. Bold/Highlight/Strikethrough share one function, since their markers (**, ==, ~~) never collide with each other; Italic gets its own version, since its single-character marker is a substring of Bold's, and every check has to confirm a * is genuinely standalone rather than one half of a **; Color gets its own, since its {color}...{/color} tags are asymmetric in length rather than a symmetric marker. Deliberately conservative throughout, per Lynn's own design: selecting text already wrapped in matching markers toggles them off; selecting text with no markers wraps it fresh; anything ambiguous (a marker on only one side, or an odd count of stray markers inside the selection) shows a toast and changes nothing rather than guessing and silently producing broken or nested markdown. No selection at all inserts an empty marker pair to type into, for Bold/Italic/Highlight/Strikethrough; Color requires an actual selection first, since there's no sensible empty color tag to insert. Color's popover now hides its Checkbox tab in typing mode -- checkbox coloring is a whole-line operation that only makes sense in R&R, exactly as Lynn described. Existing per-button "Lower Toolbar Buttons" hide/show placement choices continue to be respected in both modes -- someone who explicitly hides one of these five still sees it hidden everywhere, not just where it used to be R&R-only. Verified extensively and directly at every layer: the shared marker function (fresh wrap, toggle off via markers just outside the selection, toggle off via markers included IN the selection, no-selection insert, unmatched-marker-nearby warning, odd-internal-marker-count warning); Italic's bold-collision safety specifically (wrapping text already inside a bold span correctly produces italic-inside-bold rather than misreading part of the ** as a lone *, and toggling off an italic span sitting immediately next to a bold one doesn't disturb the bold); Color's tag toggle/re-color/remove/stray-brace-ambiguity paths; then the full click-through for all five buttons in typing mode; then a full regression pass confirming R&R mode's whole-line behavior for all five is completely unchanged. Toolbar Help's own descriptions for all five updated to describe both modes. Suite unchanged: 332/332.
   v0.1713 - FOLLOW-UP FIX to v0.1712's floating Save/Cancel/Scroll control, per Lynn's immediate report -- switching to position:fixed there made it scroll up off-screen and bounce during scroll, worse than the sticky behavior it replaced. Investigated the actual DOM structure directly rather than guessing: the control was living nested deep inside the scrolling dialog, in fact inside one of its own collapsible sections (Note Behavior), several levels of nesting down -- not just a direct child of the dialog as assumed in the previous fix. This is a documented iOS Safari/WebKit quirk: a position:fixed element nested inside a scrolling ancestor that also has a transform (the dialog itself, for horizontal centering) doesn't reliably stay fixed on iOS -- it can scroll and bounce along with the container's own content instead of staying anchored in place, despite what the CSS spec says should happen. Fixed properly this time by moving the control to a true sibling of the dialog in the HTML, completely outside it and any collapsible section -- sidesteps the whole class of bug rather than trying to work around it in place. Its own visibility now follows the dialog's existing open/closed state via a plain CSS sibling selector, requiring no new JavaScript at all, since the dialog's own open/close code already toggles the class this relies on. z-index raised to stay above the dialog now that it's a sibling rather than a nested child (previously correct by ordinary DOM stacking, now needs to be explicit). Per Lynn's clarification, still reserves space at the bottom of the dialog's own content so it doesn't PERMANENTLY cover the last buttons when scrolled all the way down -- temporary overlap while actively scrolling past that point is fine and expected. Verified directly: correctly hidden while the dialog is closed, visible and properly fixed-positioned with the correct stacking order once open, and correctly hidden again on close. Suite unchanged: 332/332.
   v0.1712 - FIX: the Settings dialog's floating Save/Cancel/Scroll control had become inconsistent about actually floating, per Lynn's report -- she'd narrowed it down herself to somewhere around v0.1699 by testing old versions directly, though diffing that exact transition found no changes to the control or its surrounding structure at all. Rather than keep chasing an exact regression point that may be tied to more subtle, content-height-dependent conditions than a single version diff can reveal, addressed the actual request directly: it was built with position:sticky, which only "sticks" while its own scrolling container is actually being scrolled, within that container's own content bounds -- inherently fragile to any change in surrounding content height or structure, which is exactly the kind of thing that degrades subtly over many builds rather than breaking cleanly at one. Per Lynn's explicit request -- always visible, no cleverness about hiding it near the top -- switched to position:fixed, which guarantees this unconditionally rather than depending on scroll state at all. Confirmed the dialog's own existing transform property (used for horizontal centering) correctly makes it the containing block for this fixed-position control, by a standard, well-established CSS rule -- so it stays anchored to the dialog's own bottom-right corner rather than jumping to the full browser viewport. Also added bottom padding scoped specifically to the Settings dialog (not the shared dialog class other dialogs also use), since a fixed-position element is removed from the normal page flow entirely -- without this, the last item in the scrollable content (Reset All Settings to Defaults) would end up hidden behind the control when scrolled all the way down. Verified all four resulting CSS properties directly. Suite unchanged: 332/332.
   v0.1711 - TWO fixes, per Lynn. (1) FIXED: Double Space showed up in typing mode, where it can never actually work. Root cause: unlike Move lines (which it was built to mirror), it only ever had readiness STYLING logic (muting its color when not usable), never an explicit display toggle -- so it stayed visible, just looking disabled, instead of not appearing at all. Also found and fixed the same missing-registration bug show-whitespace-btn had before: it was never added to MODE_GATED_BUTTON_IDS either, which would have let the toolbar-rebuild logic force it back visible regardless of the new display fix. Verified directly: hidden in typing mode, visible in R&R mode. (2) FIXED: a black bar (in reality, an empty dark-background preview container with nothing visible inside it) still appeared when searching "lower toolbar buttons", even after the earlier leaking-content fix. Root cause, found by directly inspecting exactly what stayed visible rather than guessing from the screenshot: #dark-mode-preview reuses the .settings-row class purely for its own internal layout (two rows labeled "Background" and "Text Color"), and the earlier fix for the "italic" bug had exempted ANY container holding nested .settings-row elements from ever being hidden, regardless of whether those nested rows were themselves currently visible -- so when neither of this container's two rows matched the search, they correctly hid, but the wrapper itself (with its own dark background) stayed visible with nothing inside it. A second, related bug surfaced while fixing this and testing multiple searches in sequence: simply excluding a genuine rows-container (like #toolbar-visibility-rows) from the hiding pass whenever it DID have a visible match left its own display completely untouched in that case -- meaning a PREVIOUS search that correctly hid it (nothing matched that time) left it stuck hidden forever after, even once a LATER search had a real match inside it, since nothing ever explicitly set it back to visible. Redesigned so any container holding nested rows always has its own visibility explicitly set on every search call, based on whether it currently has at least one visible row inside -- never simply left alone to potentially carry stale state from an earlier search. Verified directly: the empty preview container correctly hides now; a rows-container with a genuine match stays visible; and the exact sequential-search scenario that surfaced the second bug (searching "italic", then "line spacing", then "checkbox") now correctly finds "Toggle checkbox" every time. Suite unchanged: 332/332.
@@ -6654,23 +6655,23 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <text x="1" y="21" font-size="24" font-weight="900" font-family="serif">H</text>
         </svg>
       </button>
-      <button class="icon-btn view-only-btn readiness-btn" id="bold-mode-btn" aria-label="Toggle bold mode" title="Bold lines" style="display:none">
+      <button class="icon-btn readiness-btn" id="bold-mode-btn" aria-label="Toggle bold mode" title="Bold lines" style="display:none">
         <svg viewBox="0 0 24 24" fill="currentColor">
           <text x="1" y="21" font-size="24" font-weight="900" font-family="serif">B</text>
         </svg>
       </button>
       <!-- Italic — select-first, view mode only -->
-      <button class="icon-btn view-only-btn readiness-btn" id="italic-mode-btn" aria-label="Italic selected lines" title="Italic" style="display:none">
+      <button class="icon-btn readiness-btn" id="italic-mode-btn" aria-label="Italic selected lines" title="Italic" style="display:none">
         <svg viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none">
           <text x="5" y="21" font-size="24" font-weight="400" font-style="italic" font-family="serif">I</text>
         </svg>
       </button>
       <!-- Highlight — select-first, view mode only -->
-      <button class="icon-btn view-only-btn readiness-btn" id="highlight-mode-btn" aria-label="Highlight selected lines" title="Highlight" style="display:none">
+      <button class="icon-btn readiness-btn" id="highlight-mode-btn" aria-label="Highlight selected lines" title="Highlight" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><rect x="4" y="3" width="10" height="14" rx="2" fill="var(--highlight-color,#ffe066)" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="3" width="10" height="4" rx="2" fill="rgba(0,0,0,0.15)" stroke="currentColor" stroke-width="1.8"/><polygon points="4,17 14,17 11,22 7,22" fill="rgba(0,0,0,0.2)" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><line x1="7" y1="22" x2="11" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
       <!-- Color mode toggle + swatch always adjacent — only shown in view mode -->
-      <button class="icon-btn view-only-btn readiness-btn" id="color-mode-btn" aria-label="Toggle color mode" title="Color lines" style="display:none">
+      <button class="icon-btn readiness-btn" id="color-mode-btn" aria-label="Toggle color mode" title="Color lines" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
           <circle cx="12" cy="12" r="10"/>
           <path d="M12 2a10 10 0 010 20" fill="#aaaaaa" stroke="none"/>
@@ -6680,7 +6681,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       </button>
       <!-- Strikethrough + Clear strikethroughs grouped — move and hide as a pair -->
       <div id="crossout-group" style="display:flex;align-items:center;border-radius:6px;border:1.5px solid transparent;transition:border-color 0.2s;flex-shrink:0">
-        <button class="icon-btn view-only-btn readiness-btn" id="crossout-mode-btn" aria-label="Strikethrough selected lines" title="Strikethrough" style="display:none">
+        <button class="icon-btn readiness-btn" id="crossout-mode-btn" aria-label="Strikethrough selected lines" title="Strikethrough" style="display:none">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="4" y1="12" x2="20" y2="12"/>
             <path d="M17 5H9.5a3.5 3.5 0 000 7"/>
@@ -10881,7 +10882,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1713';
+const APP_VERSION = '0.1714';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -18245,6 +18246,210 @@ function applyCodeFenceToBlocks() {
   selectedBlocks.clear(); // line indices have shifted; stale selection would be wrong
   renderBlockSelections();
   updateViewOnlyBtns();
+}
+
+// v0.1714: typing-mode selection-based formatting, per Lynn -- unlike
+// applyFormattingToBlocks() above (whole-line, R&R mode only), these
+// operate on the textarea's own native selectionStart/selectionEnd, the
+// same mechanism indentLines()/dedentLines() already rely on. Shared by
+// Bold (**), Highlight (==), and Strikethrough (~~) -- their markers
+// never collide with each other, so one function handles all three.
+// Italic's * is handled separately, since it collides with Bold's **
+// (a lone * could easily be misread as half of a **).
+//
+// Deliberately conservative per Lynn's own design: if marker presence
+// around/within the selection is ambiguous (present on only one side,
+// or an odd number of stray occurrences inside the selection itself),
+// this warns via toast and changes nothing, rather than guessing and
+// silently producing broken or nested markdown.
+function _selMarkerCountIn(text, marker) {
+  var count = 0, idx = 0;
+  while ((idx = text.indexOf(marker, idx)) !== -1) { count++; idx += marker.length; }
+  return count;
+}
+function toggleSelectionMarker(ed, marker, label) {
+  var val = ed.value;
+  var start = ed.selectionStart;
+  var end = ed.selectionEnd;
+  var mlen = marker.length;
+
+  if (start === end) {
+    // No selection: insert an empty pair, cursor placed between them,
+    // matching how most text editors handle "format with nothing
+    // selected" — a natural way to start typing already-formatted text.
+    ed.value = val.slice(0, start) + marker + marker + val.slice(start);
+    ed.setSelectionRange(start + mlen, start + mlen);
+    _afterTypingModeEdit(ed);
+    return;
+  }
+
+  var selected = val.slice(start, end);
+  var outerBefore = val.slice(Math.max(0, start - mlen), start) === marker;
+  var outerAfter  = val.slice(end, end + mlen) === marker;
+  var innerWrapped = selected.length > 2 * mlen && selected.slice(0, mlen) === marker && selected.slice(-mlen) === marker;
+
+  // Case A: selection is the INNER content of an already-wrapped span
+  // (markers sit just OUTSIDE the selection on both sides) — toggle off.
+  if (outerBefore && outerAfter) {
+    ed.value = val.slice(0, start - mlen) + selected + val.slice(end + mlen);
+    ed.setSelectionRange(start - mlen, end - mlen);
+    _afterTypingModeEdit(ed);
+    return;
+  }
+  // Case B: selection includes the markers themselves (selected text
+  // starts and ends with the marker) — toggle off, keep only the inside.
+  if (innerWrapped) {
+    var inner = selected.slice(mlen, selected.length - mlen);
+    ed.value = val.slice(0, start) + inner + val.slice(end);
+    ed.setSelectionRange(start, start + inner.length);
+    _afterTypingModeEdit(ed);
+    return;
+  }
+  // Case C: a marker sits on only ONE side (outer or inner check
+  // partially matched) — ambiguous, don't guess.
+  if (outerBefore !== outerAfter) {
+    showToast('Selection has an unmatched ' + label + ' marker nearby — nothing changed', false);
+    return;
+  }
+  // Case D: an odd number of this marker appears INSIDE the selection
+  // itself — also ambiguous (wrapping around a stray unmatched marker
+  // could produce confusing nested/broken markdown).
+  if (_selMarkerCountIn(selected, marker) % 2 !== 0) {
+    showToast('Selection contains an unmatched ' + label + ' marker — nothing changed', false);
+    return;
+  }
+  // Case E: clean — wrap fresh.
+  ed.value = val.slice(0, start) + marker + selected + marker + val.slice(end);
+  ed.setSelectionRange(start + mlen, end + mlen);
+  _afterTypingModeEdit(ed);
+}
+// Shared bookkeeping after any typing-mode selection edit: sync the
+// note's stored content, keep the textarea focused, save.
+function _afterTypingModeEdit(ed) {
+  if (currentNoteId && notes[currentNoteId]) {
+    notes[currentNoteId].content = ed.value;
+    saveNotes();
+  }
+  ed.focus();
+}
+
+// v0.1714: Italic gets its own version rather than reusing
+// toggleSelectionMarker() above, since its single-character marker (*)
+// is a substring of Bold's own marker (**) -- every check here has to
+// confirm a * is truly standalone, not one half of a ** pair, or Bold
+// and Italic would trip over each other constantly.
+function _isLoneStarAt(val, pos) {
+  // Is there a standalone * starting at index `pos`, not part of a **?
+  if (val.charAt(pos) !== '*') return false;
+  if (val.charAt(pos - 1) === '*') return false; // preceded by * -- this is the SECOND star of a **
+  if (val.charAt(pos + 1) === '*') return false; // followed by * -- this is the FIRST star of a **
+  return true;
+}
+function toggleSelectionItalic(ed) {
+  var val = ed.value;
+  var start = ed.selectionStart;
+  var end = ed.selectionEnd;
+
+  if (start === end) {
+    ed.value = val.slice(0, start) + '**' + val.slice(start);
+    ed.setSelectionRange(start + 1, start + 1);
+    _afterTypingModeEdit(ed);
+    return;
+  }
+
+  var selected = val.slice(start, end);
+  var outerBefore = _isLoneStarAt(val, start - 1);
+  var outerAfter  = _isLoneStarAt(val, end);
+  var innerStart = selected.charAt(0) === '*' && selected.charAt(1) !== '*';
+  var innerEnd = selected.length > 1 && selected.charAt(selected.length - 1) === '*' && selected.charAt(selected.length - 2) !== '*';
+  var innerWrapped = selected.length > 2 && innerStart && innerEnd;
+
+  if (outerBefore && outerAfter) {
+    ed.value = val.slice(0, start - 1) + selected + val.slice(end + 1);
+    ed.setSelectionRange(start - 1, end - 1);
+    _afterTypingModeEdit(ed);
+    return;
+  }
+  if (innerWrapped) {
+    var inner = selected.slice(1, -1);
+    ed.value = val.slice(0, start) + inner + val.slice(end);
+    ed.setSelectionRange(start, start + inner.length);
+    _afterTypingModeEdit(ed);
+    return;
+  }
+  if (outerBefore !== outerAfter) {
+    showToast('Selection has an unmatched italic marker nearby — nothing changed', false);
+    return;
+  }
+  // Count lone (non-**) stars inside the selection for the parity check.
+  var loneCount = 0;
+  for (var i = 0; i < selected.length; i++) {
+    if (_isLoneStarAt(selected, i)) loneCount++;
+  }
+  if (loneCount % 2 !== 0) {
+    showToast('Selection contains an unmatched italic marker — nothing changed', false);
+    return;
+  }
+  ed.value = val.slice(0, start) + '*' + selected + '*' + val.slice(end);
+  ed.setSelectionRange(start + 1, end + 1);
+  _afterTypingModeEdit(ed);
+}
+
+// v0.1714: Color, per Lynn -- text-color tags are asymmetric
+// ({color}...{/color}, different length open vs close) unlike the other
+// three, so this doesn't reuse toggleSelectionMarker()'s symmetric-
+// marker logic. Only handles the case where the selection ITSELF
+// includes the tags (the natural result of re-selecting text you just
+// colored) -- doesn't attempt to detect tags sitting just outside the
+// selection the way the symmetric-marker functions do, since a named,
+// asymmetric tag makes that check meaningfully more complex for a
+// benefit Lynn's own described use case (coloring a word or two) doesn't
+// need. Shared by both plain text color and highlight color -- callers
+// pass which tag syntax to use.
+var COLOR_NAMES_RE = 'red|orange|gold|yellow|green|blue|purple|magenta|pink|rose|violet|black|gray|white|custom|custom2|custom3';
+function applySelectionTextColor(ed, color) {
+  var val = ed.value;
+  var start = ed.selectionStart;
+  var end = ed.selectionEnd;
+  if (start === end) {
+    showToast('Select text first to color it', false);
+    return;
+  }
+  var selected = val.slice(start, end);
+  var wrapRe = new RegExp('^\\{(' + COLOR_NAMES_RE + ')\\}([\\s\\S]*)\\{/\\1\\}$');
+  var m = selected.match(wrapRe);
+  if (!m && /[{}]/.test(selected)) {
+    // Stray brace characters present, but not a single clean wrap around
+    // the whole selection -- could be a partial/nested tag boundary.
+    // Don't guess.
+    showToast('Selection has an unclear color tag inside it — nothing changed', false);
+    return;
+  }
+  var inner = m ? m[2] : selected;
+  var newText = (color === 'none' || (m && m[1] === color)) ? inner : ('{' + color + '}' + inner + '{/' + color + '}');
+  ed.value = val.slice(0, start) + newText + val.slice(end);
+  ed.setSelectionRange(start, start + newText.length);
+  _afterTypingModeEdit(ed);
+}
+function applySelectionHighlightColor(ed, hex) {
+  var val = ed.value;
+  var start = ed.selectionStart;
+  var end = ed.selectionEnd;
+  if (start === end) {
+    showToast('Select text first to highlight it', false);
+    return;
+  }
+  var selected = val.slice(start, end);
+  var m = selected.match(/^==(?:#[0-9a-fA-F]{3,6}(?:\|#[0-9a-fA-F]{3,6})?:)?([\s\S]*)==$/);
+  if (!m && /==/.test(selected)) {
+    showToast('Selection has an unclear highlight marker inside it — nothing changed', false);
+    return;
+  }
+  var inner = m ? m[1] : selected;
+  var newText = (!hex) ? inner : ('==' + hex + ':' + inner + '==');
+  ed.value = val.slice(0, start) + newText + val.slice(end);
+  ed.setSelectionRange(start, start + newText.length);
+  _afterTypingModeEdit(ed);
 }
 
 function applyFormattingToBlocks(type, color) {
@@ -30539,12 +30744,12 @@ function makeImportFolderName(label) {
     { id: 'toggle-checkbox-btn',  name: 'Toggle checkbox',    desc: 'Convert the current line to a checkbox item (- [ ]), or remove the checkbox.' },
     { id: 'select-all-btn',       name: 'Select all',         desc: 'Select all text in Typing mode, or all lines in Read & Revise mode. Tap again to deselect.' },
     { id: 'quick-add-btn',        name: 'Quick add',          desc: 'Open the Add Text to Note dialog — insert text at the top, bottom, before/after a specific line, or after a divider.' },
-    { id: 'bold-mode-btn',        name: 'Bold',               desc: 'Make selected text bold (**bold**).' },
-    { id: 'italic-mode-btn',      name: 'Italic',             desc: 'Make selected text italic (*italic*).' },
+    { id: 'bold-mode-btn',        name: 'Bold',               desc: 'Read & Revise: makes selected lines bold. Typing mode: wraps the selected text in ** instead — tap again on already-bolded text to remove it. With nothing selected, inserts an empty ** ** pair to type into.' },
+    { id: 'italic-mode-btn',      name: 'Italic',             desc: 'Read & Revise: makes selected lines italic. Typing mode: wraps the selected text in * instead — tap again on already-italicized text to remove it. With nothing selected, inserts an empty pair to type into.' },
     { id: 'heading-btn',          name: 'Heading',            desc: 'Cycle the current line through heading levels H1–H6, then back to normal text.' },
-    { id: 'highlight-mode-btn',   name: 'Highlight',          desc: 'Apply the chosen highlight color to selected text (==highlighted==).' },
-    { id: 'color-mode-btn',       name: 'Color',              desc: 'Apply the chosen text color to selected text ({color}text{/color}).' },
-    { id: 'crossout-group',       name: 'Strikethrough',      desc: 'Toggle strikethrough formatting (~~text~~) on selected text.' },
+    { id: 'highlight-mode-btn',   name: 'Highlight',          desc: 'Read & Revise: highlights selected lines. Typing mode: wraps the selected text in == instead — tap again on already-highlighted text to remove it. Long-press for a color palette in either mode.' },
+    { id: 'color-mode-btn',       name: 'Color',              desc: 'Read & Revise: opens a picker to color selected lines\u2019 text, checkboxes, or highlight. Typing mode: colors the selected text or its highlight instead — the Checkbox tab is hidden there, since checkbox coloring only makes sense for a whole line.' },
+    { id: 'crossout-group',       name: 'Strikethrough',      desc: 'Read & Revise: strikes through selected lines. Typing mode: wraps the selected text in ~~ instead — tap again on already-struck-through text to remove it.' },
     { id: 'find-btn',             name: 'Find in note',       desc: 'Open the search bar to find and highlight text within this note.' },
     { id: 'font-size-btn',        name: 'Text size',          desc: 'Adjust the font size for this note.' },
     { id: 'ruler-btn',            name: 'Reading ruler',      desc: 'Show or hide a horizontal guide line to help you track your place while reading.' },
@@ -32813,7 +33018,13 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     var toggleCbBtn = document.getElementById('toggle-checkbox-btn');
     var headingBtn = document.getElementById('heading-btn');
     var showWhitespaceBtnEl = document.getElementById('show-whitespace-btn');
-    [crossoutBtn, boldBtn, italicBtn, highlightBtn, colorBtn, checkModeBtn, toggleCbBtn, headingBtn, addBlankLineBtn, showWhitespaceBtnEl].forEach(function(b) {
+    // v0.1714: Bold, Italic, Highlight, Strikethrough, and Color are now
+    // dual-mode (like Select All already was) -- removed from this
+    // always-hide-in-typing-mode list. check-mode-btn, toggle-checkbox-btn,
+    // heading-btn, add-blank-line-btn, and Show Spaces and Tabs remain
+    // R&R-only, since their whole-line semantics genuinely don't have a
+    // typing-mode equivalent.
+    [checkModeBtn, toggleCbBtn, headingBtn, addBlankLineBtn, showWhitespaceBtnEl].forEach(function(b) {
       if (b) b.style.display = inView ? '' : 'none';
     });
     // Jump to heading / Outline mode (stage 3c toolbar buttons): R&R mode
@@ -32887,17 +33098,41 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     }
 
     // Formatting buttons: ready when blocks are selected, intermediate otherwise
-    [boldBtn, italicBtn, crossoutBtn, colorBtn, highlightBtn, toggleCbBtn, headingBtn].forEach(function(b) {
+    [toggleCbBtn, headingBtn].forEach(function(b) {
       if (!b) return;
       b.style.opacity = '';
       applyButtonReadiness(b, (inView && hasBlocks) ? 'ready' : 'intermediate');
-      b.title = b.id === 'bold-mode-btn'        ? (hasBlocks ? 'Bold selected lines'           : 'Bold (select lines first)') :
-                b.id === 'italic-mode-btn'       ? (hasBlocks ? 'Italic selected lines'         : 'Italic (select lines first)') :
-                b.id === 'crossout-mode-btn'     ? (hasBlocks ? 'Strikethrough selected lines'  : 'Strikethrough (select lines first)') :
-                b.id === 'color-mode-btn'        ? (hasBlocks ? 'Color selected lines'          : 'Color (select lines first)') :
-                b.id === 'highlight-mode-btn'    ? (hasBlocks ? 'Highlight selected lines'      : 'Highlight (select lines first)') :
-                b.id === 'toggle-checkbox-btn'   ? (hasBlocks ? 'Toggle checkbox/hyphen'        : 'Toggle checkbox (select lines first)') :
+      b.title = b.id === 'toggle-checkbox-btn'   ? (hasBlocks ? 'Toggle checkbox/hyphen'        : 'Toggle checkbox (select lines first)') :
                 b.id === 'heading-btn'           ? (hasBlocks ? 'Apply heading'                 : 'Heading (select lines first)') : b.title;
+    });
+    // v0.1714: Bold/Italic/Highlight/Strikethrough/Color are dual-mode --
+    // in R&R mode they still depend on a block selection like before, but
+    // in typing mode they're always usable (even with nothing selected,
+    // since they insert an empty marker pair to type into), so they're
+    // always shown ready there rather than following hasBlocks at all.
+    [boldBtn, italicBtn, crossoutBtn, colorBtn, highlightBtn].forEach(function(b) {
+      if (!b) return;
+      // v0.1714: now dual-mode, so always eligible to show regardless of
+      // isView -- but still respect a user's own explicit "Neither"
+      // placement choice for the button, rather than unconditionally
+      // forcing it visible.
+      b.style.display = isToolbarPlacementHidden(b.id) ? 'none' : '';
+      b.style.opacity = '';
+      var dualReady = inView ? hasBlocks : true;
+      applyButtonReadiness(b, dualReady ? 'ready' : 'intermediate');
+      var rrLabel =
+        b.id === 'bold-mode-btn'        ? 'Bold selected lines' :
+        b.id === 'italic-mode-btn'      ? 'Italic selected lines' :
+        b.id === 'crossout-mode-btn'    ? 'Strikethrough selected lines' :
+        b.id === 'color-mode-btn'       ? 'Color selected lines' :
+        b.id === 'highlight-mode-btn'   ? 'Highlight selected lines' : b.title;
+      var typingLabel =
+        b.id === 'bold-mode-btn'        ? 'Bold selected text' :
+        b.id === 'italic-mode-btn'      ? 'Italic selected text' :
+        b.id === 'crossout-mode-btn'    ? 'Strikethrough selected text' :
+        b.id === 'color-mode-btn'       ? 'Color selected text' :
+        b.id === 'highlight-mode-btn'   ? 'Highlight selected text' : b.title;
+      b.title = inView ? (hasBlocks ? rrLabel : rrLabel.replace('selected lines', '(select lines first)')) : typingLabel;
     });
     // Move button: ready when a contiguous selection exists and nothing
     // else blocks it; intermediate otherwise (covers both "nothing
@@ -33694,14 +33929,22 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   })();
 
   document.getElementById('bold-mode-btn').addEventListener('click', function() {
-    if (!isViewMode || selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
-    applyFormattingToBlocks('bold');
+    if (isViewMode) {
+      if (selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
+      applyFormattingToBlocks('bold');
+    } else {
+      toggleSelectionMarker(document.getElementById('note-editor'), '**', 'bold');
+    }
   });
 
-  // ── Italic: one-shot on selected blocks ──────────────────────────────────
+  // ── Italic: one-shot on selected blocks (R&R) / selection (typing) ───────
   document.getElementById('italic-mode-btn').addEventListener('click', function() {
-    if (!isViewMode || selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
-    applyFormattingToBlocks('italic');
+    if (isViewMode) {
+      if (selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
+      applyFormattingToBlocks('italic');
+    } else {
+      toggleSelectionItalic(document.getElementById('note-editor'));
+    }
   });
 
   // ── Highlight: one-shot on selected blocks; long-press = quick palette ──
@@ -33781,22 +34024,37 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   });
   _hlBtnEl.addEventListener('click', function() {
     if (_hlLp.fired) return; // long-press opened the palette; swallow this tap
-    if (!isViewMode || selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
     var _active = settings.activeHighlightHex || '';
-    if (_active) applyFormattingToBlocks('highlight-color', _active);
-    else applyFormattingToBlocks('highlight');
+    if (isViewMode) {
+      if (selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
+      if (_active) applyFormattingToBlocks('highlight-color', _active);
+      else applyFormattingToBlocks('highlight');
+    } else {
+      var ed = document.getElementById('note-editor');
+      if (_active) applySelectionHighlightColor(ed, _active);
+      else toggleSelectionMarker(ed, '==', 'highlight');
+    }
   });
   _updateHlBtnTint();
 
   // ── Strikethrough: one-shot on selected blocks ────────────────────────────
   document.getElementById('crossout-mode-btn').addEventListener('click', function() {
-    if (!isViewMode || selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
-    applyFormattingToBlocks('strikethrough');
+    if (isViewMode) {
+      if (selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
+      applyFormattingToBlocks('strikethrough');
+    } else {
+      toggleSelectionMarker(document.getElementById('note-editor'), '~~', 'strikethrough');
+    }
   });
 
   // ── Color: open picker popover ────────────────────────────────────────────
   document.getElementById('color-mode-btn').addEventListener('click', function() {
-    if (!isViewMode || selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
+    if (isViewMode) {
+      if (selectedBlocks.size === 0) { showToast("Use the 'Select lines' button in the upper toolbar first", false); flashSelectBtn(); return; }
+    } else {
+      var ed = document.getElementById('note-editor');
+      if (ed.selectionStart === ed.selectionEnd) { showToast('Select text first to color it', false); return; }
+    }
     if (colorPickerOpen) { closeColorPicker(); } else { openColorPicker(); }
   });
   document.getElementById('color-picker-close-btn').addEventListener('click', function(e) {
@@ -33897,6 +34155,16 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   // Patch into existing openColorPicker wrapper (scroll arrows already wrap it)
   var _prevOpenCP = openColorPicker;
   openColorPicker = function() { _prevOpenCP(); setCptTarget('text'); };
+  // v0.1714: per Lynn -- Checkbox coloring only makes sense as a whole-
+  // line operation (it colors the checkbox bracket itself, not any
+  // selected text), so it stays R&R-only. Hide that tab entirely when
+  // the picker is opened from typing mode.
+  var _prevOpenCP2 = openColorPicker;
+  openColorPicker = function() {
+    _prevOpenCP2();
+    var cbTab = document.getElementById('cpt-checkbox');
+    if (cbTab) cbTab.style.display = isViewMode ? '' : 'none';
+  };
 
   // Named color swatches (text + checkbox targets)
   document.querySelectorAll('.color-picker-swatch[data-color]').forEach(function(swatch) {
@@ -33904,7 +34172,11 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     swatch.addEventListener('click', function() {
       var color = this.dataset.color;
       closeColorPicker();
-      if (_cptTarget === 'checkbox') {
+      if (!isViewMode) {
+        // Checkbox tab is hidden in typing mode (see above), so _cptTarget
+        // here can only ever be 'text'.
+        applySelectionTextColor(document.getElementById('note-editor'), color);
+      } else if (_cptTarget === 'checkbox') {
         applyFormattingToBlocks('cbcolor', color);
       } else {
         applyFormattingToBlocks('color', color);
@@ -33917,7 +34189,11 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     swatch.addEventListener('click', function() {
       var color = this.dataset.hlcolor;
       closeColorPicker();
-      applyFormattingToBlocks('highlight-color', color);
+      if (!isViewMode) {
+        applySelectionHighlightColor(document.getElementById('note-editor'), color === 'none' ? '' : color);
+      } else {
+        applyFormattingToBlocks('highlight-color', color);
+      }
     });
   });
   document.addEventListener('click', function(e) {
