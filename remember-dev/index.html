@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1703 -->
+<!-- Remember App - Version 0.1711 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1703
+  Version 0.1711
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,14 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1711 - TWO fixes, per Lynn. (1) FIXED: Double Space showed up in typing mode, where it can never actually work. Root cause: unlike Move lines (which it was built to mirror), it only ever had readiness STYLING logic (muting its color when not usable), never an explicit display toggle -- so it stayed visible, just looking disabled, instead of not appearing at all. Also found and fixed the same missing-registration bug show-whitespace-btn had before: it was never added to MODE_GATED_BUTTON_IDS either, which would have let the toolbar-rebuild logic force it back visible regardless of the new display fix. Verified directly: hidden in typing mode, visible in R&R mode. (2) FIXED: a black bar (in reality, an empty dark-background preview container with nothing visible inside it) still appeared when searching "lower toolbar buttons", even after the earlier leaking-content fix. Root cause, found by directly inspecting exactly what stayed visible rather than guessing from the screenshot: #dark-mode-preview reuses the .settings-row class purely for its own internal layout (two rows labeled "Background" and "Text Color"), and the earlier fix for the "italic" bug had exempted ANY container holding nested .settings-row elements from ever being hidden, regardless of whether those nested rows were themselves currently visible -- so when neither of this container's two rows matched the search, they correctly hid, but the wrapper itself (with its own dark background) stayed visible with nothing inside it. A second, related bug surfaced while fixing this and testing multiple searches in sequence: simply excluding a genuine rows-container (like #toolbar-visibility-rows) from the hiding pass whenever it DID have a visible match left its own display completely untouched in that case -- meaning a PREVIOUS search that correctly hid it (nothing matched that time) left it stuck hidden forever after, even once a LATER search had a real match inside it, since nothing ever explicitly set it back to visible. Redesigned so any container holding nested rows always has its own visibility explicitly set on every search call, based on whether it currently has at least one visible row inside -- never simply left alone to potentially carry stale state from an earlier search. Verified directly: the empty preview container correctly hides now; a rows-container with a genuine match stays visible; and the exact sequential-search scenario that surfaced the second bug (searching "italic", then "line spacing", then "checkbox") now correctly finds "Toggle checkbox" every time. Suite unchanged: 332/332.
+  v0.1710 - FOUR fixes, per Lynn -- three of them traced back to one root cause. (1) ROOT CAUSE: Double Space and Show Spaces and Tabs were never added to DEFAULT_TOOLBAR_ORDER at all when they were first built. This single omission explained three separate symptoms at once: the Toolbar Help cheat sheet only ever lists buttons present in the user's effective toolbar order, so they never appeared there regardless of being in its own description list; the Settings "Lower Toolbar Buttons" section is built from that same effective order, so they never appeared there either; and their actual position in the real toolbar was essentially undefined, since nothing told the app where they belonged. Confirmed directly that an existing reconciliation mechanism (insertMissingIdsAtDefaultPosition) already handles inserting a new button into a user's customized saved order correctly -- it was never the problem; it depends entirely on the button existing in DEFAULT_TOOLBAR_ORDER in the first place, which these two never did. Fixed by adding both, positioned right after scroll-bottom-btn per Lynn's explicit request -- verified this one change alone resolves all three symptoms: both now appear in the Toolbar Help panel, both now appear in the Settings reorder/hide list, and both land in the correct toolbar position. (2) FIXED: searching Settings for "Lower Toolbar Buttons" (its own subsection title, verbatim) found nothing. Same structural gap as the earlier "italic" search bug, but hitting the matching logic instead of the hiding logic this time: rows built by buildToolbarVisibilityRows() are nested inside a wrapper div, so a plain previousElementSibling walk from any individual row could never reach the title, which is a sibling of the wrapper, not of the rows themselves. Replaced the inline sibling-only walk (used in two places) with a shared helper that also walks up through ancestor containers when a direct sibling search comes up empty. Verified directly: searching "lower toolbar buttons" now correctly shows both a matching row inside the section and the section's own title. Suite unchanged: 332/332.
+  v0.1709 - TWO fixes, per Lynn. (1) FIXED: Double Space and Show Spaces and Tabs had been placed INSIDE the crossout-group wrapper div -- visually boxed together with Strikethrough and Clear All Strikethroughs as if they were that button's paired partner, which they're not. Root cause: both were inserted right after clear-strikethroughs-btn without first closing the wrapper div it lives in. Moved both outside the box as separate, standalone buttons; the box itself now contains only its true pair again. Verified directly: crossout-group's only children are crossout-mode-btn and clear-strikethroughs-btn, and neither new button's parent is the group anymore. (2) Updated the Toolbar Help cheat sheet (the ? button's reference list) -- audited it programmatically against the toolbar's own full button registry rather than checking by eye, which found two real gaps: select-all-btn (a genuine lower toolbar button, now documented) and note-fab (deliberately left out -- it's a floating action button, not a lower toolbar button, and its function is already covered by the existing "Quick add" entry, so adding it would have been redundant). Also updated Show Spaces and Tabs' own description, which still said "small gray marks" -- stale since a recent fix made those glyphs prominent, full-strength colored marks rather than muted gray ones. Suite unchanged: 332/332.
+  v0.1708 - FOUR fixes to "Show spaces and tabs", all per Lynn's follow-up bug reports. (1) FIXED: the button stayed visible in typing mode. Root cause: a THIRD list this button was never added to, MODE_GATED_BUTTON_IDS -- without it, the toolbar-rebuild logic unconditionally force-showed the button (since it wasn't hidden via the placement setting), overriding whatever the correct, mode-aware logic had just set. Diagnosed directly: confirmed the mode-aware function WAS running and correctly setting display:none each time, only to have it silently reset afterward -- traced to this exact list, whose entire job is "only ever force-hide, never force-show" for buttons whose actual visibility is decided elsewhere. (2) FIXED: an indented checkbox/hyphen item's leading whitespace never showed at all, regardless of tabs or spaces or the toggle -- a separate, deliberate rendering step strips ALL leading whitespace from these lines unconditionally (their visual indent comes from calculated CSS padding instead, not literal characters), so there was nothing left in the text for the glyph pass to ever find. Now captured before stripping and shown as glyphs, when the toggle is on, positioned right where the padding begins; toggle-off behavior is completely unchanged. (3) FIXED: a tab pasted at the start of a line WITH real text got shown as spaces, while the same tab on an otherwise-blank line, mid-line, or at the end of a line displayed correctly -- exactly Lynn's own precise observation. Root cause: a separate, pre-existing rendering step (for consistent visual alignment of wrapped paragraph lines) always expanded a LEADING tab into literal space characters before the glyph pass ever ran -- only leading whitespace on a plain paragraph went through it at all, which is exactly why nowhere else was affected. Now skips that expansion when the toggle is on, so the real character survives through to the glyph pass. (4) FIXED: the tab arrow sometimes overlapped the start of the following word. Root cause: a tab character with no surrounding pre-formatted context (e.g. one appearing mid-line, inside normal text flow) collapses to near-zero rendered width under default CSS whitespace handling, while the arrow still tried to render at its fixed size regardless, spilling past the character's own collapsed box into whatever came next. Gave the tab's own span an explicit white-space:pre and a reasonable tab-size, so it always reserves real, predictable width for the arrow no matter where in the line it appears -- the width Lynn was seeing is the tab's own true rendered width, now shown accurately rather than as an overflow bug. Verified all four directly: the button correctly hides/shows across typing and R&R mode; an indented checkbox item's tab is now visible as a glyph; a leading tab on a line with real text is now shown as a real tab rather than expanded spaces, with the toggle-off case confirmed completely unchanged in both fixes. Suite unchanged: 332/332.
+  v0.1707 - FOUR fixes/changes, per Lynn. (1) Note statistics now says "paragraphs" instead of "lines" -- non-technical people may not realize "line" means a whole text block up to a newline. (2) Show Spaces and Tabs glyphs made substantially more prominent -- full-strength color instead of muted gray, larger dots, full opacity -- since this is a quick on/off sanity-check tool for technical users (not supported in typing mode, not meant to stay on for long stretches), so subtlety was working against the whole point of it. (3) FIXED: heading lines and whitespace-only lines never showed any glyphs at all, regardless of the toggle -- both had early-return code paths that bypassed the glyph substitution function entirely (headings inserted their already-assembled content directly; blank/whitespace-only lines returned a hardcoded empty div, discarding the raw content completely). Fixed both; verified directly, including that a truly empty line and the toggle-off case are both completely unchanged. (4) NEW: "Indent with tab characters" setting, per Lynn's own bug report and proposed design -- root cause confirmed directly: the Tab key's own keydown handler intercepts it completely (preventDefault) and always calls the app's own indent action instead, which always inserted a fixed number of spaces, regardless of any paste-related setting -- "Convert tabs to spaces on paste" was never involved in this at all, which is why turning it off didn't help. New setting, off by default (matching her own "team spaces" preference), makes indentLines()/dedentLines() -- one shared function powering the Tab key, Shift+Tab, and both toolbar Indent/Unindent buttons at once -- insert or remove a single real tab character instead. "Spaces per indent" dims and its input disables while the new setting is on, exactly as she proposed, since it no longer applies. CAUGHT AND FIXED before shipping: an early version defined the dimming function nested inside a locally-scoped settings-wiring block, inaccessible from the sync-on-open code far earlier in the file that also needs to call it -- a real "is not defined" crash on opening Settings, caught immediately by the harness's own Settings-search regression check built two builds ago exercising openSettings() -- concrete proof of exactly the kind of bug that check exists to catch. Fixed by making it a proper global, top-level function. Verified directly: tab-mode insert produces a single real tab character with the cursor shifted by exactly one position (not four); dedent removes exactly one leading tab; a multi-line selection gets a tab prepended to every line; the setting OFF case is completely unchanged (still four spaces, no regression); and all three dimming states (off, on, back off) toggle correctly. Suite unchanged: 332/332.
+  v0.1706 - Relabeled Note statistics' second character count, per Lynn -- "without spaces" was confusing since the underlying count already excluded tabs and newlines too, not just literal space characters (the regex used the standard \s pattern, which covers all three at once). Now reads "non-whitespace" instead -- the accurate, standard term for exactly what's being excluded, not new jargon. Only the label changed; the underlying count was already correct. Suite unchanged: 332/332.
+  v0.1705 - TWO new features, per Lynn. (1) "Show spaces and tabs" lower toolbar button, R&R mode only, persistent toggle (settings.showWhitespace) matching Outline mode's own on/off pattern (.active class, accent-colored outline). Shows spaces as a small gray dot, tabs as a gray arrow, and non-breaking spaces as a distinctly-colored dot (an nbsp looks identical to a plain space but never wraps, exactly the kind of invisible-but-consequential character this exists to surface). Deliberately never replaces the real character with a different one -- each glyph is a background-image or ::before pseudo-element layered on a span that still contains the actual original character as its real text content, so selecting or copying text is completely unaffected; verified directly that extracted plain text from the glyph-decorated HTML matches the original content exactly, character for character. CAUGHT AND FIXED before shipping: an early version chained three separate .replace() calls (nbsp, then tab, then space) on the same string -- each one runs on the OUTPUT of the previous, so once nbsp/tab replacement had already inserted a span tag, the LATER space replacement matched the literal spaces INSIDE that freshly-inserted tag and wrapped those too, corrupting the markup it had just built. Fixed with one single-pass regex covering all three characters at once. Applied only to the fully-assembled line HTML, split on tags first so the substitution can never touch a tag or attribute value, only real text content between them -- verified directly that bold/link markup survives completely intact. Only R&R mode is built for now; typing mode would need a genuine visible-overlay mirror technique (the same class of thing Bold Cursor positioning already uses, but harder, since it has to track scrolling continuously rather than measure a single moment) and is being treated as a deliberate, separate follow-up rather than attempted alongside this. (2) "Note statistics" More menu item, dual-mode (works from either Typing or Read & Revise) -- confirmed by direct search first that nothing like this existed anywhere in the file. Shows line count (total and non-blank), word count, character count (with and without spaces), and checkbox count (checked of total, shown only when the note actually has any). Verified directly against known content, including the checkbox count. Suite unchanged: 332/332.
+  v0.1704 - NEW: "Double space" lower toolbar button, per Lynn -- R&R mode only, requiring a contiguous Select-Lines selection exactly like Move lines already does (same shared _contiguousSelection() check, same three-state readiness color, same "select adjacent lines" message when the selection has a gap). Ensures exactly one blank line between every pair of adjacent non-blank lines within the selection -- collapses triple-or-more spacing down to one blank AND inserts a blank where two lines currently sit with none between them, fixing up unevenly- or single-spaced pasted text in one tap instead of using Add Blank Line repeatedly. Works on any plain text line, not just checkboxes or bullets -- reuses ensureInternalChecklistSpacing() as-is (built for the v0.1701 checklist-insertion fix) rather than writing a parallel copy of the same logic, since despite its name it never actually checks for checklist-ness anywhere -- it only ever looks at blank vs. non-blank, exactly what this needed. Unlike Bold/Italic/Strikethrough (which transform lines in place without changing how many there are), this can change the total line count, so it extracts the whole contiguous range as one sub-array, transforms that, and splices the result back in place of the original range rather than mutating individual indices; the selection is cleared afterward since inserted/removed blanks shift every line index that followed. Verified directly: plain single-spaced text becomes correctly double-spaced; a mix of single- and triple-spaced lines normalizes to exactly one blank throughout; a non-contiguous selection is correctly rejected both by the action itself and by the readiness/tooltip state ("Select adjacent lines to double space", matching Move lines' own wording exactly). Suite unchanged: 332/332.
   v0.1703 - FIX: real regression I introduced in v0.1702 itself, per Lynn's report -- searching Settings for "italic" (a real toolbar button) found nothing. Root cause: v0.1702's fix for unrelated loose text leaking during search worked by hiding any element that wasn't itself a .settings-row, based on whether its nearest preceding subsection title had a matching row among its DIRECT siblings. #toolbar-visibility-rows is a container built dynamically with every toolbar row NESTED inside it rather than as a direct sibling of its own subsection title -- so that walk never associated any row inside it (Italic included) with anything, and the whole container got hidden regardless of what matched inside it. Fixed by excluding, from the loose-content pass, any candidate that itself contains nested .settings-row descendants -- such containers should never be hidden wholesale, since their own rows are already correctly handled by the main row-matching loop individually. Per Lynn's explicit request, also added two new harness checks (see test harness v6) that drive the real Settings and Help search inputs with known terms and confirm the expected row/section is actually visible afterward -- verified by deliberately reintroducing this exact bug and confirming the harness catches it immediately, flagging both "italic" and "checkbox" (both nested inside the same affected container) as suppressed. Also fixed a genuine pre-existing gap in the harness surfaced while building this: it stubbed the speechSynthesis API but never SpeechSynthesisUtterance, a separate global some first-gesture handlers construct directly. Verified directly: searching "italic" now shows the Italic row and leaves the container visible; the original v0.1702 leak-fix (unrelated content staying hidden) still works with no regression; clearing search still restores everything correctly. Suite unchanged: 332/332.
   v0.1702 - FIX: Settings search always leaking unrelated content whenever anything in App Theme or Note Appearance matched, per Lynn's bug report and screenshot. Root cause: many "subsection groups" in those two sections are just a .settings-subsection-title followed by loose sibling content (an explanatory paragraph, a live preview box, a "Reset to default order" button) with no wrapping container tying them together -- unlike the handful of subsections that ARE properly wrapped. The existing search logic only ever hid/restored .settings-row elements and the bare subsection-title text itself; the loose content sitting after a title was never touched at all, so once ANYTHING else in that whole section matched, it stayed visible unconditionally regardless of the actual search term -- confirmed exactly matching both of Lynn's reported examples (the "Longer Help & Documentation Text" block always appearing for any App Theme match, the "Add extra space to the left or right edges" block always appearing for any Note Appearance match). Fixed with a second pass: for each subsection-title, track whether any row belonging to it matched the search, then apply that same show/hide decision to every loose sibling between it and the next title -- exactly the treatment the title itself already got, extended to the content around it. clearSettingsSearch() updated to restore this loose content too. Verified directly: searching a real row inside a subsection correctly shows that subsection's own loose description while an unrelated section's loose content stays hidden; clearing the search correctly restores everything. One narrower case flagged honestly rather than overclaimed: the dynamically-generated Lower Toolbar Buttons subsection didn't show its own loose content when searching its title text directly in this test environment -- possibly a test-harness initialization gap rather than a real app bug, not fully isolated yet, but the worst case is that one subsection being slightly over-hidden in a narrow scenario, not the original leaking-everywhere bug. Suite unchanged: 332/332.
   v0.1701 - FIX: real bug in "Add Text to Note", diagnosed by Lynn herself after correctly rejecting a race-condition theory I'd wrongly reached for -- double-spacing between newly typed items depended on whether the EXISTING content adjacent to the insertion point happened to be checklist-ish, which she pointed out has no logical connection to whether the new items should be spaced from each other. Confirmed exactly right: computeChecklistInsertion's single "applies" flag conflated two separate decisions -- whether the SEAM gets a blank line (correctly depends on adjacent content) and whether the block's OWN items get spaced from each other (which shouldn't). When adjacent content wasn't checklist-ish, applies went false and BOTH decisions were skipped together, even though the typed block itself was a homogeneous checklist block. New shared helper ensureInternalChecklistSpacing() handles internal spacing only, with no seam-blank or indentation side effects; computeChecklistInsertion's own fallback return now uses it, and both of doInsert()'s independent fallback branches (plain Quick Add and the tag-sort path's own leftover-content fallback) now build from that already-corrected result instead of re-deriving from the untouched raw lines, which is what was silently discarding the fix before. Verified directly: inserting at the top above a plain (non-checklist) paragraph -- Lynn's exact first-attempt scenario -- now produces correct double-spacing between the new items; inserting above an existing checklist item (her "it works the second time" case) remains correct, confirming no regression to the already-working path. Suite unchanged: 332/332.
@@ -2268,6 +2276,7 @@ body.edit-block-mode #note-viewer .viewer-line:not(.blank-viewer-line) { cursor:
 #tap-to-edit-btn.active { color: var(--note-accent, var(--accent)); box-shadow: 0 0 0 2px var(--note-accent, var(--accent)); border-radius: var(--radius-sm); }
 #ruler-btn.active { color: var(--note-accent, var(--accent)); box-shadow: 0 0 0 2px var(--note-accent, var(--accent)); border-radius: var(--radius-sm); }
 #outline-mode-btn.active { color: var(--note-accent, var(--accent)); box-shadow: 0 0 0 2px var(--note-accent, var(--accent)); border-radius: var(--radius-sm); }
+#show-whitespace-btn.active { color: var(--note-accent, var(--accent)); box-shadow: 0 0 0 2px var(--note-accent, var(--accent)); border-radius: var(--radius-sm); }
 #show-tags-btn.active { color: var(--note-accent, var(--accent)); box-shadow: 0 0 0 2px var(--note-accent, var(--accent)); border-radius: var(--radius-sm); }
 #hide-completed-btn.active { color: var(--note-accent, var(--accent)); box-shadow: 0 0 0 2px var(--note-accent, var(--accent)); border-radius: var(--radius-sm); }
 #tag-presence-btn.active { color: var(--note-accent, var(--accent)); box-shadow: 0 0 0 2px var(--note-accent, var(--accent)); border-radius: var(--radius-sm); }
@@ -4248,6 +4257,64 @@ body.has-mouse .toolbar-drag-handle.dragging {
    shifting left, while showing nothing visible at all. Sized close to
    .viewer-checkbox's own 1.1em + 0.35em margin footprint. */
 .viewer-hidden-marker { display: inline-block; width: 1.1em; margin-right: 0.35em; }
+/* v0.1705: "Show spaces and tabs", per Lynn -- deliberately does NOT
+   replace the real space/tab/nbsp character with a different one (a dot
+   glyph, say). These spans still contain the real, original whitespace
+   character as their actual text content -- copying or selecting text
+   copies the real space/tab, never a visible dot or arrow. The glyph is
+   purely a background-image (a tiny radial-gradient dot) or a ::before
+   pseudo-element (the tab arrow) layered visually UNDER/BESIDE the real
+   character, which is why it can never affect what actually gets
+   selected or copied.
+   v0.1707: made noticeably more prominent, per Lynn's follow-up -- this
+   is a quick on/off sanity-check tool for technical users (not supported
+   in typing mode, not meant to stay on for long stretches), so a subtle,
+   muted appearance was working against the whole point of it. Bigger
+   dots, full-strength color instead of a muted gray, full opacity. */
+.viewer-ws-space {
+  background-image: radial-gradient(circle, var(--fg) 1.6px, transparent 1.9px);
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 1;
+}
+.viewer-ws-nbsp {
+  /* Distinct color from a plain space -- an nbsp LOOKS identical to a
+     regular space but behaves differently (never wraps), which is
+     exactly the kind of invisible-but-consequential character this
+     whole feature exists to surface. */
+  background-image: radial-gradient(circle, var(--note-accent, var(--accent)) 1.8px, transparent 2.1px);
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 1;
+}
+.viewer-ws-tab {
+  position: relative;
+  /* v0.1708 FIX, per Lynn's report: without its own explicit
+     white-space:pre, a mid-line tab (one with no surrounding
+     pre-formatted wrapper) collapsed to near-zero rendered width under
+     normal CSS whitespace handling, while the arrow below still tried
+     to render at its fixed size regardless -- overflowing onto the
+     start of the next word. This guarantees the character itself always
+     reserves real, predictable width to contain the arrow, no matter
+     where in the line it appears. tab-size set explicitly rather than
+     left at the browser default (8 character-widths, wider than needed
+     here) to keep the reserved width reasonable rather than oversized.
+  */
+  white-space: pre;
+  tab-size: 4;
+}
+
+.viewer-ws-tab::before {
+  content: '\2192'; /* → */
+  position: absolute;
+  left: 0.1em;
+  top: 0;
+  color: var(--fg);
+  opacity: 1;
+  font-size: 0.95em;
+  font-weight: 700;
+  pointer-events: none;
+}
 /* Fenced code blocks — three line types share one seamless-looking
    background (rounded corners only at the very top/bottom). The whole
    block scrolls horizontally together as ONE unit (.code-fence-scroll-
@@ -6598,6 +6665,34 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           </svg>
         </button>
       </div>
+      <!-- v0.1709 FIX, per Lynn's report: Double Space and Show Spaces
+           and Tabs had been placed INSIDE crossout-group above --
+           visually boxed together with Strikethrough/Clear as if they
+           were its paired partner, which they're not. Moved outside the
+           box, as separate, standalone buttons. -->
+      <!-- v0.1704: Double Space, per Lynn -- R&R-mode-only, same
+           "select adjacent lines first" readiness as Move lines. -->
+      <button class="icon-btn view-only-btn readiness-btn" id="double-space-btn" aria-label="Double space selected lines" title="Double space" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <line x1="3" y1="6" x2="14" y2="6"/>
+          <line x1="3" y1="18" x2="14" y2="18"/>
+          <path d="M19 9V6.5"/>
+          <path d="M19 15v2.5"/>
+          <polyline points="17 8 19 6 21 8"/>
+          <polyline points="17 16 19 18 21 16"/>
+        </svg>
+      </button>
+      <!-- v0.1705: Show spaces and tabs, per Lynn -- R&R-mode-only,
+           persistent toggle (settings.showWhitespace), no selection
+           prerequisite so it's a plain toggle button, not a
+           readiness-btn like Move lines/Double space above. -->
+      <button class="icon-btn view-only-btn" id="show-whitespace-btn" aria-label="Show spaces and tabs" title="Show spaces and tabs" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none">
+          <circle cx="6" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+          <line x1="11" y1="12" x2="14.5" y2="12"/>
+          <polyline points="13 10 15.5 12 13 14"/>
+        </svg>
+      </button>
       <!-- Delete text — renamed from delete line -->
       <!-- Paste — view mode only -->
       <!-- Toggle checkbox — convert selected lines to/from checkboxes -->
@@ -7470,6 +7565,16 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
   <button id="more-select-all-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="8 12 11 15 16 9"/></svg>
     <span class="more-label" id="more-select-all-label" style="pointer-events:none;flex:1">Select all</span>
+  </button>
+  <!-- v0.1705: Note statistics, per Lynn -- dual-mode (works from either
+       Typing or Read & Revise), same shape as Select all just above. -->
+  <button id="more-note-stats-btn" style="display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="var(--icon-size)" height="var(--icon-size)" style="flex-shrink:0;pointer-events:none">
+      <line x1="18" y1="20" x2="18" y2="10"/>
+      <line x1="12" y1="20" x2="12" y2="4"/>
+      <line x1="6" y1="20" x2="6" y2="14"/>
+    </svg>
+    <span class="more-label" style="pointer-events:none;flex:1">Note statistics</span>
   </button>
   <!-- Settings (stage 3, dual-mode) — opens the same Settings dialog
        reachable from the home screen, so the user never has to leave
@@ -9639,7 +9744,20 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </label>
       </div>
 
+      <!-- v0.1707: per Lynn -- some people prefer real tab characters
+           over a fixed number of spaces for indentation. -->
       <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Indent with tab characters</div>
+          <div class="settings-row-desc">When on, Tab / Shift+Tab and the Indent / Unindent buttons insert or remove a single real tab character instead of a fixed number of spaces. "Spaces per indent" below no longer applies while this is on.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Indent with tab characters">
+          <input type="checkbox" id="indent-uses-tabs-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row" id="indent-spaces-row">
         <div>
           <div class="settings-row-label">Spaces per indent / unindent</div>
           <div class="settings-row-desc">Number of spaces added or removed when you press Tab / Shift+Tab, or tap the Indent / Unindent buttons.</div>
@@ -10721,7 +10839,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1703';
+const APP_VERSION = '0.1711';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12161,6 +12279,14 @@ const DEFAULT_SETTINGS = {
   sectionStates: {},         // collapsed/expanded state for each settings section
   helpSectionStates: {},     // collapsed/expanded state for each Help dialog section, keyed by its stable HTML id
   indentSpaces: 4,             // spaces per indent/dedent action
+  // v0.1707: per Lynn -- some people prefer real tab characters for
+  // indentation instead of a fixed number of spaces. When true,
+  // indentLines()/dedentLines() (shared by the Tab key, Shift+Tab, and
+  // the toolbar Indent/Unindent buttons -- one function, every caller
+  // fixed at once) insert/remove a single real tab character instead of
+  // indentSpaces spaces. Default false, matching her own stated
+  // preference -- most people (including her) want spaces.
+  indentUsesTabs: false,
   newItemDefaultTags: '',      // '@tag @tag2' auto-appended to new checkbox-ish items without tags (Note Behavior)
   // v0.1653: Insert Date/Time toolbar button settings. Note Behavior
   // bucket (not Note Appearance) -- same reasoning as newItemDefaultTags
@@ -12242,6 +12368,11 @@ const DEFAULT_SETTINGS = {
   // diagnosis.
   skipFirstLevelIndentWhenHidden: false,
   outlineMode: false,            // collapsible outline mode in Read & Revise
+  // v0.1705: per Lynn -- toggle-able R&R-mode display of spaces/tabs/
+  // non-breaking-spaces as small visible glyphs, purely a rendering
+  // choice (never touches the underlying note content, same principle
+  // as Outline mode's own chevrons or bullet rendering).
+  showWhitespace: false,
   outlineCollapseOnOpen: false,  // collapse all outline sections when note opens
   quietMode: false,              // open note in quiet mode (set by theme only)
   showMultiLevelBullets: false,  // cycle bullet style by indent level (•, ◦, ▪)
@@ -12326,11 +12457,11 @@ const SETTING_BUCKETS = {
   marginLineColor: SETTING_BUCKETS_NOTE_APPEARANCE, marginLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNoteAccentColor: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNotePaperColors: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNoteToolbarColors: SETTING_BUCKETS_NOTE_APPEARANCE,
   noteFont: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginLeft: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginRight: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineStyle: SETTING_BUCKETS_NOTE_APPEARANCE,
   ruledLineTone: SETTING_BUCKETS_NOTE_APPEARANCE, rulerColor: SETTING_BUCKETS_NOTE_APPEARANCE, rulerOpacity: SETTING_BUCKETS_NOTE_APPEARANCE, rulerThickness: SETTING_BUCKETS_NOTE_APPEARANCE, showBlockRules: SETTING_BUCKETS_NOTE_APPEARANCE,
-  showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE, circularCheckboxes: SETTING_BUCKETS_NOTE_APPEARANCE, hideMarkerForChecklistIsh: SETTING_BUCKETS_NOTE_APPEARANCE, skipFirstLevelIndentWhenHidden: SETTING_BUCKETS_NOTE_APPEARANCE,
+  showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE, showWhitespace: SETTING_BUCKETS_NOTE_APPEARANCE, circularCheckboxes: SETTING_BUCKETS_NOTE_APPEARANCE, hideMarkerForChecklistIsh: SETTING_BUCKETS_NOTE_APPEARANCE, skipFirstLevelIndentWhenHidden: SETTING_BUCKETS_NOTE_APPEARANCE,
   tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE,
   // ---- NOTE_BEHAVIOR (35) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
-  confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, collapseToolbarOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, collapseToolbarOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, indentUsesTabs: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   insertDateTimeMode: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDateStyle: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDayOfWeek: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeSeconds: SETTING_BUCKETS_NOTE_BEHAVIOR,
   moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, checkAnimation: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR, plusSortedByTag: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -16108,10 +16239,25 @@ function urlsToLinks(text, addLineWrappers) {
           }
         }
         return '<div class="viewer-line' + _hTagBorderClass + '"' + _hStyle + ' data-line="' + i + '">'
-          + '<div class="viewer-h' + level + '">' + (content || '&nbsp;') + '</div>'
+          + '<div class="viewer-h' + level + '">' + applyWhitespaceGlyphs(content || '&nbsp;') + '</div>'
           + '</div>';
       }
-      if (!line || rawLine.trim() === '') return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
+      if (!line || rawLine.trim() === '') {
+        // v0.1707 FIX, per Lynn's report: this always discarded the
+        // line's entire content and rendered an empty div, regardless of
+        // whether Show Spaces and Tabs was on -- a whitespace-only line
+        // (spaces/tabs with no visible text) never showed anything at
+        // all, even though that's exactly the kind of line this feature
+        // exists to make visible. When the toggle is on and there's
+        // actual whitespace content (not a truly empty line), render it
+        // through the same glyph substitution as everywhere else --
+        // escHtml first since this raw text was never going through the
+        // normal escaping/markdown pipeline at all before.
+        if (settings.showWhitespace && rawLine) {
+          return '<div class="viewer-line blank-viewer-line" data-line="' + i + '">' + applyWhitespaceGlyphs(escHtml(rawLine)) + '</div>';
+        }
+        return '<div class="viewer-line blank-viewer-line" data-line="' + i + '"></div>';
+      }
       // [last modified] tag: may appear anywhere in the block (not just at start).
       // Extract the datetime text immediately after the tag.
       if (_lastModifiedRegex.test(rawLine)) {
@@ -16243,7 +16389,19 @@ function urlsToLinks(text, addLineWrappers) {
       // as block padding (list-ish lines only — plain paragraphs keep
       // their raw leading whitespace in `line` for the marker-splitting /
       // text-indent handling further below).
-      if (_isListIshLine && _indentLevel > 0) line = line.replace(/^\s+/, '');
+      // v0.1708 FIX, per Lynn's report: this used to discard the leading
+      // whitespace unconditionally -- indented checkbox/hyphen items
+      // (padding-left already carries the actual visual indent, via
+      // _indentLevel computed separately above) had NOTHING left in the
+      // rendered text for Show Spaces and Tabs to ever find, regardless
+      // of whether the original indent used tabs or spaces. Captured here
+      // so it can be shown later, right before the final glyph pass.
+      var _strippedLeadingWs = '';
+      if (_isListIshLine && _indentLevel > 0) {
+        var _stripMatch = line.match(/^\s+/);
+        if (_stripMatch) _strippedLeadingWs = _stripMatch[0];
+        line = line.replace(/^\s+/, '');
+      }
       // Bullets for markers: '*' and '+' ALWAYS render as a bullet
       // character in R&R mode, matching Bear — there's no real
       // preference value in literally seeing "*"/"+". '-' only renders
@@ -16518,7 +16676,20 @@ function urlsToLinks(text, addLineWrappers) {
         var _tabWidthPara = settings.indentSpaces || 4;
         var _leadMatch = line.match(/^([ \t]+)/);
         if (_leadMatch) {
-          var _leadExpanded = _leadMatch[1].replace(/\t/g, ' '.repeat(_tabWidthPara));
+          // v0.1708 FIX, per Lynn's report: this always expanded a
+          // leading tab into spaces for display, even with Show Spaces
+          // and Tabs on -- by the time the later, whole-line glyph pass
+          // ran, the real tab character was already gone, replaced by
+          // literal space characters, so it could only ever show as
+          // spaces. Only the LEADING whitespace on a plain paragraph
+          // went through this path at all, which is exactly why a tab
+          // pasted at the start of a line with real text behaved
+          // differently from one pasted mid-line, at the end of a line,
+          // or into an otherwise-blank line (none of those go through
+          // this expansion at all). Skip the expansion when the toggle
+          // is on, so the real character survives into the glyph pass
+          // below.
+          var _leadExpanded = settings.showWhitespace ? _leadMatch[1] : _leadMatch[1].replace(/\t/g, ' '.repeat(_tabWidthPara));
           var _restHtmlPara = line.slice(_leadMatch[0].length);
           if (settings.paragraphContinuationIndent === true) {
             line = '<span class="line-marker"><span style="white-space:pre">' + _leadExpanded + '</span></span>' +
@@ -16540,6 +16711,10 @@ function urlsToLinks(text, addLineWrappers) {
           }
         }
       }
+      if (settings.showWhitespace && _strippedLeadingWs) {
+        line = '<span style="white-space:pre">' + escHtml(_strippedLeadingWs) + '</span>' + line;
+      }
+      line = applyWhitespaceGlyphs(line);
       return '<div class="viewer-line' + parEndClass + blockRuleClass + blockRuleTopClass + _tagBorderClass + _lciClass + _paraContClass + '"' + _indentStyle + ' data-line="' + i + '">' + line + _calBtnHtml + '</div>';
     }).join('');
   }
@@ -17219,6 +17394,91 @@ function resolveChecklistBoundary(lines, idx, role, smartBlankOn) {
 // etc.) disqualifies the whole block from the "fancy" treatment below —
 // per the rule, we only do indent/spacing magic when the WHOLE inserted
 // block is checklist-items-and-blanks, nothing else.
+// v0.1705: "Show spaces and tabs", per Lynn -- applied to an already-
+// fully-assembled line of HTML (bullets/checkboxes/bold/italic/links all
+// already inserted), so naively replacing every space/tab in the whole
+// string would corrupt HTML tags and attribute values (e.g. a space
+// inside style="..." or between two attributes). Splits on HTML tags
+// first (capturing them, so they survive in the result untouched) and
+// only ever transforms the TEXT segments between tags -- tags themselves
+// are always at odd indices after this split and are skipped entirely.
+// Deliberately wraps the REAL character in a span rather than replacing
+// it with a different one (see the CSS comment on .viewer-ws-space for
+// why) -- this function only ever adds a wrapping span, never changes
+// what character is actually there. CAUGHT AND FIXED before shipping: an
+// earlier version used three separate, chained .replace() calls (nbsp,
+// then tab, then space) -- each one runs on the OUTPUT of the previous,
+// so once the nbsp/tab replacement had already inserted a span tag like
+// <span class="viewer-ws-tab">, the LATER space replacement matched the
+// literal space characters INSIDE that freshly-inserted tag (between
+// <span and class="...") and wrapped THOSE too, corrupting the markup
+// it had just built. Fixed with one single-pass regex covering all
+// three characters at once, with a replacer function choosing which
+// span to insert -- the regex engine only ever scans the ORIGINAL text
+// once, so it can never re-match anything a replacement just produced.
+function applyWhitespaceGlyphs(html) {
+  if (!settings.showWhitespace || !html) return html;
+  var parts = html.split(/(<[^>]*>)/);
+  for (var i = 0; i < parts.length; i += 2) {
+    parts[i] = parts[i].replace(/[\u00A0\t ]/g, function(ch) {
+      if (ch === '\u00A0') return '<span class="viewer-ws-nbsp">\u00A0</span>';
+      if (ch === '\t') return '<span class="viewer-ws-tab">\t</span>';
+      return '<span class="viewer-ws-space"> </span>';
+    });
+  }
+  return parts.join('');
+}
+
+// v0.1705: Note statistics, per Lynn's request for a More menu item
+// showing lines/words/characters -- confirmed by direct search first
+// that nothing like this existed anywhere in the file. Pure function
+// (content in, numbers out) so it's independently testable and has no
+// dependency on which note is currently open, matching the established
+// pattern for content-processing helpers elsewhere in this file
+// (stripForShare, computeChecklistInsertion, etc). Checkbox counting
+// reuses the exact same bracket pattern the rest of the app already
+// treats as a literal checkbox (see _markerLineMatch's own exclusion
+// regex elsewhere), so it never miscounts a plain "- [something]" line
+// that merely happens to contain brackets as a checkbox.
+function computeNoteStats(content) {
+  content = content || '';
+  var lines = content.split('\n');
+  var nonBlankLines = 0;
+  var checkboxTotal = 0, checkboxChecked = 0;
+  lines.forEach(function(l) {
+    if (l.trim() !== '') nonBlankLines++;
+    var m = l.match(/^\s*[-*+]\s\[([ xX])\]/);
+    if (m) {
+      checkboxTotal++;
+      if (m[1].toLowerCase() === 'x') checkboxChecked++;
+    }
+  });
+  var words = (content.match(/\S+/g) || []).length;
+  return {
+    totalLines: lines.length,
+    nonBlankLines: nonBlankLines,
+    words: words,
+    charsWithSpaces: content.length,
+    charsNoSpaces: content.replace(/\s/g, '').length,
+    checkboxTotal: checkboxTotal,
+    checkboxChecked: checkboxChecked
+  };
+}
+function showNoteStats() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  var s = computeNoteStats(notes[currentNoteId].content);
+  var out = [
+    s.totalLines + ' paragraph' + (s.totalLines === 1 ? '' : 's') + ' (' + s.nonBlankLines + ' non-blank)',
+    s.words + ' word' + (s.words === 1 ? '' : 's'),
+    s.charsWithSpaces + ' character' + (s.charsWithSpaces === 1 ? '' : 's') + ' (' + s.charsNoSpaces + ' non-whitespace)'
+  ];
+  if (s.checkboxTotal > 0) {
+    out.push(s.checkboxChecked + ' of ' + s.checkboxTotal + ' checkbox' + (s.checkboxTotal === 1 ? '' : 'es') + ' checked');
+  }
+  showDismissibleNotice(out.join('\n'));
+  logDebugAction('Viewed note statistics: ' + out.join(' | '));
+}
+
 function isHomogeneousChecklistBlock(blockLines) {
   for (var i = 0; i < blockLines.length; i++) {
     var l = blockLines[i];
@@ -17454,10 +17714,38 @@ function _fixupMoveBlankLines(pairs) {
 // If nothing is selected (or selection is on one line with start==end), just
 // insert N spaces at the cursor position.
 // Returns nothing; mutates the textarea value and selection.
+// v0.1707: per Lynn -- when "Indent with tab characters" is on, "Spaces
+// per indent" no longer applies at all, so dim it and disable its input
+// rather than leave it looking active but meaningless. Deliberately a
+// global, top-level function (not nested inside a settings-wiring IIFE)
+// since it needs to be callable both from the settings-sync-on-open code
+// (far earlier in the file) and from this toggle's own change handler
+// (far later) -- nesting it in either one's local scope was exactly the
+// mistake that caused a real "is not defined" crash, caught by the
+// harness's own Settings-search check before this ever shipped.
+function updateIndentSpacesRowDimming() {
+  var row = document.getElementById('indent-spaces-row');
+  var input = document.getElementById('indent-spaces-input');
+  if (!row || !input) return;
+  var on = !!settings.indentUsesTabs;
+  row.style.opacity = on ? '0.45' : '';
+  row.style.pointerEvents = on ? 'none' : '';
+  input.disabled = on;
+}
 function indentLines(ed) {
+  // v0.1707 FIX, per Lynn's bug report: this ALWAYS inserted spaces,
+  // regardless of any setting -- the Tab key's own keydown handler
+  // intercepts Tab entirely (preventDefault) and calls this instead of
+  // ever letting the browser insert a real tab character, so pressing
+  // Tab could never produce one no matter what convertTabsOnPaste (an
+  // unrelated, paste-only setting) was set to. Now respects the new
+  // "Indent with tab characters" setting: a single real tab character,
+  // one character wide, instead of N spaces.
+  var usesTabs = !!settings.indentUsesTabs;
   var n = (settings.indentSpaces !== undefined ? settings.indentSpaces : 4);
-  var spaces = '';
-  for (var si = 0; si < n; si++) spaces += ' ';
+  var spaces = usesTabs ? '\t' : '';
+  if (!usesTabs) for (var si = 0; si < n; si++) spaces += ' ';
+  var insertWidth = usesTabs ? 1 : n;
   var val      = ed.value;
   var selStart = ed.selectionStart;
   var selEnd   = ed.selectionEnd;
@@ -17470,7 +17758,7 @@ function indentLines(ed) {
     ed.value = val.substring(0, lineStart) + spaces + val.substring(lineStart);
     ed._lastLength = ed.value.length;
     // Restore cursor position, shifted right by indent amount
-    ed.setSelectionRange(selStart + n, selStart + n);
+    ed.setSelectionRange(selStart + insertWidth, selStart + insertWidth);
   } else {
     // Text selection — indent every line the selection touches
     var chunk    = val.substring(lineStart, selEnd);
@@ -17480,12 +17768,14 @@ function indentLines(ed) {
     ed.value = val.substring(0, lineStart) + result + val.substring(selEnd);
     ed._lastLength = ed.value.length;
     // Restore cursor to same position within text (shifted by one indent level)
-    ed.setSelectionRange(selStart + n, selEnd + indented.length * n);
+    ed.setSelectionRange(selStart + insertWidth, selEnd + indented.length * insertWidth);
   }
 }
 
-// dedentLines: remove up to N leading spaces from each line in the selection.
+// dedentLines: remove up to N leading spaces (or, with "Indent with tab
+// characters" on, a single leading tab) from each line in the selection.
 function dedentLines(ed) {
+  var usesTabs = !!settings.indentUsesTabs;
   var n = (settings.indentSpaces !== undefined ? settings.indentSpaces : 4);
   var val      = ed.value;
   var selStart = ed.selectionStart;
@@ -17496,7 +17786,11 @@ function dedentLines(ed) {
   var removedPerLine = [];
   var dedented = lines.map(function(l) {
     var removed = 0;
-    while (removed < n && l.charAt(removed) === ' ') removed++;
+    if (usesTabs) {
+      if (l.charAt(0) === '\t') removed = 1;
+    } else {
+      while (removed < n && l.charAt(removed) === ' ') removed++;
+    }
     removedPerLine.push(removed);
     return l.substring(removed);
   });
@@ -17927,6 +18221,45 @@ function applyFormattingToBlocks(type, color) {
   document.getElementById('note-editor').value = notes[currentNoteId].content;
   saveNotes();
   renderViewer(notes[currentNoteId].content);
+  renderBlockSelections();
+  updateViewOnlyBtns();
+}
+
+// v0.1704: Double Space, per Lynn -- ensures exactly one blank line
+// between every pair of adjacent non-blank lines within a CONTIGUOUS
+// selection (same "must be adjacent" prerequisite Move lines already
+// requires, checked the same way via _contiguousSelection()). Unlike
+// applyFormattingToBlocks() above, this can change the total number of
+// lines in the note (inserting or removing blanks), so it can't just
+// mutate selectedBlocks' indices in place -- it extracts the whole
+// contiguous range as one sub-array, transforms that, and splices the
+// result back in place of the original range. Deliberately reuses
+// ensureInternalChecklistSpacing() as-is rather than writing a parallel
+// copy of the same logic -- despite its name (added for the checklist-
+// insertion bug fix in v0.1701), it never actually checks for checklist-
+// ness anywhere in its own implementation; it only ever looks at whether
+// each line is blank or not, which is exactly what Lynn wants this to
+// work on ANY plain text line, not just checkboxes or bullets.
+function applyDoubleSpaceToBlocks() {
+  if (!currentNoteId || !notes[currentNoteId] || selectedBlocks.size === 0) return;
+  var indices = _contiguousSelection();
+  if (!indices) return; // readiness gating should prevent this, but never act on a non-contiguous selection
+  var minIdx = indices[0];
+  var maxIdx = indices[indices.length - 1];
+  pushUndo();
+  var lines = (notes[currentNoteId].content || '').split('\n');
+  var selectedRange = lines.slice(minIdx, maxIdx + 1);
+  var spaced = ensureInternalChecklistSpacing(selectedRange);
+  var newLines = lines.slice(0, minIdx).concat(spaced, lines.slice(maxIdx + 1));
+  notes[currentNoteId].content = newLines.join('\n');
+  document.getElementById('note-editor').value = notes[currentNoteId].content;
+  saveNotes();
+  renderViewer(notes[currentNoteId].content);
+  logDebugAction('Double Space: normalized spacing for ' + selectedRange.length + ' selected line(s)');
+  // Line indices shift once blanks are inserted/removed — the old
+  // selection no longer refers to anything meaningful, so clear it
+  // rather than leave selectedBlocks pointing at the wrong lines.
+  clearSelectedBlocks();
   renderBlockSelections();
   updateViewOnlyBtns();
 }
@@ -20394,6 +20727,9 @@ function openSettings() {
   if (tripleTapToggleEl) tripleTapToggleEl.checked = settings.tripleTapToEdit !== false;
   document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
   document.getElementById('indent-spaces-input').value = settings.indentSpaces !== undefined ? settings.indentSpaces : 4;
+  var _iutTog = document.getElementById('indent-uses-tabs-toggle');
+  if (_iutTog) _iutTog.checked = !!settings.indentUsesTabs;
+  updateIndentSpacesRowDimming();
   document.getElementById('new-item-default-tags-input').value = settings.newItemDefaultTags || '';
   var _dciEl = document.getElementById('default-checkbox-indent-input'); if (_dciEl) _dciEl.value = settings.defaultCheckboxIndent || 0;
 
@@ -20519,6 +20855,34 @@ function applySettingsSearch(query) {
   document.querySelectorAll('#settings-sheet .settings-go-arrow').forEach(function(a) { a.remove(); });
 
   var anyVisible = false;
+  // v0.1710 FIX, per Lynn's report: searching "Lower Toolbar Buttons"
+  // (its own subsection title, verbatim) found nothing at all. Root
+  // cause: the same structural gap behind the earlier "italic" search
+  // bug, but hitting the MATCHING logic this time instead of the hiding
+  // logic. Rows built by buildToolbarVisibilityRows() are nested INSIDE
+  // #toolbar-visibility-rows, a wrapper div -- the title is a sibling of
+  // that CONTAINER, not of the individual rows, so a plain
+  // previousElementSibling walk from any one row can never reach it (it
+  // only ever sees other rows within the same wrapper). None of those
+  // rows' own labels ("Italic", "Bold", etc) contain the search text
+  // either, so nothing matched and the whole subsection, title included,
+  // stayed hidden. This helper walks up through ancestor containers when
+  // sibling-only search comes up empty, so a row nested arbitrarily deep
+  // can still find its real subsection title.
+  function findPrecedingSubsectionTitle(el, sectionRoot) {
+    var node = el;
+    while (node && node !== sectionRoot) {
+      var prev = node.previousElementSibling;
+      while (prev) {
+        if (prev.classList && prev.classList.contains('settings-subsection-title')) {
+          return prev;
+        }
+        prev = prev.previousElementSibling;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
   document.querySelectorAll('#settings-sheet .settings-section').forEach(function(sec) {
     var rows = sec.querySelectorAll('.settings-row');
     var secVisible = false;
@@ -20553,18 +20917,10 @@ function applySettingsSearch(query) {
       var descEl  = row.querySelector('.settings-row-desc');
       var labelTxt = labelEl ? labelEl.textContent.toLowerCase() : '';
       var descTxt  = descEl  ? descEl.textContent.toLowerCase()  : '';
-      // Check nearest preceding subsection-title
-      var prevSubsec = '';
-      var prevSubsecEl = null;
-      var prev = row.previousElementSibling;
-      while (prev) {
-        if (prev.classList && prev.classList.contains('settings-subsection-title')) {
-          prevSubsec = prev.textContent.toLowerCase();
-          prevSubsecEl = prev;
-          break;
-        }
-        prev = prev.previousElementSibling;
-      }
+      // Check nearest preceding subsection-title (walking up through
+      // ancestors when needed, not just direct siblings)
+      var prevSubsecEl = findPrecedingSubsectionTitle(row, sec);
+      var prevSubsec = prevSubsecEl ? prevSubsecEl.textContent.toLowerCase() : '';
       // Also check if this row is inside a .settings-subsection — match its header label
       var parentSubsecTxt = '';
       var parentSub = row.closest('.settings-subsection');
@@ -20584,14 +20940,7 @@ function applySettingsSearch(query) {
         // Show and expand the parent subsection block if this row is inside one
         if (parentSub) { parentSub.style.display = ''; parentSub.classList.add('open'); }
         // Restore nearest preceding subsection title for context
-        var prevEl = row.previousElementSibling;
-        while (prevEl) {
-          if (prevEl.classList && prevEl.classList.contains('settings-subsection-title')) {
-            prevEl.style.display = '';
-            break;
-          }
-          prevEl = prevEl.previousElementSibling;
-        }
+        if (prevSubsecEl) prevSubsecEl.style.display = '';
         var arrow = document.createElement('button');
         arrow.className = 'settings-go-arrow';
         arrow.setAttribute('aria-label', 'Go to this setting');
@@ -20631,37 +20980,46 @@ function applySettingsSearch(query) {
     // preceding title" walk already used for rows above, just applied to
     // content the row-matching loop never touched at all.
     var body = sec.querySelector('.settings-section-body') || sec;
-    var looseCandidates = Array.from(body.children).filter(function(el) {
-      return !el.classList.contains('settings-row')
-        && !el.classList.contains('settings-subsection-title')
-        && !el.classList.contains('settings-subsection')
-        && !el.classList.contains('settings-section-header')
+    var looseCandidates = [];
+    Array.from(body.children).forEach(function(el) {
+      if (el.classList.contains('settings-row')
+        || el.classList.contains('settings-subsection-title')
+        || el.classList.contains('settings-subsection')
+        || el.classList.contains('settings-section-header')) {
+        return;
+      }
+      var nestedRows = el.querySelectorAll('.settings-row');
+      if (nestedRows.length > 0) {
         // v0.1703 FIX, per Lynn's report ("italic" search didn't find the
         // Italic toolbar row): a container that itself holds nested
         // .settings-row elements (like #toolbar-visibility-rows, built
         // dynamically with each row NESTED inside it rather than as a
         // direct sibling of its subsection title) must never be treated
-        // as "loose" -- those rows are already correctly shown/hidden by
-        // the main row loop above, individually. This pass hiding the
-        // WHOLE container regardless is exactly what suppressed a
-        // correctly-matching row: the previousElementSibling walk used
-        // to associate a row with its subsection title only ever checks
-        // DIRECT siblings, so a row nested a level deeper inside a
-        // container like this one never gets associated with anything,
-        // and the container itself -- with every row inside it,
-        // matching or not -- was being hidden outright.
-        && !el.querySelector('.settings-row');
+        // as "loose" while it has genuine matches inside -- those rows
+        // are already correctly shown/hidden by the main row loop above,
+        // individually.
+        // v0.1712 FIX, per Lynn's follow-up report: the original fix
+        // simply EXCLUDED such a container from the loose-content pass
+        // whenever it had a visible row, leaving its own display
+        // completely untouched in that case -- which meant a PREVIOUS
+        // search call that correctly hid it (because nothing matched
+        // that time) left it stuck hidden forever after, even once a
+        // later search DID have a real match inside it. Nothing ever
+        // explicitly set it back to visible. Now always explicitly sets
+        // this container's own display on every call, based on whether
+        // it currently has any visible row inside -- never just "leaves
+        // it alone" to potentially carry stale state from an earlier
+        // search.
+        var hasVisibleRow = Array.from(nestedRows).some(function(r) {
+          return r.style.display !== 'none';
+        });
+        el.style.display = hasVisibleRow ? '' : 'none';
+        return;
+      }
+      looseCandidates.push(el);
     });
     looseCandidates.forEach(function(el) {
-      var prevTitleEl = null;
-      var prev = el.previousElementSibling;
-      while (prev) {
-        if (prev.classList && prev.classList.contains('settings-subsection-title')) {
-          prevTitleEl = prev;
-          break;
-        }
-        prev = prev.previousElementSibling;
-      }
+      var prevTitleEl = findPrecedingSubsectionTitle(el, sec);
       var show = sectionHeaderMatch || (prevTitleEl && subsecMatchMap.get(prevTitleEl));
       el.style.display = show ? '' : 'none';
     });
@@ -23616,6 +23974,8 @@ function makeImportFolderName(label) {
     { id: 'redo-btn',               label: 'Redo' },
     { id: 'add-blank-line-btn',     label: 'Add blank line' },
     { id: 'move-mode-btn',           label: 'Move line' },
+    { id: 'double-space-btn',        label: 'Double space' },
+    { id: 'show-whitespace-btn',     label: 'Show spaces and tabs' },
     { id: 'indent-btn',             label: 'Indent' },
     { id: 'dedent-btn',             label: 'Unindent' },
     { id: 'insert-datetime-btn',    label: 'Insert Date/Time' },
@@ -23659,7 +24019,7 @@ function makeImportFolderName(label) {
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['quick-add-btn', 'tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'insert-datetime-btn', 'caret-left-btn', 'caret-right-btn', 'caret-up-btn', 'caret-down-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['quick-add-btn', 'tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'insert-datetime-btn', 'caret-left-btn', 'caret-right-btn', 'caret-up-btn', 'caret-down-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'double-space-btn', 'show-whitespace-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -23914,7 +24274,8 @@ function makeImportFolderName(label) {
     'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn',
     'toggle-checkbox-btn', 'check-mode-btn', 'dictate-btn', 'add-blank-line-btn',
     'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-filter-btn',
-    'uncheck-all-btn', 'hide-completed-btn', 'tag-presence-btn', 'jump-next-section-btn'];
+    'uncheck-all-btn', 'hide-completed-btn', 'tag-presence-btn', 'jump-next-section-btn',
+    'show-whitespace-btn', 'double-space-btn'];
 
   function applyToolbarHiddenOverrides() {
     // v0.1583: 'toolbar'/'both' -> shown, anything else ('more'/'neither')
@@ -25435,6 +25796,14 @@ function makeImportFolderName(label) {
     closeMoreMenu();
     var sab = document.getElementById('select-all-btn');
     if (sab) sab.click();
+  });
+  // v0.1705: Note statistics, per Lynn -- a pure function (no DOM/note
+  // access) so it's independently testable, matching the pattern already
+  // used elsewhere in this file (computeChecklistInsertion, etc).
+  document.getElementById('more-note-stats-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('more-note-stats-btn').addEventListener('click', function() {
+    closeMoreMenu();
+    showNoteStats();
   });
   // Copy for speech — calls the same shared whole-note action as the
   // inline [copy for speech] tag button and the toolbar button.
@@ -30109,6 +30478,8 @@ function makeImportFolderName(label) {
     { id: 'tap-to-edit-btn',      name: 'Tap to edit',        desc: 'Enables "tap to edit" mode — tap anywhere in Read & Revise view to jump into editing at that spot.' },
     { id: 'toolbar-help-btn',     name: 'Toolbar help',       desc: 'Shows this cheat sheet of all toolbar buttons.' },
     { id: 'move-mode-btn',        name: 'Move lines',         desc: 'Drag-to-reorder mode. Tap a line and drag it up or down. Tap again or use Done to exit.' },
+    { id: 'double-space-btn',     name: 'Double space',       desc: 'Selected lines only (must be adjacent, same as Move lines). Ensures exactly one blank line between each non-blank line — fixes single-spaced or unevenly-spaced text without retyping it. Works on any lines, not just checkboxes or bullets.' },
+    { id: 'show-whitespace-btn',  name: 'Show spaces and tabs', desc: 'Toggle visible marks for spaces (·), tabs (→), and non-breaking spaces (a colored dot — these look identical to a normal space but never wrap). Read & Revise mode only. Purely visual — never changes note content.' },
     { id: 'dictate-btn',          name: 'Dictate',            desc: 'Start voice dictation. Speak to insert text hands-free.' },
     { id: 'dismiss-keyboard-btn', name: 'Done typing',        desc: 'Dismiss the keyboard without leaving the note.' },
     { id: 'indent-btn',           name: 'Indent',             desc: 'Indent the selected line(s) one level to the right.' },
@@ -30124,6 +30495,7 @@ function makeImportFolderName(label) {
     { id: 'add-blank-line-btn',   name: 'Add blank line',     desc: 'Insert a blank line after the current line in Read & Revise mode.' },
     { id: 'check-mode-btn',       name: 'Check state',        desc: 'Check or uncheck all selected checkbox lines at once.' },
     { id: 'toggle-checkbox-btn',  name: 'Toggle checkbox',    desc: 'Convert the current line to a checkbox item (- [ ]), or remove the checkbox.' },
+    { id: 'select-all-btn',       name: 'Select all',         desc: 'Select all text in Typing mode, or all lines in Read & Revise mode. Tap again to deselect.' },
     { id: 'quick-add-btn',        name: 'Quick add',          desc: 'Open the Add Text to Note dialog — insert text at the top, bottom, before/after a specific line, or after a divider.' },
     { id: 'bold-mode-btn',        name: 'Bold',               desc: 'Make selected text bold (**bold**).' },
     { id: 'italic-mode-btn',      name: 'Italic',             desc: 'Make selected text italic (*italic*).' },
@@ -30503,6 +30875,27 @@ function makeImportFolderName(label) {
     _outlineToolbarBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
     _outlineToolbarBtn.addEventListener('click', _toggleOutlineMode);
   }
+  // v0.1705: Show spaces and tabs, per Lynn -- same toggle-button shape
+  // as Outline mode just above (persistent setting, .active class for
+  // on-state, re-render immediately on toggle since it's purely visual).
+  function updateShowWhitespaceBtnState() {
+    var wsBtn = document.getElementById('show-whitespace-btn');
+    if (wsBtn) wsBtn.classList.toggle('active', !!settings.showWhitespace);
+  }
+  function _toggleShowWhitespace() {
+    settings.showWhitespace = !settings.showWhitespace;
+    saveSettings();
+    updateShowWhitespaceBtnState();
+    if (currentNoteId && notes[currentNoteId] && isViewMode) {
+      renderViewer(notes[currentNoteId].content);
+    }
+  }
+  var _showWhitespaceBtnEl = document.getElementById('show-whitespace-btn');
+  if (_showWhitespaceBtnEl) {
+    _showWhitespaceBtnEl.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    _showWhitespaceBtnEl.addEventListener('click', _toggleShowWhitespace);
+  }
+  updateShowWhitespaceBtnState();
   // Sync label when More menu opens
   var _origOpenMore = openMoreMenu;
   openMoreMenu = function() {
@@ -31043,6 +31436,24 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     else { this.value = val; settings.indentSpaces = val; }
     updateSaveBtnState();
   });
+  // v0.1707: per Lynn -- when "Indent with tab characters" is on,
+  // "Spaces per indent" no longer applies at all, so dim it and disable
+  // its input rather than leave it looking active but meaningless.
+  // (updateIndentSpacesRowDimming itself is defined as a global,
+  // top-level function near indentLines/dedentLines -- CAUGHT AND FIXED
+  // before shipping: an earlier version defined it right here, nested
+  // inside this locally-scoped wiring block, which meant it wasn't
+  // accessible from the sync-on-open code far earlier in the file that
+  // also needs to call it -- "is not defined" at runtime, caught by the
+  // harness's own Settings-search check exercising openSettings().)
+  var _iutTogEl = document.getElementById('indent-uses-tabs-toggle');
+  if (_iutTogEl) {
+    _iutTogEl.addEventListener('change', function() {
+      settings.indentUsesTabs = this.checked;
+      updateIndentSpacesRowDimming();
+      updateSaveBtnState();
+    });
+  }
   document.getElementById('new-item-default-tags-input').addEventListener('input', function() {
     settings.newItemDefaultTags = this.value; // raw while typing; blur canonicalizes
     updateSaveBtnState();
@@ -32359,7 +32770,8 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     // Show view-only buttons in view mode
     var toggleCbBtn = document.getElementById('toggle-checkbox-btn');
     var headingBtn = document.getElementById('heading-btn');
-    [crossoutBtn, boldBtn, italicBtn, highlightBtn, colorBtn, checkModeBtn, toggleCbBtn, headingBtn, addBlankLineBtn].forEach(function(b) {
+    var showWhitespaceBtnEl = document.getElementById('show-whitespace-btn');
+    [crossoutBtn, boldBtn, italicBtn, highlightBtn, colorBtn, checkModeBtn, toggleCbBtn, headingBtn, addBlankLineBtn, showWhitespaceBtnEl].forEach(function(b) {
       if (b) b.style.display = inView ? '' : 'none';
     });
     // Jump to heading / Outline mode (stage 3c toolbar buttons): R&R mode
@@ -32461,6 +32873,30 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       applyButtonReadiness(moveModeBtn, moveReady ? 'ready' : 'intermediate');
       moveModeBtn.title = filterOn ? 'Clear tag filter before moving lines' :
         (!moveBlocked && moveHasSelection && !moveContiguous) ? 'Select adjacent lines to move' : 'Move lines';
+    }
+    // v0.1704: Double Space -- same "contiguous selection required" model
+    // as Move lines just above (reuses the exact same _contiguousSelection()
+    // check), but no "entered mode" concept since this is a one-shot
+    // action on the selection, same shape as Bold/Italic/Strikethrough.
+    var doubleSpaceBtn = document.getElementById('double-space-btn');
+    if (doubleSpaceBtn) {
+      // v0.1711 FIX, per Lynn's report: unlike Move lines (which this
+      // button was built to mirror), this never got its own explicit
+      // display toggle -- only readiness STYLING (color/opacity), which
+      // just makes an already-visible button look muted, not hidden.
+      // Double Space is R&R-only and can never become usable in typing
+      // mode, so it should never appear there at all, exactly like Move
+      // lines' own display line just above.
+      doubleSpaceBtn.style.display = inView ? '' : 'none';
+      doubleSpaceBtn.style.color = '';
+      doubleSpaceBtn.style.opacity = '';
+      var dsHasSelection = selectedBlocks.size > 0;
+      var dsContiguous = !dsHasSelection || _contiguousSelection() !== null;
+      var dsBlocked = !inView || filterOn;
+      var dsReady = !dsBlocked && dsHasSelection && dsContiguous;
+      applyButtonReadiness(doubleSpaceBtn, dsReady ? 'ready' : 'intermediate');
+      doubleSpaceBtn.title = filterOn ? 'Clear tag filter before double spacing' :
+        (!dsBlocked && dsHasSelection && !dsContiguous) ? 'Select adjacent lines to double space' : 'Double space';
     }
     // Code block button: same model as Move, but only while in view mode
     // (selection-dependent there). In typing mode it always works from
@@ -32584,6 +33020,26 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       showToast('Clear the tag filter before moving lines', false); return;
     }
     if (moveMode) { exitMoveMode(); } else { enterMoveMode(); }
+  });
+  // v0.1704: Double Space, per Lynn -- a one-shot action (unlike Move
+  // lines, which enters its own mode), so unlike that button's click
+  // handler above, this one has to check contiguity itself right here
+  // rather than deferring to a mode that handles it internally.
+  document.getElementById('double-space-btn').addEventListener('click', function() {
+    if (!isViewMode) return;
+    if (typeof _tagFilterActive !== 'undefined' && _tagFilterActive) {
+      showToast('Clear the tag filter before double spacing', false); return;
+    }
+    if (selectedBlocks.size === 0) {
+      showToast("Use the 'Select lines' button in the upper toolbar first", false);
+      flashSelectBtn();
+      return;
+    }
+    if (_contiguousSelection() === null) {
+      showToast('Select adjacent lines to double space', false);
+      return;
+    }
+    applyDoubleSpaceToBlocks();
   });
   document.getElementById('move-jump-top-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('move-jump-top-btn').addEventListener('click', function() { if (moveMode) _moveJump(true); });
