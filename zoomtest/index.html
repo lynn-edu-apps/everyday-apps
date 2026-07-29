@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ctrl+Wheel Zoom Test</title>
+<style>
+  :root {
+    --bg: #f5f0e8;
+    --fg: #2a2520;
+    --fg2: #6b6258;
+    --bar-bg: #5b7c6e;
+    --bar-fg: #ffffff;
+    --btn-bg: #5b7c6e;
+    --line-bg: #ffffff;
+    --line-border: rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* ===== solid fixed header bar (top only) =====
+     v4 FIX: no more right:0/width:100% -- that's exactly what broke
+     under zoom-OUT compensation. Scaling UP a 100%-wide element makes
+     its RENDERED width exceed the viewport (transform:scale() grows an
+     element beyond its own laid-out box, it doesn't reflow anything),
+     pushing the left/right edge buttons off-screen. width is now set
+     explicitly in JS every update, computed so the POST-scale result
+     always exactly equals the real, current viewport width. */
+  #solid-header {
+    position: fixed;
+    top: 0; left: 0;
+    height: 56px;
+    background: var(--bar-bg);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    z-index: 50;
+    transform-origin: top left;
+  }
+  #solid-header button {
+    background: rgba(255,255,255,0.15);
+    color: var(--bar-fg);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 15px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #solid-header .label {
+    color: var(--bar-fg);
+    font-weight: 600;
+    margin-right: auto;
+    white-space: nowrap;
+  }
+
+  /* ===== floating buttons — v4 FIX: grouped into one shared, fixed
+     container instead of each button being independently
+     position:fixed. Each button previously scaled from its OWN
+     top-left corner, so as size changed their spacing relative to each
+     other drifted inconsistently ("the buttons move around"). Now the
+     GROUP is the only thing that's position:fixed and the only thing
+     that gets the compensation transform; the buttons inside are just
+     normal flex children, so their spacing to each other never changes
+     regardless of zoom -- only the group's own overall size/position
+     does, uniformly. ===== */
+  #float-btn-group {
+    position: fixed;
+    display: flex;
+    gap: 12px;
+  }
+  #float-btn-group.at-top { top: 12px; left: 14px; transform-origin: top left; }
+  #float-btn-group.at-bottom { bottom: 118px; left: 14px; transform-origin: bottom left; }
+  .float-btn {
+    background: var(--btn-bg);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 15px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    white-space: nowrap;
+  }
+
+  /* ===== controls, always fixed at the very bottom, stacked ===== */
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    z-index: 60;
+    transform-origin: center bottom;
+  }
+  #controls button {
+    border: none;
+    border-radius: 999px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+    white-space: nowrap;
+  }
+  #mode-toggle { background: var(--fg); color: var(--bg); }
+  #compensation-toggle { background: var(--bar-bg); color: #fff; }
+  #compensation-toggle.off { background: #a85c4f; }
+
+  /* ===== message toast ===== */
+  #toast {
+    position: fixed;
+    top: 76px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--fg);
+    color: var(--bg);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 60;
+    transform-origin: center top;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ===== scrolling content ===== */
+  #content {
+    padding: 80px 16px 200px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  #instructions {
+    background: var(--line-bg);
+    border: 1px solid var(--line-border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+  #instructions strong { display: block; margin-bottom: 6px; }
+  #instructions .current-mode { color: var(--bar-bg); font-weight: 600; }
+  #zoom-readout {
+    background: #efe9df;
+    border: 1px solid var(--line-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 12px;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--fg2);
+    white-space: pre-line;
+  }
+  .line {
+    background: var(--line-bg);
+    border: 1px solid var(--line-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    color: var(--fg2);
+  }
+</style>
+</head>
+<body>
+
+  <div id="solid-header" style="display:none">
+    <span class="label">Solid header bar (top)</span>
+    <button onclick="showToast('Message button tapped')">Message</button>
+    <button onclick="showToast('Another button tapped')">Other</button>
+  </div>
+
+  <div id="float-btn-group" style="display:none">
+    <button class="float-btn" onclick="showToast('Message button tapped')">Message</button>
+    <button class="float-btn" onclick="showToast('Another button tapped')">Other</button>
+    <button class="float-btn" onclick="showToast('Third button tapped')">Third</button>
+  </div>
+
+  <div id="controls">
+    <button id="mode-toggle" onclick="toggleMode()">Switch to: Floating buttons (top)</button>
+    <button id="compensation-toggle" onclick="toggleCompensation()">Zoom compensation: ON</button>
+  </div>
+  <div id="toast"></div>
+
+  <div id="content">
+    <div id="instructions">
+      <strong>Ctrl+wheel zoom test</strong>
+      Hold Ctrl and spin your mouse wheel to zoom in/out on this page. Watch whether the buttons/bar grow much larger than the numbered lines below, and whether the header's width or the floating buttons' spacing hold up correctly at every zoom level, in both directions.
+      Current position mode: <span class="current-mode" id="mode-label">Solid header bar (top)</span>.
+      The top toggle cycles through: solid bar at top, floating buttons at top, floating buttons at bottom.
+      The second toggle turns zoom compensation on/off.
+      <div id="zoom-readout">reading...</div>
+    </div>
+  </div>
+
+<script>
+  // v4: fixes two real bugs found by testing in actual Chrome/Firefox,
+  // per Lynn's report -- the v3 approach scaled each fixed element's own
+  // box independently, which looked fine for overall SIZE but broke two
+  // specific things on zoom-OUT (devicePixelRatio decreasing, so the
+  // compensation scale grows above 1 to counteract it):
+  //   1. The solid header used left:0/right:0 (100% viewport width).
+  //      Growing a 100%-wide box via transform:scale() makes its
+  //      RENDERED width exceed the real viewport -- scale() doesn't
+  //      reflow anything, it just paints the existing box bigger --
+  //      pushing the leftmost/rightmost buttons off-screen.
+  //   2. Each floating button was independently position:fixed with its
+  //      own left offset and its own transform-origin. As each one grew
+  //      from its own separate corner, their spacing relative to each
+  //      other drifted inconsistently instead of staying fixed.
+  // Fixed by (1) computing the header's width explicitly in JS every
+  // update, so the POST-scale result always exactly equals the real
+  // current viewport width regardless of zoom direction, and (2)
+  // grouping the floating buttons into one shared fixed container that
+  // gets scaled as a single unit -- the buttons inside are ordinary flex
+  // children now, so their spacing to each other never changes, only
+  // the group's own overall size/position does, uniformly.
+  var MODES = ['solid', 'floating-top', 'floating-bottom'];
+  var MODE_LABELS = {
+    'solid': 'Solid header bar (top)',
+    'floating-top': 'Floating buttons (top)',
+    'floating-bottom': 'Floating buttons (bottom)'
+  };
+  var modeIndex = 0;
+  var compensationEnabled = true;
+  var baseDPR = window.devicePixelRatio || 1;
+
+  function toggleMode() {
+    modeIndex = (modeIndex + 1) % MODES.length;
+    render();
+  }
+  function toggleCompensation() {
+    compensationEnabled = !compensationEnabled;
+    updateCompensation();
+  }
+
+  function render() {
+    var mode = MODES[modeIndex];
+    var solidHeader = document.getElementById('solid-header');
+    var floatGroup = document.getElementById('float-btn-group');
+    var toggleBtn = document.getElementById('mode-toggle');
+    var nextMode = MODES[(modeIndex + 1) % MODES.length];
+
+    solidHeader.style.display = (mode === 'solid') ? 'flex' : 'none';
+
+    var floating = (mode === 'floating-top' || mode === 'floating-bottom');
+    floatGroup.style.display = floating ? 'flex' : 'none';
+    floatGroup.classList.toggle('at-top', mode === 'floating-top');
+    floatGroup.classList.toggle('at-bottom', mode === 'floating-bottom');
+
+    toggleBtn.textContent = 'Switch to: ' + MODE_LABELS[nextMode];
+    document.getElementById('mode-label').textContent = MODE_LABELS[mode];
+
+    updateCompensation(); // header width in particular needs recomputing whenever it becomes visible
+  }
+
+  // Elements whose SIZE/POSITION scale via transform, with an existing
+  // base transform (if any) that must be preserved, not overwritten.
+  function scaledElements() {
+    return [
+      { el: document.getElementById('solid-header'), base: '' },
+      { el: document.getElementById('float-btn-group'), base: '' },
+      { el: document.getElementById('controls'), base: 'translateX(-50%)' },
+      { el: document.getElementById('toast'), base: 'translateX(-50%)' }
+    ];
+  }
+
+  function updateCompensation() {
+    var currentDPR = window.devicePixelRatio || 1;
+    var zoomFactor = currentDPR / baseDPR; // >1 means zoomed IN since load, <1 means zoomed OUT
+    var scale = compensationEnabled ? (1 / zoomFactor) : 1;
+
+    scaledElements().forEach(function(item) {
+      item.el.style.transform = (item.base ? item.base + ' ' : '') + 'scale(' + scale + ')';
+    });
+
+    // Header width fix: whatever its PRE-scale (layout) width is, it
+    // needs to equal (current viewport width) * zoomFactor, so that
+    // AFTER applying scale(1/zoomFactor) to it, the RENDERED width comes
+    // back out to exactly the real viewport width, in both zoom
+    // directions -- confirmed algebraically and by direct testing below.
+    var header = document.getElementById('solid-header');
+    if (compensationEnabled) {
+      header.style.width = (window.innerWidth * zoomFactor) + 'px';
+    } else {
+      header.style.width = window.innerWidth + 'px';
+    }
+
+    var toggleBtn = document.getElementById('compensation-toggle');
+    toggleBtn.textContent = 'Zoom compensation: ' + (compensationEnabled ? 'ON' : 'OFF');
+    toggleBtn.classList.toggle('off', !compensationEnabled);
+
+    document.getElementById('zoom-readout').textContent =
+      'Baseline devicePixelRatio (at page load): ' + baseDPR.toFixed(3) + '\n' +
+      'Current devicePixelRatio: ' + currentDPR.toFixed(3) + '\n' +
+      'Estimated zoom change since load: ' + (zoomFactor * 100).toFixed(0) + '%\n' +
+      'window.innerWidth right now: ' + window.innerWidth + 'px\n' +
+      'Header layout width set to: ' + header.style.width + '\n' +
+      'Compensation: ' + (compensationEnabled ? 'ON — scale(' + scale.toFixed(3) + ')' : 'OFF — natural page zoom');
+  }
+
+  window.addEventListener('resize', updateCompensation);
+  // Fallback: some browsers don't reliably fire resize for zoom-only
+  // changes, so also poll periodically as a safety net for this test.
+  setInterval(updateCompensation, 400);
+
+  var toastTimer = null;
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() { t.classList.remove('show'); }, 1200);
+  }
+
+  // Build 150 numbered scrollable lines -- plenty of content to
+  // observe proportions changing across several screens' worth of zoom.
+  var content = document.getElementById('content');
+  for (var i = 1; i <= 150; i++) {
+    var line = document.createElement('div');
+    line.className = 'line';
+    line.textContent = 'Line ' + i + ' — scrolling content for comparison';
+    content.appendChild(line);
+  }
+
+  render();
+</script>
+
+</body>
+</html>
