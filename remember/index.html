@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1718 -->
+<!-- Remember App - Version 0.1719 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1718
+  Version 0.1719
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1719 - REVERT, per Lynn's urgent report: the header/toolbar were growing huge again, back to the original bug. v0.1718's height-locking addition (attempting to fix the collapse tab detaching) had a genuine compounding bug, not just an imperfect fix. pinToolbars() runs repeatedly during an active zoom gesture -- multiple event listeners (window resize, visualViewport resize/scroll) all call it -- and the height fix measured getBoundingClientRect().height BEFORE resetting anything on the element. Every call after the first was measuring the PREVIOUS call's already-scaled, already-rendered height, not the element's true natural size -- then locking THAT inflated number in and scaling again on top of it. Each successive call during a zoom gesture compounded on the last, producing exactly the runaway growth reported. Reverted applyZoomSizeCompensation() entirely back to width-only compensation, the version already confirmed working correctly across multiple rounds of real testing. Everything else from v0.1718 (the FAB's transition-suppression fix, zoom-factor rounding) is untouched and kept, since neither was implicated in this specific bug -- confirmed directly. The collapse tab detaching problem v0.1718 was trying to solve is NOT fixed by this revert; it still needs its own correctly-built attempt, one that doesn't fall into this same repeated-measurement trap. Verified directly: four successive pinToolbars() calls at the same zoom level now produce identical, stable results (no compounding), matching what actually happens during a real zoom gesture; the FAB and the no-mouse fallback are both unaffected. Suite unchanged: 332/332.
   v0.1718 - TWO fixes, per Lynn's continued mouse-zoom testing. (1) FIX: the note editor's "+" FAB looked bouncy/flashing while zooming with a mouse. Two contributing causes addressed together: the FAB already had its own CSS transition (0.15s, for hover/press feedback) covering `transform`, but not `right`/`bottom` -- every compensation update changed both together, so position jumped instantly while size animated smoothly over 0.15s, visibly desyncing on every rapid zoom step. Now suppresses any existing transition for the instant a compensation update applies, then restores it immediately after, so hover/press feedback is completely unaffected the rest of the time. Also rounds the computed zoom factor to 3 decimal places -- three separate listeners (window resize, visualViewport resize, visualViewport scroll) all call pinToolbars(), and a single zoom step can trigger more than one in quick succession while devicePixelRatio may still be settling; rounding collapses near-identical readings from overlapping event fires into the same applied value instead of two visibly different ones. (2) FIX (logically sound, not yet visually confirmed in a real browser): the lower-toolbar collapse tab detaching from the header as its vertical position drifted -- its position is derived each update from the header's own measured bottom edge, which depends on the header's height, which is itself content-driven (its buttons wrap via flex-wrap), not a fixed value. The width override central to the whole size-compensation fix is deliberately DIFFERENT from the header's true rendered width -- meaning the header's content could plausibly wrap differently at that temporary width than it actually displays, making its measured height (and therefore the collapse tab's derived position) unstable. Fixed by measuring the header's natural height BEFORE applying the width override -- capturing its true, correctly-wrapped height first -- then locking it explicitly the same way width already is, so it can no longer drift for this reason regardless of what the temporary width override does internally. Verified directly: the FAB's transition is suppressed then correctly restored to its original CSS value (not left permanently disabled); rapid, near-identical zoom readings now collapse to the same applied scale; the no-mouse fallback correctly resets height alongside width and transform. Flagged honestly: jsdom cannot compute real layout or real element heights, so the height fix's logic was verified, not its actual on-screen effect -- that needs the next round of real-device testing to confirm. Suite unchanged: 332/332.
   v0.1717 - FIX + two more elements covered, per Lynn's real-device testing round across Windows, iOS, and Android. (1) FIX: pinch-zoom in the note editor had become jumpy specifically on iOS (Safari and the PWA), less severely on Android. Root cause: window.devicePixelRatio -- the signal v0.1716's new compensation watches -- very likely also changes during a touch pinch gesture, not just desktop Ctrl+wheel zoom, meaning the new logic was firing DURING pinch-zoom too and fighting the existing, already-proven visualViewport.scale-based pinch guard from v0.1497, both repositioning/rescaling the same elements on every frame of the same gesture. Fixed exactly as Lynn proposed: all of v0.1716's new compensation is now gated behind (hover: hover) -- the SAME media feature this app already uses everywhere else (scratch pad mouse support, its edge tab) to mean "a real mouse or trackpad is attached" -- so none of it runs at all on touch-primary devices, leaving pinch-zoom exactly as it worked before this whole effort began. (2) Two more position:fixed elements Lynn found ballooning that v0.1716 missed: the lower-toolbar collapse handle and the mouse-only scratch-pad edge tab. The collapse handle's position is already correctly derived each update from the header's own (already compensated) bottom edge, so it only needed its SIZE held steady, not a separate position recalculation -- added directly alongside where that top offset is already computed. The scratch-pad tab is vertically CENTERED (top:50% + translateY(-50%)) rather than anchored to one edge, which exposed a real gap in applyZoomPositionCompensation()'s original design: it inferred transform-origin from which anchors were present, which has no sensible answer for a centered element. Fixed properly rather than special-cased around: transformOrigin is now an explicit parameter every caller provides, not something inferred. Verified directly: with no mouse present, all five elements (header, toolbar, FAB, collapse tab, scratch tab) cleanly fall back to their plain, uncompensated state; with a mouse present, all five compensate correctly together, including the collapse tab and scratch tab's own existing centering transforms being correctly preserved alongside the new compensating scale rather than overwritten by it. Suite unchanged: 332/332.
   v0.1716 - NEW: brought the Ctrl+wheel zoom compensation into the real app for the note editor's fixed elements (top header bar, bottom toolbar bar, the "+" FAB), after several rounds of validating the underlying math in a completely isolated test page first, with Lynn doing real testing in Chrome and Firefox at every step -- including catching and correcting my own misunderstanding of the position-compensation direction along the way. Two shared, reusable functions, applyZoomSizeCompensation() and applyZoomPositionCompensation(), rather than copy-pasting the formula three times: SIZE compensation (header/toolbar, both spanning the full viewport width) explicitly recomputes the pre-scale layout width every update so the post-scale rendered result always exactly matches the true viewport width, in both zoom directions -- fixes transform:scale() otherwise making a 100%-wide element wider than the viewport on zoom-out, pushing edge content off-screen. POSITION compensation (the FAB, anchored via right/bottom rather than spanning full width) recomputes its layout offset as (desired position) / zoomFactor -- smaller at higher zoom, larger at lower zoom -- since the browser moves position:fixed offsets on its own zoom rendering, separately from and before any CSS transform we apply. Both driven off a devicePixelRatio baseline captured once at load, comparing only the CHANGE since then rather than the raw number, since Retina displays and OS display scaling both start above 1 with no zooming at all. No new event wiring needed: both hook into pinToolbars(), already called on every window resize event, which reliably fires for desktop browser zoom changes too -- confirmed directly, rather than adding a redundant polling loop. Verified directly in the real app: header and toolbar widths exactly match the live viewport width at baseline, 200% zoom, and the previously-broken 50% zoom-out case; the FAB's position scales in the correct, confirmed direction at both zoom levels; the existing height-stacking/padding logic that already lived in pinToolbars() is untouched by these additions. Two things deliberately NOT done in this build, flagged honestly rather than silently left incomplete: the home screen's own header uses position:sticky, not fixed, and Lynn has now confirmed directly (Chrome, Firefox, and a Chromebook) that it has the same problem once scrolled to its stuck position -- that needs its own follow-up, since detecting whether a sticky element is CURRENTLY stuck (vs. still in normal flow) is a distinct problem this build doesn't address yet. The Settings dialog's own floating Save/Cancel/Scroll control (also position:fixed) likewise doesn't have this compensation applied yet. Suite unchanged: 332/332.
@@ -10897,7 +10898,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1718';
+const APP_VERSION = '0.1719';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12149,29 +12150,28 @@ function applyZoomSizeCompensation(el) {
     // completely alone, matching plain, unmodified CSS/browser behavior.
     el.style.transform = '';
     el.style.width = '';
-    el.style.height = '';
     return;
   }
   var zf = _zoomFactor();
   var scale = 1 / zf;
-  // v0.1718 FIX, per Lynn's report of the toolbar collapse tab
-  // detaching from the header: its position is derived each update from
-  // the header's own MEASURED bottom edge (getBoundingClientRect()),
-  // which depends on the header's height -- itself driven by its
-  // content (button wrapping via flex-wrap), not a fixed value. The
-  // width override just below is deliberately DIFFERENT from the
-  // header's true rendered width (that's the whole point of the fix),
-  // so measuring height AFTER applying it risked capturing how the
-  // content wraps at this artificial, temporary width rather than how
-  // it actually looks on screen. Measuring BEFORE the override captures
-  // the header's true, natural wrapping/height first, then locks it
-  // explicitly the same way width already is, so it can't drift for
-  // this reason regardless of what the temporary width override does.
-  var naturalHeight = el.getBoundingClientRect().height;
+  // v0.1719 REVERT, per Lynn's report of the header/toolbar growing huge
+  // again: v0.1718's height-locking addition (attempting to fix the
+  // collapse tab detaching) had a genuine compounding bug, not just an
+  // imperfect one. pinToolbars() runs repeatedly during an active zoom
+  // gesture (multiple event listeners all call it), and this function
+  // measured getBoundingClientRect().height BEFORE resetting anything --
+  // meaning every call AFTER the first measured the PREVIOUS call's
+  // already-scaled, already-rendered height, not the element's true
+  // natural size, then locked THAT in and scaled again on top of it.
+  // Each successive call compounded on the last, producing exactly the
+  // runaway growth Lynn saw. Reverted to width-only compensation, the
+  // version already confirmed working correctly. The collapse tab
+  // detaching problem this was trying to solve is not fixed by this
+  // revert -- it needs its own correctly-built attempt later, not
+  // reintroduced here.
   el.style.transform = 'scale(' + scale + ')';
   el.style.transformOrigin = 'top left';
   el.style.width = (window.innerWidth * zf) + 'px';
-  if (naturalHeight > 0) el.style.height = naturalHeight + 'px';
 }
 
 // POSITION compensation: for elements anchored via top/left/right/bottom
