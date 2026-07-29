@@ -4,6 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ctrl+Wheel Zoom Test</title>
+<script>
+  // v7: tab-reopening diagnostic, per Lynn -- captures devicePixelRatio
+  // as early as possible (right here, before any other script or even
+  // the stylesheet has loaded) plus at several later points, so we can
+  // see directly whether/when the reading settles after reopening a
+  // tab where the browser has a persisted, non-100% zoom level from a
+  // previous session -- rather than guessing at a fix without evidence.
+  window._dprLog = [];
+  function _logDpr(label) {
+    window._dprLog.push({ label: label, dpr: window.devicePixelRatio, t: performance.now() });
+  }
+  _logDpr('1. Earliest possible (top of <head>, before CSS/other scripts)');
+  document.addEventListener('DOMContentLoaded', function() { _logDpr('2. DOMContentLoaded'); });
+  window.addEventListener('load', function() {
+    _logDpr('3. window.load');
+    setTimeout(function() { _logDpr('4. +100ms after load'); }, 100);
+    setTimeout(function() { _logDpr('5. +500ms after load'); }, 500);
+    setTimeout(function() { _logDpr('6. +1500ms after load'); }, 1500);
+  });
+</script>
 <style>
   :root {
     --bg: #f5f0e8;
@@ -23,14 +43,6 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
-  /* ===== solid fixed header bar (top only) =====
-     v4 FIX: no more right:0/width:100% -- that's exactly what broke
-     under zoom-OUT compensation. Scaling UP a 100%-wide element makes
-     its RENDERED width exceed the viewport (transform:scale() grows an
-     element beyond its own laid-out box, it doesn't reflow anything),
-     pushing the left/right edge buttons off-screen. width is now set
-     explicitly in JS every update, computed so the POST-scale result
-     always exactly equals the real, current viewport width. */
   #solid-header {
     position: fixed;
     top: 0; left: 0;
@@ -60,23 +72,13 @@
     white-space: nowrap;
   }
 
-  /* ===== floating buttons — v4 FIX: grouped into one shared, fixed
-     container instead of each button being independently
-     position:fixed. Each button previously scaled from its OWN
-     top-left corner, so as size changed their spacing relative to each
-     other drifted inconsistently ("the buttons move around"). Now the
-     GROUP is the only thing that's position:fixed and the only thing
-     that gets the compensation transform; the buttons inside are just
-     normal flex children, so their spacing to each other never changes
-     regardless of zoom -- only the group's own overall size/position
-     does, uniformly. ===== */
   #float-btn-group {
     position: fixed;
     display: flex;
     gap: 12px;
   }
-  #float-btn-group.at-top { top: 12px; left: 14px; transform-origin: top left; }
-  #float-btn-group.at-bottom { bottom: 118px; left: 14px; transform-origin: bottom left; }
+  #float-btn-group.at-top { transform-origin: top left; }
+  #float-btn-group.at-bottom { transform-origin: bottom left; }
   .float-btn {
     background: var(--btn-bg);
     color: #fff;
@@ -89,7 +91,6 @@
     white-space: nowrap;
   }
 
-  /* ===== controls, always fixed at the very bottom, stacked ===== */
   #controls {
     position: fixed;
     bottom: 16px;
@@ -116,7 +117,6 @@
   #compensation-toggle { background: var(--bar-bg); color: #fff; }
   #compensation-toggle.off { background: #a85c4f; }
 
-  /* ===== message toast ===== */
   #toast {
     position: fixed;
     top: 76px;
@@ -135,7 +135,6 @@
   }
   #toast.show { opacity: 1; }
 
-  /* ===== scrolling content ===== */
   #content {
     padding: 80px 16px 200px;
     max-width: 640px;
@@ -151,6 +150,27 @@
   }
   #instructions strong { display: block; margin-bottom: 6px; }
   #instructions .current-mode { color: var(--bar-bg); font-weight: 600; }
+  #dpr-log-panel {
+    background: var(--line-bg);
+    border: 2px solid var(--bar-bg);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+  #dpr-log-panel strong { display: block; margin-bottom: 6px; color: var(--bar-bg); }
+  #dpr-log {
+    background: #efe9df;
+    border: 1px solid var(--line-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 12px;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--fg2);
+    white-space: pre-line;
+  }
   #zoom-readout {
     background: #efe9df;
     border: 1px solid var(--line-border);
@@ -170,6 +190,32 @@
     padding: 10px 14px;
     margin-bottom: 6px;
     color: var(--fg2);
+  }
+
+  /* ===== single, exactly 1x1 CSS-pixel reference dot, per Lynn --
+     a concrete ground truth for "how big is one CSS pixel right now",
+     watchable directly while zooming, rather than reasoning about it
+     abstractly. The halo/label around it are purely for locating it
+     easily; only #pixel-ref itself is the precisely-measured 1x1 box. */
+  #pixel-ref-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 0;
+    margin-bottom: 20px;
+    border-top: 1px dashed var(--line-border);
+    border-bottom: 1px dashed var(--line-border);
+    font-size: 12px;
+    color: var(--fg2);
+  }
+  #pixel-ref {
+    display: inline-block;
+    width: 1px;
+    height: 1px;
+    background: #000;
+    box-shadow: 0 0 0 6px rgba(0,0,0,0.06); /* faint halo, purely visual, doesn't change the dot's own size */
+    flex-shrink: 0;
   }
 </style>
 </head>
@@ -194,38 +240,64 @@
   <div id="toast"></div>
 
   <div id="content">
+    <div id="dpr-log-panel">
+      <strong>Tab-reopening diagnostic (v7)</strong>
+      Test: zoom this page in or out with Ctrl+wheel, close this tab, then reopen this same page in a
+      new tab (the browser should remember the zoom level). The readings below show what
+      devicePixelRatio looked like at several points during THIS load -- if the browser applies the
+      remembered zoom AFTER our page's very first reading, the early rows will show the OLD, un-zoomed
+      value while later rows catch up to the real, zoomed value once it settles.
+      <div id="dpr-log" title="Tap to copy"></div>
+      <div style="margin-top:10px;font-size:12px;">
+        Stored baseline devicePixelRatio: <span id="stored-baseline-display"></span>
+        <button id="reset-baseline-btn" style="margin-left:10px;font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--line-border);background:var(--line-bg);cursor:pointer;">Reset stored baseline</button>
+      </div>
+    </div>
     <div id="instructions">
       <strong>Ctrl+wheel zoom test</strong>
-      Hold Ctrl and spin your mouse wheel to zoom in/out on this page. Watch whether the buttons/bar grow much larger than the numbered lines below, and whether the header's width or the floating buttons' spacing hold up correctly at every zoom level, in both directions.
-      Current position mode: <span class="current-mode" id="mode-label">Solid header bar (top)</span>.
-      The top toggle cycles through: solid bar at top, floating buttons at top, floating buttons at bottom.
-      The second toggle turns zoom compensation on/off.
+      Hold Ctrl and spin your mouse wheel to zoom in/out. Current position mode: <span class="current-mode" id="mode-label">Solid header bar (top)</span>.
       <div id="zoom-readout">reading...</div>
+    </div>
+    <div id="pixel-ref-row">
+      <span>1 CSS pixel reference →</span>
+      <span id="pixel-ref"></span>
+      <span>← watch this grow/shrink as you zoom</span>
     </div>
   </div>
 
 <script>
-  // v4: fixes two real bugs found by testing in actual Chrome/Firefox,
-  // per Lynn's report -- the v3 approach scaled each fixed element's own
-  // box independently, which looked fine for overall SIZE but broke two
-  // specific things on zoom-OUT (devicePixelRatio decreasing, so the
-  // compensation scale grows above 1 to counteract it):
-  //   1. The solid header used left:0/right:0 (100% viewport width).
-  //      Growing a 100%-wide box via transform:scale() makes its
-  //      RENDERED width exceed the real viewport -- scale() doesn't
-  //      reflow anything, it just paints the existing box bigger --
-  //      pushing the leftmost/rightmost buttons off-screen.
-  //   2. Each floating button was independently position:fixed with its
-  //      own left offset and its own transform-origin. As each one grew
-  //      from its own separate corner, their spacing relative to each
-  //      other drifted inconsistently instead of staying fixed.
-  // Fixed by (1) computing the header's width explicitly in JS every
-  // update, so the POST-scale result always exactly equals the real
-  // current viewport width regardless of zoom direction, and (2)
-  // grouping the floating buttons into one shared fixed container that
-  // gets scaled as a single unit -- the buttons inside are ordinary flex
-  // children now, so their spacing to each other never changes, only
-  // the group's own overall size/position does, uniformly.
+  // Live-render the dpr log captured in <head>, updating as new entries
+  // arrive asynchronously (DOMContentLoaded, load, and the delayed
+  // checks after load).
+  (function renderDprLog() {
+    var panel = document.getElementById('dpr-log');
+    var lines = window._dprLog.map(function(entry) {
+      return entry.label + ':  devicePixelRatio = ' + entry.dpr + '   (at ' + entry.t.toFixed(0) + 'ms since navigation start)';
+    });
+    panel.textContent = lines.join('\n');
+    if (window._dprLog.length < 6) requestAnimationFrame(renderDprLog);
+    else setTimeout(renderDprLog, 500); // keep rendering post-completion in case of late polling checks
+  })();
+</script>
+
+<script>
+  // v6: replaces the getBoundingClientRect()-based measurement approach
+  // entirely, per Lynn's own sharp diagnosis -- the readout kept showing
+  // "no change" in baseline vs current position, yet she could clearly
+  // see the buttons drifting on screen. That meant the measurement
+  // wasn't detecting the real problem at all: CSS-pixel coordinates
+  // staying constant doesn't mean the PHYSICAL on-screen position stays
+  // constant once devicePixelRatio itself has changed. Her own diagnosis
+  // was the fix: explicitly compute new layout left/top/bottom values as
+  // (desired visual position) / zoomFactor -- smaller layout values at
+  // higher zoom, larger at lower zoom, the inverse relationship from the
+  // header's own width fix (which needed LARGER layout values at lower
+  // zoom to counteract growth). Position isn't being scaled by our own
+  // transform (transform-origin keeps that anchor point fixed, as
+  // expected) -- it's the browser's own zoom rendering moving it, before
+  // our transform ever applies, which is why measuring the ALREADY-
+  // transformed result via getBoundingClientRect() never found anything
+  // to correct.
   var MODES = ['solid', 'floating-top', 'floating-bottom'];
   var MODE_LABELS = {
     'solid': 'Solid header bar (top)',
@@ -234,7 +306,41 @@
   };
   var modeIndex = 0;
   var compensationEnabled = true;
-  var baseDPR = window.devicePixelRatio || 1;
+  // v7 FIX, per Lynn's own diagnostic data: devicePixelRatio was
+  // confirmed STABLE from the very first possible reading through 1.5s
+  // later after reopening a tab with a browser-remembered zoom level --
+  // ruling out any settling/timing issue entirely. The real problem:
+  // every fresh page load re-captured "whatever DPR is present right
+  // now" as the baseline, which is correct on a truly first-ever load,
+  // but silently treats an ALREADY-zoomed reopened tab's zoom level as
+  // the new "neutral, unzoomed" reference -- meaning no compensation
+  // ever gets applied to correct for it. Fixed by persisting the
+  // baseline across sessions (localStorage) rather than recapturing it
+  // every load: captured once, the very first time this page is ever
+  // visited in this browser, then reused on every subsequent visit,
+  // regardless of what zoom level the browser happens to restore.
+  var _STORAGE_KEY = 'zoomTestBaselineDPR';
+  var baseDPR;
+  try {
+    var _stored = localStorage.getItem(_STORAGE_KEY);
+    if (_stored) {
+      baseDPR = parseFloat(_stored);
+    } else {
+      baseDPR = window.devicePixelRatio || 1;
+      localStorage.setItem(_STORAGE_KEY, String(baseDPR));
+    }
+  } catch (e) {
+    // localStorage unavailable (e.g. some file:// contexts) -- fall back
+    // to the old, per-load behavior rather than breaking entirely.
+    baseDPR = window.devicePixelRatio || 1;
+  }
+
+  // The floating group's ORIGINAL, desired visual position -- these used
+  // to be static CSS values (top:12px/left:14px, bottom:118px/left:14px);
+  // now computed dynamically every update instead.
+  var DESIRED_LEFT_PX = 14;
+  var DESIRED_TOP_PX = 12;
+  var DESIRED_BOTTOM_PX = 118;
 
   function toggleMode() {
     modeIndex = (modeIndex + 1) % MODES.length;
@@ -262,57 +368,64 @@
     toggleBtn.textContent = 'Switch to: ' + MODE_LABELS[nextMode];
     document.getElementById('mode-label').textContent = MODE_LABELS[mode];
 
-    updateCompensation(); // header width in particular needs recomputing whenever it becomes visible
-  }
-
-  // Elements whose SIZE/POSITION scale via transform, with an existing
-  // base transform (if any) that must be preserved, not overwritten.
-  function scaledElements() {
-    return [
-      { el: document.getElementById('solid-header'), base: '' },
-      { el: document.getElementById('float-btn-group'), base: '' },
-      { el: document.getElementById('controls'), base: 'translateX(-50%)' },
-      { el: document.getElementById('toast'), base: 'translateX(-50%)' }
-    ];
+    updateCompensation();
   }
 
   function updateCompensation() {
     var currentDPR = window.devicePixelRatio || 1;
-    var zoomFactor = currentDPR / baseDPR; // >1 means zoomed IN since load, <1 means zoomed OUT
+    var zoomFactor = currentDPR / baseDPR;
     var scale = compensationEnabled ? (1 / zoomFactor) : 1;
+    var mode = MODES[modeIndex];
 
-    scaledElements().forEach(function(item) {
-      item.el.style.transform = (item.base ? item.base + ' ' : '') + 'scale(' + scale + ')';
+    // --- solid header: width fix (unchanged from v4, confirmed working) ---
+    var header = document.getElementById('solid-header');
+    header.style.transform = 'scale(' + scale + ')';
+    header.style.width = compensationEnabled ? (window.innerWidth * zoomFactor) + 'px' : window.innerWidth + 'px';
+
+    // --- controls / toast: unchanged, size-only compensation ---
+    ['controls', 'toast'].forEach(function(id) {
+      document.getElementById(id).style.transform = 'translateX(-50%) scale(' + scale + ')';
     });
 
-    // Header width fix: whatever its PRE-scale (layout) width is, it
-    // needs to equal (current viewport width) * zoomFactor, so that
-    // AFTER applying scale(1/zoomFactor) to it, the RENDERED width comes
-    // back out to exactly the real viewport width, in both zoom
-    // directions -- confirmed algebraically and by direct testing below.
-    var header = document.getElementById('solid-header');
-    if (compensationEnabled) {
-      header.style.width = (window.innerWidth * zoomFactor) + 'px';
-    } else {
-      header.style.width = window.innerWidth + 'px';
+    // --- floating button group: size (scale) + explicit position calc ---
+    var group = document.getElementById('float-btn-group');
+    var appliedLeft = '', appliedTop = '', appliedBottom = '';
+    if (mode === 'floating-top' || mode === 'floating-bottom') {
+      var posDivisor = compensationEnabled ? zoomFactor : 1;
+      appliedLeft = (DESIRED_LEFT_PX / posDivisor).toFixed(2);
+      group.style.left = appliedLeft + 'px';
+      if (mode === 'floating-top') {
+        appliedTop = (DESIRED_TOP_PX / posDivisor).toFixed(2);
+        group.style.top = appliedTop + 'px';
+        group.style.bottom = '';
+      } else {
+        appliedBottom = (DESIRED_BOTTOM_PX / posDivisor).toFixed(2);
+        group.style.bottom = appliedBottom + 'px';
+        group.style.top = '';
+      }
+      group.style.transform = 'scale(' + scale + ')';
     }
 
     var toggleBtn = document.getElementById('compensation-toggle');
     toggleBtn.textContent = 'Zoom compensation: ' + (compensationEnabled ? 'ON' : 'OFF');
     toggleBtn.classList.toggle('off', !compensationEnabled);
 
+    var posLine = '';
+    if (mode === 'floating-top' || mode === 'floating-bottom') {
+      posLine = 'Float group: desired visual position left=' + DESIRED_LEFT_PX + 'px' +
+        (mode === 'floating-top' ? ', top=' + DESIRED_TOP_PX + 'px' : ', bottom=' + DESIRED_BOTTOM_PX + 'px') + '\n' +
+        'Layout position now set to: left=' + appliedLeft + 'px' +
+        (mode === 'floating-top' ? ', top=' + appliedTop + 'px' : ', bottom=' + appliedBottom + 'px') + '\n';
+    }
+
     document.getElementById('zoom-readout').textContent =
-      'Baseline devicePixelRatio (at page load): ' + baseDPR.toFixed(3) + '\n' +
-      'Current devicePixelRatio: ' + currentDPR.toFixed(3) + '\n' +
+      'Baseline devicePixelRatio: ' + baseDPR.toFixed(3) + '  Current: ' + currentDPR.toFixed(3) + '\n' +
       'Estimated zoom change since load: ' + (zoomFactor * 100).toFixed(0) + '%\n' +
-      'window.innerWidth right now: ' + window.innerWidth + 'px\n' +
-      'Header layout width set to: ' + header.style.width + '\n' +
-      'Compensation: ' + (compensationEnabled ? 'ON — scale(' + scale.toFixed(3) + ')' : 'OFF — natural page zoom');
+      posLine +
+      'Compensation: ' + (compensationEnabled ? 'ON — scale(' + scale.toFixed(3) + ')' : 'OFF');
   }
 
   window.addEventListener('resize', updateCompensation);
-  // Fallback: some browsers don't reliably fire resize for zoom-only
-  // changes, so also poll periodically as a safety net for this test.
   setInterval(updateCompensation, 400);
 
   var toastTimer = null;
@@ -324,8 +437,6 @@
     toastTimer = setTimeout(function() { t.classList.remove('show'); }, 1200);
   }
 
-  // Build 150 numbered scrollable lines -- plenty of content to
-  // observe proportions changing across several screens' worth of zoom.
   var content = document.getElementById('content');
   for (var i = 1; i <= 150; i++) {
     var line = document.createElement('div');
@@ -335,6 +446,30 @@
   }
 
   render();
+
+  // Tap-to-copy, per Lynn's request -- copying the readings by hand was
+  // difficult. Copies the exact same text currently shown in the panel.
+  document.getElementById('dpr-log').addEventListener('click', function() {
+    var text = this.textContent;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() {
+        showToast('Copied to clipboard');
+      }, function() {
+        showToast('Copy failed -- clipboard permission blocked');
+      });
+    } else {
+      showToast('Clipboard not available in this context');
+    }
+  });
+
+  // Display the currently stored baseline, and let it be reset for
+  // repeated testing (otherwise the first-ever captured value would
+  // stick permanently, making it hard to re-test from a fresh state).
+  document.getElementById('stored-baseline-display').textContent = baseDPR.toFixed(3);
+  document.getElementById('reset-baseline-btn').addEventListener('click', function() {
+    try { localStorage.removeItem('zoomTestBaselineDPR'); } catch (e) {}
+    showToast('Baseline reset -- reload the page to capture a new one');
+  });
 </script>
 
 </body>
