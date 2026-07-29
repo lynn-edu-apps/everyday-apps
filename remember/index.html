@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1715 -->
+<!-- Remember App - Version 0.1716 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1715
+  Version 0.1716
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1716 - NEW: brought the Ctrl+wheel zoom compensation into the real app for the note editor's fixed elements (top header bar, bottom toolbar bar, the "+" FAB), after several rounds of validating the underlying math in a completely isolated test page first, with Lynn doing real testing in Chrome and Firefox at every step -- including catching and correcting my own misunderstanding of the position-compensation direction along the way. Two shared, reusable functions, applyZoomSizeCompensation() and applyZoomPositionCompensation(), rather than copy-pasting the formula three times: SIZE compensation (header/toolbar, both spanning the full viewport width) explicitly recomputes the pre-scale layout width every update so the post-scale rendered result always exactly matches the true viewport width, in both zoom directions -- fixes transform:scale() otherwise making a 100%-wide element wider than the viewport on zoom-out, pushing edge content off-screen. POSITION compensation (the FAB, anchored via right/bottom rather than spanning full width) recomputes its layout offset as (desired position) / zoomFactor -- smaller at higher zoom, larger at lower zoom -- since the browser moves position:fixed offsets on its own zoom rendering, separately from and before any CSS transform we apply. Both driven off a devicePixelRatio baseline captured once at load, comparing only the CHANGE since then rather than the raw number, since Retina displays and OS display scaling both start above 1 with no zooming at all. No new event wiring needed: both hook into pinToolbars(), already called on every window resize event, which reliably fires for desktop browser zoom changes too -- confirmed directly, rather than adding a redundant polling loop. Verified directly in the real app: header and toolbar widths exactly match the live viewport width at baseline, 200% zoom, and the previously-broken 50% zoom-out case; the FAB's position scales in the correct, confirmed direction at both zoom levels; the existing height-stacking/padding logic that already lived in pinToolbars() is untouched by these additions. Two things deliberately NOT done in this build, flagged honestly rather than silently left incomplete: the home screen's own header uses position:sticky, not fixed, and Lynn has now confirmed directly (Chrome, Firefox, and a Chromebook) that it has the same problem once scrolled to its stuck position -- that needs its own follow-up, since detecting whether a sticky element is CURRENTLY stuck (vs. still in normal flow) is a distinct problem this build doesn't address yet. The Settings dialog's own floating Save/Cancel/Scroll control (also position:fixed) likewise doesn't have this compensation applied yet. Suite unchanged: 332/332.
   v0.1715 - THREE new pieces, per Lynn. (1) Bold/Italic/Highlight/Strikethrough/Color (made dual-mode last build) are now hidden entirely when settings.noteEditingMode === 'typing' -- with Read & Revise completely disabled in that configuration, there's nowhere for the markdown these buttons insert to ever render, so showing them would just be clutter with no payoff. (2) Their "Lower Toolbar Buttons" placement dropdown now offers only "Neither" as a choice while that same setting is active -- any other choice would be permanently, silently false in that configuration, unlike genuinely R&R-only buttons (Move lines, Heading, etc), whose other placement choices remain true the moment the person switches back to R&R mode within the same session. Deliberately does not touch the user's own underlying stored placement preference -- switching noteEditingMode back to 'both' or 'rronly' restores their original choice automatically, verified directly. (3) NEW: HTML export, a fourth option alongside the existing JSON/Markdown/Plain text choices -- reuses the exact same rendering pipeline Read & Revise mode already uses (urlsToLinks), so no new markdown-conversion logic was written, and no third-party library anywhere in the process. Fonts are loaded live from Google Fonts (the same single combined @import the app itself already uses, reused verbatim rather than risking an incorrectly-narrowed one) -- needs an internet connection to render correctly, matching the simpler, internet-dependent version Lynn chose over a fully self-contained one. CSS is NOT copied wholesale (~260KB, almost all irrelevant to any single note) -- instead, every rule in the live stylesheet is checked against the actually-rendered note content, and only genuinely-used rules are kept, so simple notes produce correspondingly small files and richer ones scale up proportionally; verified directly against both a plain-text note and a richer one using headings/bold/italic/checkboxes/tags. Every CSS custom property currently in use gets resolved to its actual current value and frozen into the export (confirmed no raw var() references survive), so the file correctly reflects whatever theme/colors were active at export time without needing the app's own theme-switching system at all. Checkboxes -- drawn as custom, JS-driven SVGs in the live app, with no native equivalent -- are converted to real, genuinely tappable <input type="checkbox"> elements with their checked state carried over; CAUGHT AND FIXED before shipping: an early version set the .checked DOM PROPERTY, which does not reflect into the serialized HTML attribute at all, so every exported checkbox silently lost its checked state the moment the string was written out -- fixed by setting the actual attribute instead, caught by direct testing of the real output rather than assuming the property would be enough. As discussed with Lynn beforehand, any tapping in the exported file is purely visual/temporary -- a standalone file has no save mechanism, so nothing writes back to the original note. Suite unchanged: 332/332.
   v0.1714 - NEW: Bold, Italic, Highlight, Strikethrough, and Color are now dual-mode, per Lynn -- previously R&R-only (whole-line formatting), now also available in typing mode, operating on the native textarea text selection instead (the same selectionStart/selectionEnd mechanism Indent/Dedent already use). R&R mode's own whole-line behavior is completely unchanged; the buttons simply branch on which mode is active. Bold/Highlight/Strikethrough share one function, since their markers (**, ==, ~~) never collide with each other; Italic gets its own version, since its single-character marker is a substring of Bold's, and every check has to confirm a * is genuinely standalone rather than one half of a **; Color gets its own, since its {color}...{/color} tags are asymmetric in length rather than a symmetric marker. Deliberately conservative throughout, per Lynn's own design: selecting text already wrapped in matching markers toggles them off; selecting text with no markers wraps it fresh; anything ambiguous (a marker on only one side, or an odd count of stray markers inside the selection) shows a toast and changes nothing rather than guessing and silently producing broken or nested markdown. No selection at all inserts an empty marker pair to type into, for Bold/Italic/Highlight/Strikethrough; Color requires an actual selection first, since there's no sensible empty color tag to insert. Color's popover now hides its Checkbox tab in typing mode -- checkbox coloring is a whole-line operation that only makes sense in R&R, exactly as Lynn described. Existing per-button "Lower Toolbar Buttons" hide/show placement choices continue to be respected in both modes -- someone who explicitly hides one of these five still sees it hidden everywhere, not just where it used to be R&R-only. Verified extensively and directly at every layer: the shared marker function (fresh wrap, toggle off via markers just outside the selection, toggle off via markers included IN the selection, no-selection insert, unmatched-marker-nearby warning, odd-internal-marker-count warning); Italic's bold-collision safety specifically (wrapping text already inside a bold span correctly produces italic-inside-bold rather than misreading part of the ** as a lone *, and toggling off an italic span sitting immediately next to a bold one doesn't disturb the bold); Color's tag toggle/re-color/remove/stray-brace-ambiguity paths; then the full click-through for all five buttons in typing mode; then a full regression pass confirming R&R mode's whole-line behavior for all five is completely unchanged. Toolbar Help's own descriptions for all five updated to describe both modes. Suite unchanged: 332/332.
   v0.1713 - FOLLOW-UP FIX to v0.1712's floating Save/Cancel/Scroll control, per Lynn's immediate report -- switching to position:fixed there made it scroll up off-screen and bounce during scroll, worse than the sticky behavior it replaced. Investigated the actual DOM structure directly rather than guessing: the control was living nested deep inside the scrolling dialog, in fact inside one of its own collapsible sections (Note Behavior), several levels of nesting down -- not just a direct child of the dialog as assumed in the previous fix. This is a documented iOS Safari/WebKit quirk: a position:fixed element nested inside a scrolling ancestor that also has a transform (the dialog itself, for horizontal centering) doesn't reliably stay fixed on iOS -- it can scroll and bounce along with the container's own content instead of staying anchored in place, despite what the CSS spec says should happen. Fixed properly this time by moving the control to a true sibling of the dialog in the HTML, completely outside it and any collapsible section -- sidesteps the whole class of bug rather than trying to work around it in place. Its own visibility now follows the dialog's existing open/closed state via a plain CSS sibling selector, requiring no new JavaScript at all, since the dialog's own open/close code already toggles the class this relies on. z-index raised to stay above the dialog now that it's a sibling rather than a nested child (previously correct by ordinary DOM stacking, now needs to be explicit). Per Lynn's clarification, still reserves space at the bottom of the dialog's own content so it doesn't PERMANENTLY cover the last buttons when scrolled all the way down -- temporary overlap while actively scrolling past that point is fine and expected. Verified directly: correctly hidden while the dialog is closed, visible and properly fixed-positioned with the correct stacking order once open, and correctly hidden again on close. Suite unchanged: 332/332.
@@ -10894,7 +10895,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1715';
+const APP_VERSION = '0.1716';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12081,11 +12082,84 @@ function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleCo
   overlay.appendChild(svgEl);
 }
 
+// ===== ZOOM COMPENSATION (v0.1716) =====
+// Validated first in an isolated test page (no app code at all) before
+// being brought in here, per Lynn's own methodical approach across
+// several rounds of real-browser testing in Chrome and Firefox. Desktop
+// browser page zoom (Ctrl+wheel / Ctrl+Plus) visually magnifies
+// position:fixed elements -- and "stuck" position:sticky elements, which
+// behave identically to fixed once caught at their scroll threshold --
+// disproportionately more than in-flow scrolling content, since a fixed
+// element's rendered share of the (now smaller, in CSS-pixel terms)
+// viewport grows as zoom increases. Detected via window.devicePixelRatio
+// (confirmed to track desktop page zoom, unlike visualViewport.scale,
+// which only reflects mobile PINCH zoom and stays at 1 for this case)
+// compared against a baseline captured once at load -- only the CHANGE
+// since load matters, not the raw number, since Retina displays and OS
+// display scaling both start above 1 with no zooming at all.
+var _zoomBaselineDPR = window.devicePixelRatio || 1;
+function _zoomFactor() {
+  return (window.devicePixelRatio || 1) / _zoomBaselineDPR;
+}
+
+// SIZE compensation: for elements spanning left:0;right:0 (100% of the
+// viewport width), like the note header/toolbar bars. transform:scale()
+// magnifies an element beyond its own laid-out box without reflowing
+// anything, so a 100%-wide element becomes WIDER than the viewport once
+// scaled up (during zoom-OUT, when the compensating scale must exceed 1
+// to counteract shrinkage) -- pushing its edge content off-screen.
+// Fixed by explicitly setting the PRE-scale layout width so the
+// POST-scale rendered result always exactly equals the true current
+// viewport width, confirmed correct in both zoom directions.
+function applyZoomSizeCompensation(el) {
+  if (!el) return;
+  var zf = _zoomFactor();
+  var scale = 1 / zf;
+  el.style.transform = 'scale(' + scale + ')';
+  el.style.transformOrigin = 'top left';
+  el.style.width = (window.innerWidth * zf) + 'px';
+}
+
+// POSITION compensation: for elements anchored via top/left/right/bottom
+// offsets rather than spanning full width, like the note editor's "+"
+// FAB. Confirmed empirically, not just theoretically -- transform-origin
+// does NOT keep a fixed element's anchor point visually steady under
+// page zoom the way the CSS spec's model would suggest; the browser
+// moves position:fixed offsets on its own zoom rendering, separately
+// from and before any of our own transform ever applies. The fix Lynn
+// herself worked out: the offset needs to shrink at higher zoom and grow
+// at lower zoom -- confirmed correct in both directions and both
+// floating positions in the test page before being brought here.
+// `anchors` is e.g. {right:24, bottom:28} or {left:14, top:12} --
+// whichever two edges the element is actually positioned from.
+function applyZoomPositionCompensation(el, anchors) {
+  if (!el) return;
+  var zf = _zoomFactor();
+  var scale = 1 / zf;
+  Object.keys(anchors).forEach(function(edge) {
+    el.style[edge] = (anchors[edge] / zf) + 'px';
+  });
+  el.style.transform = 'scale(' + scale + ')';
+  var originV = anchors.top !== undefined ? 'top' : 'bottom';
+  var originH = anchors.left !== undefined ? 'left' : 'right';
+  el.style.transformOrigin = originV + ' ' + originH;
+}
+
 function pinToolbars() {
   var header  = document.getElementById('note-top-bar');
   var toolbar = document.getElementById('note-bottom-bar');
   var area    = document.getElementById('note-content-area');
   if (!header || !toolbar || !area) return;
+
+  // v0.1716: zoom compensation, applied BEFORE the height measurements
+  // below, so those measurements reflect the compensated, stable size
+  // rather than whatever size the browser's own zoom rendering produced.
+  applyZoomSizeCompensation(header);
+  applyZoomSizeCompensation(toolbar);
+  var noteFab = document.getElementById('note-fab');
+  if (noteFab && noteFab.style.display !== 'none') {
+    applyZoomPositionCompensation(noteFab, { right: 24, bottom: 28 });
+  }
 
   var vv = window.visualViewport;
   var offsetTop = vv ? vv.offsetTop : 0;
