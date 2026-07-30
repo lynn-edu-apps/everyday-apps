@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1721 -->
+<!-- Remember App - Version 0.1722 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1721
+  Version 0.1722
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1722 - TWO fixes, per Lynn. (1) Zoom compensation for the quiet-mode/view-only More menu FAB (#quiet-more-fab) -- position:fixed, right/top anchored, ballooning under mouse zoom the same way the note FAB, collapse tab, and scratch-pad tab did before their own fixes. Its real CSS also adds env(safe-area-inset-right) to the right offset for notch clearance on mobile, but since this compensation is gated to (hover: hover) -- desktop/mouse devices only -- that safe-area component is effectively 0 on every device this code actually runs on, so the static 12px/6px alone is the correct desired position here. (2) Toolbar Help panel (the one with a sentence or two about each note editor button) now supports pinch-to-zoom -- its scrollable body had touch-action:pan-y alone, which allows vertical scrolling but explicitly excludes pinch-zoom by spec. This is the identical root cause already fixed once for the note editor itself, all the way back in v0.1498 (touch-action pan-y -> pan-y pinch-zoom) -- just never applied to this panel, added separately later. Verified directly: the FAB's right/top offsets scale in the correct direction under zoom, its size stays steady, and it cleanly falls back to untouched CSS with no mouse present, matching every other fixed element already covered; the Toolbar Help panel's touch-action is confirmed set to the correct value in the DOM. Suite unchanged: 332/332.
   v0.1721 - FIX: the note editor's toolbar rendering huge or tiny after closing and reopening the tab, when the browser remembers a non-100% zoom level for the app's origin -- the big feature this whole session's zoom-compensation work has been building toward, now landed. Diagnosed carefully in the isolated test page first, with Lynn's own real-device data: devicePixelRatio was confirmed completely stable from the earliest possible reading through 1.5 seconds later on a reopened tab, ruling out any settling/timing issue. The real problem was conceptual, not timing-related: every fresh page load recaptured "whatever devicePixelRatio is present right now" as the neutral baseline -- correct for a genuinely first-ever load, but silently wrong the moment a reopened tab already carries a browser-remembered zoom level, since that already-zoomed state would get treated as the new "normal," with no compensation ever applying to correct for it. Fixed by persisting the baseline across sessions (localStorage, using the app's own storeKey() namespacing so dev/stable deployments sharing an origin don't collide) instead of recapturing it every load -- captured once, the very first time Remember is ever used in this browser, then reused on every subsequent visit regardless of what zoom level the browser happens to restore. This same approach was validated end-to-end in the isolated test page first, including Lynn's own real zoom/close/reopen cycle at her actual desktop -- deploying it (rather than opening the file directly from disk, which has known localStorage reliability issues in some browsers) confirmed it working correctly. Brought over and verified directly with the exact real numbers from that test (baseline 1.626, restored zoom reading 2.845, both actually recorded on Lynn's own machine): correctly computes a zoomFactor of 1.75, precisely matching the real 175% zoom she'd set, rather than the old behavior which would have seen no change at all. Also verified a genuinely fresh, first-ever load still correctly captures and persists the current devicePixelRatio as the new baseline, and that the header/toolbar/FAB compensation built in earlier builds continues working correctly on top of this change. Suite unchanged: 332/332.
   v0.1720 - FIX: toolbar tooltips landing under the cursor, per Lynn's short-term to-do item -- requested as a quick, morale-boosting win in the middle of the harder zoom-compensation debugging cycle. Even after v0.1686's earlier loosened threshold for when to give up on positioning above, a regular browser tab (address bar etc. eating vertical space, unlike the PWA) still often doesn't leave enough room above toolbar buttons sitting near the top -- the fallback used to be flipping BELOW the button, which lands the tooltip right where the cursor already is, since the cursor is still resting on the button being hovered. Per Lynn's explicit request, the fallback now prefers flipping sideways instead -- whichever of left/right has more room, vertically centered on the button -- since a horizontal offset moves the tooltip clear of the cursor entirely rather than just relocating it to a spot the cursor still occupies. Only falls back to below as a genuine last resort, when there's not enough room on either side either (acknowledged directly as an accepted limitation near the far left/right screen edges). Verified directly with two scenarios: a button near the top with room to at least one side correctly flips sideways and stays vertically centered on the button rather than dropping below it; a button in a narrow window with no usable room anywhere else correctly still falls back to below rather than rendering off-screen. Suite unchanged: 332/332.
   v0.1719 - REVERT, per Lynn's urgent report: the header/toolbar were growing huge again, back to the original bug. v0.1718's height-locking addition (attempting to fix the collapse tab detaching) had a genuine compounding bug, not just an imperfect fix. pinToolbars() runs repeatedly during an active zoom gesture -- multiple event listeners (window resize, visualViewport resize/scroll) all call it -- and the height fix measured getBoundingClientRect().height BEFORE resetting anything on the element. Every call after the first was measuring the PREVIOUS call's already-scaled, already-rendered height, not the element's true natural size -- then locking THAT inflated number in and scaling again on top of it. Each successive call during a zoom gesture compounded on the last, producing exactly the runaway growth reported. Reverted applyZoomSizeCompensation() entirely back to width-only compensation, the version already confirmed working correctly across multiple rounds of real testing. Everything else from v0.1718 (the FAB's transition-suppression fix, zoom-factor rounding) is untouched and kept, since neither was implicated in this specific bug -- confirmed directly. The collapse tab detaching problem v0.1718 was trying to solve is NOT fixed by this revert; it still needs its own correctly-built attempt, one that doesn't fall into this same repeated-measurement trap. Verified directly: four successive pinToolbars() calls at the same zoom level now produce identical, stable results (no compounding), matching what actually happens during a real zoom gesture; the FAB and the no-mouse fallback are both unaffected. Suite unchanged: 332/332.
@@ -7917,7 +7918,13 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <div style="font-size:1.05em;font-weight:600;color:var(--fg);">Toolbar Buttons</div>
       <button id="toolbar-help-close" aria-label="Close" style="padding:0;width:30px;height:30px;border:none;background:transparent;color:var(--fg3);cursor:pointer;font-size:1.3em;line-height:1;display:flex;align-items:center;justify-content:center;border-radius:6px;">&#x2715;</button>
     </div>
-    <div id="toolbar-help-body" style="overflow-y:auto;overflow-x:hidden;padding:14px 18px;flex:1;overscroll-behavior:contain;touch-action:pan-y;"></div>
+    <!-- v0.1722 FIX, per Lynn's report: touch-action was pan-y alone,
+         which allows vertical scrolling but explicitly excludes pinch-
+         zoom by spec -- identical to the exact issue already fixed for
+         the note editor itself in v0.1498 (touch-action pan-y -> pan-y
+         pinch-zoom), just never applied here since this panel was added
+         separately. -->
+    <div id="toolbar-help-body" style="overflow-y:auto;overflow-x:hidden;padding:14px 18px;flex:1;overscroll-behavior:contain;touch-action:pan-y pinch-zoom;"></div>
   </div>
 </div>
 
@@ -10900,7 +10907,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1721';
+const APP_VERSION = '0.1722';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12285,6 +12292,16 @@ function pinToolbars() {
   // to a hidden element is harmless either way.
   var scratchTab = document.getElementById('scratch-pad-edge-tab');
   applyZoomPositionCompensation(scratchTab, { right: 10 }, 'translateY(-50%)', 'center right');
+  // v0.1722: the quiet-mode/view-only More menu FAB, per Lynn's report --
+  // position:fixed, anchored via right/top (its real CSS also adds
+  // env(safe-area-inset-right) to the right offset for notch clearance,
+  // but that's effectively 0 on the desktop/mouse devices this
+  // compensation is gated to, so the static 12px alone is the correct
+  // desired value here). Its own visibility is CSS-class-driven (same
+  // pattern as the scratch tab above), not inline style.display, so no
+  // visibility check -- applying compensation while hidden is harmless.
+  var quietMoreFab = document.getElementById('quiet-more-fab');
+  applyZoomPositionCompensation(quietMoreFab, { right: 12, top: 6 }, '', 'top right');
 
   var vv = window.visualViewport;
   var offsetTop = vv ? vv.offsetTop : 0;
