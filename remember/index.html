@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1726 -->
+<!-- Remember App - Version 0.1727 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1726
+  Version 0.1727
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1727 - FIX: a growing horizontal band under the Home Screen's header, hiding list text and blocking mouse scroll over that area, per Lynn's report and screenshot. Root cause traced by reasoning through what's actually different about this header versus the note editor's own: her screenshot showed the search bar (display:none when not open, so it couldn't be the visible thing growing) and confirmed via inspector that a container near it was ballooning -- but the real culprit was .home-header itself growing in HEIGHT, something never explicitly addressed before now. v0.1726's fix reused applyZoomSizeCompensation() wholesale, including its width-override formula -- but that formula was specifically built for the note editor's header/toolbar, which are position:fixed with left:0;right:0 (a genuine 100%-of-viewport rule that needs correcting under zoom). The Home Screen's header is position:sticky, and its width comes from ordinary block-level layout instead, already correctly tracking its parent with no help needed -- forcing the same artificial width formula onto it anyway meant its flex-wrapping row of buttons could wrap differently at that artificial width than they actually render at, inflating the header's own natural height. Since it's sticky (overlaying content once stuck, not pushing content down the way normal flow does), a taller header simply covers more of the list beneath it and intercepts mouse wheel events meant for that list -- matching the screenshot and the scroll-blocking symptom precisely. Fixed with a new, simpler scale-only compensation variant that never touches width at all, used for this header specifically; the note editor's own header/toolbar are completely unaffected, still using the original width-override version they actually need. Verified directly: the Home Screen header's width is now correctly left untouched while still compensating for scale; the note editor's header still gets the full width-override treatment, unchanged. Flagged honestly: the underlying wrapping-at-the-wrong-width theory is well-reasoned from the actual CSS, not something that can be fully confirmed without real layout, which nothing in this testing environment can compute -- worth specifically re-checking that horizontal band is fully gone. Suite unchanged: 332/332.
   v0.1726 - NEW: started the Home Screen's own Ctrl+wheel zoom compensation, per Lynn -- first two pieces, the sticky header and the "+" FAB button (#new-note-btn, class .fab), extending the same mouse-only approach already proven in the note editor. The header required one genuinely new piece of care nothing covered so far needed: it's position:sticky, not fixed, and a sticky element only behaves like (and therefore only balloons like) a fixed one while it's actually STUCK at its own scroll threshold (top:0 here) -- while still in normal, unstuck document flow, it's ordinary in-flow content that already scales correctly with the rest of the page, and forcing the same compensation onto it in that state would incorrectly resize perfectly normal content. Detected via getBoundingClientRect().top: at (or very near) 0 means currently stuck and gets full size compensation, same as the note editor's own header; anything meaningfully greater means still in normal flow, compensation skipped entirely and any stale compensation from a moment earlier cleanly reset. Reacts to both resize (zoom changes) and scroll (since scrolling itself, independent of any zoom, is what actually crosses the stuck/unstuck threshold) -- the scroll listener uses the capture phase specifically, since scroll events don't bubble on their own and the Home Screen's own scrollable region isn't the window itself. Entire function gated on the Home Screen actually being the active screen (checked via the same note-screen-active body class the rest of the app already uses), so none of this runs at all while a note is open. Verified directly: currently-stuck state correctly applies the same width/scale formula already proven for the note editor's own header; not-stuck state correctly leaves the header completely untouched, including cleanly resetting any compensation left over from a moment ago; the FAB's position scales in the correct direction; and the whole function correctly does nothing at all while the note editor is the active screen. Suite unchanged: 332/332.
   v0.1725 - TWO fixes, per Lynn. (1) Extended Disable Pinch to Zoom to also cover the Home Screen, Help dialog, and Settings dialog -- it previously only reached the note editor and Toolbar Help panel. None of these three had any touch-action set before at all (default auto, which allows pinch-zoom natively), so this is a genuinely new restriction on each rather than an override of an existing allowance the way the earlier two were. (2) FIX: expanding the Note Behavior settings section also expanded Debugging below it, with Debugging's own chevron then stuck showing the wrong (collapsed) state despite its content being visible -- a bug class Lynn correctly recognized as familiar even without remembering the exact prior sections involved, and one the project's own instructions already document by name ("Settings HTML div nesting") with a ready-made verification script, specifically because it has recurred multiple times before. Ran that exact script rather than guessing: confirmed settings-section-debugging sitting at DOM depth 3 instead of the required 2, meaning it was nested one level too deep inside Note Behavior's own body. Traced the precise cause by tracking the running open/close tag depth through Note Behavior's own content line by line: the "Speak button: icon only" row was missing its own closing </div>, silently pushing every row after it (including the entirety of Debugging) one level deeper for the rest of the section. Added the missing tag; re-ran the verification script and confirmed every section, including Debugging, now correctly sits at depth 2. Verified directly end to end: clicking Note Behavior's header now opens only Note Behavior, Debugging stays closed, and Debugging is confirmed no longer a DOM descendant of Note Behavior at all; the three newly-covered pinch-zoom areas all correctly pick up the disabled override. Suite unchanged: 332/332.
   v0.1724 - FOUR pieces, per Lynn. (1) NEW: "Reset Zoom Size" button at the bottom of Settings -- clears the persisted zoom baseline and immediately re-captures the CURRENT devicePixelRatio as the new "100%" reference, with pinToolbars() re-run right away so an open note reflects it immediately rather than needing a reload. Mainly useful for the one-time case where the very first-ever load of the app happened to already be at a non-100% zoom for unrelated reasons. (2) NEW App Theme setting: "Disable Pinch to Zoom" -- turns off pinch-zoom in the note editor and Toolbar Help panel for anyone who prefers it off. Implemented as a body-class CSS override dropping pinch-zoom from the touch-action whitelist on all four elements that grant it (#note-content-area, #note-editor, .note-viewer, #toolbar-help-body) -- the last of these had its touch-action set inline, which no stylesheet rule can override regardless of specificity, so it was moved into a proper CSS rule first so the override could actually reach it. (3) NEW App Theme setting: "Hide Remember Logo" -- hides the "Remember" wordmark on the Home Screen. Uses visibility:hidden rather than display:none, since .home-title has flex:1 and acts as a spacer positioning the header's other buttons; hiding it that way keeps the header's layout completely unchanged rather than risking the buttons shifting once the spacer's space collapses. (4) FIX: the Settings dialog's floating Save/Cancel/Scroll control landing outside the dialog on wide desktop windows -- it's a true HTML sibling of the dialog (moved there in v0.1713 to sidestep an iOS WebKit bug), so its right offset was measured from the full browser viewport rather than the dialog's own edge, which only matched on phones where the dialog already spans nearly the full width. Fixed by computing its position from the dialog's own actual rendered bounding rect instead of a static value, reacting to the dialog opening (a MutationObserver on its own open/close class, the same pattern the scratch-pad panel already uses) and to the window being resized while it's still open. All four pieces verified directly: the reset button correctly overwrites both the in-memory baseline and persisted storage; both new toggles correctly set their setting, apply their body class, and the resulting computed touch-action/visibility CSS is confirmed correct; the FAB's position was verified against two different simulated window widths, both matching the expected math exactly. Suite unchanged: 332/332.
@@ -10971,7 +10972,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1726';
+const APP_VERSION = '0.1727';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12280,6 +12281,34 @@ function applyZoomSizeCompensation(el) {
   el.style.width = (window.innerWidth * zf) + 'px';
 }
 
+// v0.1727: scale-only variant, per Lynn's report of a growing horizontal
+// band under the Home Screen's header, hiding list text and blocking
+// mouse scroll. applyZoomSizeCompensation()'s width-override formula was
+// specifically designed for the note editor's header/toolbar, which are
+// position:fixed with left:0;right:0 (a genuine 100%-of-viewport rule
+// that DOES need correcting). The Home Screen's own header is
+// position:sticky, and its width is ordinary block-level layout instead
+// -- already correctly tracking its parent/viewport with no help
+// needed. Forcing that same width-override formula onto it anyway meant
+// its flex-wrapping row of buttons could wrap differently at the
+// artificial, zoom-adjusted width than they actually render at,
+// inflating the header's own natural height -- and since it's sticky
+// (overlaying content once stuck, not pushing it down the way normal
+// flow does), a taller header simply covers more of the list beneath it
+// and intercepts mouse wheel events meant for that list. This variant
+// only ever touches transform/transformOrigin -- never width -- leaving
+// the element's own naturally-correct width completely alone.
+function applyZoomScaleOnlyCompensation(el) {
+  if (!el) return;
+  if (!_mouseZoomCompensationActive()) {
+    el.style.transform = '';
+    return;
+  }
+  var scale = 1 / _zoomFactor();
+  el.style.transform = 'scale(' + scale + ')';
+  el.style.transformOrigin = 'top left';
+}
+
 // POSITION compensation: for elements anchored via top/left/right/bottom
 // offsets rather than spanning full width, like the note editor's "+"
 // FAB and the lower-toolbar collapse tab. Confirmed empirically, not
@@ -12470,7 +12499,7 @@ function pinHomeScreenElements() {
   if (header) {
     var isStuck = header.getBoundingClientRect().top <= 0.5;
     if (isStuck) {
-      applyZoomSizeCompensation(header);
+      applyZoomScaleOnlyCompensation(header);
     } else {
       // Not currently stuck -- ordinary in-flow content, leave it
       // completely untouched rather than force compensation it doesn't
