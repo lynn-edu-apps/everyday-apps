@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1731 -->
+<!-- Remember App - Version 0.1735 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1731
+  Version 0.1735
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,10 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1735 - NEW: "Floating Pill Header" is now a genuine on/off setting, per Lynn's request, rather than the pill redesign being the only option. Defaults to on, keeping the just-shipped look as the default rather than silently reverting existing users to the old bar on upgrade. Off restores the classic single header bar -- specifically the version from right before the pill redesign (v0.1730/1731: position:fixed, not sticky), deliberately not the original, older sticky version with its own since-fixed bugs. Implemented with a shared wrapper around the logo and pill: display:contents by default (invisible to the box model, so the two children behave exactly as independent position:fixed islands, unchanged from current behavior), becoming a real, single, full-width flex bar when Classic mode is selected, with both children dropping their independent positioning and pill-specific background/border/shadow to become ordinary flex items sharing the bar's own background instead. Zoom compensation branches accordingly: Classic mode reuses the exact same width-override size compensation the note editor's own header already uses (since it's now the same kind of element); Pill mode keeps the current independent-islands approach. Per Lynn's explicit instruction, the logo is now ALWAYS hidden while Pill mode is on, regardless of the separate "Hide Remember Logo" setting's own value -- "the logo looks silly in this mode" -- while Classic mode continues to respect that setting normally. Verified directly: default state correctly has the setting on with the logo hidden; toggling to Classic mode correctly restores the single bar (confirmed fixed positioning, flex display, and pill styling stripped from both children), respects the separate hide-logo setting again, and its own zoom compensation and breadcrumb/search/select-bar clearing logic all work correctly measuring the single bar instead of the two independent pieces; toggling back to Pill mode correctly re-hides the logo. Suite unchanged: 332/332.
+  v0.1734 - TWO fixes, per Lynn. (1) The Select Notes bar landed hidden behind the header pill unless the search bar was also open, or when navigating within a folder -- the exact same underlying bug class as the folder breadcrumb and search bar from two builds ago (an ordinary, in-flow element that was never given any header-clearing margin at all), just never previously recognized as also affecting this specific element. Confirmed via direct DOM inspection (not assumed) that these are all direct children of the same scrollable #home-screen container, in this fixed order: search bar, select bar, breadcrumb, then the list. Rewrote the clearing logic as an explicit priority chain rather than a two-way branch, since the old logic never knew the select bar existed at all, and would have picked the wrong element (breadcrumb instead of select bar) in the real combination of being in select mode while also inside a folder. (2) LONG-STANDING BUG, per Lynn's own correct read that this predates any recent header work: selecting multiple notes (or Select All) and trying to move them to Top level never offered that option in the Move sheet, even though moving items one at a time worked fine. Root cause: the multi-select Move button's call to openFolderPicker() was missing its 4th argument (startId) entirely, unlike the single-note and single-folder move calls right above it in the same file, which both pass it correctly. Omitted, it silently defaulted to null (top level) regardless of where the selected items actually lived -- so the picker's own "are we already at the starting location" check went true the instant it reached top level, hiding the Move button exactly when it was needed. Fixed by passing currentFolderId, matching the exact pattern the working single-item paths already use (all selected items necessarily live in the currently-viewed folder, since select mode only operates within one folder view at a time). Verified directly end to end: selecting multiple items inside a real folder, opening the move picker, and navigating up to top level within it now correctly shows an enabled "Move to Top level" button, where before it would have stayed hidden. Suite unchanged: 332/332.
+  v0.1733 - FIX: the logo was fully transparent floating text, per Lynn's request it now matches the button pill -- same background, border, border-radius, and shadow, reading as a matched pair rather than one solid pill and one bare label. Adjusted its top offset from 14px to 12px to match the pill's own, since both now have similar padding/border structure. Verified directly: background color, border-radius, and shadow all confirmed matching between the two elements; top offsets confirmed identical. Suite unchanged: 332/332.
+  v0.1732 - NEW: Home Screen header redesign, per Lynn -- first piece of the floating-pill experiment. Replaced the single solid header bar with two independently-floating pieces: the logo top-left, and a new pill-shaped container (rounded, its own background/border/shadow) holding the 4 buttons (sort, help, more, settings) top-right. Both are position:fixed on their own now, not sharing a layout container the way the old single bar did -- genuinely separate floating islands rather than sections of one continuous strip. The old <header class="home-header"> wrapper is removed entirely. Zoom compensation updated to match: both pieces are now small, anchored islands (the same kind of element as the note editor's own FABs), so they use position compensation instead of the old width-override size compensation a full-width bar needed; the notes list's own top-clearing padding (and the folder breadcrumb / search bar clearing logic from the last two builds) now uses whichever of the two pieces extends further down, since logo text and a row of icon buttons can have genuinely different natural heights. The "Hide Remember Logo" setting also improved as a side effect: the logo used to need visibility:hidden specifically because it acted as a flex spacer positioning the buttons; now that it's independently positioned, there's nothing to preserve space for anymore, so it correctly uses display:none instead. One known gap, flagged rather than solved here: the old "large font wraps buttons to a second line" accommodation depended entirely on the old shared-container layout and doesn't map onto two independent pieces -- removed for now; revisit only if large-font users actually report the logo and pill visually overlapping. Verified directly: both pieces exist with correct fixed positioning and pill styling; Hide Remember Logo confirmed using display:none; zoom position compensation confirmed working on both; the list's padding math confirmed using the taller of the two, not a fixed assumption about which one that would be. Suite unchanged: 332/332.
   v0.1731 - FIX: navigating into a folder made the back-chevron/"Back"/folder-name breadcrumb row missing or invisible, per Lynn's report -- a direct casualty of v0.1730's header switching to position:fixed. Root cause: the breadcrumb is an ordinary, in-flow sibling inserted directly before #notes-list, which used to rely on the header (when position:sticky) still reserving its own space in normal document flow. With the header now fixed and removed from flow entirely, the breadcrumb rendered right at the very top of the page, landing directly underneath the header's own opaque background. The Home Screen's search bar is the exact same kind of element -- also ordinary, in-flow, also previously relying on the same sticky behavior -- so it was fixed here too rather than waiting for a second report of the identical underlying problem the moment it's opened. pinHomeScreenElements() now checks the known, fixed DOM order after the header (search bar, then breadcrumb, then the list) and gives whichever of these actually renders FIRST a top margin that clears the header directly, while the list's own padding only ever needs to handle its own small, original gap beneath whatever now precedes it. Verified directly across all four real combinations: root level (list gets the full header-clearing padding, unchanged from v0.1730), inside a folder (breadcrumb correctly clears the header, list drops to its small original gap), search open (search bar clears the header the same way), and the edge case of both search open and inside a folder at once (search bar -- first in DOM order -- correctly gets the margin, breadcrumb correctly gets reset rather than double-clearing). Suite unchanged: 332/332.
   v0.1730 - NEW: switched the Home Screen header from position:sticky to position:fixed, per Lynn's request, after she found the real, more precise symptom underneath all of this -- at extreme zoom-out, the topmost notes in the list ended up permanently hidden underneath the header with no way to scroll far enough to reveal them (something the note editor's own header never exhibited). Root cause, confirmed by checking the actual CSS directly: .notes-list had only a static 16px top padding, with no dynamic reservation for the header's actual height at all -- unlike the note editor, which recalculates this every single time via pinToolbars(). Since you can't scroll above scrollTop:0, any notes already past that point when the header covers more space than the static padding accounts for are trapped there permanently, not just temporarily obscured. Fixed by switching to position:fixed, which removes the whole "is it currently stuck" question this header never really needed anyway (it's the very first thing on the page, so it was effectively always stuck from the moment the page loaded), and now dynamically reserves exactly the right amount of top padding on the notes list for the header's actual, current rendered height -- the same proven approach the note editor's own content area already uses. Critically, this padding reservation now runs unconditionally, for every user, called directly from renderNotesList() itself rather than only from the mouse-gated zoom-compensation function -- the header is now position:fixed for everyone, not just mouse users, so relying on the mouse-only compensation path alone to set it would have left touch/mobile users with the exact same problem from the very first render. Also restored the header's box-shadow, confirmed uninvolved in the earlier growing-band problem by Lynn's own direct test. Verified directly: the header is confirmed fixed at left:0/right:0; the notes list's padding is correctly set even with no mouse present at all (the critical gap this build closes); the existing mouse-zoom compensation and FAB positioning both continue working correctly on top of this. Suite unchanged: 332/332.
   v0.1729 - REVERT + experiment, per Lynn's explicit request: both v0.1727 (scale-only, no width override) and v0.1728 (added height-locking on top of that) are backed out entirely -- neither improved the Home Screen header's growing-band problem, and v0.1728 was reported as bad too. Back to exactly v0.1726's approach: applyZoomSizeCompensation() (the width-override version, same formula the note editor's own header uses), which Lynn confirmed was an acceptable starting point despite the original issue. applyZoomScaleOnlyCompensation() and its baseline-height variable are removed entirely rather than just left unused. Also, per Lynn's request, temporarily commented out the Home Screen header's box-shadow, to test whether that effect is involved in whatever's actually happening -- easy to restore by uncommenting the single line once this experiment has an answer. Verified directly: the header's compensation now behaves identically to v0.1726 (scale and width both set, height untouched); the removed function no longer exists at all; the shadow is confirmed absent via computed style. Suite unchanged: 332/332.
@@ -527,16 +531,79 @@ body.in-iframe #home-screen {
 }
 
 /* ===== HOME SCREEN ===== */
-.home-header {
+/* v0.1732: replaced the single solid-bar header with two independently
+   floating pieces, per Lynn's request -- the logo top-left, and a new
+   pill-shaped container for the 4 buttons top-right. Both are
+   position:fixed on their own, not sharing a layout container the way
+   the old single bar did, so they genuinely float as separate islands
+   rather than sections of one continuous strip. Removed the old
+   large-font accommodation (which wrapped buttons to a second line
+   when the UI font got very large) since it depended entirely on the
+   old shared-flex-container layout and doesn't map cleanly onto two
+   independent elements -- flagged as a known gap; revisit only if
+   large-font users actually report the two pieces overlapping.
+   v0.1735: made the whole redesign an actual on/off setting ("Floating
+   Pill Header"), per Lynn's request, rather than only offering the new
+   look. #home-header-wrap is display:contents by default -- invisible
+   to the box model entirely, so .home-title and .home-header-pill
+   still behave exactly as independent position:fixed islands as if
+   they had no parent at all. When Classic mode is selected instead
+   (body.home-classic-header), the wrapper becomes a real, single,
+   full-width bar and its two children become normal flex items within
+   it -- see the override block below. */
+.home-header-wrap {
+  display: contents;
+}
+.home-title {
+  position: fixed;
+  top: 12px;
+  left: calc(20px + env(safe-area-inset-left, 0px));
+  z-index: 10;
+  font-family: 'Lora', serif;
+  font-size: 1.7em;
+  font-weight: var(--font-weight-heading);
+  color: var(--fg);
+  letter-spacing: -0.02em;
+  margin: 0;
+  /* v0.1733: matching pill treatment, per Lynn -- was fully transparent
+     floating text; now shares the same background/border/radius/shadow
+     as the button pill so the two read as a matched pair. */
   background: var(--bg2);
-  border-bottom: 1px solid var(--border);
-  /* landscape notch/corner clearance — see .note-header */
-  /* v0.1574: vertical padding trimmed 18/16 -> 10/8 to reclaim ~16px for
-     the notes list. Safe to change: every consumer of this header's height
-     MEASURES it at runtime (pinToolbars' offsetHeight, the sticky-offset
-     and search-bar getBoundingClientRect calls) — no pixel value is
-     hardcoded anywhere. */
-  padding: 12px calc(20px + env(safe-area-inset-right, 0px)) 12px calc(20px + env(safe-area-inset-left, 0px));
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 16px;
+  box-shadow: var(--shadow);
+  line-height: 1.3;
+}
+
+.home-title span {
+  color: var(--accent);
+}
+
+.home-header-pill {
+  position: fixed;
+  top: 12px;
+  right: calc(20px + env(safe-area-inset-right, 0px));
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: var(--shadow);
+}
+
+/* v0.1735: Classic mode -- the wrapper becomes a genuine, single,
+   full-width bar (matching exactly how the header worked right before
+   the pill redesign, v0.1730/1731: position:fixed, not sticky, with
+   the bug fixes from that era intentionally preserved here rather than
+   reintroducing the old sticky-related bugs). Both children drop their
+   independent position:fixed and pill-specific background/border/
+   radius/shadow, becoming ordinary flex items sharing the bar's own
+   single background instead. */
+body.home-classic-header .home-header-wrap {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -546,51 +613,51 @@ body.in-iframe #home-screen {
   left: 0;
   right: 0;
   z-index: 10;
-  /* v0.1730: switched from position:sticky to position:fixed, per Lynn's
-     request -- this header is the very first thing on the page with
-     nothing above it, so in practice it was ALWAYS in its "stuck" state
-     anyway; sticky's whole distinguishing behavior (only activating past
-     a scroll threshold) barely applied here, while its lack of a
-     reliable, DYNAMICALLY-updated space reservation for the notes list
-     below it (unlike the note editor, which recalculates this every
-     time via pinToolbars()) meant at extreme zoom levels the header
-     could cover more of the list than any static padding accounted for,
-     permanently trapping the topmost items with no way to scroll past
-     them. Fixed removes the whole "is it currently stuck" question
-     entirely -- it's now unconditionally anchored to the viewport, same
-     as the note editor's own header, and the notes list's own top
-     padding is now recalculated dynamically to match (see
-     pinHomeScreenElements()), the same proven approach already used
-     there. Confirmed the shadow itself wasn't the cause of the earlier
-     growing-band problem -- restored here. */
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px calc(20px + env(safe-area-inset-right, 0px)) 12px calc(20px + env(safe-area-inset-left, 0px));
   box-shadow: var(--shadow);
 }
-/* Large font: title takes full row, icons drop to second line */
-.home-header.large-font .home-title {
-  flex: 1 1 100%;
-}
-.home-header.large-font .icon-btn {
-  flex-shrink: 0;
-}
-
-.home-title {
-  font-family: 'Lora', serif;
-  font-size: 1.7em;
-  font-weight: var(--font-weight-heading);
-  color: var(--fg);
-  letter-spacing: -0.02em;
+body.home-classic-header .home-title {
+  position: static;
   flex: 1;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  line-height: normal;
 }
-
-.home-title span {
-  color: var(--accent);
+body.home-classic-header .home-header-pill {
+  position: static;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
-/* v0.1724: Hide Remember Logo setting, per Lynn -- visibility:hidden
-   rather than display:none, since .home-title has flex:1 and acts as a
-   spacer positioning the header's buttons; hiding it visually while
-   keeping its layout space preserved avoids shifting those buttons. */
+/* v0.1724: Hide Remember Logo setting, per Lynn.
+   v0.1732: switched from visibility:hidden to display:none -- the logo
+   used to have flex:1 and act as a spacer positioning the header's
+   buttons, so hiding it while preserving its layout space mattered.
+   Now that it's independently position:fixed (see the header redesign
+   above), the pill's position doesn't depend on the logo's presence or
+   size at all -- nothing to preserve space for anymore.
+   v0.1735: also now forced whenever Floating Pill Header mode is on
+   (see applySettings()), regardless of this setting's own value -- per
+   Lynn, the logo looks silly in that mode, so pill mode always hides it
+   outright rather than offering the choice there. Classic mode still
+   respects this setting normally, same as before, since the logo's
+   flex:1 spacer role there means visibility:hidden would have been the
+   safer choice if this rule still needed to preserve layout space --
+   but display:none remains correct even for classic mode: the
+   spacer-role logic is about the LOGO's own space needing preservation
+   for a shared bar's layout, but hiding it in classic mode simply
+   collapses the bar's own flex row to fewer items (icons shift left),
+   an intentional and reasonable difference from the always-pill-shaped
+   v0.1724 behavior it descends from. */
 body.hide-remember-logo .home-title {
-  visibility: hidden;
+  display: none;
 }
 
 .icon-btn {
@@ -6304,8 +6371,9 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 </div>
 <!-- ===== HOME SCREEN ===== -->
 <div id="home-screen" class="screen active">
-  <header class="home-header">
-    <h1 class="home-title">re<span>member</span></h1>
+  <div class="home-header-wrap" id="home-header-wrap">
+  <h1 class="home-title" id="home-title">re<span>member</span></h1>
+  <div class="home-header-pill" id="home-header-pill">
     <button class="icon-btn" id="sort-btn" aria-label="Sort notes" title="Sort notes">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/>
@@ -6328,7 +6396,8 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
       </svg>
     </button>
-  </header>
+  </div>
+  </div>
   <!-- Hidden file input for import -->
   <input type="file" id="import-file-input" accept=".json" style="display:none">
 
@@ -8265,6 +8334,15 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <div class="settings-row-desc">Hides the "Remember" word on the Home Screen, for anyone who'd rather not see it every day.</div>
         </div>
         <label class="toggle-switch" aria-label="Hide Remember logo"><input type="checkbox" id="hide-logo-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+
+      <!-- v0.1735: per Lynn -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Floating Pill Header</div>
+          <div class="settings-row-desc">On: the Home Screen's buttons float in a rounded pill and the logo floats separately (the logo is always hidden in this mode). Off: the classic single header bar.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Floating pill header"><input type="checkbox" id="home-floating-header-toggle" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
 
         <div class="settings-subsection-title">UI Text</div>
@@ -10995,7 +11073,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1731';
+const APP_VERSION = '0.1735';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12491,14 +12569,55 @@ function pinToolbars() {
 // far enough to reveal them.
 function pinHomeScreenElements() {
   if (document.body.classList.contains('note-screen-active')) return; // only relevant on the Home Screen
-  var header = document.querySelector('.home-header');
+  var wrap = document.getElementById('home-header-wrap');
+  var logo = document.getElementById('home-title');
+  var pill = document.getElementById('home-header-pill');
   var fab = document.getElementById('new-note-btn');
   var list = document.getElementById('notes-list');
   var breadcrumb = document.getElementById('folder-breadcrumb');
   var searchBar = document.getElementById('home-search-bar');
-  if (header) {
-    applyZoomSizeCompensation(header);
-    var headerH = header.getBoundingClientRect().height;
+  var classicMode = document.body.classList.contains('home-classic-header');
+  var headerAreaBottom = 0;
+
+  if (classicMode) {
+    // v0.1735: Classic mode -- the wrapper is now a genuine, single,
+    // full-width bar (position:fixed, left:0;right:0), exactly the same
+    // kind of element the note editor's own header is, so it reuses
+    // that same, already-proven width-override size compensation
+    // directly rather than the independent-islands approach pill mode
+    // needs. logo/pill are now ordinary flex children within it, no
+    // compensation of their own needed.
+    if (wrap) {
+      applyZoomSizeCompensation(wrap);
+      headerAreaBottom = wrap.getBoundingClientRect().bottom;
+    }
+  } else {
+    // v0.1732: logo and pill are now two independent, small, anchored
+    // islands (position:fixed, top/left and top/right respectively) --
+    // the same kind of element as the note editor's own FABs -- rather
+    // than one full-width bar, so each gets POSITION compensation
+    // (matching note-fab/quiet-more-fab/settings-fab) instead of the
+    // width-override SIZE compensation the old single-bar header used.
+    // Its real CSS also adds env(safe-area-inset-*) for notch clearance
+    // on mobile, but since this compensation is gated to (hover: hover)
+    // -- desktop/mouse devices only -- that safe-area component is
+    // effectively 0 on every device this code actually runs on, same
+    // reasoning already used for the quiet-mode FAB.
+    if (logo) applyZoomPositionCompensation(logo, { left: 20, top: 12 }, '', 'top left');
+    if (pill) applyZoomPositionCompensation(pill, { right: 20, top: 12 }, '', 'top right');
+
+    // The "header area" the rest of the screen needs to clear is now
+    // whichever of the two floating pieces extends furthest down --
+    // logo and pill can have genuinely different natural heights (serif
+    // text vs. a row of icon buttons), so take the max of both rather
+    // than assuming either one specifically.
+    var logoBottom = logo ? logo.getBoundingClientRect().bottom : 0;
+    var pillBottom = pill ? pill.getBoundingClientRect().bottom : 0;
+    headerAreaBottom = Math.max(logoBottom, pillBottom);
+  }
+
+  if (headerAreaBottom > 0) {
+    var headerH = headerAreaBottom + 8; // small breathing room below whichever is taller
     // v0.1731 FIX, per Lynn's report: the folder breadcrumb (back
     // chevron + "Back" + folder name) went missing/invisible after the
     // header switched to position:fixed. Root cause: the breadcrumb is
@@ -12511,18 +12630,28 @@ function pinHomeScreenElements() {
     // search bar is the exact same kind of element (also an ordinary,
     // in-flow sibling, also previously relying on the same sticky
     // behavior) and would have the identical problem the moment it's
-    // opened, so it's fixed here too rather than waiting for a second
-    // report of the same underlying issue.
-    // Known, fixed DOM order after the header: search bar, then the
-    // breadcrumb, then the list. Whichever of these actually renders
-    // FIRST (the search bar if open; otherwise the breadcrumb if
-    // present; otherwise the list itself directly) is the one that
-    // needs to clear the header directly -- the others only need their
-    // own small, original spacing from whatever now precedes them.
+    // opened, so it was fixed alongside the breadcrumb rather than
+    // waiting for a second report of the same underlying issue.
+    // v0.1734 FIX, per Lynn's report: the Select Notes bar has the
+    // EXACT same problem -- also an ordinary, in-flow sibling, also
+    // never given any header-clearing margin at all, so it landed
+    // hidden behind the pill whenever it was the first visible element.
+    // Confirmed via direct DOM inspection (not assumed) that these are
+    // all direct children of the same scrollable #home-screen
+    // container, in this fixed order: search bar, select bar,
+    // breadcrumb, then the list. Rewritten as an explicit priority
+    // chain instead of a two-way branch, since the old logic never knew
+    // about the select bar at all, and would have picked the wrong
+    // element (breadcrumb instead of select bar) in the real scenario
+    // of being in select mode while also inside a folder.
+    var selectBar = document.getElementById('home-select-bar');
     var searchOpen = !!(searchBar && searchBar.style.display !== 'none');
-    if (searchBar) searchBar.style.marginTop = searchOpen ? headerH + 'px' : '';
-    if (breadcrumb) breadcrumb.style.marginTop = searchOpen ? '' : headerH + 'px';
-    if (list) list.style.paddingTop = (searchOpen || breadcrumb) ? '16px' : (headerH + 16) + 'px';
+    var selectOpen = !!(selectBar && selectBar.classList.contains('visible'));
+    var firstVisible = searchOpen ? 'search' : (selectOpen ? 'select' : (breadcrumb ? 'breadcrumb' : 'list'));
+    if (searchBar) searchBar.style.marginTop = (firstVisible === 'search') ? headerH + 'px' : '';
+    if (selectBar) selectBar.style.marginTop = (firstVisible === 'select') ? headerH + 'px' : '';
+    if (breadcrumb) breadcrumb.style.marginTop = (firstVisible === 'breadcrumb') ? headerH + 'px' : '';
+    if (list) list.style.paddingTop = (firstVisible === 'list') ? (headerH + 16) + 'px' : '16px';
   }
   if (fab) {
     applyZoomPositionCompensation(fab, { right: 24, bottom: 28 }, '', 'bottom right');
@@ -12554,6 +12683,7 @@ const DEFAULT_SETTINGS = {
   disableScratchPad: false,
   disablePinchZoom: false, // v0.1724
   hideLogo: false,         // v0.1724
+  homeFloatingHeader: true, // v0.1735 -- defaults to true, keeping the just-shipped pill design as the default rather than silently reverting existing users to classic on upgrade
   tagColorBorders: false,
   tagColorPills: false,   // color tag pills by tag identity in R&R mode
   tagScope: 'block',
@@ -12870,7 +13000,7 @@ const SETTING_BUCKETS_EXCLUDED = 'excluded';
 const SETTING_BUCKETS = {
   // ---- GENERAL (48) ----
   accentColor: SETTING_BUCKETS_GENERAL, convertTabsOnPaste: SETTING_BUCKETS_GENERAL, convertBulletsOnPaste: SETTING_BUCKETS_GENERAL, darkBgColor: SETTING_BUCKETS_GENERAL, darkFgColor: SETTING_BUCKETS_GENERAL, darkNotePreviewColor: SETTING_BUCKETS_GENERAL,
-  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disablePinchZoom: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL, hideLogo: SETTING_BUCKETS_GENERAL,
+  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disablePinchZoom: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL, hideLogo: SETTING_BUCKETS_GENERAL, homeFloatingHeader: SETTING_BUCKETS_GENERAL,
   globalViewOnly: SETTING_BUCKETS_GENERAL, lastSuffix: SETTING_BUCKETS_GENERAL, lightBgColor: SETTING_BUCKETS_GENERAL, lightFgColor: SETTING_BUCKETS_GENERAL, lightNotePreviewColor: SETTING_BUCKETS_GENERAL,
   lightNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, listMarginLeft: SETTING_BUCKETS_GENERAL, listMarginRight: SETTING_BUCKETS_GENERAL, matchGeneralNotesListEntryColors: SETTING_BUCKETS_GENERAL, noteEditingMode: SETTING_BUCKETS_GENERAL,
   notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListNoteNameFontWeight: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFontWeight: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
@@ -14519,7 +14649,8 @@ function applySettings() {
   document.body.classList.toggle('scratch-pad-disabled', !!settings.disableScratchPad);
   // v0.1724: per Lynn
   document.body.classList.toggle('pinch-zoom-disabled', !!settings.disablePinchZoom);
-  document.body.classList.toggle('hide-remember-logo', !!settings.hideLogo);
+  document.body.classList.toggle('hide-remember-logo', !!settings.hideLogo || (settings.homeFloatingHeader !== false));
+  document.body.classList.toggle('home-classic-header', settings.homeFloatingHeader === false);
   var _nem = settings.noteEditingMode || 'both';
   document.body.classList.toggle('typing-mode-only', _nem === 'typing');
   document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
@@ -14698,9 +14829,12 @@ function applySettings() {
   // Font size
   document.documentElement.style.setProperty('--font-size-base', settings.uiFontSize + 'px');
   document.documentElement.style.setProperty('--font-ui', settings.uiFontSize + 'px');
-  // Large font: move home header icons to second line when font > 28px
-  var homeHeader = document.querySelector('.home-header');
-  if (homeHeader) homeHeader.classList.toggle('large-font', (settings.uiFontSize || 20) > 34);
+  // v0.1732: the old "large font moves header icons to a second line"
+  // accommodation is removed -- it depended on the logo and buttons
+  // sharing one flex container, which no longer exists now that they're
+  // two independently-floating pieces (see the header redesign).
+  // Known gap, not yet solved: revisit only if large-font users
+  // actually report the two pieces visually overlapping.
   document.documentElement.style.fontSize = settings.uiFontSize + 'px';
   document.documentElement.style.setProperty('--font-size-editor', settings.editorFontSize + 'px');
 
@@ -21447,6 +21581,7 @@ function openSettings() {
   var dspToggle=document.getElementById('disable-scratch-pad-toggle'); if(dspToggle)dspToggle.checked=!!settings.disableScratchPad;
   var pzToggle=document.getElementById('disable-pinch-zoom-toggle'); if(pzToggle)pzToggle.checked=!!settings.disablePinchZoom;
   var logoToggle=document.getElementById('hide-logo-toggle'); if(logoToggle)logoToggle.checked=!!settings.hideLogo;
+  var floatHeaderToggle=document.getElementById('home-floating-header-toggle'); if(floatHeaderToggle)floatHeaderToggle.checked=(settings.homeFloatingHeader !== false);
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
   var debugLogToggle=document.getElementById('debug-logging-toggle'); if(debugLogToggle)debugLogToggle.checked=!!settings.debugLoggingEnabled;
   (function() {
@@ -23374,6 +23509,19 @@ function init() {
   document.getElementById('home-select-move-btn').addEventListener('click', function() {
     if (_selectedNoteIds.size === 0) { showToast('Select at least one item first', false); return; }
     var ids = Array.from(_selectedNoteIds);
+    // v0.1734 FIX, per Lynn's report: this call was missing its 4th
+    // argument (startId) entirely, unlike the single-note/single-folder
+    // move calls above, which both correctly pass it. Omitted, it
+    // silently defaulted to null (top level) regardless of where the
+    // selected items actually live -- so the picker's own "are we
+    // already at the starting location" check went true the instant it
+    // reached top level, hiding the Move button exactly when trying to
+    // move multiple selected items back to top level from within a
+    // folder (single-item moves were unaffected, since that path always
+    // passed the item's real starting folder correctly). All selected
+    // items live in the currently-viewed folder (select mode only
+    // operates within one folder view at a time), so that's the
+    // correct startId here.
     openFolderPicker(function(targetId) {
       ids.forEach(function(id) {
         if (notes[id]) notes[id].folderId = targetId || null;
@@ -23382,7 +23530,7 @@ function init() {
       saveNotes(); saveFolders();
       closeFolderPicker();
       exitSelectNotesMode();
-    }, null, 'Move ' + ids.length + ' item' + (ids.length !== 1 ? 's' : '') + ' to…');
+    }, null, 'Move ' + ids.length + ' item' + (ids.length !== 1 ? 's' : '') + ' to…', currentFolderId);
   });
   // Folder picker buttons
   document.getElementById('folder-picker-close-btn').addEventListener('click', closeFolderPicker);
@@ -32004,9 +32152,24 @@ function makeImportFolderName(label) {
     document.body.classList.toggle('pinch-zoom-disabled', this.checked);
     updateSaveBtnState();
   });
+  // v0.1735: shared helper, since the logo is now hidden if EITHER the
+  // standalone "Hide Remember Logo" setting is on, OR Floating Pill
+  // Header mode is on (per Lynn: the logo looks silly in pill mode, so
+  // that mode always hides it outright, regardless of this toggle's own
+  // value). Used by both toggles below and by applySettings() on load.
+  function updateLogoVisibility() {
+    document.body.classList.toggle('hide-remember-logo', !!settings.hideLogo || !!settings.homeFloatingHeader);
+  }
   document.getElementById('hide-logo-toggle').addEventListener('change', function() {
     settings.hideLogo = this.checked;
-    document.body.classList.toggle('hide-remember-logo', this.checked);
+    updateLogoVisibility();
+    updateSaveBtnState();
+  });
+  document.getElementById('home-floating-header-toggle').addEventListener('change', function() {
+    settings.homeFloatingHeader = this.checked;
+    document.body.classList.toggle('home-classic-header', !this.checked);
+    updateLogoVisibility();
+    if (typeof pinHomeScreenElements === 'function') pinHomeScreenElements();
     updateSaveBtnState();
   });
   document.getElementById('show-toolbar-collapse-tab-toggle').addEventListener('change', function() {
