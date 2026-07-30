@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1727 -->
+<!-- Remember App - Version 0.1731 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1727
+  Version 0.1731
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,10 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1731 - FIX: navigating into a folder made the back-chevron/"Back"/folder-name breadcrumb row missing or invisible, per Lynn's report -- a direct casualty of v0.1730's header switching to position:fixed. Root cause: the breadcrumb is an ordinary, in-flow sibling inserted directly before #notes-list, which used to rely on the header (when position:sticky) still reserving its own space in normal document flow. With the header now fixed and removed from flow entirely, the breadcrumb rendered right at the very top of the page, landing directly underneath the header's own opaque background. The Home Screen's search bar is the exact same kind of element -- also ordinary, in-flow, also previously relying on the same sticky behavior -- so it was fixed here too rather than waiting for a second report of the identical underlying problem the moment it's opened. pinHomeScreenElements() now checks the known, fixed DOM order after the header (search bar, then breadcrumb, then the list) and gives whichever of these actually renders FIRST a top margin that clears the header directly, while the list's own padding only ever needs to handle its own small, original gap beneath whatever now precedes it. Verified directly across all four real combinations: root level (list gets the full header-clearing padding, unchanged from v0.1730), inside a folder (breadcrumb correctly clears the header, list drops to its small original gap), search open (search bar clears the header the same way), and the edge case of both search open and inside a folder at once (search bar -- first in DOM order -- correctly gets the margin, breadcrumb correctly gets reset rather than double-clearing). Suite unchanged: 332/332.
+  v0.1730 - NEW: switched the Home Screen header from position:sticky to position:fixed, per Lynn's request, after she found the real, more precise symptom underneath all of this -- at extreme zoom-out, the topmost notes in the list ended up permanently hidden underneath the header with no way to scroll far enough to reveal them (something the note editor's own header never exhibited). Root cause, confirmed by checking the actual CSS directly: .notes-list had only a static 16px top padding, with no dynamic reservation for the header's actual height at all -- unlike the note editor, which recalculates this every single time via pinToolbars(). Since you can't scroll above scrollTop:0, any notes already past that point when the header covers more space than the static padding accounts for are trapped there permanently, not just temporarily obscured. Fixed by switching to position:fixed, which removes the whole "is it currently stuck" question this header never really needed anyway (it's the very first thing on the page, so it was effectively always stuck from the moment the page loaded), and now dynamically reserves exactly the right amount of top padding on the notes list for the header's actual, current rendered height -- the same proven approach the note editor's own content area already uses. Critically, this padding reservation now runs unconditionally, for every user, called directly from renderNotesList() itself rather than only from the mouse-gated zoom-compensation function -- the header is now position:fixed for everyone, not just mouse users, so relying on the mouse-only compensation path alone to set it would have left touch/mobile users with the exact same problem from the very first render. Also restored the header's box-shadow, confirmed uninvolved in the earlier growing-band problem by Lynn's own direct test. Verified directly: the header is confirmed fixed at left:0/right:0; the notes list's padding is correctly set even with no mouse present at all (the critical gap this build closes); the existing mouse-zoom compensation and FAB positioning both continue working correctly on top of this. Suite unchanged: 332/332.
+  v0.1729 - REVERT + experiment, per Lynn's explicit request: both v0.1727 (scale-only, no width override) and v0.1728 (added height-locking on top of that) are backed out entirely -- neither improved the Home Screen header's growing-band problem, and v0.1728 was reported as bad too. Back to exactly v0.1726's approach: applyZoomSizeCompensation() (the width-override version, same formula the note editor's own header uses), which Lynn confirmed was an acceptable starting point despite the original issue. applyZoomScaleOnlyCompensation() and its baseline-height variable are removed entirely rather than just left unused. Also, per Lynn's request, temporarily commented out the Home Screen header's box-shadow, to test whether that effect is involved in whatever's actually happening -- easy to restore by uncommenting the single line once this experiment has an answer. Verified directly: the header's compensation now behaves identically to v0.1726 (scale and width both set, height untouched); the removed function no longer exists at all; the shadow is confirmed absent via computed style. Suite unchanged: 332/332.
+  v0.1728 - FIX: v0.1727 made the growing-band problem worse, per Lynn's report -- her precise description ("scaling applied to the header inner elements but its surrounding area still grows") pointed straight at the real mechanism: transform:scale() only affects how an element is PAINTED, never its actual LAYOUT size. v0.1727 correctly stopped fighting the header's width, but never addressed its actual, underlying HEIGHT, which kept ballooning untouched by the scale transform -- exactly matching what she saw, content that looked right sitting inside a box that was still the wrong size, still covering the list beneath it and still blocking mouse scroll. Fixed by explicitly locking the header's real layout height too, using the same normalized-baseline math already proven for the header's width on the note editor's own version: a baseline height is captured once, lazily, on first use, and corrected back to what it would measure at true 100% zoom regardless of what zoom level happens to be active the first time it runs -- then every subsequent call sets the pre-scale layout height to baseline*zoomFactor, so after the compensating scale is applied, the rendered result always lands back on that same stable baseline, in either zoom direction. Deliberately captured ONCE and reused, rather than re-measured on every call -- re-measuring on every call is the exact mistake that caused v0.1718's runaway compounding-growth regression (each call measuring the previous call's already-scaled result instead of the element's true natural size), and this build specifically re-ran that same multi-call stress test to confirm it doesn't recur here: four successive calls at the same zoom level now produce byte-for-byte identical results, not compounding growth. Also verified the rendered height stays visually stable at its true baseline value across three different zoom levels in both directions. This height-locking is isolated to the new Home Screen function only -- the note editor's own, already-working header/toolbar compensation is completely untouched. Also directly addressed Lynn's question of why this header is sticky rather than fixed: it's the very first element on the page with nothing above it, so in practice it's continuously in its "stuck" state from the moment the page loads -- sticky's whole distinguishing behavior (only activating past a scroll threshold) barely applies here. Switching it to fixed outright would simplify this compensation logic further, but is a bigger structural change deliberately left for its own separate discussion rather than bundled into this fix. Suite unchanged: 332/332.
   v0.1727 - FIX: a growing horizontal band under the Home Screen's header, hiding list text and blocking mouse scroll over that area, per Lynn's report and screenshot. Root cause traced by reasoning through what's actually different about this header versus the note editor's own: her screenshot showed the search bar (display:none when not open, so it couldn't be the visible thing growing) and confirmed via inspector that a container near it was ballooning -- but the real culprit was .home-header itself growing in HEIGHT, something never explicitly addressed before now. v0.1726's fix reused applyZoomSizeCompensation() wholesale, including its width-override formula -- but that formula was specifically built for the note editor's header/toolbar, which are position:fixed with left:0;right:0 (a genuine 100%-of-viewport rule that needs correcting under zoom). The Home Screen's header is position:sticky, and its width comes from ordinary block-level layout instead, already correctly tracking its parent with no help needed -- forcing the same artificial width formula onto it anyway meant its flex-wrapping row of buttons could wrap differently at that artificial width than they actually render at, inflating the header's own natural height. Since it's sticky (overlaying content once stuck, not pushing content down the way normal flow does), a taller header simply covers more of the list beneath it and intercepts mouse wheel events meant for that list -- matching the screenshot and the scroll-blocking symptom precisely. Fixed with a new, simpler scale-only compensation variant that never touches width at all, used for this header specifically; the note editor's own header/toolbar are completely unaffected, still using the original width-override version they actually need. Verified directly: the Home Screen header's width is now correctly left untouched while still compensating for scale; the note editor's header still gets the full width-override treatment, unchanged. Flagged honestly: the underlying wrapping-at-the-wrong-width theory is well-reasoned from the actual CSS, not something that can be fully confirmed without real layout, which nothing in this testing environment can compute -- worth specifically re-checking that horizontal band is fully gone. Suite unchanged: 332/332.
   v0.1726 - NEW: started the Home Screen's own Ctrl+wheel zoom compensation, per Lynn -- first two pieces, the sticky header and the "+" FAB button (#new-note-btn, class .fab), extending the same mouse-only approach already proven in the note editor. The header required one genuinely new piece of care nothing covered so far needed: it's position:sticky, not fixed, and a sticky element only behaves like (and therefore only balloons like) a fixed one while it's actually STUCK at its own scroll threshold (top:0 here) -- while still in normal, unstuck document flow, it's ordinary in-flow content that already scales correctly with the rest of the page, and forcing the same compensation onto it in that state would incorrectly resize perfectly normal content. Detected via getBoundingClientRect().top: at (or very near) 0 means currently stuck and gets full size compensation, same as the note editor's own header; anything meaningfully greater means still in normal flow, compensation skipped entirely and any stale compensation from a moment earlier cleanly reset. Reacts to both resize (zoom changes) and scroll (since scrolling itself, independent of any zoom, is what actually crosses the stuck/unstuck threshold) -- the scroll listener uses the capture phase specifically, since scroll events don't bubble on their own and the Home Screen's own scrollable region isn't the window itself. Entire function gated on the Home Screen actually being the active screen (checked via the same note-screen-active body class the rest of the app already uses), so none of this runs at all while a note is open. Verified directly: currently-stuck state correctly applies the same width/scale formula already proven for the note editor's own header; not-stuck state correctly leaves the header completely untouched, including cleanly resetting any compensation left over from a moment ago; the FAB's position scales in the correct direction; and the whole function correctly does nothing at all while the note editor is the active screen. Suite unchanged: 332/332.
   v0.1725 - TWO fixes, per Lynn. (1) Extended Disable Pinch to Zoom to also cover the Home Screen, Help dialog, and Settings dialog -- it previously only reached the note editor and Toolbar Help panel. None of these three had any touch-action set before at all (default auto, which allows pinch-zoom natively), so this is a genuinely new restriction on each rather than an override of an existing allowance the way the earlier two were. (2) FIX: expanding the Note Behavior settings section also expanded Debugging below it, with Debugging's own chevron then stuck showing the wrong (collapsed) state despite its content being visible -- a bug class Lynn correctly recognized as familiar even without remembering the exact prior sections involved, and one the project's own instructions already document by name ("Settings HTML div nesting") with a ready-made verification script, specifically because it has recurred multiple times before. Ran that exact script rather than guessing: confirmed settings-section-debugging sitting at DOM depth 3 instead of the required 2, meaning it was nested one level too deep inside Note Behavior's own body. Traced the precise cause by tracking the running open/close tag depth through Note Behavior's own content line by line: the "Speak button: icon only" row was missing its own closing </div>, silently pushing every row after it (including the entirety of Debugging) one level deeper for the rest of the section. Added the missing tag; re-ran the verification script and confirmed every section, including Debugging, now correctly sits at depth 2. Verified directly end to end: clicking Note Behavior's header now opens only Note Behavior, Debugging stays closed, and Debugging is confirmed no longer a DOM descendant of Note Behavior at all; the three newly-covered pinch-zoom areas all correctly pick up the disabled override. Suite unchanged: 332/332.
@@ -537,9 +541,28 @@ body.in-iframe #home-screen {
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 10;
+  /* v0.1730: switched from position:sticky to position:fixed, per Lynn's
+     request -- this header is the very first thing on the page with
+     nothing above it, so in practice it was ALWAYS in its "stuck" state
+     anyway; sticky's whole distinguishing behavior (only activating past
+     a scroll threshold) barely applied here, while its lack of a
+     reliable, DYNAMICALLY-updated space reservation for the notes list
+     below it (unlike the note editor, which recalculates this every
+     time via pinToolbars()) meant at extreme zoom levels the header
+     could cover more of the list than any static padding accounted for,
+     permanently trapping the topmost items with no way to scroll past
+     them. Fixed removes the whole "is it currently stuck" question
+     entirely -- it's now unconditionally anchored to the viewport, same
+     as the note editor's own header, and the notes list's own top
+     padding is now recalculated dynamically to match (see
+     pinHomeScreenElements()), the same proven approach already used
+     there. Confirmed the shadow itself wasn't the cause of the earlier
+     growing-band problem -- restored here. */
   box-shadow: var(--shadow);
 }
 /* Large font: title takes full row, icons drop to second line */
@@ -10972,7 +10995,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1727';
+const APP_VERSION = '0.1731';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12281,34 +12304,6 @@ function applyZoomSizeCompensation(el) {
   el.style.width = (window.innerWidth * zf) + 'px';
 }
 
-// v0.1727: scale-only variant, per Lynn's report of a growing horizontal
-// band under the Home Screen's header, hiding list text and blocking
-// mouse scroll. applyZoomSizeCompensation()'s width-override formula was
-// specifically designed for the note editor's header/toolbar, which are
-// position:fixed with left:0;right:0 (a genuine 100%-of-viewport rule
-// that DOES need correcting). The Home Screen's own header is
-// position:sticky, and its width is ordinary block-level layout instead
-// -- already correctly tracking its parent/viewport with no help
-// needed. Forcing that same width-override formula onto it anyway meant
-// its flex-wrapping row of buttons could wrap differently at the
-// artificial, zoom-adjusted width than they actually render at,
-// inflating the header's own natural height -- and since it's sticky
-// (overlaying content once stuck, not pushing it down the way normal
-// flow does), a taller header simply covers more of the list beneath it
-// and intercepts mouse wheel events meant for that list. This variant
-// only ever touches transform/transformOrigin -- never width -- leaving
-// the element's own naturally-correct width completely alone.
-function applyZoomScaleOnlyCompensation(el) {
-  if (!el) return;
-  if (!_mouseZoomCompensationActive()) {
-    el.style.transform = '';
-    return;
-  }
-  var scale = 1 / _zoomFactor();
-  el.style.transform = 'scale(' + scale + ')';
-  el.style.transformOrigin = 'top left';
-}
-
 // POSITION compensation: for elements anchored via top/left/right/bottom
 // offsets rather than spanning full width, like the note editor's "+"
 // FAB and the lower-toolbar collapse tab. Confirmed empirically, not
@@ -12478,42 +12473,62 @@ function pinToolbars() {
 }
 
 // v0.1726: Home Screen zoom compensation, per Lynn -- the first two
-// pieces of this area (the sticky header and the "+" FAB), extending
-// the same mouse-only compensation already proven in the note editor.
-// The header is position:sticky, not fixed, which needs one genuinely
-// new piece of care neither the note editor's own fixed elements nor
-// anything else covered so far required: a sticky element only behaves
-// like a fixed one (and therefore only balloons the same way) while it
-// is actually "stuck" at its own scroll threshold (top:0 here) -- while
-// still in normal, unstuck document flow, it's ordinary in-flow content
-// that already scales correctly with the rest of the page, and forcing
-// the SAME compensation onto it in that state would incorrectly resize
-// perfectly normal content. Detected via getBoundingClientRect().top:
-// at (or very near) 0 means currently stuck; anything meaningfully
-// greater means still in normal flow, not stuck, compensation skipped
-// entirely and any prior compensation cleanly reset.
+// pieces of this area (the header and the "+" FAB), extending the same
+// mouse-only compensation already proven in the note editor.
+// v0.1730: header switched from position:sticky to position:fixed (see
+// its own CSS comment for the full reasoning), which removes the need
+// for any "is it currently stuck" detection entirely -- it's now
+// unconditionally anchored to the viewport, exactly like the note
+// editor's own header, so the same, already-proven
+// applyZoomSizeCompensation() applies directly and unconditionally.
+// Also now dynamically reserves exactly the right amount of top padding
+// on the notes list for the header's actual, current rendered height --
+// mirroring exactly how pinToolbars() already does this for the note
+// editor's own content area -- since a STATIC padding value (all this
+// screen had before) can't track a size that changes with zoom, which
+// is exactly why the topmost notes could end up permanently hidden
+// underneath the header at extreme zoom levels, with no way to scroll
+// far enough to reveal them.
 function pinHomeScreenElements() {
   if (document.body.classList.contains('note-screen-active')) return; // only relevant on the Home Screen
   var header = document.querySelector('.home-header');
   var fab = document.getElementById('new-note-btn');
+  var list = document.getElementById('notes-list');
+  var breadcrumb = document.getElementById('folder-breadcrumb');
+  var searchBar = document.getElementById('home-search-bar');
   if (header) {
-    var isStuck = header.getBoundingClientRect().top <= 0.5;
-    if (isStuck) {
-      applyZoomScaleOnlyCompensation(header);
-    } else {
-      // Not currently stuck -- ordinary in-flow content, leave it
-      // completely untouched rather than force compensation it doesn't
-      // need (or clear any that's stale from a moment ago when it was).
-      header.style.transform = '';
-      header.style.width = '';
-    }
+    applyZoomSizeCompensation(header);
+    var headerH = header.getBoundingClientRect().height;
+    // v0.1731 FIX, per Lynn's report: the folder breadcrumb (back
+    // chevron + "Back" + folder name) went missing/invisible after the
+    // header switched to position:fixed. Root cause: the breadcrumb is
+    // an ordinary, in-flow sibling inserted directly before #notes-list
+    // -- it used to rely on the header (when position:sticky) still
+    // reserving its own space in normal document flow. Now that the
+    // header is fixed and removed from flow entirely, the breadcrumb
+    // rendered right at the very top of the page, landing directly
+    // underneath the header's own opaque background. The Home Screen's
+    // search bar is the exact same kind of element (also an ordinary,
+    // in-flow sibling, also previously relying on the same sticky
+    // behavior) and would have the identical problem the moment it's
+    // opened, so it's fixed here too rather than waiting for a second
+    // report of the same underlying issue.
+    // Known, fixed DOM order after the header: search bar, then the
+    // breadcrumb, then the list. Whichever of these actually renders
+    // FIRST (the search bar if open; otherwise the breadcrumb if
+    // present; otherwise the list itself directly) is the one that
+    // needs to clear the header directly -- the others only need their
+    // own small, original spacing from whatever now precedes them.
+    var searchOpen = !!(searchBar && searchBar.style.display !== 'none');
+    if (searchBar) searchBar.style.marginTop = searchOpen ? headerH + 'px' : '';
+    if (breadcrumb) breadcrumb.style.marginTop = searchOpen ? '' : headerH + 'px';
+    if (list) list.style.paddingTop = (searchOpen || breadcrumb) ? '16px' : (headerH + 16) + 'px';
   }
   if (fab) {
     applyZoomPositionCompensation(fab, { right: 24, bottom: 28 }, '', 'bottom right');
   }
 }
 window.addEventListener('resize', pinHomeScreenElements);
-window.addEventListener('scroll', pinHomeScreenElements, true); // capture: catches scroll on any ancestor, needed to re-check stuck/unstuck as the header crosses its own threshold
 
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
@@ -15889,6 +15904,12 @@ function renderNotesList() {
   list.innerHTML = html;
   wireNoteListEvents(list);
   updateSortSheet();
+  // v0.1730: ensures the notes list's top padding (reserved space for
+  // the now position:fixed header) is set correctly from the very
+  // first render, not just on a later resize event -- needed for every
+  // user, not just mouse users, since the header no longer reserves its
+  // own space via normal document flow the way position:sticky did.
+  pinHomeScreenElements();
 }
 
 function wireNoteListEvents(list) {
