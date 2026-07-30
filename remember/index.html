@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1722 -->
+<!-- Remember App - Version 0.1724 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1722
+  Version 0.1724
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,8 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1724 - FOUR pieces, per Lynn. (1) NEW: "Reset Zoom Size" button at the bottom of Settings -- clears the persisted zoom baseline and immediately re-captures the CURRENT devicePixelRatio as the new "100%" reference, with pinToolbars() re-run right away so an open note reflects it immediately rather than needing a reload. Mainly useful for the one-time case where the very first-ever load of the app happened to already be at a non-100% zoom for unrelated reasons. (2) NEW App Theme setting: "Disable Pinch to Zoom" -- turns off pinch-zoom in the note editor and Toolbar Help panel for anyone who prefers it off. Implemented as a body-class CSS override dropping pinch-zoom from the touch-action whitelist on all four elements that grant it (#note-content-area, #note-editor, .note-viewer, #toolbar-help-body) -- the last of these had its touch-action set inline, which no stylesheet rule can override regardless of specificity, so it was moved into a proper CSS rule first so the override could actually reach it. (3) NEW App Theme setting: "Hide Remember Logo" -- hides the "Remember" wordmark on the Home Screen. Uses visibility:hidden rather than display:none, since .home-title has flex:1 and acts as a spacer positioning the header's other buttons; hiding it that way keeps the header's layout completely unchanged rather than risking the buttons shifting once the spacer's space collapses. (4) FIX: the Settings dialog's floating Save/Cancel/Scroll control landing outside the dialog on wide desktop windows -- it's a true HTML sibling of the dialog (moved there in v0.1713 to sidestep an iOS WebKit bug), so its right offset was measured from the full browser viewport rather than the dialog's own edge, which only matched on phones where the dialog already spans nearly the full width. Fixed by computing its position from the dialog's own actual rendered bounding rect instead of a static value, reacting to the dialog opening (a MutationObserver on its own open/close class, the same pattern the scratch-pad panel already uses) and to the window being resized while it's still open. All four pieces verified directly: the reset button correctly overwrites both the in-memory baseline and persisted storage; both new toggles correctly set their setting, apply their body class, and the resulting computed touch-action/visibility CSS is confirmed correct; the FAB's position was verified against two different simulated window widths, both matching the expected math exactly. Suite unchanged: 332/332.
+  v0.1723 - FIX: folder entries on the Home Screen had no mouse-hover highlight, per Lynn's report -- note entries have always had one. Found a leftover comment ("folder-item hover already wrapped") sitting exactly where the rule should have been, suggesting this was intended at some point but never actually added. Added the same hover/active pair note-item already has -- background highlight on hover, slight press-down scale on active -- wrapped in the same (hover: hover) media query used throughout the app to mean a real mouse/trackpad is attached. Folder entries don't use the customizable "Notes list entry background" setting notes do, so only the simple version was needed, not a separate light/dark-mode variant. Suite unchanged: 332/332.
   v0.1722 - TWO fixes, per Lynn. (1) Zoom compensation for the quiet-mode/view-only More menu FAB (#quiet-more-fab) -- position:fixed, right/top anchored, ballooning under mouse zoom the same way the note FAB, collapse tab, and scratch-pad tab did before their own fixes. Its real CSS also adds env(safe-area-inset-right) to the right offset for notch clearance on mobile, but since this compensation is gated to (hover: hover) -- desktop/mouse devices only -- that safe-area component is effectively 0 on every device this code actually runs on, so the static 12px/6px alone is the correct desired position here. (2) Toolbar Help panel (the one with a sentence or two about each note editor button) now supports pinch-to-zoom -- its scrollable body had touch-action:pan-y alone, which allows vertical scrolling but explicitly excludes pinch-zoom by spec. This is the identical root cause already fixed once for the note editor itself, all the way back in v0.1498 (touch-action pan-y -> pan-y pinch-zoom) -- just never applied to this panel, added separately later. Verified directly: the FAB's right/top offsets scale in the correct direction under zoom, its size stays steady, and it cleanly falls back to untouched CSS with no mouse present, matching every other fixed element already covered; the Toolbar Help panel's touch-action is confirmed set to the correct value in the DOM. Suite unchanged: 332/332.
   v0.1721 - FIX: the note editor's toolbar rendering huge or tiny after closing and reopening the tab, when the browser remembers a non-100% zoom level for the app's origin -- the big feature this whole session's zoom-compensation work has been building toward, now landed. Diagnosed carefully in the isolated test page first, with Lynn's own real-device data: devicePixelRatio was confirmed completely stable from the earliest possible reading through 1.5 seconds later on a reopened tab, ruling out any settling/timing issue. The real problem was conceptual, not timing-related: every fresh page load recaptured "whatever devicePixelRatio is present right now" as the neutral baseline -- correct for a genuinely first-ever load, but silently wrong the moment a reopened tab already carries a browser-remembered zoom level, since that already-zoomed state would get treated as the new "normal," with no compensation ever applying to correct for it. Fixed by persisting the baseline across sessions (localStorage, using the app's own storeKey() namespacing so dev/stable deployments sharing an origin don't collide) instead of recapturing it every load -- captured once, the very first time Remember is ever used in this browser, then reused on every subsequent visit regardless of what zoom level the browser happens to restore. This same approach was validated end-to-end in the isolated test page first, including Lynn's own real zoom/close/reopen cycle at her actual desktop -- deploying it (rather than opening the file directly from disk, which has known localStorage reliability issues in some browsers) confirmed it working correctly. Brought over and verified directly with the exact real numbers from that test (baseline 1.626, restored zoom reading 2.845, both actually recorded on Lynn's own machine): correctly computes a zoomFactor of 1.75, precisely matching the real 175% zoom she'd set, rather than the old behavior which would have seen no change at all. Also verified a genuinely fresh, first-ever load still correctly captures and persists the current devicePixelRatio as the new baseline, and that the header/toolbar/FAB compensation built in earlier builds continues working correctly on top of this change. Suite unchanged: 332/332.
   v0.1720 - FIX: toolbar tooltips landing under the cursor, per Lynn's short-term to-do item -- requested as a quick, morale-boosting win in the middle of the harder zoom-compensation debugging cycle. Even after v0.1686's earlier loosened threshold for when to give up on positioning above, a regular browser tab (address bar etc. eating vertical space, unlike the PWA) still often doesn't leave enough room above toolbar buttons sitting near the top -- the fallback used to be flipping BELOW the button, which lands the tooltip right where the cursor already is, since the cursor is still resting on the button being hovered. Per Lynn's explicit request, the fallback now prefers flipping sideways instead -- whichever of left/right has more room, vertically centered on the button -- since a horizontal offset moves the tooltip clear of the cursor entirely rather than just relocating it to a spot the cursor still occupies. Only falls back to below as a genuine last resort, when there's not enough room on either side either (acknowledged directly as an accepted limitation near the far left/right screen edges). Verified directly with two scenarios: a button near the top with room to at least one side correctly flips sideways and stays vertically centered on the button rather than dropping below it; a button in a narrow window with no usable room anywhere else correctly still falls back to below rather than rendering off-screen. Suite unchanged: 332/332.
@@ -556,6 +558,13 @@ body.in-iframe #home-screen {
 
 .home-title span {
   color: var(--accent);
+}
+/* v0.1724: Hide Remember Logo setting, per Lynn -- visibility:hidden
+   rather than display:none, since .home-title has flex:1 and acts as a
+   spacer positioning the header's buttons; hiding it visually while
+   keeping its layout space preserved avoids shifting those buttons. */
+body.hide-remember-logo .home-title {
+  visibility: hidden;
 }
 
 .icon-btn {
@@ -1638,7 +1647,10 @@ polyline.cb-draw-anim {
   margin-bottom: 6px;
   border: 1px solid var(--border);
 }
-/* folder-item hover already wrapped */
+@media (hover: hover) {
+  .folder-item:hover { background: var(--bg3); box-shadow: 0 4px 18px rgba(0,0,0,0.13); }
+  .folder-item:active { transform: scale(0.99); }
+}
 .folder-item-icon {
   flex-shrink: 0;
   display: flex;
@@ -4152,6 +4164,21 @@ body.has-mouse .toolbar-drag-handle.dragging {
 }
 #note-content-area.has-more-below {
   box-shadow: inset 0 -8px 6px -6px rgba(0,0,0,0.28);
+}
+#toolbar-help-body {
+  touch-action: pan-y pinch-zoom; /* NOT bare pan-y -- that kills pinch zoom, same as .note-content-area/#note-editor/.note-viewer above */
+}
+/* v0.1724: Disable Pinch to Zoom setting, per Lynn -- drops pinch-zoom
+   from the whitelist on every element that grants it, leaving plain
+   pan-y (vertical scroll still works, pinch no longer does). Higher
+   specificity than the base rules above (body class + selector each
+   beats a bare selector alone), so this correctly overrides them when
+   the setting is on. */
+body.pinch-zoom-disabled #note-content-area,
+body.pinch-zoom-disabled #note-editor,
+body.pinch-zoom-disabled .note-viewer,
+body.pinch-zoom-disabled #toolbar-help-body {
+  touch-action: pan-y;
 }
 /* v0.1666 FIX, per Lynn's on-device diagnosis: area.scrollTop = newScroll
    in _tpadEnsureCaretVisible() gets silently clamped by the browser to
@@ -7924,7 +7951,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
          the note editor itself in v0.1498 (touch-action pan-y -> pan-y
          pinch-zoom), just never applied here since this panel was added
          separately. -->
-    <div id="toolbar-help-body" style="overflow-y:auto;overflow-x:hidden;padding:14px 18px;flex:1;overscroll-behavior:contain;touch-action:pan-y pinch-zoom;"></div>
+    <div id="toolbar-help-body" style="overflow-y:auto;overflow-x:hidden;padding:14px 18px;flex:1;overscroll-behavior:contain;"></div>
   </div>
 </div>
 
@@ -8187,7 +8214,24 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <button class="seg-btn" data-val="xlarge">Extra Large</button>
         </div>
       </div>
-    
+
+      <!-- v0.1724: per Lynn -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Disable Pinch to Zoom</div>
+          <div class="settings-row-desc">Turns off pinch-to-zoom in the note editor and Toolbar Help panel, for anyone who finds it accidentally triggers or prefers it off entirely.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Disable pinch to zoom"><input type="checkbox" id="disable-pinch-zoom-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Hide Remember Logo</div>
+          <div class="settings-row-desc">Hides the "Remember" word on the Home Screen, for anyone who'd rather not see it every day.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Hide Remember logo"><input type="checkbox" id="hide-logo-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+
         <div class="settings-subsection-title">UI Text</div>
 
       <div class="settings-row">
@@ -10045,6 +10089,14 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     <div class="reset-row" style="margin-top:0;padding-bottom:32px">
       <button class="reset-defaults-btn" id="fresh-sample-picker-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Get Fresh Copy of a Sample Note…</button>
     </div>
+    <!-- v0.1724: per Lynn -- lets someone re-capture "what 100% looks
+         like" as whatever their browser's current zoom happens to be
+         right now, without needing to clear site data by hand. Mainly
+         useful if the very first-ever load of the app happened to
+         already be at a non-100% zoom for unrelated reasons. -->
+    <div class="reset-row" style="margin-top:0;padding-bottom:32px">
+      <button class="reset-defaults-btn" id="reset-zoom-size-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Reset Zoom Size</button>
+    </div>
     </div>
     </div>
     </div>
@@ -10907,7 +10959,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1722';
+const APP_VERSION = '0.1724';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12406,6 +12458,8 @@ const DEFAULT_SETTINGS = {
   // -- e.g. a senior-citizen-oriented theme that hides the pad, since it
   // uses a smaller font and lacks the note pane's full feature set.
   disableScratchPad: false,
+  disablePinchZoom: false, // v0.1724
+  hideLogo: false,         // v0.1724
   tagColorBorders: false,
   tagColorPills: false,   // color tag pills by tag identity in R&R mode
   tagScope: 'block',
@@ -12722,7 +12776,7 @@ const SETTING_BUCKETS_EXCLUDED = 'excluded';
 const SETTING_BUCKETS = {
   // ---- GENERAL (48) ----
   accentColor: SETTING_BUCKETS_GENERAL, convertTabsOnPaste: SETTING_BUCKETS_GENERAL, convertBulletsOnPaste: SETTING_BUCKETS_GENERAL, darkBgColor: SETTING_BUCKETS_GENERAL, darkFgColor: SETTING_BUCKETS_GENERAL, darkNotePreviewColor: SETTING_BUCKETS_GENERAL,
-  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL,
+  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disablePinchZoom: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL, hideLogo: SETTING_BUCKETS_GENERAL,
   globalViewOnly: SETTING_BUCKETS_GENERAL, lastSuffix: SETTING_BUCKETS_GENERAL, lightBgColor: SETTING_BUCKETS_GENERAL, lightFgColor: SETTING_BUCKETS_GENERAL, lightNotePreviewColor: SETTING_BUCKETS_GENERAL,
   lightNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, listMarginLeft: SETTING_BUCKETS_GENERAL, listMarginRight: SETTING_BUCKETS_GENERAL, matchGeneralNotesListEntryColors: SETTING_BUCKETS_GENERAL, noteEditingMode: SETTING_BUCKETS_GENERAL,
   notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListNoteNameFontWeight: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFontWeight: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
@@ -14369,6 +14423,9 @@ function applySettings() {
   // visibility (applySettings() runs on load AND after every settings
   // save, so this stays in sync without extra plumbing).
   document.body.classList.toggle('scratch-pad-disabled', !!settings.disableScratchPad);
+  // v0.1724: per Lynn
+  document.body.classList.toggle('pinch-zoom-disabled', !!settings.disablePinchZoom);
+  document.body.classList.toggle('hide-remember-logo', !!settings.hideLogo);
   var _nem = settings.noteEditingMode || 'both';
   document.body.classList.toggle('typing-mode-only', _nem === 'typing');
   document.body.classList.toggle('rronly-mode-only', _nem === 'rronly');
@@ -21288,6 +21345,8 @@ function openSettings() {
   var cbToggle=document.getElementById('convert-bullets-toggle'); if(cbToggle)cbToggle.checked=(settings.convertBulletsOnPaste !== false);
   var esToggle=document.getElementById('edge-swipe-home-toggle'); if(esToggle)esToggle.checked=(settings.edgeSwipeToHome !== false);
   var dspToggle=document.getElementById('disable-scratch-pad-toggle'); if(dspToggle)dspToggle.checked=!!settings.disableScratchPad;
+  var pzToggle=document.getElementById('disable-pinch-zoom-toggle'); if(pzToggle)pzToggle.checked=!!settings.disablePinchZoom;
+  var logoToggle=document.getElementById('hide-logo-toggle'); if(logoToggle)logoToggle.checked=!!settings.hideLogo;
   var confettiToggle=document.getElementById('confetti-on-complete-toggle'); if(confettiToggle)confettiToggle.checked=!!settings.confettiOnComplete;
   var debugLogToggle=document.getElementById('debug-logging-toggle'); if(debugLogToggle)debugLogToggle.checked=!!settings.debugLoggingEnabled;
   (function() {
@@ -28087,6 +28146,37 @@ function makeImportFolderName(label) {
   document.getElementById('settings-fab-cancel').addEventListener('click', function() {
     cancelSettings();
   });
+  // v0.1724 FIX, per Lynn's report: on a wide desktop browser window,
+  // the FAB landed outside the dialog entirely. Root cause: it's a true
+  // HTML sibling of #settings-sheet (moved there in v0.1713 to sidestep
+  // an iOS WebKit bug), so its right:16px is measured from the full
+  // browser viewport, not the dialog's own right edge -- correct on
+  // phones, where the dialog already spans nearly the full width, but
+  // wrong once the dialog is centered and capped at max-width:640px on
+  // a much wider window. Fixed by computing its right offset from the
+  // dialog's own actual rendered position instead of a static value.
+  function positionSettingsFab() {
+    var sheet = document.getElementById('settings-sheet');
+    var fab = document.getElementById('settings-fab');
+    if (!sheet || !fab) return;
+    var sheetRect = sheet.getBoundingClientRect();
+    fab.style.right = (window.innerWidth - sheetRect.right + 16) + 'px';
+  }
+  (function() {
+    var sheet = document.getElementById('settings-sheet');
+    if (!sheet) return;
+    // Same MutationObserver-on-class pattern the scratch-pad panel
+    // already uses to react to its own open/close state -- recomputes
+    // the moment the dialog opens, and again on any resize while it's
+    // still open (covers a window being resized with Settings up).
+    var _fabPosObserver = new MutationObserver(function() {
+      if (sheet.classList.contains('open')) positionSettingsFab();
+    });
+    _fabPosObserver.observe(sheet, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('resize', function() {
+      if (sheet.classList.contains('open')) positionSettingsFab();
+    });
+  })();
   document.getElementById('settings-scroll-to-last-btn').addEventListener('click', function() {
     var sheet = document.getElementById('settings-sheet');
     if (!sheet) return;
@@ -28862,6 +28952,24 @@ function makeImportFolderName(label) {
   });
   document.getElementById('fresh-sample-picker-overlay').addEventListener('click', function(e) {
     if (e.target === this) this.style.display = 'none';
+  });
+
+  // v0.1724: Reset Zoom Size, per Lynn -- clears the persisted baseline
+  // and immediately re-captures the CURRENT devicePixelRatio as the new
+  // "100%" reference, so whatever zoom level is in effect right now
+  // becomes the new normal going forward. Also re-runs pinToolbars()
+  // immediately, so if a note is currently open the fixed toolbar/FAB
+  // sizing reflects the reset right away rather than needing a reload.
+  document.getElementById('reset-zoom-size-btn').addEventListener('click', function() {
+    try {
+      var _key = storeKey('zoomBaselineDPR');
+      _zoomBaselineDPR = window.devicePixelRatio || 1;
+      localStorage.setItem(_key, String(_zoomBaselineDPR));
+    } catch (e) {
+      _zoomBaselineDPR = window.devicePixelRatio || 1;
+    }
+    if (typeof pinToolbars === 'function') pinToolbars();
+    showToast('Zoom size reset');
   });
 
   // Reset to defaults
@@ -31788,6 +31896,17 @@ function makeImportFolderName(label) {
   document.getElementById('disable-scratch-pad-toggle').addEventListener('change', function() {
     settings.disableScratchPad = this.checked;
     if (this.checked) closeScratchPadHook();
+    updateSaveBtnState();
+  });
+  // v0.1724: per Lynn
+  document.getElementById('disable-pinch-zoom-toggle').addEventListener('change', function() {
+    settings.disablePinchZoom = this.checked;
+    document.body.classList.toggle('pinch-zoom-disabled', this.checked);
+    updateSaveBtnState();
+  });
+  document.getElementById('hide-logo-toggle').addEventListener('change', function() {
+    settings.hideLogo = this.checked;
+    document.body.classList.toggle('hide-remember-logo', this.checked);
     updateSaveBtnState();
   });
   document.getElementById('show-toolbar-collapse-tab-toggle').addEventListener('change', function() {
