@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Chromatic — Color Contrast Tester</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Spectral:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ui-bg: #f4f2ee;
+    --ui-surface: #e8e5df;
+    --ui-border: #b8b4ac;
+    --ui-text: #111111;
+    --ui-muted: #444444;
+    --ui-accent: #7a5c00;
+    --radius: 4px;
+  }
+
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--ui-bg);
+    color: var(--ui-text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--ui-border);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: var(--ui-accent);
+  }
+
+  header span {
+    font-size: 0.7rem;
+    color: var(--ui-muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    flex: 1;
+    overflow: hidden;
+    height: calc(100vh - 57px);
+  }
+
+  /* ── LEFT PANEL ── */
+  .left-panel {
+    border-right: 1px solid var(--ui-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .section-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ui-muted);
+    padding: 14px 16px 8px;
+    border-bottom: 1px solid var(--ui-border);
+    flex-shrink: 0;
+  }
+
+  /* Background picker */
+  .bg-picker-block {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--ui-border);
+    flex-shrink: 0;
+  }
+
+  .bg-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .color-input-wrapper {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius);
+    overflow: visible;
+    /* double border: white ring inside black ring */
+    border: 2px solid #000;
+    box-shadow: 0 0 0 1px #fff, 0 0 0 3px #000;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  .color-input-wrapper input[type="color"] {
+    position: absolute;
+    inset: -6px;
+    width: calc(100% + 12px);
+    height: calc(100% + 12px);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    background: none;
+    border-radius: var(--radius);
+  }
+
+  .bg-hex-display {
+    font-size: 16px;
+    letter-spacing: 0.06em;
+    color: var(--ui-text);
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius);
+    padding: 6px 8px;
+    flex: 1;
+    font-family: 'DM Mono', monospace;
+    min-width: 0;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .bg-hex-display:focus {
+    border-color: var(--ui-accent);
+    background: #fff;
+  }
+
+  /* Toggle rows (mode toggle) */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ui-border);
+    flex-shrink: 0;
+  }
+
+  .toggle-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ui-muted);
+    flex: 1;
+  }
+
+  .toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+  }
+
+  .toggle input { opacity: 0; width: 0; height: 0; }
+
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    background: #ccc9c0;
+    border-radius: 11px;
+    border: 1px solid var(--ui-border);
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .toggle input:checked + .toggle-track { background: #d4b84a; border-color: var(--ui-accent); }
+
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--ui-muted);
+    top: 2px;
+    left: 2px;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .toggle input:checked + .toggle-track::after {
+    transform: translateX(18px);
+    background: var(--ui-accent);
+  }
+
+  /* Undo / Redo buttons */
+  .undo-redo-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .undo-redo-btn {
+    flex: 1;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 5px 0;
+    border-radius: var(--radius);
+    border: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, opacity 0.15s;
+  }
+
+  .undo-redo-btn:active {
+    background: var(--ui-accent);
+    color: #000;
+  }
+
+  .undo-redo-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  /* Picker sample text */
+  .picker-sample {
+    margin-top: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    padding: 2px 0;
+    letter-spacing: 0.02em;
+    transition: color 0.2s, background 0.2s;
+    border-radius: 3px;
+    text-align: center;
+  }
+
+  /* Font weight slider */
+  .weight-row {
+    padding: 10px 16px 12px;
+    border-bottom: 1px solid var(--ui-border);
+    flex-shrink: 0;
+  }
+
+  .weight-row-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .weight-row-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ui-muted);
+  }
+
+  .weight-value {
+    font-size: 0.78rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--ui-accent);
+    font-weight: bold;
+  }
+
+  .weight-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, var(--ui-accent) 0%, var(--ui-accent) 37.5%, var(--ui-border) 37.5%);
+    outline: none;
+    cursor: pointer;
+  }
+
+  .weight-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--ui-accent);
+    border: 2px solid #000;
+    box-shadow: 0 0 0 1px #fff, 0 0 0 3px #000;
+    cursor: pointer;
+  }
+
+  .weight-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--ui-accent);
+    border: 2px solid #000;
+    box-shadow: 0 0 0 1px #fff, 0 0 0 3px #000;
+    cursor: pointer;
+  }
+
+  .weight-ticks {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+  }
+
+  .weight-ticks span {
+    font-size: 0.55rem;
+    color: var(--ui-muted);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0;
+  }
+
+  /* Named colors list */
+  .colors-list-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ui-muted);
+    padding: 10px 16px 6px;
+    flex-shrink: 0;
+  }
+
+  .colors-search {
+    margin: 0 10px 8px;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius);
+    color: var(--ui-text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    padding: 5px 8px;
+    outline: none;
+    width: calc(100% - 20px);
+    flex-shrink: 0;
+  }
+
+  .colors-search::placeholder { color: var(--ui-muted); }
+  .colors-search:focus { border-color: var(--ui-accent); }
+
+  .colors-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 0 10px 10px;
+  }
+
+  .colors-list::-webkit-scrollbar { width: 4px; }
+  .colors-list::-webkit-scrollbar-track { background: transparent; }
+  .colors-list::-webkit-scrollbar-thumb { background: var(--ui-border); border-radius: 2px; }
+
+  .color-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.1s;
+    border: 1px solid transparent;
+  }
+
+  .color-item:hover { background: var(--ui-surface); }
+
+  .color-item.active {
+    background: #d4c97a44;
+    border-color: var(--ui-accent);
+  }
+
+  .color-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    /* double border: white inner ring, black outer ring */
+    border: 2px solid #000;
+    box-shadow: 0 0 0 1px #fff, 0 0 0 3px #000;
+    flex-shrink: 0;
+  }
+
+  .color-name {
+    font-size: 0.72rem;
+    color: #111111;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .color-hex {
+    font-size: 0.64rem;
+    color: #333333;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  /* ── RIGHT PANEL (text preview) ── */
+  .preview-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .preview-header {
+    border-bottom: 1px solid var(--ui-border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ui-muted);
+  }
+
+  .preview-info {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .preview-info .chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-size: 0.65rem;
+    letter-spacing: 0.06em;
+  }
+
+  .chip-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+
+  .preview-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px 52px;
+    transition: background-color 0.3s, color 0.2s;
+    font-family: 'Spectral', serif;
+    font-size: 1.05rem;
+    line-height: 1.82;
+  }
+
+  .preview-content::-webkit-scrollbar { width: 6px; }
+  .preview-content::-webkit-scrollbar-track { background: transparent; }
+  .preview-content::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.3); border-radius: 3px; }
+
+  .preview-content h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 400;
+    font-style: italic;
+    margin-bottom: 1.2em;
+    letter-spacing: 0.02em;
+    opacity: 0.95;
+  }
+
+  .preview-content p {
+    margin-bottom: 1.6em;
+  }
+
+  .preview-content .stanza {
+    margin-bottom: 2em;
+  }
+
+  .preview-content .poem-line {
+    display: block;
+    line-height: 1.6;
+  }
+
+  .preview-content .poem-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-style: italic;
+    margin-bottom: 1em;
+    margin-top: 2em;
+    opacity: 0.8;
+    font-weight: 400;
+  }
+
+  .preview-content .attr {
+    font-size: 0.82rem;
+    font-style: italic;
+    opacity: 0.6;
+    margin-bottom: 2.5em;
+  }
+
+  .preview-content .section-divider {
+    border: none;
+    border-top: 1px solid currentColor;
+    opacity: 0.2;
+    margin: 2em 0;
+  }
+
+  /* ── Color name tooltip ── */
+  .color-tooltip {
+    position: fixed;
+    background: #111;
+    color: #fff;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s, transform 0.15s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    border: 1px solid #444;
+  }
+  .color-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+</style>
+</head>
+<body>
+<div class="color-tooltip" id="colorTooltip"></div>
+
+<header>
+  <h1>Chromatic</h1>
+  <span>Color Contrast Tester</span>
+</header>
+
+<div class="workspace">
+
+  <!-- LEFT PANEL -->
+  <div class="left-panel">
+    <div class="section-label" id="pickerSectionLabel">Background Color</div>
+
+    <div class="bg-picker-block">
+      <div class="bg-picker-row">
+        <div class="color-input-wrapper" title="Click to pick background color">
+          <input type="color" id="bgPicker" value="#fffff5">
+        </div>
+        <input type="text" class="bg-hex-display" id="bgHexDisplay" value="#FFFFF5" maxlength="7" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="picker-sample" id="pickerSample">Sample Text</div>
+      <div class="undo-redo-row">
+        <button class="undo-redo-btn" id="undoBtn" disabled>↩ Undo</button>
+        <button class="undo-redo-btn" id="redoBtn" disabled>Redo ↪</button>
+      </div>
+    </div>
+
+    <div class="weight-row">
+      <div class="weight-row-top">
+        <span class="weight-row-label">Font Weight</span>
+        <span class="weight-value" id="weightValue">300</span>
+      </div>
+      <input type="range" class="weight-slider" id="weightSlider"
+             min="0" max="7" step="1" value="1">
+      <div class="weight-ticks">
+        <span>200</span><span>300</span><span>400</span><span>500</span>
+        <span>600</span><span>700</span><span>800</span><span>900</span>
+      </div>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-label" id="fontLabel">Serif</span>
+      <label class="toggle">
+        <input type="checkbox" id="fontToggle">
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-label" id="modeLabel">List → Foreground</span>
+      <label class="toggle">
+        <input type="checkbox" id="modeToggle">
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+
+    <div class="colors-list-label" id="colorsListLabel">Named HTML Colors — Foreground</div>
+    <input type="text" class="colors-search" id="colorSearch" placeholder="filter colors…">
+
+    <div class="colors-list" id="colorsList"></div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="preview-panel">
+    <div class="preview-header">
+      <span>Preview</span>
+      <div class="preview-info">
+        <div class="chip">
+          <div class="chip-dot" id="fgChipDot"></div>
+          <span id="fgChipLabel">— fg</span>
+        </div>
+        <div class="chip">
+          <div class="chip-dot" id="bgChipDot" style="background:#fffff5"></div>
+          <span id="bgChipLabel">#1a1a2e bg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview-content" id="previewContent" style="background:#fffff5; color:#c0c0c0;">
+
+      <h2>Verses for a Changing Light</h2>
+
+      <div class="stanza">
+        <p class="poem-title">I. Ode to the Visible Spectrum</p>
+        <span class="poem-line">Between the wavelength and the eye</span>
+        <span class="poem-line">a whole world waits to be decided—</span>
+        <span class="poem-line">not the rose itself, but red,</span>
+        <span class="poem-line">not the sky, but its particular blue,</span>
+        <span class="poem-line">the nameless shade that afternoon</span>
+        <span class="poem-line">casts on a whitewashed wall in June.</span>
+        <span class="poem-line">We call it light. We call it color.</span>
+        <span class="poem-line">We mean: this is how we know the world.</span>
+      </div>
+      <p class="attr">— original</p>
+
+      <hr class="section-divider">
+
+      <div class="stanza">
+        <p class="poem-title">II. The Painter's Confession</p>
+        <span class="poem-line">I have spent my life in pursuit of a color</span>
+        <span class="poem-line">that does not exist in any tube or jar,</span>
+        <span class="poem-line">the color that falls between coral and dusk,</span>
+        <span class="poem-line">between a candle and a distant star.</span>
+        <span class="poem-line">I mix and miss; I glaze and start again.</span>
+        <span class="poem-line">The canvas holds what memory cannot—</span>
+        <span class="poem-line">a nearly-there, an almost-right, a when</span>
+        <span class="poem-line">the light was something I have since forgot.</span>
+      </div>
+      <p class="attr">— original</p>
+
+      <hr class="section-divider">
+
+      <p>Color is light made legible. Every hue in this palette has a name, a history, a feeling attached to it by centuries of use — <em>crimson</em> for danger and passion, <em>cerulean</em> for open sky and longing, <em>seagreen</em> for the place where earth and water argue over territory. A designer choosing a text color is also choosing a mood, a weight, a relationship with the surface it rests on.</p>
+
+      <p>Readability is not merely a technical concern. It is a form of respect — for the eye, for the reader, for the words themselves. A high contrast between foreground and background is not always the goal; sometimes a soft, close harmony says more than a stark opposition. Sometimes you want the text to emerge slowly, like fog lifting, rather than to announce itself in bold contrasting strokes.</p>
+
+      <p>Test each color here as you would test a hypothesis: with patience, with an open eye, with the willingness to be surprised. <em>Goldenrod</em> on dark blue is an old combination, reliable as lamplight. <em>Teal</em> on cream is another country entirely. The only rule is what you can actually read — and what, reading, you want to feel.</p>
+
+      <hr class="section-divider">
+
+      <div class="stanza">
+        <p class="poem-title">III. Nocturne in Hex</p>
+        <span class="poem-line">In the grammar of machines,</span>
+        <span class="poem-line">every color has its number,</span>
+        <span class="poem-line">a six-digit name in hexadecimal—</span>
+        <span class="poem-line">as though what the eye weeps over</span>
+        <span class="poem-line">could be filed, retrieved, reproduced.</span>
+        <span class="poem-line">And yet. Type #B8860B and something</span>
+        <span class="poem-line">almost like gold appears. Something almost</span>
+        <span class="poem-line">like the feeling gold produces.</span>
+        <span class="poem-line">That almost is the whole of art.</span>
+      </div>
+      <p class="attr">— original</p>
+
+      <hr class="section-divider">
+
+      <p>Scroll through the palette at left. Click any named color to apply it as the text foreground. Use the color picker to set a background. Toggle bold weight to see how density affects legibility. Notice how some colors vanish entirely against certain backgrounds, and how others seem to vibrate with contrast. Notice what you find beautiful, and what you find merely readable — they are not always the same thing.</p>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── All 140 named HTML colors ──
+const NAMED_COLORS = [
+  ["AliceBlue","#F0F8FF"],["AntiqueWhite","#FAEBD7"],["Aqua","#00FFFF"],
+  ["Aquamarine","#7FFFD4"],["Azure","#F0FFFF"],["Beige","#F5F5DC"],
+  ["Bisque","#FFE4C4"],["Black","#000000"],["BlanchedAlmond","#FFEBCD"],
+  ["Blue","#0000FF"],["BlueViolet","#8A2BE2"],["Brown","#A52A2A"],
+  ["BurlyWood","#DEB887"],["CadetBlue","#5F9EA0"],["Chartreuse","#7FFF00"],
+  ["Chocolate","#D2691E"],["Coral","#FF7F50"],["CornflowerBlue","#6495ED"],
+  ["Cornsilk","#FFF8DC"],["Crimson","#DC143C"],["Cyan","#00FFFF"],
+  ["DarkBlue","#00008B"],["DarkCyan","#008B8B"],["DarkGoldenRod","#B8860B"],
+  ["DarkGray","#A9A9A9"],["DarkGreen","#006400"],["DarkKhaki","#BDB76B"],
+  ["DarkMagenta","#8B008B"],["DarkOliveGreen","#556B2F"],["DarkOrange","#FF8C00"],
+  ["DarkOrchid","#9932CC"],["DarkRed","#8B0000"],["DarkSalmon","#E9967A"],
+  ["DarkSeaGreen","#8FBC8F"],["DarkSlateBlue","#483D8B"],["DarkSlateGray","#2F4F4F"],
+  ["DarkTurquoise","#00CED1"],["DarkViolet","#9400D3"],["DeepPink","#FF1493"],
+  ["DeepSkyBlue","#00BFFF"],["DimGray","#696969"],["DodgerBlue","#1E90FF"],
+  ["FireBrick","#B22222"],["FloralWhite","#FFFAF0"],["ForestGreen","#228B22"],
+  ["Fuchsia","#FF00FF"],["Gainsboro","#DCDCDC"],["GhostWhite","#F8F8FF"],
+  ["Gold","#FFD700"],["GoldenRod","#DAA520"],["Gray","#808080"],
+  ["Green","#008000"],["GreenYellow","#ADFF2F"],["HoneyDew","#F0FFF0"],
+  ["HotPink","#FF69B4"],["IndianRed","#CD5C5C"],["Indigo","#4B0082"],
+  ["Ivory","#FFFFF0"],["Khaki","#F0E68C"],["Lavender","#E6E6FA"],
+  ["LavenderBlush","#FFF0F5"],["LawnGreen","#7CFC00"],["LemonChiffon","#FFFACD"],
+  ["LightBlue","#ADD8E6"],["LightCoral","#F08080"],["LightCyan","#E0FFFF"],
+  ["LightGoldenRodYellow","#FAFAD2"],["LightGray","#D3D3D3"],["LightGreen","#90EE90"],
+  ["LightPink","#FFB6C1"],["LightSalmon","#FFA07A"],["LightSeaGreen","#20B2AA"],
+  ["LightSkyBlue","#87CEFA"],["LightSlateGray","#778899"],["LightSteelBlue","#B0C4DE"],
+  ["LightYellow","#FFFFE0"],["Lime","#00FF00"],["LimeGreen","#32CD32"],
+  ["Linen","#FAF0E6"],["Magenta","#FF00FF"],["Maroon","#800000"],
+  ["MediumAquaMarine","#66CDAA"],["MediumBlue","#0000CD"],["MediumOrchid","#BA55D3"],
+  ["MediumPurple","#9370DB"],["MediumSeaGreen","#3CB371"],["MediumSlateBlue","#7B68EE"],
+  ["MediumSpringGreen","#00FA9A"],["MediumTurquoise","#48D1CC"],["MediumVioletRed","#C71585"],
+  ["MidnightBlue","#191970"],["MintCream","#F5FFFA"],["MistyRose","#FFE4E1"],
+  ["Moccasin","#FFE4B5"],["NavajoWhite","#FFDEAD"],["Navy","#000080"],
+  ["OldLace","#FDF5E6"],["Olive","#808000"],["OliveDrab","#6B8E23"],
+  ["Orange","#FFA500"],["OrangeRed","#FF4500"],["Orchid","#DA70D6"],
+  ["PaleGoldenRod","#EEE8AA"],["PaleGreen","#98FB98"],["PaleTurquoise","#AFEEEE"],
+  ["PaleVioletRed","#DB7093"],["PapayaWhip","#FFEFD5"],["PeachPuff","#FFDAB9"],
+  ["Peru","#CD853F"],["Pink","#FFC0CB"],["Plum","#DDA0DD"],
+  ["PowderBlue","#B0E0E6"],["Purple","#800080"],["RebeccaPurple","#663399"],
+  ["Red","#FF0000"],["RosyBrown","#BC8F8F"],["RoyalBlue","#4169E1"],
+  ["SaddleBrown","#8B4513"],["Salmon","#FA8072"],["SandyBrown","#F4A460"],
+  ["SeaGreen","#2E8B57"],["SeaShell","#FFF5EE"],["Sienna","#A0522D"],
+  ["Silver","#C0C0C0"],["SkyBlue","#87CEEB"],["SlateBlue","#6A5ACD"],
+  ["SlateGray","#708090"],["Snow","#FFFAFA"],["SpringGreen","#00FF7F"],
+  ["SteelBlue","#4682B4"],["Tan","#D2B48C"],["Teal","#008080"],
+  ["Thistle","#D8BFD8"],["Tomato","#FF6347"],["Turquoise","#40E0D0"],
+  ["Violet","#EE82EE"],["Wheat","#F5DEB3"],["White","#FFFFFF"],
+  ["WhiteSmoke","#F5F5F5"],["Yellow","#FFFF00"],["YellowGreen","#9ACD32"]
+];
+
+let currentFgColor = null;
+let currentBgColor = '#fffff5';
+
+const colorsList   = document.getElementById('colorsList');
+const previewContent = document.getElementById('previewContent');
+const bgPicker     = document.getElementById('bgPicker');
+const bgHexDisplay       = document.getElementById('bgHexDisplay');
+const pickerSectionLabel = document.getElementById('pickerSectionLabel');
+const weightSlider    = document.getElementById('weightSlider');
+const weightValue     = document.getElementById('weightValue');
+const modeToggle      = document.getElementById('modeToggle');
+const modeLabel       = document.getElementById('modeLabel');
+const colorsListLabel = document.getElementById('colorsListLabel');
+const colorSearch     = document.getElementById('colorSearch');
+const fgChipDot       = document.getElementById('fgChipDot');
+const fgChipLabel     = document.getElementById('fgChipLabel');
+const bgChipDot       = document.getElementById('bgChipDot');
+const bgChipLabel     = document.getElementById('bgChipLabel');
+
+function buildList(filter) {
+  colorsList.innerHTML = '';
+  const f = filter.toLowerCase();
+  NAMED_COLORS.forEach(([name, hex]) => {
+    if (f && !name.toLowerCase().includes(f)) return;
+    const item = document.createElement('div');
+    item.className = 'color-item' + (currentFgColor === hex ? ' active' : '');
+    item.dataset.hex = hex;
+    item.dataset.name = name;
+    item.innerHTML = `
+      <div class="color-dot" style="background:${hex}"></div>
+      <span class="color-name">${name}</span>
+      <span class="color-hex">${hex.toUpperCase()}</span>
+    `;
+    item.addEventListener('click', (e) => { listMode === 'fg' ? selectFg(name, hex, item) : selectBgFromList(name, hex, item); showTooltip(name, hex, e); });
+    colorsList.appendChild(item);
+  });
+}
+
+let listMode = 'fg'; // 'fg' or 'bg'
+
+function selectFg(name, hex, el) {
+  document.querySelectorAll('.color-item').forEach(i => i.classList.remove('active'));
+  if (el) el.classList.add('active');
+  currentFgColor = hex;
+  previewContent.style.color = hex;
+  fgChipDot.style.background = hex;
+  fgChipDot.style.border = '1px solid rgba(255,255,255,0.15)';
+  fgChipLabel.textContent = `${hex.toUpperCase()} · ${name} · fg`;
+  if (typeof updatePickerSample === 'function') updatePickerSample();
+  pushHistory();
+}
+
+function selectBgFromList(name, hex, el) {
+  document.querySelectorAll('.color-item').forEach(i => i.classList.remove('active'));
+  if (el) el.classList.add('active');
+  updateBg(hex);
+  pushHistory();
+  // Do NOT touch bgPicker here — in bg-list mode it controls foreground, leave it alone
+}
+
+function updateBg(hex) {
+  currentBgColor = hex;
+  previewContent.style.background = hex;
+  if (typeof updatePickerSample === 'function') updatePickerSample();
+  bgHexDisplay.value = hex.toUpperCase();
+  bgChipDot.style.background = hex;
+  bgChipLabel.textContent = `${hex.toUpperCase()} · bg`;
+}
+
+const pickerSample = document.getElementById('pickerSample');
+const undoBtn      = document.getElementById('undoBtn');
+const redoBtn      = document.getElementById('redoBtn');
+
+// History: each entry is { fgColor, bgColor }
+const history = [];
+let historyIndex = -1;
+let suppressHistory = false;
+
+function snapshotState() {
+  return { fg: currentFgColor || '#111111', bg: currentBgColor };
+}
+
+function pushHistory(prevSnap) {
+  if (suppressHistory) return;
+  const snap = snapshotState();
+  // Drop any redo entries ahead of current position
+  history.splice(historyIndex + 1);
+  // Compare against provided previous snapshot, or last history entry
+  const baseline = prevSnap || history[historyIndex];
+  if (baseline && baseline.fg === snap.fg && baseline.bg === snap.bg) return;
+  history.push(snap);
+  historyIndex = history.length - 1;
+  updateUndoRedo();
+}
+
+function updateUndoRedo() {
+  undoBtn.disabled = historyIndex <= 0;
+  redoBtn.disabled = historyIndex >= history.length - 1;
+}
+
+function restoreSnapshot(snap) {
+  suppressHistory = true;
+  // Restore both fg and bg silently
+  currentFgColor = snap.fg;
+  currentBgColor = snap.bg;
+  previewContent.style.color = snap.fg;
+  previewContent.style.background = snap.bg;
+  bgPicker.value = listMode === 'fg' ? snap.bg : snap.fg;
+  bgHexDisplay.value = bgPicker.value.toUpperCase();
+  fgChipDot.style.background = snap.fg;
+  fgChipLabel.textContent = snap.fg.toUpperCase() + ' · fg';
+  bgChipDot.style.background = snap.bg;
+  bgChipLabel.textContent = snap.bg.toUpperCase() + ' · bg';
+  updatePickerSample();
+  suppressHistory = false;
+  updateUndoRedo();
+}
+
+undoBtn.addEventListener('click', () => {
+  if (historyIndex > 0) {
+    historyIndex--;
+    restoreSnapshot(history[historyIndex]);
+  }
+});
+
+redoBtn.addEventListener('click', () => {
+  if (historyIndex < history.length - 1) {
+    historyIndex++;
+    restoreSnapshot(history[historyIndex]);
+  }
+});
+
+function updatePickerSample() {
+  pickerSample.style.color = currentFgColor || '#111111';
+  pickerSample.style.background = currentBgColor;
+}
+
+function applyPickerColor(hex, prevSnap) {
+  if (listMode === 'fg') {
+    updateBg(hex);
+  } else {
+    // picker controls foreground in bg-list mode
+    currentFgColor = hex;
+    previewContent.style.color = hex;
+    fgChipDot.style.background = hex;
+    fgChipDot.style.border = '1px solid rgba(0,0,0,0.15)';
+    fgChipLabel.textContent = `${hex.toUpperCase()} · fg`;
+    bgHexDisplay.value = hex.toUpperCase();
+  }
+  updatePickerSample();
+  pushHistory(prevSnap);
+}
+
+bgPicker.addEventListener('input', e => {
+  // Apply color live while dragging but don't push history on every move
+  suppressHistory = true;
+  applyPickerColor(e.target.value);
+  suppressHistory = false;
+});
+bgPicker.addEventListener('change', e => {
+  // Only push history when the user releases (change fires once on commit)
+  applyPickerColor(e.target.value);
+});
+
+// Snapshot taken when the hex field is focused, so we always know what
+// the color was BEFORE the user started typing in this editing session.
+let hexSessionStart = null;
+
+bgHexDisplay.addEventListener('input', () => {
+  let val = bgHexDisplay.value.trim();
+  if (!val.startsWith('#')) val = '#' + val;
+  if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+    // Apply live so the preview updates as you type, but NO history push yet
+    suppressHistory = true;
+    bgPicker.value = val;
+    applyPickerColor(val);
+    suppressHistory = false;
+    bgHexDisplay.style.outline = '';
+  } else {
+    bgHexDisplay.style.outline = '2px solid #c0392b';
+  }
+});
+
+bgHexDisplay.addEventListener('keydown', e => {
+  if (e.key === 'Enter') bgHexDisplay.blur();
+});
+
+bgHexDisplay.addEventListener('blur', () => {
+  let val = bgHexDisplay.value.trim();
+  if (!val.startsWith('#')) val = '#' + val;
+  if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+    // Apply final value and push ONE history entry comparing against
+    // what the color was when the user first tapped into the field
+    bgPicker.value = val;
+    applyPickerColor(val, hexSessionStart);
+  } else {
+    // Revert display to last good color
+    bgHexDisplay.value = listMode === 'fg'
+      ? currentBgColor.toUpperCase()
+      : (currentFgColor || '#000000').toUpperCase();
+  }
+  bgHexDisplay.style.outline = '';
+  hexSessionStart = null;
+});
+
+bgHexDisplay.addEventListener('focus', () => {
+  // Remember the state at the moment the user taps in, before any typing
+  hexSessionStart = snapshotState();
+  // Select everything after the leading '#'
+  requestAnimationFrame(() => {
+    bgHexDisplay.setSelectionRange(1, bgHexDisplay.value.length);
+  });
+});
+
+const WEIGHTS = [200, 300, 400, 500, 600, 700, 800, 900];
+
+function updateWeightSlider(idx) {
+  const w = WEIGHTS[idx];
+  weightValue.textContent = w;
+  previewContent.style.fontWeight = w;
+  // Update track fill
+  const pct = (idx / (WEIGHTS.length - 1)) * 100;
+  weightSlider.style.background =
+    `linear-gradient(to right, var(--ui-accent) 0%, var(--ui-accent) ${pct}%, var(--ui-border) ${pct}%)`;
+}
+
+weightSlider.addEventListener('input', () => updateWeightSlider(+weightSlider.value));
+updateWeightSlider(1); // default 300
+
+const fontToggle = document.getElementById('fontToggle');
+const fontLabel  = document.getElementById('fontLabel');
+
+fontToggle.addEventListener('change', () => {
+  const isSans = fontToggle.checked;
+  fontLabel.textContent = isSans ? 'Sans-serif (Inter)' : 'Serif (Spectral)';
+  previewContent.style.fontFamily = isSans ? "'Inter', sans-serif" : "'Spectral', serif";
+  // Inter looks better at slightly smaller size; Spectral at slightly larger
+  previewContent.style.fontSize = isSans ? '0.97rem' : '1.05rem';
+  previewContent.style.lineHeight = isSans ? '1.72' : '1.82';
+});
+
+modeToggle.addEventListener('change', () => {
+  listMode = modeToggle.checked ? 'bg' : 'fg';
+  const isBgMode = listMode === 'bg';
+  modeLabel.textContent = isBgMode ? 'List → Background' : 'List → Foreground';
+  colorsListLabel.textContent = isBgMode
+    ? 'Named HTML Colors — Background'
+    : 'Named HTML Colors — Foreground';
+  pickerSectionLabel.textContent = isBgMode ? 'Foreground Text Color' : 'Background Color';
+  // Resync picker to the relevant current color
+  bgPicker.value = isBgMode
+    ? (currentFgColor || '#000000')
+    : currentBgColor;
+  bgHexDisplay.value = bgPicker.value.toUpperCase();
+  // Clear active state since meaning has switched
+  document.querySelectorAll('.color-item').forEach(i => i.classList.remove('active'));
+});
+
+colorSearch.addEventListener('input', e => buildList(e.target.value));
+
+// Init
+buildList('');
+updateBg('#fffff5');
+
+// Pre-select Silver as a readable default on dark bg
+const defaultColor = NAMED_COLORS.find(([n]) => n === 'Silver');
+if (defaultColor) {
+  const firstMatch = colorsList.querySelector(`[data-name="Silver"]`);
+  selectFg(defaultColor[0], defaultColor[1], firstMatch);
+}
+// Seed initial history entry
+pushHistory();
+
+const colorTooltip = document.getElementById('colorTooltip');
+let tooltipTimer = null;
+
+function showTooltip(name, hex, e) {
+  clearTimeout(tooltipTimer);
+  colorTooltip.textContent = name + '  ' + hex.toUpperCase();
+  colorTooltip.classList.add('visible');
+
+  // Position: centered above the tapped element
+  const rect = e.currentTarget.getBoundingClientRect();
+  const tw = colorTooltip.offsetWidth || 160;
+  let left = rect.left + rect.width / 2 - tw / 2;
+  let top  = rect.top - 38;
+
+  // Keep within viewport horizontally
+  if (left < 6) left = 6;
+  if (left + tw > window.innerWidth - 6) left = window.innerWidth - tw - 6;
+  // If no room above, show below
+  if (top < 6) top = rect.bottom + 8;
+
+  colorTooltip.style.left = left + 'px';
+  colorTooltip.style.top  = top  + 'px';
+
+  tooltipTimer = setTimeout(() => {
+    colorTooltip.classList.remove('visible');
+  }, 2200);
+}
+
+document.addEventListener('scroll', () => colorTooltip.classList.remove('visible'), true);
+</script>
+</body>
+</html>
