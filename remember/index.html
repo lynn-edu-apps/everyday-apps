@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1724 -->
+<!-- Remember App - Version 0.1725 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1724
+  Version 0.1725
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1725 - TWO fixes, per Lynn. (1) Extended Disable Pinch to Zoom to also cover the Home Screen, Help dialog, and Settings dialog -- it previously only reached the note editor and Toolbar Help panel. None of these three had any touch-action set before at all (default auto, which allows pinch-zoom natively), so this is a genuinely new restriction on each rather than an override of an existing allowance the way the earlier two were. (2) FIX: expanding the Note Behavior settings section also expanded Debugging below it, with Debugging's own chevron then stuck showing the wrong (collapsed) state despite its content being visible -- a bug class Lynn correctly recognized as familiar even without remembering the exact prior sections involved, and one the project's own instructions already document by name ("Settings HTML div nesting") with a ready-made verification script, specifically because it has recurred multiple times before. Ran that exact script rather than guessing: confirmed settings-section-debugging sitting at DOM depth 3 instead of the required 2, meaning it was nested one level too deep inside Note Behavior's own body. Traced the precise cause by tracking the running open/close tag depth through Note Behavior's own content line by line: the "Speak button: icon only" row was missing its own closing </div>, silently pushing every row after it (including the entirety of Debugging) one level deeper for the rest of the section. Added the missing tag; re-ran the verification script and confirmed every section, including Debugging, now correctly sits at depth 2. Verified directly end to end: clicking Note Behavior's header now opens only Note Behavior, Debugging stays closed, and Debugging is confirmed no longer a DOM descendant of Note Behavior at all; the three newly-covered pinch-zoom areas all correctly pick up the disabled override. Suite unchanged: 332/332.
   v0.1724 - FOUR pieces, per Lynn. (1) NEW: "Reset Zoom Size" button at the bottom of Settings -- clears the persisted zoom baseline and immediately re-captures the CURRENT devicePixelRatio as the new "100%" reference, with pinToolbars() re-run right away so an open note reflects it immediately rather than needing a reload. Mainly useful for the one-time case where the very first-ever load of the app happened to already be at a non-100% zoom for unrelated reasons. (2) NEW App Theme setting: "Disable Pinch to Zoom" -- turns off pinch-zoom in the note editor and Toolbar Help panel for anyone who prefers it off. Implemented as a body-class CSS override dropping pinch-zoom from the touch-action whitelist on all four elements that grant it (#note-content-area, #note-editor, .note-viewer, #toolbar-help-body) -- the last of these had its touch-action set inline, which no stylesheet rule can override regardless of specificity, so it was moved into a proper CSS rule first so the override could actually reach it. (3) NEW App Theme setting: "Hide Remember Logo" -- hides the "Remember" wordmark on the Home Screen. Uses visibility:hidden rather than display:none, since .home-title has flex:1 and acts as a spacer positioning the header's other buttons; hiding it that way keeps the header's layout completely unchanged rather than risking the buttons shifting once the spacer's space collapses. (4) FIX: the Settings dialog's floating Save/Cancel/Scroll control landing outside the dialog on wide desktop windows -- it's a true HTML sibling of the dialog (moved there in v0.1713 to sidestep an iOS WebKit bug), so its right offset was measured from the full browser viewport rather than the dialog's own edge, which only matched on phones where the dialog already spans nearly the full width. Fixed by computing its position from the dialog's own actual rendered bounding rect instead of a static value, reacting to the dialog opening (a MutationObserver on its own open/close class, the same pattern the scratch-pad panel already uses) and to the window being resized while it's still open. All four pieces verified directly: the reset button correctly overwrites both the in-memory baseline and persisted storage; both new toggles correctly set their setting, apply their body class, and the resulting computed touch-action/visibility CSS is confirmed correct; the FAB's position was verified against two different simulated window widths, both matching the expected math exactly. Suite unchanged: 332/332.
   v0.1723 - FIX: folder entries on the Home Screen had no mouse-hover highlight, per Lynn's report -- note entries have always had one. Found a leftover comment ("folder-item hover already wrapped") sitting exactly where the rule should have been, suggesting this was intended at some point but never actually added. Added the same hover/active pair note-item already has -- background highlight on hover, slight press-down scale on active -- wrapped in the same (hover: hover) media query used throughout the app to mean a real mouse/trackpad is attached. Folder entries don't use the customizable "Notes list entry background" setting notes do, so only the simple version was needed, not a separate light/dark-mode variant. Suite unchanged: 332/332.
   v0.1722 - TWO fixes, per Lynn. (1) Zoom compensation for the quiet-mode/view-only More menu FAB (#quiet-more-fab) -- position:fixed, right/top anchored, ballooning under mouse zoom the same way the note FAB, collapse tab, and scratch-pad tab did before their own fixes. Its real CSS also adds env(safe-area-inset-right) to the right offset for notch clearance on mobile, but since this compensation is gated to (hover: hover) -- desktop/mouse devices only -- that safe-area component is effectively 0 on every device this code actually runs on, so the static 12px/6px alone is the correct desired position here. (2) Toolbar Help panel (the one with a sentence or two about each note editor button) now supports pinch-to-zoom -- its scrollable body had touch-action:pan-y alone, which allows vertical scrolling but explicitly excludes pinch-zoom by spec. This is the identical root cause already fixed once for the note editor itself, all the way back in v0.1498 (touch-action pan-y -> pan-y pinch-zoom) -- just never applied to this panel, added separately later. Verified directly: the FAB's right/top offsets scale in the correct direction under zoom, its size stays steady, and it cleanly falls back to untouched CSS with no mouse present, matching every other fixed element already covered; the Toolbar Help panel's touch-action is confirmed set to the correct value in the DOM. Suite unchanged: 332/332.
@@ -4173,11 +4174,20 @@ body.has-mouse .toolbar-drag-handle.dragging {
    pan-y (vertical scroll still works, pinch no longer does). Higher
    specificity than the base rules above (body class + selector each
    beats a bare selector alone), so this correctly overrides them when
-   the setting is on. */
+   the setting is on.
+   v0.1725: extended to the Home Screen's notes list, the Help dialog's
+   body, and the Settings dialog's own scrollable sheet, per Lynn's
+   follow-up -- none of these three had any touch-action set before (all
+   default to auto, which allows pinch-zoom natively), so this is a new
+   restriction on each rather than an override of an existing allowance
+   the way the note editor/Toolbar Help ones were. */
 body.pinch-zoom-disabled #note-content-area,
 body.pinch-zoom-disabled #note-editor,
 body.pinch-zoom-disabled .note-viewer,
-body.pinch-zoom-disabled #toolbar-help-body {
+body.pinch-zoom-disabled #toolbar-help-body,
+body.pinch-zoom-disabled .notes-list,
+body.pinch-zoom-disabled .help-body,
+body.pinch-zoom-disabled #settings-sheet {
   touch-action: pan-y;
 }
 /* v0.1666 FIX, per Lynn's on-device diagnosis: area.scrollTop = newScroll
@@ -8219,7 +8229,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Disable Pinch to Zoom</div>
-          <div class="settings-row-desc">Turns off pinch-to-zoom in the note editor and Toolbar Help panel, for anyone who finds it accidentally triggers or prefers it off entirely.</div>
+          <div class="settings-row-desc">Turns off pinch-to-zoom throughout the app -- the note editor, Toolbar Help panel, Home Screen, Help, and Settings -- for anyone who finds it accidentally triggers or prefers it off entirely.</div>
         </div>
         <label class="toggle-switch" aria-label="Disable pinch to zoom"><input type="checkbox" id="disable-pinch-zoom-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
@@ -9984,6 +9994,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <input type="checkbox" id="speak-icon-only-toggle">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
+      </div>
 
       <div class="settings-row">
         <div>
@@ -10959,7 +10970,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1724';
+const APP_VERSION = '0.1725';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
