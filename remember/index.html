@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1736 -->
+<!-- Remember App - Version 0.1737 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1736
+  Version 0.1737
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1737 - FIX: note editor toolbar icons (both bars) stayed at their old touch size in hover mode, per Lynn's precise report -- padding visibly reduced, but the drawn icon itself unchanged, while the Home Screen pill and list icons correctly shrank. Root cause: applyToolbarIconSizes() injects a dynamic, !important-tagged style element that sets these SVGs' width/height directly in JS pixels -- a deliberate, pre-existing mechanism (documented in its own comment) working around CSS var() being unreliable in SVG width/height attributes in some browsers. Being a completely separate, JS-only computation from the CSS --icon-size variable, it never had any awareness of the new hover-mode override from the last build at all, and kept using its own hardcoded, touch-only lookup table regardless of input device -- exactly matching Lynn's observation, since the pill and list icons use var(--icon-size) directly with no JS involved, while these specific toolbars route through this separate path. Fixed by giving this lookup its own hover-aware touch/mouse tables, using the EXACT same numeric values already defined in the CSS override, so both mechanisms now agree. Verified directly: touch mode still produces the original 28px (medium); mouse mode now correctly produces 20px, matching the CSS side exactly, with the button's own minimum click-target floor (also computed in this same function) correctly shrinking in proportion. Suite unchanged: 332/332.
   v0.1736 - NEW: Stage 1 of device-aware sizing, per Lynn's discussion -- the core mechanism, plus one proof-of-concept spot (.icon-btn's own internal padding, Lynn's top priority). Icon size and button padding were calibrated as fixed pixel values tuned for touch targets -- correct for phones, but noticeably oversized once a mouse is doing the clicking, since mouse precision and desktop conventions call for tighter controls, not bigger ones. Added a full set of @media(hover: hover) overrides for the existing --icon-size/--btn-pad/--btn-icon/--ui-scale variables (already used 98 times throughout the CSS for icon sizing, just never previously varied by input type), separately calibrated per size tier at roughly 70-75% of each touch dimension -- a reasonable starting point grounded in common touch-vs-mouse target-size guidance, explicitly NOT visually tuned by eye the way the original four touch tiers were, since nothing in this environment can render and look at it; expect these specific numbers to want adjustment once actually seen. Font size deliberately left unchanged in every tier -- legibility wasn't part of what read as oversized. Also added two new, dedicated variables (--icon-btn-pad, --icon-btn-min) specifically for .icon-btn's own internal padding and minimum click-target size, defaulting to its exact previous hardcoded values (5px, 36px) so touch behavior is completely unchanged, with a separate, smaller hover-mode override (3px, 28px) -- proof of concept for the "padding within a button" priority Lynn flagged specifically. Confirmed structurally (jsdom cannot fully resolve calc()/var() chains into rendered pixel values, a genuine limitation of this test environment, not something worked around): the full four-tier hover override block is correctly present and cascades after the touch tiers; icon-btn correctly references the new variables in place of the old hardcoded ones; :root's default (touch) values for the new variables exactly match what was there before. Suite unchanged: 332/332.
   v0.1735 - NEW: "Floating Pill Header" is now a genuine on/off setting, per Lynn's request, rather than the pill redesign being the only option. Defaults to on, keeping the just-shipped look as the default rather than silently reverting existing users to the old bar on upgrade. Off restores the classic single header bar -- specifically the version from right before the pill redesign (v0.1730/1731: position:fixed, not sticky), deliberately not the original, older sticky version with its own since-fixed bugs. Implemented with a shared wrapper around the logo and pill: display:contents by default (invisible to the box model, so the two children behave exactly as independent position:fixed islands, unchanged from current behavior), becoming a real, single, full-width flex bar when Classic mode is selected, with both children dropping their independent positioning and pill-specific background/border/shadow to become ordinary flex items sharing the bar's own background instead. Zoom compensation branches accordingly: Classic mode reuses the exact same width-override size compensation the note editor's own header already uses (since it's now the same kind of element); Pill mode keeps the current independent-islands approach. Per Lynn's explicit instruction, the logo is now ALWAYS hidden while Pill mode is on, regardless of the separate "Hide Remember Logo" setting's own value -- "the logo looks silly in this mode" -- while Classic mode continues to respect that setting normally. Verified directly: default state correctly has the setting on with the logo hidden; toggling to Classic mode correctly restores the single bar (confirmed fixed positioning, flex display, and pill styling stripped from both children), respects the separate hide-logo setting again, and its own zoom compensation and breadcrumb/search/select-bar clearing logic all work correctly measuring the single bar instead of the two independent pieces; toggling back to Pill mode correctly re-hides the logo. Suite unchanged: 332/332.
   v0.1734 - TWO fixes, per Lynn. (1) The Select Notes bar landed hidden behind the header pill unless the search bar was also open, or when navigating within a folder -- the exact same underlying bug class as the folder breadcrumb and search bar from two builds ago (an ordinary, in-flow element that was never given any header-clearing margin at all), just never previously recognized as also affecting this specific element. Confirmed via direct DOM inspection (not assumed) that these are all direct children of the same scrollable #home-screen container, in this fixed order: search bar, select bar, breadcrumb, then the list. Rewrote the clearing logic as an explicit priority chain rather than a two-way branch, since the old logic never knew the select bar existed at all, and would have picked the wrong element (breadcrumb instead of select bar) in the real combination of being in select mode while also inside a folder. (2) LONG-STANDING BUG, per Lynn's own correct read that this predates any recent header work: selecting multiple notes (or Select All) and trying to move them to Top level never offered that option in the Move sheet, even though moving items one at a time worked fine. Root cause: the multi-select Move button's call to openFolderPicker() was missing its 4th argument (startId) entirely, unlike the single-note and single-folder move calls right above it in the same file, which both pass it correctly. Omitted, it silently defaulted to null (top level) regardless of where the selected items actually lived -- so the picker's own "are we already at the starting location" check went true the instant it reached top level, hiding the Move button exactly when it was needed. Fixed by passing currentFolderId, matching the exact pattern the working single-item paths already use (all selected items necessarily live in the currently-viewed folder, since select mode only operates within one folder view at a time). Verified directly end to end: selecting multiple items inside a real folder, opening the move picker, and navigating up to top level within it now correctly shows an enabled "Move to Top level" button, where before it would have stayed hidden. Suite unchanged: 332/332.
@@ -11123,7 +11124,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1736';
+const APP_VERSION = '0.1737';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -22224,7 +22225,26 @@ function applySmallScreenOverflow() {
 // Inject a dynamic <style> rule to force icon sizes — more reliable than inline styles on SVGs
 var _iconSizeStyleEl = null;
 function applyToolbarIconSizes() {
-  var _iconPx = { small: 22, medium: 28, large: 38, xlarge: 48 }[settings.uiSize || 'medium'] || 28;
+  // v0.1737 FIX, per Lynn's report: this lookup was completely
+  // independent of the CSS --icon-size variable (and its new
+  // hover-mode override) by design -- the whole reason this JS-injected
+  // <style> mechanism exists is that CSS var() in an SVG's width/height
+  // attribute doesn't reliably apply in every context, so toolbar icon
+  // sizes were always computed here in JS instead. That meant the new
+  // hover-mode sizing (v0.1736) never reached these icons at all: the
+  // pill's icons and the notes list icons correctly shrank (they use
+  // var(--icon-size) directly, no JS override involved), but the note
+  // editor's own toolbars stayed at their old touch size -- exactly
+  // what Lynn described, the drawn icon unchanged while only the
+  // .icon-btn padding (a separate, CSS-only change) actually reduced.
+  // Fixed by giving this lookup its own touch/mouse tables, using the
+  // EXACT same values already defined in the CSS hover-mode override,
+  // so both mechanisms agree.
+  var _hoverCapable = !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+  var _touchIconSizes = { small: 22, medium: 28, large: 38, xlarge: 48 };
+  var _hoverIconSizes = { small: 16, medium: 20, large: 27, xlarge: 34 };
+  var _iconSizeTable = _hoverCapable ? _hoverIconSizes : _touchIconSizes;
+  var _iconPx = _iconSizeTable[settings.uiSize || 'medium'] || (_hoverCapable ? 20 : 28);
   // Inject/update a high-specificity style rule to override any CSS
   if (!_iconSizeStyleEl) {
     _iconSizeStyleEl = document.createElement('style');
