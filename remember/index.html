@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1747 -->
+<!-- Remember App - Version 0.1748 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1747
+  Version 0.1748
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1748 - FIX: found the ACTUAL root cause for the remaining breadcrumb-missing case, from Lynn re-running the exact same scenario on the v0.1747 build and getting the identical symptom -- since the folder involved clearly wasn't empty (it had a note in it, confirmed by the log), the previous build's fix genuinely didn't apply here, exactly as flagged. The distinguishing pattern across both logs was unmistakable: every render triggered by directly tapping a folder from the list worked correctly; only the one triggered by goHome() (returning from a note back into its folder) consistently failed. Traced goHome() directly and found it: renderNotesList() was called BEFORE showScreen('home-screen') -- but showScreen() is the only thing that clears the note-screen-active class, and pinHomeScreenElements() (called at the very end of renderNotesList()) begins with a guard that returns immediately while that class is still present. Calling renderNotesList() first meant that guard was still seeing the note screen's own, not-yet-cleared state, silently exiting before ever reaching the breadcrumb margin code -- every single time a note was exited this way. A plain, deterministic ordering mistake, not timing, and it explains precisely why direct folder-tap navigation always worked (that path never went through this wrong order) while this one never did. Fixed by swapping the order in goHome() (both its normal exit and its auto-delete-empty-note early return), then searched specifically for the same exact wrong-order pattern anywhere else in the file and found two more genuine instances -- the app's initial-load path and the Siri Shortcut/URL-action "note not found" path -- fixed identically. Verified directly: reproduced Lynn's exact scenario end to end (open a folder, open a note inside it, exit via goHome()) and confirmed the breadcrumb now correctly receives a real margin value clearing the header, where before it would have silently stayed empty. Suite unchanged: 332/332.
   v0.1747 - FIX: found a genuine, confirmed structural gap in renderNotesList(), from directly reading Lynn's own log. Her log showed the breadcrumb correctly created (confirmed present in the DOM) right after returning from a note back into its folder -- but, unlike every other successful case earlier in that same log, no pinHomeScreenElements() margin-decision entry ever followed it. Traced the actual code and found two early `return` statements in renderNotesList() -- one for an empty folder, one for zero search results -- both of which exit the function completely before ever reaching pinHomeScreenElements() at the very end. Since the breadcrumb is created earlier in the SAME function call, either path leaves it correctly present in the DOM but with no margin ever set to clear the fixed header, making it invisible behind it. A plain, deterministic structural gap, not timing: whenever a folder happens to render as empty (or a search inside one finds nothing) while the breadcrumb is showing, this happens every single time, guaranteed. Fixed by calling pinHomeScreenElements() before both early returns. One honest caveat: the specific folder in Lynn's log did have at least one note in it, so this exact path isn't confirmed as the trigger for that particular instance -- but it's a real, separately-confirmed bug regardless, and would produce exactly this symptom under the right conditions. Verified directly: an empty folder, and a folder with an active search matching nothing, both now correctly set the breadcrumb's margin before returning. Suite unchanged: 332/332.
   v0.1746 - NEW: diagnostic logging for the sometimes-missing folder breadcrumb on iOS PWA, per Lynn's request -- starting the same evidence-first approach that just solved the toolbar-overflow bug, rather than guessing further. Confirmed first that nothing had been added for this specific bug yet (only pre-existing, narrower "FOLDER ANOMALY" logging that covers just one failure mode -- currentFolderId pointing at a folder that no longer exists). Three additions: (1) renderNotesList() now logs its breadcrumb creation decision every time it runs -- currentFolderId, whether the folder actually exists, and whether it decided to create the element -- plus a direct verification that the element genuinely landed in the DOM right after insertBefore, rather than assuming it did. (2) pinHomeScreenElements() now logs its own decision whenever a breadcrumb element exists -- which element was determined to be first-visible, the computed header height, and the actual marginTop value set, with a call stack, since this function has multiple trigger points. (3) A new, separate visibilitychange listener (kept independent from the two existing ones in this file, matching this app's own established convention for these) logs the breadcrumb's real DOM state -- exists, current marginTop -- on every background/foreground transition. This exact app already has a precedented, documented bug class here (v0.1657, pinch-zoom getting stuck on iOS PWA) where backgrounding can leave stale state that predates a suspension without firing expected events, so this specifically captures facts across that transition rather than assuming it's the cause. Verified directly: navigating into a folder correctly logs the decision and creation; simulated background/foreground events correctly log the breadcrumb's real state on each; the margin-decision logging correctly fires and captures the right values once realistic layout measurements are present. Suite unchanged: 332/332.
   v0.1745 - FIX: found and fixed the actual root cause, from Lynn's own precise comparison of two logged runs -- her second test deliberately skipped opening the More menu specifically to keep the data simple, and it worked. Same note, same view-mode transition, identical window width logged in every line -- one measurement read 6px (correctly not wrapped), another read 48px (wrapped), and the ONLY difference between their two visible-button lists (added in the last build specifically to catch this) was select-blocks-btn ("Select Lines"). Root cause, confirmed by reading the exact code order: applySmallScreenOverflow() ran PARTWAY through updateViewOnlyBtns() -- specifically, before select-blocks-btn (and everything else set after it, all the way to the end of the function) had its own visibility finalized for the CURRENT call. The check was measuring select-blocks-btn's STALE value left over from the PREVIOUS call, not what it was about to become moments later in the very same invocation -- a plain, deterministic ordering bug inside one function, never a timing issue of any kind, exactly matching what Lynn asked to rule out from the very start. Fixed by moving the overflow check to the true end of updateViewOnlyBtns(), after every single button it sets has been finalized for that call -- not just past select-blocks-btn specifically, since other buttons set later in the same function could plausibly have had the identical problem. Verified directly: engineered the exact stale-state scenario from the log (select-blocks-btn left hidden from a prior call, then switching to view mode) and confirmed the overflow check's own visible-button list now correctly includes select-blocks-btn in the SAME measurement that turns it visible, rather than one call behind. Suite unchanged: 332/332.
@@ -11134,7 +11135,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1747';
+const APP_VERSION = '0.1748';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -20438,8 +20439,11 @@ function goHome() {
       saveNotes();
       currentNoteId = null;
       saveCurrentRef();
-      renderNotesList();
+      // v0.1748 FIX: showScreen must run BEFORE renderNotesList -- see
+      // the matching fix and full explanation at the bottom of this
+      // function, where the identical ordering mistake was found.
       showScreen('home-screen');
+      renderNotesList();
       return;
     }
     // Lock the name once user exits — prevents quick-add or edits from renaming
@@ -20454,8 +20458,23 @@ function goHome() {
   selectMode = false;
   clearSelectedBlocks();
   saveCurrentRef();
-  renderNotesList();
+  // v0.1748 FIX, per Lynn's own log evidence across two separate runs
+  // of the identical scenario: found the actual root cause. showScreen()
+  // is the ONLY thing that clears the note-screen-active class -- and
+  // pinHomeScreenElements() (called at the very end of renderNotesList())
+  // begins with a guard that returns immediately while that class is
+  // still present, since it's meant to mean "we're not on the Home
+  // Screen yet, nothing to do here." Calling renderNotesList() BEFORE
+  // showScreen() meant that guard was still seeing the note screen's
+  // own, not-yet-cleared state -- so it silently exited before ever
+  // reaching the breadcrumb margin code, every single time a note was
+  // exited this way. A plain, deterministic ordering mistake, not
+  // timing: this is exactly why direct folder-tap navigation always
+  // worked correctly in Lynn's logs (that path never went through this
+  // wrong order) while returning from a note via goHome() consistently
+  // did not.
   showScreen('home-screen');
+  renderNotesList();
 }
 
 function restoreNote() {
@@ -35449,8 +35468,10 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   if (currentNoteId && notes[currentNoteId]) {
     openNote(currentNoteId, 'ongesture');
   } else {
-    renderNotesList();
+    // v0.1748 FIX: same ordering bug as goHome() -- see the full
+    // explanation there. showScreen() must run first.
     showScreen('home-screen');
+    renderNotesList();
   }
   // If loadState() had to recover orphaned notes into a new folder,
   // this is the first point where the confirm-dialog DOM is guaranteed
@@ -40329,8 +40350,10 @@ function handleUrlAction() {
     } else {
       // Note not found — show error on the speak overlay (always visible,
       // not covered by the iOS shortcut banner like a top toast would be)
-      renderNotesList();
+      // v0.1748 FIX: same ordering bug as goHome() -- see the full
+      // explanation there. showScreen() must run first.
       showScreen('home-screen');
+      renderNotesList();
       var noteCount = Object.keys(notes).length;
       var needle = normalizeNoteName(noteName);
       // Build debug info with Unicode codepoints for each note name
