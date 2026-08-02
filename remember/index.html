@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1748 -->
+<!-- Remember App - Version 0.1749 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1748
+  Version 0.1749
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1749 - THREE pieces, per Lynn. (1) FIX: export reminder nagged on every single app launch once its thresholds were crossed, per Lynn's report -- confirmed by reading the original v0.1683 design directly: it only had a ONE-TIME 3-day grace period before the reminder could first fire, never a repeating cooldown between separate showings, so once crossed, the same check re-fired on every subsequent launch with nothing tracking when it had last actually been shown. Added a genuine cooldown (2 days, matching Lynn's own recollection of the intended design) via a new tracked timestamp, lastExportNagShownAt, recorded only when the notice is actually shown. (2) NEW: consolidated the "switch to Home Screen + render its list" pair into one shared helper, goToHomeScreen() -- direct response to Lynn's question of how to prevent bugs like the breadcrumb one from recurring. The correct order between these two calls (showScreen must run first) was found to have been gotten wrong independently in FIVE separate places throughout the file. Replaced all five with the new helper, so the correct order is now structurally guaranteed in one place instead of five places each needing to remember it correctly on their own. (3) NEW: a loud, non-transient toast warning for the exact failure mode just fixed, per Lynn's explicit request that a debug-log entry alone isn't enough during alpha testing -- it's exactly what let this bug go unnoticed through several rounds of testing. renderNotesList()'s own three internal calls to pinHomeScreenElements() now route through a wrapper that checks for the specific anomaly (note-screen-active still set when it shouldn't be) and immediately shows a persistent, must-dismiss toast if so -- deliberately NOT applied to pinHomeScreenElements()'s other callers (like a settings-change handler), where hitting this same guard can be completely legitimate. Verified directly: the cooldown correctly blocks a repeat nag within 2 days and correctly allows one again after; the new helper correctly performs both steps in the right order; the loud toast correctly fires for the exact anomaly scenario and correctly does NOT fire during normal, correct operation (no false positives). Suite unchanged: 332/332.
   v0.1748 - FIX: found the ACTUAL root cause for the remaining breadcrumb-missing case, from Lynn re-running the exact same scenario on the v0.1747 build and getting the identical symptom -- since the folder involved clearly wasn't empty (it had a note in it, confirmed by the log), the previous build's fix genuinely didn't apply here, exactly as flagged. The distinguishing pattern across both logs was unmistakable: every render triggered by directly tapping a folder from the list worked correctly; only the one triggered by goHome() (returning from a note back into its folder) consistently failed. Traced goHome() directly and found it: renderNotesList() was called BEFORE showScreen('home-screen') -- but showScreen() is the only thing that clears the note-screen-active class, and pinHomeScreenElements() (called at the very end of renderNotesList()) begins with a guard that returns immediately while that class is still present. Calling renderNotesList() first meant that guard was still seeing the note screen's own, not-yet-cleared state, silently exiting before ever reaching the breadcrumb margin code -- every single time a note was exited this way. A plain, deterministic ordering mistake, not timing, and it explains precisely why direct folder-tap navigation always worked (that path never went through this wrong order) while this one never did. Fixed by swapping the order in goHome() (both its normal exit and its auto-delete-empty-note early return), then searched specifically for the same exact wrong-order pattern anywhere else in the file and found two more genuine instances -- the app's initial-load path and the Siri Shortcut/URL-action "note not found" path -- fixed identically. Verified directly: reproduced Lynn's exact scenario end to end (open a folder, open a note inside it, exit via goHome()) and confirmed the breadcrumb now correctly receives a real margin value clearing the header, where before it would have silently stayed empty. Suite unchanged: 332/332.
   v0.1747 - FIX: found a genuine, confirmed structural gap in renderNotesList(), from directly reading Lynn's own log. Her log showed the breadcrumb correctly created (confirmed present in the DOM) right after returning from a note back into its folder -- but, unlike every other successful case earlier in that same log, no pinHomeScreenElements() margin-decision entry ever followed it. Traced the actual code and found two early `return` statements in renderNotesList() -- one for an empty folder, one for zero search results -- both of which exit the function completely before ever reaching pinHomeScreenElements() at the very end. Since the breadcrumb is created earlier in the SAME function call, either path leaves it correctly present in the DOM but with no margin ever set to clear the fixed header, making it invisible behind it. A plain, deterministic structural gap, not timing: whenever a folder happens to render as empty (or a search inside one finds nothing) while the breadcrumb is showing, this happens every single time, guaranteed. Fixed by calling pinHomeScreenElements() before both early returns. One honest caveat: the specific folder in Lynn's log did have at least one note in it, so this exact path isn't confirmed as the trigger for that particular instance -- but it's a real, separately-confirmed bug regardless, and would produce exactly this symptom under the right conditions. Verified directly: an empty folder, and a folder with an active search matching nothing, both now correctly set the breadcrumb's margin before returning. Suite unchanged: 332/332.
   v0.1746 - NEW: diagnostic logging for the sometimes-missing folder breadcrumb on iOS PWA, per Lynn's request -- starting the same evidence-first approach that just solved the toolbar-overflow bug, rather than guessing further. Confirmed first that nothing had been added for this specific bug yet (only pre-existing, narrower "FOLDER ANOMALY" logging that covers just one failure mode -- currentFolderId pointing at a folder that no longer exists). Three additions: (1) renderNotesList() now logs its breadcrumb creation decision every time it runs -- currentFolderId, whether the folder actually exists, and whether it decided to create the element -- plus a direct verification that the element genuinely landed in the DOM right after insertBefore, rather than assuming it did. (2) pinHomeScreenElements() now logs its own decision whenever a breadcrumb element exists -- which element was determined to be first-visible, the computed header height, and the actual marginTop value set, with a call stack, since this function has multiple trigger points. (3) A new, separate visibilitychange listener (kept independent from the two existing ones in this file, matching this app's own established convention for these) logs the breadcrumb's real DOM state -- exists, current marginTop -- on every background/foreground transition. This exact app already has a precedented, documented bug class here (v0.1657, pinch-zoom getting stuck on iOS PWA) where backgrounding can leave stale state that predates a suspension without firing expected events, so this specifically captures facts across that transition rather than assuming it's the cause. Verified directly: navigating into a folder correctly logs the decision and creation; simulated background/foreground events correctly log the breadcrumb's real state on each; the margin-decision logging correctly fires and captures the right values once realistic layout measurements are present. Suite unchanged: 332/332.
@@ -11135,7 +11136,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1748';
+const APP_VERSION = '0.1749';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12766,6 +12767,29 @@ function pinHomeScreenElements() {
 }
 window.addEventListener('resize', pinHomeScreenElements);
 
+// v0.1749 NEW, per Lynn's explicit request: a LOUD, non-transient
+// failure signal for exactly the bug class just fixed (v0.1747/v0.1748),
+// specifically for alpha testing -- "just log it to the debug log" is
+// not enough, since that's exactly what let this bug go unnoticed
+// through several rounds of testing before it was finally caught. Wraps
+// pinHomeScreenElements() for renderNotesList()'s own three internal
+// call sites specifically (not its other callers, like a settings-change
+// handler, where hitting this same guard can be completely legitimate
+// -- e.g. toggling a setting while a note happens to be open). Since
+// renderNotesList()'s entire purpose is rendering the Home Screen, it
+// should ALWAYS be the active screen by the time this runs -- if it
+// isn't, that's not a normal, expected skip, it's the exact silent
+// failure mode this whole investigation was about, and now it announces
+// itself immediately instead of requiring another multi-round log-and-
+// guess cycle to find.
+function pinHomeScreenElementsFromRenderNotesList() {
+  if (document.body.classList.contains('note-screen-active')) {
+    logSys('ANOMALY: renderNotesList reached its own end while note-screen-active was still true -- pinHomeScreenElements() is about to silently do nothing. This is the exact bug class fixed in v0.1747/v0.1748.');
+    showToast('DEV WARNING: Home Screen elements (breadcrumb/search/select bar) will NOT be positioned correctly this render -- note-screen-active was still set. Please report this with the Debug Log.', true);
+  }
+  pinHomeScreenElements();
+}
+
 // ===== STATE =====
 const DEFAULT_SETTINGS = {
   globalViewOnly: false,
@@ -12856,6 +12880,16 @@ const DEFAULT_SETTINGS = {
   exportReminderEnabled: true,
   lastExportAt: null, // null = never tracked yet (seeded to "now" on first run after this feature ships, not treated as "infinitely overdue" -- see init())
   charsEditedSinceExport: 0, // running total of |length delta| per edit, insertions AND deletions both counted, reset to 0 on every full export
+  // v0.1749: per Lynn's report -- the original design (v0.1683) only had
+  // a ONE-TIME 3-day grace period before the reminder could first fire,
+  // not a repeating cooldown between separate showings. Once the
+  // underlying thresholds were crossed, the exact same check re-ran on
+  // every single app launch and kept re-triggering every time, with
+  // nothing tracking when it had last actually been shown -- which is
+  // exactly what she experienced (nagged on every session start, despite
+  // not having edited anything new). Tracks the last time the notice was
+  // actually shown, separately from lastExportAt (last actual export).
+  lastExportNagShownAt: null,
   editorFontSize: 20,
   lineHeight: 1.5,          // unitless line-height
   blankLineHeight: 1,       // height of blank viewer-line divs in em; 1 = same as text line
@@ -13139,7 +13173,7 @@ const SETTING_BUCKETS = {
   // ---- EXCLUDED (13) ----
   activeHighlightHex: SETTING_BUCKETS_EXCLUDED, customColors: SETTING_BUCKETS_EXCLUDED, debugLoggingEnabled: SETTING_BUCKETS_EXCLUDED, helpSectionStates: SETTING_BUCKETS_EXCLUDED, rulerPosition: SETTING_BUCKETS_EXCLUDED,
   rulerVisible: SETTING_BUCKETS_EXCLUDED, scratchPadPage: SETTING_BUCKETS_EXCLUDED, scratchPadText: SETTING_BUCKETS_EXCLUDED, scratchPadText2: SETTING_BUCKETS_EXCLUDED, scratchPadText3: SETTING_BUCKETS_EXCLUDED,
-  lastExportAt: SETTING_BUCKETS_EXCLUDED, charsEditedSinceExport: SETTING_BUCKETS_EXCLUDED,
+  lastExportAt: SETTING_BUCKETS_EXCLUDED, charsEditedSinceExport: SETTING_BUCKETS_EXCLUDED, lastExportNagShownAt: SETTING_BUCKETS_EXCLUDED,
   sectionStates: SETTING_BUCKETS_EXCLUDED, toolbarCollapsed: SETTING_BUCKETS_EXCLUDED, settingsScrollPosition: SETTING_BUCKETS_EXCLUDED,
 };
 
@@ -14080,7 +14114,7 @@ var _lastConfirmTitle = '';  // set by showConfirm(), read when OK/Cancel resolv
 //   - 14 days, just ONE heavily-edited note -> still warns (via C alone)
 //   - 7 days, five notes, lots of edits -> warns (via N + C together)
 //   - light editing over months -> never warns (never clears any tier)
-function computeExportReminderDecision(notesObj, lastExportAt, charsEditedSinceExport, now) {
+function computeExportReminderDecision(notesObj, lastExportAt, charsEditedSinceExport, now, lastNagShownAt) {
   now = now || Date.now();
   var MS_PER_DAY = 24 * 60 * 60 * 1000;
   var daysSince = (lastExportAt != null) ? Math.floor((now - lastExportAt) / MS_PER_DAY) : 0;
@@ -14098,6 +14132,22 @@ function computeExportReminderDecision(notesObj, lastExportAt, charsEditedSinceE
     if (daysSince >= 21 && (notesChanged >= 2 || charsEdited >= 200)) shouldWarn = true;
     else if (daysSince >= 14 && charsEdited >= 500) shouldWarn = true;
     else if (daysSince >= 7 && notesChanged >= 3 && charsEdited >= 2000) shouldWarn = true;
+  }
+
+  // v0.1749 FIX, per Lynn's report: the original design only gated the
+  // FIRST possible warning behind a one-time 3-day grace period -- once
+  // the thresholds above were crossed, they stayed crossed and this same
+  // check re-fired the notice on every single subsequent app launch,
+  // since nothing tracked when it had last actually been shown. Added a
+  // genuine repeating cooldown: even if the thresholds above say yes,
+  // don't show it again until at least NAG_COOLDOWN_DAYS have passed
+  // since the last time it actually WAS shown -- matching Lynn's own
+  // recollection of the intended "not more often than every couple
+  // days" design.
+  var NAG_COOLDOWN_DAYS = 2;
+  if (shouldWarn && lastNagShownAt != null) {
+    var daysSinceLastNag = Math.floor((now - lastNagShownAt) / MS_PER_DAY);
+    if (daysSinceLastNag < NAG_COOLDOWN_DAYS) shouldWarn = false;
   }
 
   return { shouldWarn: shouldWarn, daysSince: daysSince, notesChanged: notesChanged, charsEdited: charsEdited };
@@ -15194,6 +15244,25 @@ function showScreen(id) {
   document.body.classList.toggle('note-screen-active', id === 'note-screen');
 }
 
+// v0.1749 NEW, per Lynn's request: consolidates the "go to the Home
+// Screen and render its list" pair into one place, since the correct
+// order between them matters and was found to have been gotten wrong in
+// FIVE separate call sites throughout the file (goHome() twice, the
+// initial-load path, the Siri Shortcut/URL-action "note not found"
+// path, and init()'s own error-recovery fallback). showScreen() must
+// run first: pinHomeScreenElements() (called at the very end of
+// renderNotesList()) begins with a guard that silently does nothing
+// while note-screen-active is still set, and only showScreen() clears
+// that. Calling renderNotesList() first meant that guard was still
+// seeing the PREVIOUS screen's state. Every future call site that needs
+// this same pair should call this instead of the two calls directly --
+// the correct order becomes structurally guaranteed rather than
+// something each new call site has to remember to get right on its own.
+function goToHomeScreen() {
+  showScreen('home-screen');
+  renderNotesList();
+}
+
 // ===== HOME SCREEN =====
 function notePreview(content) {
   if (!content) return null;
@@ -16019,7 +16088,7 @@ function renderNotesList() {
     // leaving it correctly present in the DOM but invisible behind it.
     // A plain, deterministic gap, not timing: any time a folder renders
     // empty while the breadcrumb is showing, this happens every time.
-    pinHomeScreenElements();
+    pinHomeScreenElementsFromRenderNotesList();
     return;
   }
 
@@ -16056,7 +16125,7 @@ function renderNotesList() {
       '<p>No notes match<br><strong>' + escHtml(_homeSearchTerm) + '</strong></p></div>';
     // v0.1747 FIX: identical gap as the empty-folder case above -- this
     // early return also skipped pinHomeScreenElements() entirely.
-    pinHomeScreenElements();
+    pinHomeScreenElementsFromRenderNotesList();
     return;
   }
   var sortBy  = settings.sortBy  || 'viewedAt';
@@ -16173,7 +16242,7 @@ function renderNotesList() {
   // first render, not just on a later resize event -- needed for every
   // user, not just mouse users, since the header no longer reserves its
   // own space via normal document flow the way position:sticky did.
-  pinHomeScreenElements();
+  pinHomeScreenElementsFromRenderNotesList();
 }
 
 function wireNoteListEvents(list) {
@@ -20439,11 +20508,10 @@ function goHome() {
       saveNotes();
       currentNoteId = null;
       saveCurrentRef();
-      // v0.1748 FIX: showScreen must run BEFORE renderNotesList -- see
-      // the matching fix and full explanation at the bottom of this
-      // function, where the identical ordering mistake was found.
-      showScreen('home-screen');
-      renderNotesList();
+      // v0.1749: now uses the consolidated goToHomeScreen() helper --
+      // see its own definition for the full explanation of why the
+      // order matters here.
+      goToHomeScreen();
       return;
     }
     // Lock the name once user exits — prevents quick-add or edits from renaming
@@ -20458,23 +20526,12 @@ function goHome() {
   selectMode = false;
   clearSelectedBlocks();
   saveCurrentRef();
-  // v0.1748 FIX, per Lynn's own log evidence across two separate runs
-  // of the identical scenario: found the actual root cause. showScreen()
-  // is the ONLY thing that clears the note-screen-active class -- and
-  // pinHomeScreenElements() (called at the very end of renderNotesList())
-  // begins with a guard that returns immediately while that class is
-  // still present, since it's meant to mean "we're not on the Home
-  // Screen yet, nothing to do here." Calling renderNotesList() BEFORE
-  // showScreen() meant that guard was still seeing the note screen's
-  // own, not-yet-cleared state -- so it silently exited before ever
-  // reaching the breadcrumb margin code, every single time a note was
-  // exited this way. A plain, deterministic ordering mistake, not
-  // timing: this is exactly why direct folder-tap navigation always
-  // worked correctly in Lynn's logs (that path never went through this
-  // wrong order) while returning from a note via goHome() consistently
-  // did not.
-  showScreen('home-screen');
-  renderNotesList();
+  // v0.1749: now uses the consolidated goToHomeScreen() helper, per
+  // Lynn's request -- the full explanation of why this order matters
+  // (found from her own log evidence) now lives in that helper's own
+  // definition, the one place it needs to be documented instead of
+  // repeated at every call site.
+  goToHomeScreen();
 }
 
 function restoreNote() {
@@ -24804,8 +24861,10 @@ function makeImportFolderName(label) {
   // toast -- this is worth actually reading, not a quick timeout.
   if (settings.exportReminderEnabled !== false) {
     setTimeout(function() {
-      var decision = computeExportReminderDecision(notes, settings.lastExportAt, settings.charsEditedSinceExport, Date.now());
+      var decision = computeExportReminderDecision(notes, settings.lastExportAt, settings.charsEditedSinceExport, Date.now(), settings.lastExportNagShownAt);
       if (decision.shouldWarn) {
+        settings.lastExportNagShownAt = Date.now();
+        saveSettings();
         showDismissibleNotice(
           "It's been " + decision.daysSince + " days and " + decision.notesChanged +
           ' note' + (decision.notesChanged === 1 ? '' : 's') +
@@ -35468,10 +35527,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   if (currentNoteId && notes[currentNoteId]) {
     openNote(currentNoteId, 'ongesture');
   } else {
-    // v0.1748 FIX: same ordering bug as goHome() -- see the full
-    // explanation there. showScreen() must run first.
-    showScreen('home-screen');
-    renderNotesList();
+    goToHomeScreen();
   }
   // If loadState() had to recover orphaned notes into a new folder,
   // this is the first point where the confirm-dialog DOM is guaranteed
@@ -40350,10 +40406,7 @@ function handleUrlAction() {
     } else {
       // Note not found — show error on the speak overlay (always visible,
       // not covered by the iOS shortcut banner like a top toast would be)
-      // v0.1748 FIX: same ordering bug as goHome() -- see the full
-      // explanation there. showScreen() must run first.
-      showScreen('home-screen');
-      renderNotesList();
+      goToHomeScreen();
       var noteCount = Object.keys(notes).length;
       var needle = normalizeNoteName(noteName);
       // Build debug info with Unicode codepoints for each note name
@@ -40470,8 +40523,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     console.error('[Remember] init() failed:', e);
     // Still try to render notes list so user can see their notes
-    try { renderNotesList(); } catch(_) {}
-    try { showScreen('home-screen'); } catch(_) {}
+    try { goToHomeScreen(); } catch(_) {}
     _earlyErrors.push(msg);
   }
   _flushEarlyErrors();
