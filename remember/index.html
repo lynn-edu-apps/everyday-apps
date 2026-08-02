@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1754 -->
+<!-- Remember App - Version 0.1755 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1754
+  Version 0.1755
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1755 - THREE pieces, per Lynn. (1) FIX: the entire zoom-cap system never once checked the separate "Disable Pinch to Zoom" setting -- capping was harmless to leave as-is with that setting on, but every release path was unconditional, meaning the system would keep re-enabling actual zoom capability at the OS level even after the user explicitly turned pinch-zoom off. Gated the 350ms timer's restore and the force-release function behind the setting; capping itself untouched. (2) FIX: repeated pinch attempts in EMNI became progressively harder (an unusual ~2-second hold needed) even though the very first attempt worked cleanly after v0.1754. Theory, flagged honestly since it involves iOS's own undocumented gesture-recognition timing, invisible to JS logging: v0.1754 still capped the first finger's touch immediately then un-capped it a moment later once a second finger confirmed a pinch -- a real, if brief, maximum-scale=1.0 moment right as the gesture begins, which may be enough for iOS's recognizer to decide up front "no zoom for this gesture" and not reconsider mid-gesture, only on a fresh touch sequence (matching the ~2-second-hold pattern). Redesigned so the cap is delayed 60ms and fully cancelable -- if a second finger arrives within that window, the cap is never applied at all for that gesture, not applied-then-undone. A genuine tap still caps correctly (60ms is well within a normal tap's hold time). (3) NEW: two one-touch lower toolbar buttons in the note editor, per Lynn's own testing with elderly users showing even the existing text-size bottom sheet is too much friction for some. Capital 'A' increases note text size, lowercase 'a' decreases -- reuses the exact same increment/bounds (12-72px) as the sheet's own buttons, saves immediately, and shows a brief toast confirming the new size. Fully registered alongside every other toolbar button: hideable/reorderable (HIDEABLE_BUTTONS, DEFAULT_TOOLBAR_ORDER), paired as one settings row like undo/redo (SETTINGS_ROW_PAIRS), and documented in the Toolbar Help panel. Verified all three directly: the setting-respecting release paths correctly stay capped when Disable Pinch to Zoom is on; the delayed cap correctly never touches the capped state at all during a simulated two-finger pinch start while still correctly capping a genuine single tap after the delay; the new buttons correctly adjust, clamp at both bounds, update the live CSS variable, and show the confirmation toast. Suite unchanged: 332/332.
   v0.1754 - FIX: found the actual, final root cause -- every prior fix correctly restored zoom at the MOMENT of transition into EMNI, but Lynn's log showed it breaking again barely half a second later, with no focus or typing event anywhere in between: zoom correctly freed at timestamp .079, then capped again at .641, both from the exact same touchstart listener. Root cause: the editor remains the visible, on-screen element throughout EMNI (until switching back to R&R) -- and the touchstart listener caps on ANY touch landing on it, with no way to distinguish a genuine tap-to-type gesture from the first finger of a pinch-to-zoom gesture. The very act of touching the screen to BEGIN pinching was itself immediately re-capping the zoom before the gesture could ever happen, which is exactly why the bug persisted despite every transition-point fix working correctly in isolation. A pinch's first finger necessarily touches slightly before its second, and that first touch alone still reports touches.length===1 -- so simply skipping multi-touch touchstarts doesn't help, since the cap is already applied by the first finger before the second one ever arrives. Fixed instead by detecting the moment a SECOND finger lands and immediately undoing whatever the first finger's touch may have just capped, since that retroactively proves it was never a single tap-to-type gesture -- the brief cap-then-uncap for the first finger alone happens in a sub-frame window before any real gesture is underway. Verified directly: a genuine single-finger tap still correctly caps (the actual intended trade-off, unaffected); a second finger arriving immediately and correctly releases the cap, confirmed in a clean instance with no state carried over from a prior test. Suite unchanged: 332/332.
   v0.1753 - FIX: v0.1752 only fixed R&R mode -- EMNI (Typing mode with the keyboard NOT showing) was still broken, per Lynn's own precise correction, which also caught a real gap in the fix being planned: EMNI can be reached two genuinely different ways -- fresh entry into Typing mode from R&R (never having been in EMTIP at all this session), and dismissing the keyboard while already in Typing mode -- and a fix aimed only at the second path would have completely missed the first, exactly the scenario she flagged before it was built. Root cause of the fresh-entry case: setViewMode()'s switch-to-Typing branch calls editor.focus({preventScroll:true}) to prepare the cursor for typing -- necessary and correct -- but the zoom-cap system's focusin listener can't tell "editor is programmatically focused" apart from "the keyboard is genuinely showing," and caps regardless, landing fresh EMNI entry incorrectly zoom-locked despite no keyboard ever appearing. Fixed by force-releasing the cap immediately after that focus() call -- it fires synchronously during focus(), so by the time execution resumes the cap is already wrongly applied and needs undoing right there. If the user then genuinely taps into the text, the normal touchstart/focusin path still correctly re-caps at that point, unchanged. Also added the same force-release to the EMTIP-exit blur handler (the actual keyboard-dismiss-while-staying-in-Typing-mode path), as belt and suspenders alongside the existing timer-based restore, which has already been shown unreliable twice. Verified directly, covering all three real states: fresh EMNI entry now correctly stays zoom-free despite the programmatic focus; genuinely tapping into the text still correctly caps (preserving the actual intended trade-off); dismissing the keyboard while remaining in Typing mode now correctly releases. Suite unchanged: 332/332.
   v0.1752 - FIX: found the ACTUAL root cause of the pinch-zoom bug, directly from Lynn's own diagnostic log. At the exact moment setViewMode(true) (switching to R&R mode) was entered, activeElement was ALREADY "BODY" -- focus had already left the editor -- yet the viewport was STILL capped at maximum-scale=1.0, and no "focusout from text field" line appears anywhere in the several preceding seconds. Something moved focus away from the editor (very likely the toolbar view-mode button itself, tapped while the keyboard was still open) WITHOUT a real, catchable focusout event ever firing. This meant v0.1750's explicit editor.blur() call -- which only guarantees a focusout event fires -- was calling blur() on an element that had already lost focus through some other, untraceable path: a genuine no-op, explaining precisely why it made zero improvement despite being technically sound. Fixed by no longer depending on that event at all: exposed a new, directly-callable window._forceReleaseZoomCap(), reusing the exact same unconditional release logic the existing visibilitychange handler already used, and call it directly from both setViewMode(true) and goHome() -- both are the app's own authoritative signal that editing has ended, and shouldn't need to wait for or depend on any DOM event to know that. The original explicit editor.blur() calls are kept in place too, for the normal case where focus genuinely is still on the editor. Verified directly by reproducing Lynn's EXACT scenario: focus the editor (caps the viewport), then simulate focus silently moving to body with NO focusout event ever dispatched (precisely what her log showed), then call setViewMode(true) -- confirmed the cap now correctly releases regardless, since the new mechanism never depends on that event firing at all. Suite unchanged: 332/332.
@@ -6782,6 +6783,11 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <path d="M3 17a9 9 0 019-9 9 9 0 016 2.3L21 13"/>
         </svg>
       </button>
+      <!-- v0.1755: one-touch note text size buttons, per Lynn's request --
+           same increment/decrement and bounds as the existing text-size
+           bottom sheet, just without needing to open it first. -->
+      <button class="icon-btn" id="font-size-up-btn" tabindex="-1" aria-label="Increase note text size" title="Increase text size" style="font-family:var(--font-body);font-weight:700;font-size:calc(var(--icon-size) * 0.62);line-height:1;">A</button>
+      <button class="icon-btn" id="font-size-down-btn" tabindex="-1" aria-label="Decrease note text size" title="Decrease text size" style="font-family:var(--font-body);font-weight:700;font-size:calc(var(--icon-size) * 0.42);line-height:1;">a</button>
       <!-- Add blank line (stage 3d "tap item" — R&R mode only, toolbar-only,
            tap to arm, then tap a note line to insert a blank line above it) -->
       <button class="icon-btn view-only-btn" id="add-blank-line-btn" tabindex="-1" aria-label="Add blank line" title="Add blank line" style="display:none">
@@ -11141,7 +11147,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1754';
+const APP_VERSION = '0.1755';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11181,6 +11187,17 @@ const APP_VERSION = '0.1754';
     return el && (el.tagName === 'TEXTAREA' ||
       (el.tagName === 'INPUT' && !/^(checkbox|radio|button|range|color|file|submit)$/i.test(el.type || '')));
   }
+  // v0.1755 NEW, per Lynn's own question: this whole system never once
+  // checked the separate "Disable Pinch to Zoom" setting. Capping is
+  // harmless to leave as-is when that setting is on (aligned with "no
+  // zoom wanted" either way), but every RELEASE path was unconditional
+  // -- meaning if someone explicitly turned pinch-zoom off, this system
+  // would still busily re-enable actual zoom CAPABILITY at the OS level
+  // every time it released the cap, directly working against their own
+  // choice. Gated below.
+  function _pinchZoomDisabled() {
+    return typeof settings !== 'undefined' && !!settings.disablePinchZoom;
+  }
   // v0.1751: diagnostic logging, per Lynn's report that the explicit-blur
   // fix (v0.1750) made no improvement -- meaning the root-cause theory
   // was likely wrong, not just incomplete, since an explicit blur() call
@@ -11209,10 +11226,18 @@ const APP_VERSION = '0.1754';
     if (typeof logSys === 'function') logSys('zoom-cap: CAPPED (maximum-scale=1.0). calledFrom=[' + _capCallerInfo() + ']');
   }
   function _scheduleFree() {
+    if (_pinchZoomDisabled()) {
+      if (typeof logSys === 'function') logSys('zoom-cap: restore skipped entirely -- Disable Pinch to Zoom setting is on, staying capped.');
+      return;
+    }
     if (_restoreTimer) clearTimeout(_restoreTimer);
     if (typeof logSys === 'function') logSys('zoom-cap: restore scheduled (350ms), activeElement=' + (document.activeElement ? (document.activeElement.tagName + '#' + document.activeElement.id) : 'null'));
     _restoreTimer = setTimeout(function() {
       _restoreTimer = null;
+      if (_pinchZoomDisabled()) {
+        if (typeof logSys === 'function') logSys('zoom-cap: restore timer fired but Disable Pinch to Zoom is now on -- staying capped.');
+        return;
+      }
       // Don't free the cap if focus just moved to ANOTHER text field
       if (_isTextField(document.activeElement)) {
         if (typeof logSys === 'function') logSys('zoom-cap: restore timer fired but activeElement is STILL a text field (' + document.activeElement.tagName + '#' + document.activeElement.id + ') -- staying capped.');
@@ -11247,13 +11272,45 @@ const APP_VERSION = '0.1754';
   // retroactively proves it was never a single tap-to-type gesture. The
   // brief cap-then-uncap for the first finger is a sub-frame window
   // before the gesture is even underway.
+  // v0.1755 FIX, per Lynn's report that repeated pinch attempts in EMNI
+  // became progressively harder (an unusual ~2-second hold needed to
+  // start a second or third pinch) even after v0.1754's fix made the
+  // very first attempt work smoothly. Theory, worth being upfront about
+  // since it involves iOS's own internal, undocumented gesture-
+  // recognition behavior that isn't visible to any JS-level logging:
+  // v0.1754 still capped the FIRST finger's touch immediately, then
+  // un-capped a moment later once the second finger confirmed it was a
+  // pinch -- a real, if brief, maximum-scale=1.0 state right as the
+  // gesture begins. If iOS's gesture recognizer checks the viewport's
+  // current zoom limit at the moment it starts tracking a touch
+  // sequence, that brief flicker may be enough for it to decide up
+  // front "no zoom for this gesture," even though corrected a few
+  // milliseconds later -- and this decision might not be something the
+  // recognizer reconsiders mid-gesture, only on a fresh touch sequence
+  // (matching "hold for ~2 seconds, then it works" -- long enough that
+  // the recognizer effectively restarts its own tracking).
+  // Redesigned so the cap for a single finger is DELAYED (60ms) rather
+  // than immediate, and cancelable: if a second finger arrives within
+  // that window, the cap is never applied AT ALL for that gesture --
+  // not applied-then-undone, genuinely never touched. A real tap still
+  // caps correctly (60ms is well within a normal tap's hold time, and
+  // still comfortably before focus/auto-zoom would resolve, which was
+  // always the actual requirement here, not "instantly on touchstart").
+  var _pendingCapTimer = null;
   document.addEventListener('touchstart', function(e) {
     var t = e.target;
     if (e.touches && e.touches.length > 1) {
+      if (_pendingCapTimer) { clearTimeout(_pendingCapTimer); _pendingCapTimer = null; }
       if (typeof window._forceReleaseZoomCap === 'function') window._forceReleaseZoomCap('multi-touch detected (' + e.touches.length + ' fingers) -- a pinch, not a tap');
       return;
     }
-    if (_isTextField(t) || (t && t.closest && _isTextField(t.closest('textarea, input')))) _cap();
+    if (_isTextField(t) || (t && t.closest && _isTextField(t.closest('textarea, input')))) {
+      if (_pendingCapTimer) clearTimeout(_pendingCapTimer);
+      _pendingCapTimer = setTimeout(function() {
+        _pendingCapTimer = null;
+        _cap();
+      }, 60);
+    }
   }, { capture: true, passive: true });
   document.addEventListener('focusin', function(e) {
     if (_isTextField(e.target)) {
@@ -11325,6 +11382,10 @@ const APP_VERSION = '0.1754';
   // that. Reuses the exact same unconditional release logic the
   // visibilitychange listener above already uses.
   window._forceReleaseZoomCap = function(reason) {
+    if (_pinchZoomDisabled()) {
+      if (typeof logSys === 'function') logSys('zoom-cap: force-release skipped (' + (reason || 'no reason given') + ') -- Disable Pinch to Zoom setting is on, staying capped.');
+      return;
+    }
     if (_restoreTimer) { clearTimeout(_restoreTimer); _restoreTimer = null; }
     var wasCapped = _capped;
     _capped = false;
@@ -25251,6 +25312,7 @@ function makeImportFolderName(label) {
     ['indent-btn', 'dedent-btn'],
     ['caret-left-btn', 'caret-right-btn'],
     ['caret-up-btn', 'caret-down-btn'],
+    ['font-size-up-btn', 'font-size-down-btn'],
     // v0.1583: quick-add-btn (toolbar icon) and note-fab (floating +) open
     // the identical Quick Add dialog -- confirmed by reading both click
     // handlers -- so one settings row controls both, same as the others.
@@ -25393,6 +25455,8 @@ function makeImportFolderName(label) {
     { id: 'tap-to-edit-btn',        label: 'Tap to edit' },
     { id: 'undo-btn',               label: 'Undo' },
     { id: 'redo-btn',               label: 'Redo' },
+    { id: 'font-size-up-btn',       label: 'Increase text size' },
+    { id: 'font-size-down-btn',     label: 'Decrease text size' },
     { id: 'add-blank-line-btn',     label: 'Add blank line' },
     { id: 'move-mode-btn',           label: 'Move line' },
     { id: 'double-space-btn',        label: 'Double space' },
@@ -25440,7 +25504,7 @@ function makeImportFolderName(label) {
   ];
 
   // Default toolbar order — matches the original HTML left-to-right order
-  var DEFAULT_TOOLBAR_ORDER = ['quick-add-btn', 'tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'insert-datetime-btn', 'caret-left-btn', 'caret-right-btn', 'caret-up-btn', 'caret-down-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'double-space-btn', 'show-whitespace-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
+  var DEFAULT_TOOLBAR_ORDER = ['quick-add-btn', 'tap-to-edit-btn', 'toolbar-help-btn', 'move-mode-btn', 'dictate-btn', 'dismiss-keyboard-btn', 'indent-btn', 'dedent-btn', 'insert-datetime-btn', 'caret-left-btn', 'caret-right-btn', 'caret-up-btn', 'caret-down-btn', 'code-fence-btn', 'undo-btn', 'redo-btn', 'font-size-up-btn', 'font-size-down-btn', 'add-blank-line-btn', 'check-mode-btn', 'toggle-checkbox-btn', 'bold-mode-btn', 'italic-mode-btn', 'heading-btn', 'highlight-mode-btn', 'color-mode-btn', 'crossout-group', 'ruler-btn', 'find-btn', 'share-note-btn', 'copy-for-speech-btn', 'share-for-speech-btn', 'select-all-btn', 'font-size-btn', 'settings-btn-toolbar', 'print-btn', 'uncheck-all-btn', 'hide-completed-btn', 'scroll-top-btn', 'scroll-bottom-btn', 'double-space-btn', 'show-whitespace-btn', 'jump-next-section-btn', 'jump-to-btn', 'outline-mode-btn', 'show-tags-btn', 'insert-tag-btn', 'tag-presence-btn', 'tag-filter-btn', 'theme-btn', 'delete-note-btn', ];
 
   // Get effective order: stored order supplemented by any missing buttons
   // Normalize SETTINGS_ROW_PAIRS members in an order array so they are
@@ -31996,6 +32060,8 @@ function makeImportFolderName(label) {
     { id: 'code-fence-btn',       name: 'Code block',         desc: 'Wrap the selected text in a fenced code block (``` markers).' },
     { id: 'undo-btn',             name: 'Undo',               desc: 'Undo the last edit.' },
     { id: 'redo-btn',             name: 'Redo',               desc: 'Redo the last undone edit.' },
+    { id: 'font-size-up-btn',     name: 'Increase text size', desc: 'Make the note text one pixel larger. Same as the text size option in the More menu, in one tap.' },
+    { id: 'font-size-down-btn',   name: 'Decrease text size', desc: 'Make the note text one pixel smaller. Same as the text size option in the More menu, in one tap.' },
     { id: 'add-blank-line-btn',   name: 'Add blank line',     desc: 'Insert a blank line after the current line in Read & Revise mode.' },
     { id: 'check-mode-btn',       name: 'Check state',        desc: 'Check or uncheck all selected checkbox lines at once.' },
     { id: 'toggle-checkbox-btn',  name: 'Toggle checkbox',    desc: 'Convert the current line to a checkbox item (- [ ]), or remove the checkbox.' },
@@ -34546,6 +34612,27 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   document.getElementById('undo-btn').addEventListener('click', function() { applyUndo(); });
   document.getElementById('redo-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('redo-btn').addEventListener('click', function() { applyRedo(); });
+  // v0.1755: one-touch note text size buttons, per Lynn's request for a
+  // lower-friction alternative to the text-size bottom sheet for
+  // elderly users -- reuses the exact same increment/decrement and
+  // bounds (12-72px) as that sheet's own up/down buttons. Saves
+  // immediately, same as other toolbar actions (bold, italic, etc.) --
+  // no separate "save" step needed, since this is a standalone toolbar
+  // action, not part of the Settings dialog's own session.
+  document.getElementById('font-size-up-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('font-size-up-btn').addEventListener('click', function() {
+    settings.editorFontSize = Math.min(72, (settings.editorFontSize || 20) + 1);
+    applySettings();
+    saveSettings();
+    showToast('Text size: ' + settings.editorFontSize + 'px');
+  });
+  document.getElementById('font-size-down-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+  document.getElementById('font-size-down-btn').addEventListener('click', function() {
+    settings.editorFontSize = Math.max(12, (settings.editorFontSize || 20) - 1);
+    applySettings();
+    saveSettings();
+    showToast('Text size: ' + settings.editorFontSize + 'px');
+  });
 
   // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo
   // Ctrl/Cmd+B = bold, Ctrl/Cmd+I = italic (Typing mode only)
