@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1752 -->
+<!-- Remember App - Version 0.1753 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1752
+  Version 0.1753
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1753 - FIX: v0.1752 only fixed R&R mode -- EMNI (Typing mode with the keyboard NOT showing) was still broken, per Lynn's own precise correction, which also caught a real gap in the fix being planned: EMNI can be reached two genuinely different ways -- fresh entry into Typing mode from R&R (never having been in EMTIP at all this session), and dismissing the keyboard while already in Typing mode -- and a fix aimed only at the second path would have completely missed the first, exactly the scenario she flagged before it was built. Root cause of the fresh-entry case: setViewMode()'s switch-to-Typing branch calls editor.focus({preventScroll:true}) to prepare the cursor for typing -- necessary and correct -- but the zoom-cap system's focusin listener can't tell "editor is programmatically focused" apart from "the keyboard is genuinely showing," and caps regardless, landing fresh EMNI entry incorrectly zoom-locked despite no keyboard ever appearing. Fixed by force-releasing the cap immediately after that focus() call -- it fires synchronously during focus(), so by the time execution resumes the cap is already wrongly applied and needs undoing right there. If the user then genuinely taps into the text, the normal touchstart/focusin path still correctly re-caps at that point, unchanged. Also added the same force-release to the EMTIP-exit blur handler (the actual keyboard-dismiss-while-staying-in-Typing-mode path), as belt and suspenders alongside the existing timer-based restore, which has already been shown unreliable twice. Verified directly, covering all three real states: fresh EMNI entry now correctly stays zoom-free despite the programmatic focus; genuinely tapping into the text still correctly caps (preserving the actual intended trade-off); dismissing the keyboard while remaining in Typing mode now correctly releases. Suite unchanged: 332/332.
   v0.1752 - FIX: found the ACTUAL root cause of the pinch-zoom bug, directly from Lynn's own diagnostic log. At the exact moment setViewMode(true) (switching to R&R mode) was entered, activeElement was ALREADY "BODY" -- focus had already left the editor -- yet the viewport was STILL capped at maximum-scale=1.0, and no "focusout from text field" line appears anywhere in the several preceding seconds. Something moved focus away from the editor (very likely the toolbar view-mode button itself, tapped while the keyboard was still open) WITHOUT a real, catchable focusout event ever firing. This meant v0.1750's explicit editor.blur() call -- which only guarantees a focusout event fires -- was calling blur() on an element that had already lost focus through some other, untraceable path: a genuine no-op, explaining precisely why it made zero improvement despite being technically sound. Fixed by no longer depending on that event at all: exposed a new, directly-callable window._forceReleaseZoomCap(), reusing the exact same unconditional release logic the existing visibilitychange handler already used, and call it directly from both setViewMode(true) and goHome() -- both are the app's own authoritative signal that editing has ended, and shouldn't need to wait for or depend on any DOM event to know that. The original explicit editor.blur() calls are kept in place too, for the normal case where focus genuinely is still on the editor. Verified directly by reproducing Lynn's EXACT scenario: focus the editor (caps the viewport), then simulate focus silently moving to body with NO focusout event ever dispatched (precisely what her log showed), then call setViewMode(true) -- confirmed the cap now correctly releases regardless, since the new mechanism never depends on that event firing at all. Suite unchanged: 332/332.
   v0.1751 - NEW: full diagnostic logging for the pinch-zoom bug, per Lynn's report that v0.1750's explicit-blur fix made no improvement -- meaning the root-cause theory was likely wrong, not just incomplete, since an explicit blur() call is about as reliable as JS gets for triggering a real focusout. Rather than theorize further, added real evidence-gathering, same approach that solved the toolbar-overflow and breadcrumb bugs: (1) the zoom-cap system's own private _cap()/_scheduleFree() functions now log every cap/restore decision directly, including a caller stack for _cap() (called from multiple event listeners) and the exact reason a restore attempt does or doesn't succeed; (2) the focusin/focusout listeners themselves now log every time they fire on a text field, so it's directly visible whether these events are actually firing at all when they should be, not assumed; (3) a new shared diagnostic snapshot function logs the FULL picture at once -- viewport meta content, activeElement, touch-action on both the editor and content area, and the separate "Disable Pinch to Zoom" setting's state (a completely different, CSS-based mechanism that could independently block pinch-zoom and would explain why a fix aimed only at the viewport-cap system had zero effect) -- called at setViewMode's entry, immediately after the blur() call, and again 500ms later once the real restore window has passed. Verified directly: the full logging chain fires correctly end to end and correctly captures every field. Suite unchanged: 332/332.
   v0.1750 - FIX: pinch-zoom getting stuck disabled after leaving Typing mode, per Lynn's report -- worse specifically via the toolbar view/edit button than double-tap. Found the existing iOS zoom-cap system (an intentional, documented mechanism: while a text field is focused, the viewport's max-zoom is capped to 1.0 to prevent iOS's own jarring auto-zoom-on-focus, restored ~350ms after a genuine focusout). Clarified directly with Lynn: the accepted trade-off was specifically EMTIP (Typing mode with the keyboard actually open) losing pinch -- not the whole of Typing mode, and R&R mode should always have it back. Root cause: setViewMode()'s switch-to-R&R branch hid the editor via display:none without ever explicitly blurring it first -- and whether hiding a still-focused element via CSS reliably fires a real focusout on its own is inconsistent and known to be unreliable on iOS Safari specifically, rather than something to depend on implicitly. Confirmed directly that the app's own EMTIP/EMNI keyboard-open tracking depends on this exact same focusout event too (not a separate, disagreeing signal), and that the two existing "Done typing" handlers already blur explicitly and correctly -- narrowing the actual gap to specifically the Typing-to-R&R transition. Fixed by calling editor.blur() explicitly before hiding it in setViewMode(), guaranteeing a real focusout fires regardless of which code path triggered the mode switch, rather than depending on the browser's implicit behavior. Also added the same defensive blur to goHome(), for the separate case of exiting a note directly from Typing mode without ever switching to R&R first -- the editor could still be focused when the whole note screen gets hidden via a CSS class toggle, the identical underlying risk. Verified end to end with iOS mocked: focusing the editor correctly caps the viewport; switching to R&R via setViewMode() correctly blurs it; after the real 350ms restore delay, the viewport is correctly restored to allow pinch-zoom again; exiting a note directly from Typing mode via goHome() also correctly blurs. Suite unchanged: 332/332.
@@ -11139,7 +11140,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1752';
+const APP_VERSION = '0.1753';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -17965,6 +17966,18 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
     if (!suppressFocus) {
       ignoreFocus = false;
       editor.focus({ preventScroll: true });
+      // v0.1753 FIX, per Lynn's precise correction: this focus() call
+      // only prepares the cursor for typing (fresh entry into EMNI, no
+      // keyboard yet) -- but the zoom-cap system's focusin listener
+      // can't distinguish "editor is focused" from "keyboard is
+      // genuinely showing," and caps regardless. Since it fires
+      // synchronously during focus() above, the cap is already applied
+      // by this point -- force-release it immediately after, so
+      // entering typing mode fresh never starts zoom-locked. If the
+      // user then genuinely taps into the text, the normal
+      // touchstart/focusin path re-caps correctly at that point, same
+      // as it always has.
+      if (typeof window._forceReleaseZoomCap === 'function') window._forceReleaseZoomCap('setViewMode(false) fresh EMNI entry, no keyboard yet');
     }
     pinToolbars();
     resizeEditor();
@@ -28090,6 +28103,16 @@ function makeImportFolderName(label) {
           _typingSessionStartLen = null;
         }
         noteScreen.classList.remove('keyboard-open');
+        // v0.1753: force-release here too, per the same reasoning as the
+        // setViewMode(false) fix above -- this is the other real path
+        // into EMNI (dismissing the keyboard while staying in Typing
+        // mode, rather than entering Typing mode fresh). This point is
+        // the app's own authoritative confirmation that we're genuinely
+        // in EMNI now (keyboard-open just removed), so it shouldn't
+        // depend on the existing _scheduleFree()/350ms timer path
+        // working correctly on its own -- belt and suspenders, since
+        // that path has already been shown unreliable twice.
+        if (typeof window._forceReleaseZoomCap === 'function') window._forceReleaseZoomCap('EMTIP-exit blur handler (dismissed keyboard, staying in Typing mode)');
         // v0.1666: clear the inline keyboard-scroll-room override applied
         // by _applyKeyboardScrollRoom() while EMTIP was active -- an
         // inline style persists regardless of the keyboard-open class, so
