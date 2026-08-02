@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1744 -->
+<!-- Remember App - Version 0.1745 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1744
+  Version 0.1745
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1745 - FIX: found and fixed the actual root cause, from Lynn's own precise comparison of two logged runs -- her second test deliberately skipped opening the More menu specifically to keep the data simple, and it worked. Same note, same view-mode transition, identical window width logged in every line -- one measurement read 6px (correctly not wrapped), another read 48px (wrapped), and the ONLY difference between their two visible-button lists (added in the last build specifically to catch this) was select-blocks-btn ("Select Lines"). Root cause, confirmed by reading the exact code order: applySmallScreenOverflow() ran PARTWAY through updateViewOnlyBtns() -- specifically, before select-blocks-btn (and everything else set after it, all the way to the end of the function) had its own visibility finalized for the CURRENT call. The check was measuring select-blocks-btn's STALE value left over from the PREVIOUS call, not what it was about to become moments later in the very same invocation -- a plain, deterministic ordering bug inside one function, never a timing issue of any kind, exactly matching what Lynn asked to rule out from the very start. Fixed by moving the overflow check to the true end of updateViewOnlyBtns(), after every single button it sets has been finalized for that call -- not just past select-blocks-btn specifically, since other buttons set later in the same function could plausibly have had the identical problem. Verified directly: engineered the exact stale-state scenario from the log (select-blocks-btn left hidden from a prior call, then switching to view mode) and confirmed the overflow check's own visible-button list now correctly includes select-blocks-btn in the SAME measurement that turns it visible, rather than one call behind. Suite unchanged: 332/332.
   v0.1744 - NEW: full visible-button-list logging, found necessary by actually tracing through Lynn's newest log line by line with the added stack traces. Real progress this round: the log clearly showed the SAME note, in the SAME view mode, with window.innerWidth logged as exactly 402 in every single line (the viewport genuinely never changed) -- yet one measurement read 6px (correctly not wrapped) and another, three seconds later, read 48px (wrapped), with only opening the More menu in between. Checked two plausible CSS-driven causes directly and ruled both out: neither the view-only-mode class nor the toolbar-collapsed class touch anything in the upper toolbar row at all (confirmed by reading their actual CSS rules, not assumed). Since the viewport didn't change, the row's own CONTENT must have -- but the logging so far only ever recorded the two measured positions, never which specific buttons were actually visible at each moment, so there was no way to see WHICH one differed. Added exactly that: every overflow check now lists every currently-visible button in the row by id at the moment of measurement, since updateViewOnlyBtns() (which runs immediately before every check) sets visibility for several other buttons based on note state, any of which is now the leading suspect for the real, additional cause. Verified directly: the new field correctly lists the actual visible buttons by id. Suite unchanged: 332/332.
   v0.1743 - NEW: verification-focused logging, per Lynn's specific, pointed questions -- not just logging the DECISION, but verifying the actual DOM state independently rather than trusting the decision's own claim, and investigating a concrete new hypothesis she raised (the More menu being rebuilt without the moved items) rather than only adding more logging blindly. Checked directly: the overflow items are NOT registered in MORE_MENU_ITEMS (so that table's own rebuild loop can't silently overwrite them), and confirmed structurally (not just by test) that #toolbar-more-hidden-items -- the container that DOES get its innerHTML wiped on every menu open -- is a completely separate, initially-empty element from where the overflow buttons actually live in the HTML, so that rebuild mechanism cannot be destroying them either. Along the way, the new call-stack logging surfaced something not previously known: opening the More menu itself triggers a full fresh re-check of its own, via openMoreMenu -> rebuildMoreMenuItems -> updateViewOnlyBtns -> applySmallScreenOverflow -- a real, additional trigger point beyond the three already known. Added exactly what Lynn asked for: showInMainBar() (the function that resets copy/cut/paste back to visible) now logs every single time it runs, with its own caller stack; openMoreMenu() now reads and logs the ACTUAL current DOM display values of both the overflow items and the main-bar buttons at the exact moment the menu is opened and looked at, independent of what any earlier "corrected" message claimed -- if these two ever disagree in a real log, that's direct, undeniable proof something changed them in between without going through the overflow-check code at all. Verified directly: triggered the real click handler (not a synthetic function call, since openMoreMenu isn't exposed globally) and confirmed the full logging chain fires correctly end to end, including correctly naming the newly-discovered rebuildMoreMenuItems call path. Suite unchanged: 332/332.
   v0.1742 - NEW: further diagnostic logging, per Lynn's continued report that the bug still occurs after v0.1741 and her own suggestion to add logging in the deciding functions and capture the call stack. Re-searched by button ID rather than variable name this time (broader net than the earlier search) -- found two more references to paste-btn, but both only toggle a CSS class for the paste-mode indicator, not visibility, so ruled out. Re-examined updateViewOnlyBtns() (28 separate callers throughout the code) in full: it unconditionally resets cut/paste to visible and calls applySmallScreenOverflow() right after, every single time -- nothing found there that would skip or bypass the correction. Since inference from surrounding log lines hasn't been enough to find what's actually happening, added exactly what Lynn asked for: applySmallScreenOverflow()'s own log entry now captures and includes the real call stack (just the function names from the first few frames, not a full raw trace, which would mostly be noise) so every entry shows precisely which of the many call paths triggered it, rather than guessing from context; updateViewOnlyBtns() itself also now logs the moment it resets these buttons, including whether it's in view or edit mode at that exact point. Verified directly: the stack capture correctly names the actual calling function when tested through a wrapper. Suite unchanged: 332/332.
@@ -11131,7 +11132,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1744';
+const APP_VERSION = '0.1745';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -34020,15 +34021,8 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     var hideCompletedBtnEl = document.getElementById('hide-completed-btn');
     if (hideCompletedBtnEl) hideCompletedBtnEl.style.display = (inView && _hasCheckedNow && !isToolbarPlacementHidden('hide-completed-btn')) ? '' : 'none';
     // Cut and paste: show in both edit and view mode
-    // But defer to applySmallScreenOverflow for small-screen+large-icon policy
     if (deleteTextBtn) deleteTextBtn.style.display = '';
     if (pasteBtn) pasteBtn.style.display = '';
-    // v0.1742: per Lynn's request to log the deciding functions
-    // themselves, not just applySmallScreenOverflow's own entry point.
-    logSys('updateViewOnlyBtns: about to re-apply overflow policy, inView=' + inView +
-      ' note=' + (typeof currentNoteId !== 'undefined' ? currentNoteId : '?'));
-    // Re-apply small screen overflow policy after resetting button visibility
-    applySmallScreenOverflow();
     // Select lines: only useful in view mode — hide in edit mode
     var selectBlocksBtn = document.getElementById('select-blocks-btn');
     if (selectBlocksBtn) selectBlocksBtn.style.display = inView ? '' : 'none';
@@ -34205,6 +34199,25 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     updateSelectModeBtn();
     if (window._updateToolbarArrows) setTimeout(window._updateToolbarArrows, 0);
     if (typeof applyToolbarHiddenOverrides === 'function') applyToolbarHiddenOverrides();
+
+    // v0.1745 FIX, per Lynn's own precise log comparison: found the exact
+    // root cause. This overflow check used to run partway through this
+    // function -- specifically, BEFORE select-blocks-btn (and everything
+    // set after it, all the way to the end of this function) had its
+    // visibility finalized for the CURRENT call. That meant the check
+    // was measuring select-blocks-btn's STALE value left over from the
+    // previous call, not what it was about to become moments later --
+    // a plain, deterministic ordering bug, not any kind of timing issue.
+    // Lynn's own comparison of two logged runs made this undeniable:
+    // same note, same view mode, identical window width in every line,
+    // yet one measurement read 6px and another read 48px -- and the
+    // ONLY difference between the two visible-button lists was
+    // select-blocks-btn itself. Moved to the very end of this function,
+    // after every button it sets has been finalized for this call, so
+    // it always measures the true, complete, current state.
+    logSys('updateViewOnlyBtns: about to re-apply overflow policy, inView=' + inView +
+      ' note=' + (typeof currentNoteId !== 'undefined' ? currentNoteId : '?'));
+    applySmallScreenOverflow();
   };
 
   // ── Undo / Redo buttons ──────────────────────────────────────────────────
