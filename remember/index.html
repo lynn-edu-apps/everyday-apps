@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1746 -->
+<!-- Remember App - Version 0.1747 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1746
+  Version 0.1747
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1747 - FIX: found a genuine, confirmed structural gap in renderNotesList(), from directly reading Lynn's own log. Her log showed the breadcrumb correctly created (confirmed present in the DOM) right after returning from a note back into its folder -- but, unlike every other successful case earlier in that same log, no pinHomeScreenElements() margin-decision entry ever followed it. Traced the actual code and found two early `return` statements in renderNotesList() -- one for an empty folder, one for zero search results -- both of which exit the function completely before ever reaching pinHomeScreenElements() at the very end. Since the breadcrumb is created earlier in the SAME function call, either path leaves it correctly present in the DOM but with no margin ever set to clear the fixed header, making it invisible behind it. A plain, deterministic structural gap, not timing: whenever a folder happens to render as empty (or a search inside one finds nothing) while the breadcrumb is showing, this happens every single time, guaranteed. Fixed by calling pinHomeScreenElements() before both early returns. One honest caveat: the specific folder in Lynn's log did have at least one note in it, so this exact path isn't confirmed as the trigger for that particular instance -- but it's a real, separately-confirmed bug regardless, and would produce exactly this symptom under the right conditions. Verified directly: an empty folder, and a folder with an active search matching nothing, both now correctly set the breadcrumb's margin before returning. Suite unchanged: 332/332.
   v0.1746 - NEW: diagnostic logging for the sometimes-missing folder breadcrumb on iOS PWA, per Lynn's request -- starting the same evidence-first approach that just solved the toolbar-overflow bug, rather than guessing further. Confirmed first that nothing had been added for this specific bug yet (only pre-existing, narrower "FOLDER ANOMALY" logging that covers just one failure mode -- currentFolderId pointing at a folder that no longer exists). Three additions: (1) renderNotesList() now logs its breadcrumb creation decision every time it runs -- currentFolderId, whether the folder actually exists, and whether it decided to create the element -- plus a direct verification that the element genuinely landed in the DOM right after insertBefore, rather than assuming it did. (2) pinHomeScreenElements() now logs its own decision whenever a breadcrumb element exists -- which element was determined to be first-visible, the computed header height, and the actual marginTop value set, with a call stack, since this function has multiple trigger points. (3) A new, separate visibilitychange listener (kept independent from the two existing ones in this file, matching this app's own established convention for these) logs the breadcrumb's real DOM state -- exists, current marginTop -- on every background/foreground transition. This exact app already has a precedented, documented bug class here (v0.1657, pinch-zoom getting stuck on iOS PWA) where backgrounding can leave stale state that predates a suspension without firing expected events, so this specifically captures facts across that transition rather than assuming it's the cause. Verified directly: navigating into a folder correctly logs the decision and creation; simulated background/foreground events correctly log the breadcrumb's real state on each; the margin-decision logging correctly fires and captures the right values once realistic layout measurements are present. Suite unchanged: 332/332.
   v0.1745 - FIX: found and fixed the actual root cause, from Lynn's own precise comparison of two logged runs -- her second test deliberately skipped opening the More menu specifically to keep the data simple, and it worked. Same note, same view-mode transition, identical window width logged in every line -- one measurement read 6px (correctly not wrapped), another read 48px (wrapped), and the ONLY difference between their two visible-button lists (added in the last build specifically to catch this) was select-blocks-btn ("Select Lines"). Root cause, confirmed by reading the exact code order: applySmallScreenOverflow() ran PARTWAY through updateViewOnlyBtns() -- specifically, before select-blocks-btn (and everything else set after it, all the way to the end of the function) had its own visibility finalized for the CURRENT call. The check was measuring select-blocks-btn's STALE value left over from the PREVIOUS call, not what it was about to become moments later in the very same invocation -- a plain, deterministic ordering bug inside one function, never a timing issue of any kind, exactly matching what Lynn asked to rule out from the very start. Fixed by moving the overflow check to the true end of updateViewOnlyBtns(), after every single button it sets has been finalized for that call -- not just past select-blocks-btn specifically, since other buttons set later in the same function could plausibly have had the identical problem. Verified directly: engineered the exact stale-state scenario from the log (select-blocks-btn left hidden from a prior call, then switching to view mode) and confirmed the overflow check's own visible-button list now correctly includes select-blocks-btn in the SAME measurement that turns it visible, rather than one call behind. Suite unchanged: 332/332.
   v0.1744 - NEW: full visible-button-list logging, found necessary by actually tracing through Lynn's newest log line by line with the added stack traces. Real progress this round: the log clearly showed the SAME note, in the SAME view mode, with window.innerWidth logged as exactly 402 in every single line (the viewport genuinely never changed) -- yet one measurement read 6px (correctly not wrapped) and another, three seconds later, read 48px (wrapped), with only opening the More menu in between. Checked two plausible CSS-driven causes directly and ruled both out: neither the view-only-mode class nor the toolbar-collapsed class touch anything in the upper toolbar row at all (confirmed by reading their actual CSS rules, not assumed). Since the viewport didn't change, the row's own CONTENT must have -- but the logging so far only ever recorded the two measured positions, never which specific buttons were actually visible at each moment, so there was no way to see WHICH one differed. Added exactly that: every overflow check now lists every currently-visible button in the row by id at the moment of measurement, since updateViewOnlyBtns() (which runs immediately before every check) sets visibility for several other buttons based on note state, any of which is now the leading suspect for the real, additional cause. Verified directly: the new field correctly lists the actual visible buttons by id. Suite unchanged: 332/332.
@@ -11133,7 +11134,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1746';
+const APP_VERSION = '0.1747';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -16010,6 +16011,14 @@ function renderNotesList() {
     list.innerHTML = '<div class="notes-empty">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>' +
       '<p>' + (currentFolderId ? 'This folder is empty.' : 'No notes yet.<br>Tap <strong>+</strong> to create your first note.') + '</p></div>';
+    // v0.1747 FIX, per Lynn's own log evidence: this early return skipped
+    // pinHomeScreenElements() entirely -- the breadcrumb was already
+    // created earlier in this same function call (above), but without
+    // this, it never gets the margin that clears the fixed header,
+    // leaving it correctly present in the DOM but invisible behind it.
+    // A plain, deterministic gap, not timing: any time a folder renders
+    // empty while the breadcrumb is showing, this happens every time.
+    pinHomeScreenElements();
     return;
   }
 
@@ -16044,6 +16053,9 @@ function renderNotesList() {
     list.innerHTML = '<div class="notes-empty">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
       '<p>No notes match<br><strong>' + escHtml(_homeSearchTerm) + '</strong></p></div>';
+    // v0.1747 FIX: identical gap as the empty-folder case above -- this
+    // early return also skipped pinHomeScreenElements() entirely.
+    pinHomeScreenElements();
     return;
   }
   var sortBy  = settings.sortBy  || 'viewedAt';
