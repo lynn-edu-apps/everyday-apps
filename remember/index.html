@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1742 -->
+<!-- Remember App - Version 0.1743 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1742
+  Version 0.1743
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1743 - NEW: verification-focused logging, per Lynn's specific, pointed questions -- not just logging the DECISION, but verifying the actual DOM state independently rather than trusting the decision's own claim, and investigating a concrete new hypothesis she raised (the More menu being rebuilt without the moved items) rather than only adding more logging blindly. Checked directly: the overflow items are NOT registered in MORE_MENU_ITEMS (so that table's own rebuild loop can't silently overwrite them), and confirmed structurally (not just by test) that #toolbar-more-hidden-items -- the container that DOES get its innerHTML wiped on every menu open -- is a completely separate, initially-empty element from where the overflow buttons actually live in the HTML, so that rebuild mechanism cannot be destroying them either. Along the way, the new call-stack logging surfaced something not previously known: opening the More menu itself triggers a full fresh re-check of its own, via openMoreMenu -> rebuildMoreMenuItems -> updateViewOnlyBtns -> applySmallScreenOverflow -- a real, additional trigger point beyond the three already known. Added exactly what Lynn asked for: showInMainBar() (the function that resets copy/cut/paste back to visible) now logs every single time it runs, with its own caller stack; openMoreMenu() now reads and logs the ACTUAL current DOM display values of both the overflow items and the main-bar buttons at the exact moment the menu is opened and looked at, independent of what any earlier "corrected" message claimed -- if these two ever disagree in a real log, that's direct, undeniable proof something changed them in between without going through the overflow-check code at all. Verified directly: triggered the real click handler (not a synthetic function call, since openMoreMenu isn't exposed globally) and confirmed the full logging chain fires correctly end to end, including correctly naming the newly-discovered rebuildMoreMenuItems call path. Suite unchanged: 332/332.
   v0.1742 - NEW: further diagnostic logging, per Lynn's continued report that the bug still occurs after v0.1741 and her own suggestion to add logging in the deciding functions and capture the call stack. Re-searched by button ID rather than variable name this time (broader net than the earlier search) -- found two more references to paste-btn, but both only toggle a CSS class for the paste-mode indicator, not visibility, so ruled out. Re-examined updateViewOnlyBtns() (28 separate callers throughout the code) in full: it unconditionally resets cut/paste to visible and calls applySmallScreenOverflow() right after, every single time -- nothing found there that would skip or bypass the correction. Since inference from surrounding log lines hasn't been enough to find what's actually happening, added exactly what Lynn asked for: applySmallScreenOverflow()'s own log entry now captures and includes the real call stack (just the function names from the first few frames, not a full raw trace, which would mostly be noise) so every entry shows precisely which of the many call paths triggered it, rather than guessing from context; updateViewOnlyBtns() itself also now logs the moment it resets these buttons, including whether it's in view or edit mode at that exact point. Verified directly: the stack capture correctly names the actual calling function when tested through a wrapper. Suite unchanged: 332/332.
   v0.1741 - FIX: found the ACTUAL root cause of the toolbar-overflow intermittency, from reading Lynn's own debug log with her precise clarification -- every logged correction had claimed success, but she confirmed several of them did not actually stick. That mismatch was the real clue: a SEPARATE, completely independent window.resize listener, unrelated to the one removed in v0.1739, was still calling applySmallScreenOverflow() on every resize -- discovered sitting right next to a second, older, mostly-dead function (checkTopBarOverflow) from an earlier, abandoned attempt at this exact same problem, whose own button-moving logic was already commented out and whose only remaining output (_topBarOverflow) was confirmed unused anywhere in the file. v0.1739 could only remove the resize listener it knew about -- the one it had added itself -- with no way to know this second, pre-existing one was also there. That's exactly why corrections kept logging as successful in the moment: they genuinely were, right up until some later resize event (iOS fires these for non-width changes like the address bar or keyboard) silently reran the whole check and undid it, with nothing left to catch and re-correct that second pass. Removed both the dead checkTopBarOverflow function entirely and its own resize listener, along with the second, still-live one -- confirmed no other callers of checkTopBarOverflow exist anywhere, cleaned up its now-vestigial stub declaration, and corrected a stale comment that still pointed to it. Verified directly: after a correction is applied, firing a resize event (waited past the old 150ms debounce window, to be thorough) no longer undoes it -- the buttons correctly stay in the overflow menu. Suite unchanged: 332/332.
   v0.1740 - NEW: full diagnostic logging for applySmallScreenOverflow(), per Lynn's explicit request. Every call now logs the current note id, window width, UI size setting, whether Speak is icon-only, the actual measured offsetTop of both the More button and the first toolbar button, and the resulting wrapped/not-wrapped determination -- not just when something moves, so entries from different opens of the SAME note can be directly compared to see exactly what differed between a call that worked correctly and one that didn't, rather than guessing. If a correction is applied, a second entry logs whether the single re-check confirmed the wrap actually resolved. Also corrected the record on the previous build's own tests: they used artificial, hand-set offsetTop values to verify the JS logic responds correctly to an ASSUMED wrapped state -- they never verified whether real wrapping actually occurs under real conditions, since this environment has no real browser layout engine and cannot compute CSS flexbox wrapping at all. That distinction wasn't stated clearly before and should have been. Verified only what's actually verifiable here: the logging mechanism itself correctly captures every intended field, tested explicitly with Speak set to NOT icon-only (Lynn's exact repro condition) and an iPhone-width viewport -- confirming the diagnostic captures what's needed, not confirming real-world wrapping behavior, which only Lynn's own device can settle. Suite unchanged: 332/332.
@@ -11129,7 +11130,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1742';
+const APP_VERSION = '0.1743';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -22231,6 +22232,19 @@ function applySmallScreenOverflow() {
     return moreBtn.offsetTop > firstBtn.offsetTop + 2; // small tolerance for sub-pixel rounding
   }
   function showInMainBar() {
+    // v0.1743: per Lynn's explicit question -- log every time this
+    // specific function runs (the one that resets copy/cut/paste back to
+    // visible), with its own caller stack, so it's traceable exactly WHY
+    // they got reset, independent of the overall decision log below.
+    var _swCaller = '?';
+    try {
+      var _swStack = (new Error()).stack.split('\n').slice(1, 4);
+      _swCaller = _swStack.map(function(l) {
+        var m = l.match(/at (\S+)/);
+        return m ? m[1] : l.trim();
+      }).join(' < ');
+    } catch (eSw) {}
+    logSys('showInMainBar: resetting copy/cut/paste to visible, calledFrom=[' + _swCaller + ']');
     if (copyBtn)  copyBtn.style.display  = '';
     if (cutBtn)   cutBtn.style.display   = '';
     if (pasteBtn) pasteBtn.style.display = '';
@@ -26045,6 +26059,30 @@ function makeImportFolderName(label) {
       el.style.display = item.show(_menuState) ? 'flex' : 'none';
       if (item.override) item.override(el, _menuState);
     });
+    // v0.1743: per Lynn's explicit question -- verify, don't assume,
+    // whether the overflow copy/cut/paste items are ACTUALLY in the
+    // More menu at the exact moment it's opened and looked at. Reads
+    // the real, current DOM display values directly here (not relying
+    // on applySmallScreenOverflow()'s own earlier "corrected" log
+    // message, which only reflects what was true at that earlier
+    // moment). If this ever disagrees with what that message claimed,
+    // that's direct proof something between the two moments changed
+    // them without going through the overflow-check code at all.
+    (function() {
+      var _mCopy  = document.getElementById('more-overflow-copy-btn');
+      var _mCut   = document.getElementById('more-overflow-cut-btn');
+      var _mPaste = document.getElementById('more-overflow-paste-btn');
+      var _copyBtn  = document.getElementById('copy-btn');
+      var _cutBtn   = document.getElementById('delete-line-btn');
+      var _pasteBtn = document.getElementById('paste-btn');
+      logSys('openMoreMenu: overflow-item DOM state at open — ' +
+        'mCopy=' + (_mCopy ? _mCopy.style.display : 'MISSING') +
+        ' mCut=' + (_mCut ? _mCut.style.display : 'MISSING') +
+        ' mPaste=' + (_mPaste ? _mPaste.style.display : 'MISSING') +
+        ' | main-bar copyBtn=' + (_copyBtn ? _copyBtn.style.display : 'MISSING') +
+        ' cutBtn=' + (_cutBtn ? _cutBtn.style.display : 'MISSING') +
+        ' pasteBtn=' + (_pasteBtn ? _pasteBtn.style.display : 'MISSING'));
+    })();
     // show-tags checkmark: sync independently of visibility
     var showTagsChk = document.getElementById('more-show-tags-check');
     if (showTagsChk) showTagsChk.style.display = (settings.showTagsInViewer !== false) ? '' : 'none';
