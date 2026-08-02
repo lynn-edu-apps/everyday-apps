@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1753 -->
+<!-- Remember App - Version 0.1754 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1753
+  Version 0.1754
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1754 - FIX: found the actual, final root cause -- every prior fix correctly restored zoom at the MOMENT of transition into EMNI, but Lynn's log showed it breaking again barely half a second later, with no focus or typing event anywhere in between: zoom correctly freed at timestamp .079, then capped again at .641, both from the exact same touchstart listener. Root cause: the editor remains the visible, on-screen element throughout EMNI (until switching back to R&R) -- and the touchstart listener caps on ANY touch landing on it, with no way to distinguish a genuine tap-to-type gesture from the first finger of a pinch-to-zoom gesture. The very act of touching the screen to BEGIN pinching was itself immediately re-capping the zoom before the gesture could ever happen, which is exactly why the bug persisted despite every transition-point fix working correctly in isolation. A pinch's first finger necessarily touches slightly before its second, and that first touch alone still reports touches.length===1 -- so simply skipping multi-touch touchstarts doesn't help, since the cap is already applied by the first finger before the second one ever arrives. Fixed instead by detecting the moment a SECOND finger lands and immediately undoing whatever the first finger's touch may have just capped, since that retroactively proves it was never a single tap-to-type gesture -- the brief cap-then-uncap for the first finger alone happens in a sub-frame window before any real gesture is underway. Verified directly: a genuine single-finger tap still correctly caps (the actual intended trade-off, unaffected); a second finger arriving immediately and correctly releases the cap, confirmed in a clean instance with no state carried over from a prior test. Suite unchanged: 332/332.
   v0.1753 - FIX: v0.1752 only fixed R&R mode -- EMNI (Typing mode with the keyboard NOT showing) was still broken, per Lynn's own precise correction, which also caught a real gap in the fix being planned: EMNI can be reached two genuinely different ways -- fresh entry into Typing mode from R&R (never having been in EMTIP at all this session), and dismissing the keyboard while already in Typing mode -- and a fix aimed only at the second path would have completely missed the first, exactly the scenario she flagged before it was built. Root cause of the fresh-entry case: setViewMode()'s switch-to-Typing branch calls editor.focus({preventScroll:true}) to prepare the cursor for typing -- necessary and correct -- but the zoom-cap system's focusin listener can't tell "editor is programmatically focused" apart from "the keyboard is genuinely showing," and caps regardless, landing fresh EMNI entry incorrectly zoom-locked despite no keyboard ever appearing. Fixed by force-releasing the cap immediately after that focus() call -- it fires synchronously during focus(), so by the time execution resumes the cap is already wrongly applied and needs undoing right there. If the user then genuinely taps into the text, the normal touchstart/focusin path still correctly re-caps at that point, unchanged. Also added the same force-release to the EMTIP-exit blur handler (the actual keyboard-dismiss-while-staying-in-Typing-mode path), as belt and suspenders alongside the existing timer-based restore, which has already been shown unreliable twice. Verified directly, covering all three real states: fresh EMNI entry now correctly stays zoom-free despite the programmatic focus; genuinely tapping into the text still correctly caps (preserving the actual intended trade-off); dismissing the keyboard while remaining in Typing mode now correctly releases. Suite unchanged: 332/332.
   v0.1752 - FIX: found the ACTUAL root cause of the pinch-zoom bug, directly from Lynn's own diagnostic log. At the exact moment setViewMode(true) (switching to R&R mode) was entered, activeElement was ALREADY "BODY" -- focus had already left the editor -- yet the viewport was STILL capped at maximum-scale=1.0, and no "focusout from text field" line appears anywhere in the several preceding seconds. Something moved focus away from the editor (very likely the toolbar view-mode button itself, tapped while the keyboard was still open) WITHOUT a real, catchable focusout event ever firing. This meant v0.1750's explicit editor.blur() call -- which only guarantees a focusout event fires -- was calling blur() on an element that had already lost focus through some other, untraceable path: a genuine no-op, explaining precisely why it made zero improvement despite being technically sound. Fixed by no longer depending on that event at all: exposed a new, directly-callable window._forceReleaseZoomCap(), reusing the exact same unconditional release logic the existing visibilitychange handler already used, and call it directly from both setViewMode(true) and goHome() -- both are the app's own authoritative signal that editing has ended, and shouldn't need to wait for or depend on any DOM event to know that. The original explicit editor.blur() calls are kept in place too, for the normal case where focus genuinely is still on the editor. Verified directly by reproducing Lynn's EXACT scenario: focus the editor (caps the viewport), then simulate focus silently moving to body with NO focusout event ever dispatched (precisely what her log showed), then call setViewMode(true) -- confirmed the cap now correctly releases regardless, since the new mechanism never depends on that event firing at all. Suite unchanged: 332/332.
   v0.1751 - NEW: full diagnostic logging for the pinch-zoom bug, per Lynn's report that v0.1750's explicit-blur fix made no improvement -- meaning the root-cause theory was likely wrong, not just incomplete, since an explicit blur() call is about as reliable as JS gets for triggering a real focusout. Rather than theorize further, added real evidence-gathering, same approach that solved the toolbar-overflow and breadcrumb bugs: (1) the zoom-cap system's own private _cap()/_scheduleFree() functions now log every cap/restore decision directly, including a caller stack for _cap() (called from multiple event listeners) and the exact reason a restore attempt does or doesn't succeed; (2) the focusin/focusout listeners themselves now log every time they fire on a text field, so it's directly visible whether these events are actually firing at all when they should be, not assumed; (3) a new shared diagnostic snapshot function logs the FULL picture at once -- viewport meta content, activeElement, touch-action on both the editor and content area, and the separate "Disable Pinch to Zoom" setting's state (a completely different, CSS-based mechanism that could independently block pinch-zoom and would explain why a fix aimed only at the viewport-cap system had zero effect) -- called at setViewMode's entry, immediately after the blur() call, and again 500ms later once the real restore window has passed. Verified directly: the full logging chain fires correctly end to end and correctly captures every field. Suite unchanged: 332/332.
@@ -11140,7 +11141,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1753';
+const APP_VERSION = '0.1754';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11225,8 +11226,33 @@ const APP_VERSION = '0.1753';
   // touchstart fires before the tap can focus anything -- capping here
   // guarantees the cap is already in force when iOS decides whether to
   // auto-zoom. Only cap when the touch is on (or inside) a text field.
+  // v0.1754 FIX, per Lynn's own log evidence: found the actual reason
+  // zoom kept failing in EMNI even with every transition correctly
+  // force-releasing the cap. This listener capped on ANY touch landing
+  // on the textarea, with no way to tell a genuine tap-to-type gesture
+  // apart from the first finger of a pinch-to-zoom gesture -- and since
+  // the editor remains the visible, on-screen element throughout EMNI
+  // (until switching back to R&R), simply touching it to BEGIN pinching
+  // was itself immediately re-capping the zoom before the gesture could
+  // ever happen. Her log showed this precisely: zoom correctly freed at
+  // 48.079, then capped again at 48.641 -- barely half a second later,
+  // with no focus or typing event anywhere in between, from this exact
+  // listener.
+  // A pinch's first finger necessarily touches slightly before its
+  // second -- that first touch alone still has touches.length===1, so
+  // simply skipping multi-touch touchstarts doesn't help: the cap would
+  // already be applied by the first finger before the second ever
+  // arrives. Instead, the moment a SECOND finger is detected, undo
+  // whatever the first finger's touch may have just capped -- that
+  // retroactively proves it was never a single tap-to-type gesture. The
+  // brief cap-then-uncap for the first finger is a sub-frame window
+  // before the gesture is even underway.
   document.addEventListener('touchstart', function(e) {
     var t = e.target;
+    if (e.touches && e.touches.length > 1) {
+      if (typeof window._forceReleaseZoomCap === 'function') window._forceReleaseZoomCap('multi-touch detected (' + e.touches.length + ' fingers) -- a pinch, not a tap');
+      return;
+    }
     if (_isTextField(t) || (t && t.closest && _isTextField(t.closest('textarea, input')))) _cap();
   }, { capture: true, passive: true });
   document.addEventListener('focusin', function(e) {
