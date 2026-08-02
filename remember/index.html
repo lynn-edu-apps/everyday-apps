@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1751 -->
+<!-- Remember App - Version 0.1752 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1751
+  Version 0.1752
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1752 - FIX: found the ACTUAL root cause of the pinch-zoom bug, directly from Lynn's own diagnostic log. At the exact moment setViewMode(true) (switching to R&R mode) was entered, activeElement was ALREADY "BODY" -- focus had already left the editor -- yet the viewport was STILL capped at maximum-scale=1.0, and no "focusout from text field" line appears anywhere in the several preceding seconds. Something moved focus away from the editor (very likely the toolbar view-mode button itself, tapped while the keyboard was still open) WITHOUT a real, catchable focusout event ever firing. This meant v0.1750's explicit editor.blur() call -- which only guarantees a focusout event fires -- was calling blur() on an element that had already lost focus through some other, untraceable path: a genuine no-op, explaining precisely why it made zero improvement despite being technically sound. Fixed by no longer depending on that event at all: exposed a new, directly-callable window._forceReleaseZoomCap(), reusing the exact same unconditional release logic the existing visibilitychange handler already used, and call it directly from both setViewMode(true) and goHome() -- both are the app's own authoritative signal that editing has ended, and shouldn't need to wait for or depend on any DOM event to know that. The original explicit editor.blur() calls are kept in place too, for the normal case where focus genuinely is still on the editor. Verified directly by reproducing Lynn's EXACT scenario: focus the editor (caps the viewport), then simulate focus silently moving to body with NO focusout event ever dispatched (precisely what her log showed), then call setViewMode(true) -- confirmed the cap now correctly releases regardless, since the new mechanism never depends on that event firing at all. Suite unchanged: 332/332.
   v0.1751 - NEW: full diagnostic logging for the pinch-zoom bug, per Lynn's report that v0.1750's explicit-blur fix made no improvement -- meaning the root-cause theory was likely wrong, not just incomplete, since an explicit blur() call is about as reliable as JS gets for triggering a real focusout. Rather than theorize further, added real evidence-gathering, same approach that solved the toolbar-overflow and breadcrumb bugs: (1) the zoom-cap system's own private _cap()/_scheduleFree() functions now log every cap/restore decision directly, including a caller stack for _cap() (called from multiple event listeners) and the exact reason a restore attempt does or doesn't succeed; (2) the focusin/focusout listeners themselves now log every time they fire on a text field, so it's directly visible whether these events are actually firing at all when they should be, not assumed; (3) a new shared diagnostic snapshot function logs the FULL picture at once -- viewport meta content, activeElement, touch-action on both the editor and content area, and the separate "Disable Pinch to Zoom" setting's state (a completely different, CSS-based mechanism that could independently block pinch-zoom and would explain why a fix aimed only at the viewport-cap system had zero effect) -- called at setViewMode's entry, immediately after the blur() call, and again 500ms later once the real restore window has passed. Verified directly: the full logging chain fires correctly end to end and correctly captures every field. Suite unchanged: 332/332.
   v0.1750 - FIX: pinch-zoom getting stuck disabled after leaving Typing mode, per Lynn's report -- worse specifically via the toolbar view/edit button than double-tap. Found the existing iOS zoom-cap system (an intentional, documented mechanism: while a text field is focused, the viewport's max-zoom is capped to 1.0 to prevent iOS's own jarring auto-zoom-on-focus, restored ~350ms after a genuine focusout). Clarified directly with Lynn: the accepted trade-off was specifically EMTIP (Typing mode with the keyboard actually open) losing pinch -- not the whole of Typing mode, and R&R mode should always have it back. Root cause: setViewMode()'s switch-to-R&R branch hid the editor via display:none without ever explicitly blurring it first -- and whether hiding a still-focused element via CSS reliably fires a real focusout on its own is inconsistent and known to be unreliable on iOS Safari specifically, rather than something to depend on implicitly. Confirmed directly that the app's own EMTIP/EMNI keyboard-open tracking depends on this exact same focusout event too (not a separate, disagreeing signal), and that the two existing "Done typing" handlers already blur explicitly and correctly -- narrowing the actual gap to specifically the Typing-to-R&R transition. Fixed by calling editor.blur() explicitly before hiding it in setViewMode(), guaranteeing a real focusout fires regardless of which code path triggered the mode switch, rather than depending on the browser's implicit behavior. Also added the same defensive blur to goHome(), for the separate case of exiting a note directly from Typing mode without ever switching to R&R first -- the editor could still be focused when the whole note screen gets hidden via a CSS class toggle, the identical underlying risk. Verified end to end with iOS mocked: focusing the editor correctly caps the viewport; switching to R&R via setViewMode() correctly blurs it; after the real 350ms restore delay, the viewport is correctly restored to allow pinch-zoom again; exiting a note directly from Typing mode via goHome() also correctly blurs. Suite unchanged: 332/332.
   v0.1749 - THREE pieces, per Lynn. (1) FIX: export reminder nagged on every single app launch once its thresholds were crossed, per Lynn's report -- confirmed by reading the original v0.1683 design directly: it only had a ONE-TIME 3-day grace period before the reminder could first fire, never a repeating cooldown between separate showings, so once crossed, the same check re-fired on every subsequent launch with nothing tracking when it had last actually been shown. Added a genuine cooldown (2 days, matching Lynn's own recollection of the intended design) via a new tracked timestamp, lastExportNagShownAt, recorded only when the notice is actually shown. (2) NEW: consolidated the "switch to Home Screen + render its list" pair into one shared helper, goToHomeScreen() -- direct response to Lynn's question of how to prevent bugs like the breadcrumb one from recurring. The correct order between these two calls (showScreen must run first) was found to have been gotten wrong independently in FIVE separate places throughout the file. Replaced all five with the new helper, so the correct order is now structurally guaranteed in one place instead of five places each needing to remember it correctly on their own. (3) NEW: a loud, non-transient toast warning for the exact failure mode just fixed, per Lynn's explicit request that a debug-log entry alone isn't enough during alpha testing -- it's exactly what let this bug go unnoticed through several rounds of testing. renderNotesList()'s own three internal calls to pinHomeScreenElements() now route through a wrapper that checks for the specific anomaly (note-screen-active still set when it shouldn't be) and immediately shows a persistent, must-dismiss toast if so -- deliberately NOT applied to pinHomeScreenElements()'s other callers (like a settings-change handler), where hitting this same guard can be completely legitimate. Verified directly: the cooldown correctly blocks a repeat nag within 2 days and correctly allows one again after; the new helper correctly performs both steps in the right order; the loud toast correctly fires for the exact anomaly scenario and correctly does NOT fire during normal, correct operation (no false positives). Suite unchanged: 332/332.
@@ -11138,7 +11139,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1751';
+const APP_VERSION = '0.1752';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11279,6 +11280,30 @@ const APP_VERSION = '0.1751';
       vp.setAttribute('content', FREE);
     }
   });
+  // v0.1752 NEW, per Lynn's own log evidence: exposes a directly-callable
+  // force-release, bypassing the event system entirely. Her log showed
+  // the actual root cause precisely -- at the moment setViewMode(true)
+  // was entered, activeElement was ALREADY "BODY" (focus had already
+  // left the editor), yet the cap was STILL applied, and no
+  // "focusout from text field" line appears anywhere in the preceding
+  // several seconds. Something moved focus away from the editor (very
+  // likely the toolbar view-mode button itself, tapped while the
+  // keyboard was still up) WITHOUT a real, catchable focusout event ever
+  // firing -- meaning v0.1750's explicit editor.blur() call, which only
+  // guarantees focusout fires, was calling blur() on an element that had
+  // already lost focus by another means: a genuine no-op, explaining
+  // exactly why it made no improvement. setViewMode() is the app's own
+  // authoritative signal that editing has ended (switching to R&R mode)
+  // -- it shouldn't need to wait for or depend on any DOM event to know
+  // that. Reuses the exact same unconditional release logic the
+  // visibilitychange listener above already uses.
+  window._forceReleaseZoomCap = function(reason) {
+    if (_restoreTimer) { clearTimeout(_restoreTimer); _restoreTimer = null; }
+    var wasCapped = _capped;
+    _capped = false;
+    vp.setAttribute('content', FREE);
+    if (typeof logSys === 'function') logSys('zoom-cap: FORCE-RELEASED (' + (reason || 'no reason given') + '), wasCapped=' + wasCapped + '. content=' + vp.getAttribute('content'));
+  };
 })();
 
 // v0.1746: separate, independent visibilitychange listener, per Lynn's
@@ -17882,6 +17907,15 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
     // triggered the mode switch. Harmless no-op if the editor didn't
     // currently have focus.
     editor.blur();
+    // v0.1752 FIX, per Lynn's own log evidence: the explicit blur() above
+    // (kept, still correct for the normal case) can't help when focus has
+    // ALREADY left the editor through some path that never fired a real
+    // focusout -- her log showed exactly that. This call doesn't depend
+    // on any event at all: setViewMode(true) switching to R&R mode is
+    // itself the authoritative signal that editing has ended, so force
+    // the cap released directly, regardless of what focus/blur state
+    // preceded this call.
+    if (typeof window._forceReleaseZoomCap === 'function') window._forceReleaseZoomCap('setViewMode(true)');
     _logZoomDiagnostic('setViewMode(true) right after editor.blur()');
     editor.style.display = 'none';
     viewer.style.display = 'block';
@@ -20550,6 +20584,10 @@ function goHome() {
   // element's ancestor gets hidden. Harmless no-op if not focused.
   var _editorAtExit = document.getElementById('note-editor');
   if (_editorAtExit) _editorAtExit.blur();
+  // v0.1752: same fix as setViewMode(true) -- see its own comment for
+  // the full explanation. Leaving the note is itself the authoritative
+  // signal that editing has ended.
+  if (typeof window._forceReleaseZoomCap === 'function') window._forceReleaseZoomCap('goHome()');
   // Exit any pending modes before leaving
   if (typeof pasteMode !== 'undefined' && pasteMode) exitPasteMode();
   if (typeof _tagAC !== 'undefined') _tagAC.hide();
