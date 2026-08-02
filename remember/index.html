@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1749 -->
+<!-- Remember App - Version 0.1750 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1749
+  Version 0.1750
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1750 - FIX: pinch-zoom getting stuck disabled after leaving Typing mode, per Lynn's report -- worse specifically via the toolbar view/edit button than double-tap. Found the existing iOS zoom-cap system (an intentional, documented mechanism: while a text field is focused, the viewport's max-zoom is capped to 1.0 to prevent iOS's own jarring auto-zoom-on-focus, restored ~350ms after a genuine focusout). Clarified directly with Lynn: the accepted trade-off was specifically EMTIP (Typing mode with the keyboard actually open) losing pinch -- not the whole of Typing mode, and R&R mode should always have it back. Root cause: setViewMode()'s switch-to-R&R branch hid the editor via display:none without ever explicitly blurring it first -- and whether hiding a still-focused element via CSS reliably fires a real focusout on its own is inconsistent and known to be unreliable on iOS Safari specifically, rather than something to depend on implicitly. Confirmed directly that the app's own EMTIP/EMNI keyboard-open tracking depends on this exact same focusout event too (not a separate, disagreeing signal), and that the two existing "Done typing" handlers already blur explicitly and correctly -- narrowing the actual gap to specifically the Typing-to-R&R transition. Fixed by calling editor.blur() explicitly before hiding it in setViewMode(), guaranteeing a real focusout fires regardless of which code path triggered the mode switch, rather than depending on the browser's implicit behavior. Also added the same defensive blur to goHome(), for the separate case of exiting a note directly from Typing mode without ever switching to R&R first -- the editor could still be focused when the whole note screen gets hidden via a CSS class toggle, the identical underlying risk. Verified end to end with iOS mocked: focusing the editor correctly caps the viewport; switching to R&R via setViewMode() correctly blurs it; after the real 350ms restore delay, the viewport is correctly restored to allow pinch-zoom again; exiting a note directly from Typing mode via goHome() also correctly blurs. Suite unchanged: 332/332.
   v0.1749 - THREE pieces, per Lynn. (1) FIX: export reminder nagged on every single app launch once its thresholds were crossed, per Lynn's report -- confirmed by reading the original v0.1683 design directly: it only had a ONE-TIME 3-day grace period before the reminder could first fire, never a repeating cooldown between separate showings, so once crossed, the same check re-fired on every subsequent launch with nothing tracking when it had last actually been shown. Added a genuine cooldown (2 days, matching Lynn's own recollection of the intended design) via a new tracked timestamp, lastExportNagShownAt, recorded only when the notice is actually shown. (2) NEW: consolidated the "switch to Home Screen + render its list" pair into one shared helper, goToHomeScreen() -- direct response to Lynn's question of how to prevent bugs like the breadcrumb one from recurring. The correct order between these two calls (showScreen must run first) was found to have been gotten wrong independently in FIVE separate places throughout the file. Replaced all five with the new helper, so the correct order is now structurally guaranteed in one place instead of five places each needing to remember it correctly on their own. (3) NEW: a loud, non-transient toast warning for the exact failure mode just fixed, per Lynn's explicit request that a debug-log entry alone isn't enough during alpha testing -- it's exactly what let this bug go unnoticed through several rounds of testing. renderNotesList()'s own three internal calls to pinHomeScreenElements() now route through a wrapper that checks for the specific anomaly (note-screen-active still set when it shouldn't be) and immediately shows a persistent, must-dismiss toast if so -- deliberately NOT applied to pinHomeScreenElements()'s other callers (like a settings-change handler), where hitting this same guard can be completely legitimate. Verified directly: the cooldown correctly blocks a repeat nag within 2 days and correctly allows one again after; the new helper correctly performs both steps in the right order; the loud toast correctly fires for the exact anomaly scenario and correctly does NOT fire during normal, correct operation (no false positives). Suite unchanged: 332/332.
   v0.1748 - FIX: found the ACTUAL root cause for the remaining breadcrumb-missing case, from Lynn re-running the exact same scenario on the v0.1747 build and getting the identical symptom -- since the folder involved clearly wasn't empty (it had a note in it, confirmed by the log), the previous build's fix genuinely didn't apply here, exactly as flagged. The distinguishing pattern across both logs was unmistakable: every render triggered by directly tapping a folder from the list worked correctly; only the one triggered by goHome() (returning from a note back into its folder) consistently failed. Traced goHome() directly and found it: renderNotesList() was called BEFORE showScreen('home-screen') -- but showScreen() is the only thing that clears the note-screen-active class, and pinHomeScreenElements() (called at the very end of renderNotesList()) begins with a guard that returns immediately while that class is still present. Calling renderNotesList() first meant that guard was still seeing the note screen's own, not-yet-cleared state, silently exiting before ever reaching the breadcrumb margin code -- every single time a note was exited this way. A plain, deterministic ordering mistake, not timing, and it explains precisely why direct folder-tap navigation always worked (that path never went through this wrong order) while this one never did. Fixed by swapping the order in goHome() (both its normal exit and its auto-delete-empty-note early return), then searched specifically for the same exact wrong-order pattern anywhere else in the file and found two more genuine instances -- the app's initial-load path and the Siri Shortcut/URL-action "note not found" path -- fixed identically. Verified directly: reproduced Lynn's exact scenario end to end (open a folder, open a note inside it, exit via goHome()) and confirmed the breadcrumb now correctly receives a real margin value clearing the header, where before it would have silently stayed empty. Suite unchanged: 332/332.
   v0.1747 - FIX: found a genuine, confirmed structural gap in renderNotesList(), from directly reading Lynn's own log. Her log showed the breadcrumb correctly created (confirmed present in the DOM) right after returning from a note back into its folder -- but, unlike every other successful case earlier in that same log, no pinHomeScreenElements() margin-decision entry ever followed it. Traced the actual code and found two early `return` statements in renderNotesList() -- one for an empty folder, one for zero search results -- both of which exit the function completely before ever reaching pinHomeScreenElements() at the very end. Since the breadcrumb is created earlier in the SAME function call, either path leaves it correctly present in the DOM but with no margin ever set to clear the fixed header, making it invisible behind it. A plain, deterministic structural gap, not timing: whenever a folder happens to render as empty (or a search inside one finds nothing) while the breadcrumb is showing, this happens every single time, guaranteed. Fixed by calling pinHomeScreenElements() before both early returns. One honest caveat: the specific folder in Lynn's log did have at least one note in it, so this exact path isn't confirmed as the trigger for that particular instance -- but it's a real, separately-confirmed bug regardless, and would produce exactly this symptom under the right conditions. Verified directly: an empty folder, and a folder with an active search matching nothing, both now correctly set the breadcrumb's margin before returning. Suite unchanged: 332/332.
@@ -11136,7 +11137,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1749';
+const APP_VERSION = '0.1750';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -17808,6 +17809,20 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
     if (saveTimeout) { clearTimeout(saveTimeout); saveCurrentNote(); }
     renderViewer(editor.value);
     renderBlockSelections();
+    // v0.1750 FIX, per Lynn's report: pinch-zoom getting stuck disabled
+    // after leaving Typing mode, more often via the toolbar button than
+    // double-tap. Root cause: this used to just hide the editor
+    // (display:none) without ever explicitly blurring it first. The
+    // iOS pinch-zoom-cap system (see the IIFE around line 11162) relies
+    // entirely on a genuine focusout event to know when to restore
+    // pinch-zoom -- and whether hiding a still-focused element via CSS
+    // reliably fires that event on its own is inconsistent and known to
+    // be unreliable on iOS Safari specifically, rather than something
+    // to depend on implicitly. Calling blur() explicitly here guarantees
+    // a real focusout fires every time, regardless of which code path
+    // triggered the mode switch. Harmless no-op if the editor didn't
+    // currently have focus.
+    editor.blur();
     editor.style.display = 'none';
     viewer.style.display = 'block';
     if (oopsBar) oopsBar.style.display = 'none';
@@ -20465,6 +20480,15 @@ function goHome() {
   if (currentNoteId && notes[currentNoteId] && !notes[currentNoteId].isDebugLog) {
     logDebugAction('Exited note: "' + (notes[currentNoteId].name || '(untitled)') + '"');
   }
+  // v0.1750: same reasoning as the setViewMode fix -- if the user exits
+  // directly from Typing mode (never switching to R&R first), the editor
+  // could still be focused when showScreen() hides the whole note screen
+  // via a CSS class toggle. Explicit blur guarantees the real focusout
+  // the iOS pinch-zoom-cap system needs, rather than depending on the
+  // browser's implicit (and iOS-unreliable) behavior when a focused
+  // element's ancestor gets hidden. Harmless no-op if not focused.
+  var _editorAtExit = document.getElementById('note-editor');
+  if (_editorAtExit) _editorAtExit.blur();
   // Exit any pending modes before leaving
   if (typeof pasteMode !== 'undefined' && pasteMode) exitPasteMode();
   if (typeof _tagAC !== 'undefined') _tagAC.hide();
