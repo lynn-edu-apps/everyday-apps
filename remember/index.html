@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1740 -->
+<!-- Remember App - Version 0.1741 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1740
+  Version 0.1741
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1741 - FIX: found the ACTUAL root cause of the toolbar-overflow intermittency, from reading Lynn's own debug log with her precise clarification -- every logged correction had claimed success, but she confirmed several of them did not actually stick. That mismatch was the real clue: a SEPARATE, completely independent window.resize listener, unrelated to the one removed in v0.1739, was still calling applySmallScreenOverflow() on every resize -- discovered sitting right next to a second, older, mostly-dead function (checkTopBarOverflow) from an earlier, abandoned attempt at this exact same problem, whose own button-moving logic was already commented out and whose only remaining output (_topBarOverflow) was confirmed unused anywhere in the file. v0.1739 could only remove the resize listener it knew about -- the one it had added itself -- with no way to know this second, pre-existing one was also there. That's exactly why corrections kept logging as successful in the moment: they genuinely were, right up until some later resize event (iOS fires these for non-width changes like the address bar or keyboard) silently reran the whole check and undid it, with nothing left to catch and re-correct that second pass. Removed both the dead checkTopBarOverflow function entirely and its own resize listener, along with the second, still-live one -- confirmed no other callers of checkTopBarOverflow exist anywhere, cleaned up its now-vestigial stub declaration, and corrected a stale comment that still pointed to it. Verified directly: after a correction is applied, firing a resize event (waited past the old 150ms debounce window, to be thorough) no longer undoes it -- the buttons correctly stay in the overflow menu. Suite unchanged: 332/332.
   v0.1740 - NEW: full diagnostic logging for applySmallScreenOverflow(), per Lynn's explicit request. Every call now logs the current note id, window width, UI size setting, whether Speak is icon-only, the actual measured offsetTop of both the More button and the first toolbar button, and the resulting wrapped/not-wrapped determination -- not just when something moves, so entries from different opens of the SAME note can be directly compared to see exactly what differed between a call that worked correctly and one that didn't, rather than guessing. If a correction is applied, a second entry logs whether the single re-check confirmed the wrap actually resolved. Also corrected the record on the previous build's own tests: they used artificial, hand-set offsetTop values to verify the JS logic responds correctly to an ASSUMED wrapped state -- they never verified whether real wrapping actually occurs under real conditions, since this environment has no real browser layout engine and cannot compute CSS flexbox wrapping at all. That distinction wasn't stated clearly before and should have been. Verified only what's actually verifiable here: the logging mechanism itself correctly captures every intended field, tested explicitly with Speak set to NOT icon-only (Lynn's exact repro condition) and an iPhone-width viewport -- confirming the diagnostic captures what's needed, not confirming real-world wrapping behavior, which only Lynn's own device can settle. Suite unchanged: 332/332.
   v0.1739 - FIX: v0.1738's toolbar-overflow fix was intermittent -- sometimes correctly moving copy/cut/paste to the More menu, sometimes not, even for the exact same note, per Lynn's report. Per Lynn's own diagnosis and explicit guidance (not a timing/race-condition theory, which she specifically asked to rule out first): v0.1738 also re-ran the full check on every window resize event, but phones and tablets don't get resized by the user, and iOS is known to fire resize for things that aren't a real width change at all -- the address bar showing/hiding, the keyboard appearing. Re-running "reset to visible, then measure, then possibly hide again" on every one of those spurious events is very likely the actual cause of the repeated back-and-forth flipping Lynn recalled from earlier attempts at this same problem -- not a race condition, just this function being triggered far more often than the real toolbar width could ever change. Rewritten per her exact guidance: the resize listener is removed entirely; the function now runs only from genuine recalculation moments (opening/re-entering a note, a settings change like button size) -- the same three call sites already in place, none of them resize-driven. Within one call, it does at most ONE corrective pass: measure, and only if wrapped, move copy/cut/paste to the menu and measure exactly once more to confirm the wrap actually resolved -- never loops, never re-triggers itself. Verified directly, including the specific case Lynn was concerned about: a scenario engineered so the wrap can never resolve confirms the function still returns immediately rather than looping or hanging; a second, independent call (simulating reopening the note) is confirmed to be a fresh, correct evaluation rather than compounding on the previous one. Suite unchanged: 332/332.
   v0.1738 - FIX: the upper toolbar's More button wrapped to a second line at Medium icon size instead of correctly moving cut/copy/paste into the More menu first, per Lynn's report -- reproducible specifically when the Speak button isn't set to icon-only, working correctly at Large. A genuinely pre-existing bug (confirmed by reading the code, not something the recent sizing work introduced): the check was `settings.uiSize === 'large' || 'xlarge'` -- a hardcoded GUESS based on the size setting's name, never an actual measurement of whether the toolbar's real content genuinely overflows. At Medium this guess was always false, so cut/copy/paste never moved to the menu no matter how wide the toolbar's actual content got -- exactly why it broke specifically when Speak's label added real width the old check had no way to know about, while working at Large only because the hardcoded guess happened to already be true there, for an unrelated reason. Replaced with a genuine measurement: does the More button actually sit on a different line than the first button in the row (comparing their real offsetTop, not a proxy setting)? Resets cut/copy/paste to their natural, fully-visible state before every measurement, so a stale "already moved" state from an earlier, narrower measurement can't understate the toolbar's current true width and prevent items correctly returning to the main bar once there's room again. Also added a resize listener, since a real measurement (unlike the old static guess) needs to be re-checked whenever the available width actually changes. Verified directly across all three real states: fits on one line (nothing moves), wraps (cut/copy/paste correctly move to the overflow menu, exactly the reported bug), and widening back out (items correctly return rather than staying stuck in the menu). Suite unchanged: 332/332.
@@ -11127,7 +11128,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1740';
+const APP_VERSION = '0.1741';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13382,7 +13383,6 @@ var applyBoldCursorSetting = function() {};
 // "module-level scope" rule, applied here after nearly repeating the
 // mistake it warns about). Promoted to the standard stub pattern.
 var buildToolbarVisibilityRows = function() {};
-var checkTopBarOverflow = function() {}; // defined inside init() // replaced in init
 var _updateRuledLineRowVisibility = function() {}; // defined inside init(); called from openSettings() too — must be module-level
 var closeAllBars = function() {}; // replaced in init
 var updateTagFilterIndicator = function() {}; // replaced in init
@@ -24696,61 +24696,26 @@ function makeImportFolderName(label) {
     });
   }
 
-  // Top toolbar overflow detection — moves cut/copy/paste to More menu if no room
-  var _topBarOverflow = false;
-  var _overflowDebounce = null;
-  checkTopBarOverflow = function() {
-    var moreBtn = document.getElementById('top-more-btn');
-    var headerRight = document.querySelector('.note-header-right');
-    if (!moreBtn || !headerRight) return;
-    // Use offsetWidth arithmetic — reliable on mobile without needing getBoundingClientRect
-    // Available space = headerRight width minus the More button's own width
-    var available = headerRight.clientWidth - moreBtn.offsetWidth;
-    // Used space = sum of offsetWidth of all visible buttons except More button
-    var used = 0;
-    var btns = headerRight.querySelectorAll('button:not(#top-more-btn)');
-    btns.forEach(function(b) {
-      if (window.getComputedStyle(b).display !== 'none') used += b.offsetWidth;
-    });
-    var overflow = used > available;
-    _topBarOverflow = overflow;
-    /* DISABLED — copy/cut/paste overflow hiding commented out.
-       The toolbar now wraps to a second line instead.
-       Keep this code — may want to re-enable if wrapping is removed.
-    var copyBtn  = document.getElementById('copy-btn');
-    var cutBtn   = document.getElementById('delete-line-btn');
-    var pasteBtn = document.getElementById('paste-btn');
-    var mCopy  = document.getElementById('more-overflow-copy-btn');
-    var mCut   = document.getElementById('more-overflow-cut-btn');
-    var mPaste = document.getElementById('more-overflow-paste-btn');
-    if (overflow) {
-      if (copyBtn)  copyBtn.style.display  = 'none';
-      if (cutBtn)   cutBtn.style.display   = 'none';
-      if (pasteBtn) pasteBtn.style.display = 'none';
-      if (mCopy)  mCopy.style.display  = 'flex';
-      if (mCut)   mCut.style.display   = 'flex';
-      if (mPaste) mPaste.style.display = 'flex';
-    } else {
-      if (copyBtn)  copyBtn.style.display  = '';
-      if (cutBtn)   cutBtn.style.display   = '';
-      if (pasteBtn) pasteBtn.style.display = '';
-      if (mCopy)  mCopy.style.display  = 'none';
-      if (mCut)   mCut.style.display   = 'none';
-      if (mPaste) mPaste.style.display = 'none';
-    }
-    */
-  }
-  var debouncedCheckTopBarOverflow = function() {
-    clearTimeout(_overflowDebounce);
-    _overflowDebounce = setTimeout(checkTopBarOverflow, 150);
-  };
-  window.addEventListener('resize', debouncedCheckTopBarOverflow);
-  // Also re-apply small screen overflow policy on resize
-  var _smallScreenResizeDebounce = null;
-  window.addEventListener('resize', function() {
-    clearTimeout(_smallScreenResizeDebounce);
-    _smallScreenResizeDebounce = setTimeout(applySmallScreenOverflow, 150);
-  });
+  // v0.1741 FIX, per Lynn's diagnosis from her own debug log: found the
+  // ACTUAL root cause of the intermittent overflow bug. This entire
+  // checkTopBarOverflow mechanism is dead code from an earlier, abandoned
+  // attempt at this exact same problem (its own button-moving logic was
+  // already commented out, and _topBarOverflow -- the only thing it still
+  // computed -- was confirmed unused anywhere else in the file). But its
+  // resize listener was still live, and right next to it was a SEPARATE,
+  // completely independent resize listener that also called
+  // applySmallScreenOverflow() directly. v0.1739 removed only the resize
+  // listener that had been added at the end of applySmallScreenOverflow()
+  // itself, with no idea this second, older one existed elsewhere in the
+  // file -- so the exact same problem (re-running the full check on every
+  // resize, including iOS's spurious ones for the address bar or
+  // keyboard) was still happening the whole time, just from a different
+  // call site. This explains precisely what Lynn's log showed: every
+  // correction logged as successful in the moment, then silently undone
+  // later when this listener fired again on some subsequent resize, with
+  // nothing left to catch and re-correct it. Both listeners, and the
+  // entire dead checkTopBarOverflow function, are removed here.
+
   // Small screen overflow applied via applySettings on load
   document.getElementById('back-btn').addEventListener('mousedown', function(e) {
     e.preventDefault(); // prevent blur firing before our click handler
@@ -25901,7 +25866,7 @@ function makeImportFolderName(label) {
   //   more-done-typing-btn   — part of EMTIP <div> section, handled as a group
   //   more-jump-to-btn       — managed by updateJumpToBtn() (heading detection)
   //   more-ruler-btn         — managed by applyRulerSettings() (settings gate)
-  //   overflow copy/cut/paste — managed by checkTopBarOverflow()
+  //   overflow copy/cut/paste — managed by applySmallScreenOverflow()
   //   always-visible items   — no entry needed; CSS keeps them visible by default
   var MORE_MENU_ITEMS = [
     // ── R&R mode only ──────────────────────────────────────────────────────
