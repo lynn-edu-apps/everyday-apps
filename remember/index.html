@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1745 -->
+<!-- Remember App - Version 0.1746 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1745
+  Version 0.1746
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1746 - NEW: diagnostic logging for the sometimes-missing folder breadcrumb on iOS PWA, per Lynn's request -- starting the same evidence-first approach that just solved the toolbar-overflow bug, rather than guessing further. Confirmed first that nothing had been added for this specific bug yet (only pre-existing, narrower "FOLDER ANOMALY" logging that covers just one failure mode -- currentFolderId pointing at a folder that no longer exists). Three additions: (1) renderNotesList() now logs its breadcrumb creation decision every time it runs -- currentFolderId, whether the folder actually exists, and whether it decided to create the element -- plus a direct verification that the element genuinely landed in the DOM right after insertBefore, rather than assuming it did. (2) pinHomeScreenElements() now logs its own decision whenever a breadcrumb element exists -- which element was determined to be first-visible, the computed header height, and the actual marginTop value set, with a call stack, since this function has multiple trigger points. (3) A new, separate visibilitychange listener (kept independent from the two existing ones in this file, matching this app's own established convention for these) logs the breadcrumb's real DOM state -- exists, current marginTop -- on every background/foreground transition. This exact app already has a precedented, documented bug class here (v0.1657, pinch-zoom getting stuck on iOS PWA) where backgrounding can leave stale state that predates a suspension without firing expected events, so this specifically captures facts across that transition rather than assuming it's the cause. Verified directly: navigating into a folder correctly logs the decision and creation; simulated background/foreground events correctly log the breadcrumb's real state on each; the margin-decision logging correctly fires and captures the right values once realistic layout measurements are present. Suite unchanged: 332/332.
   v0.1745 - FIX: found and fixed the actual root cause, from Lynn's own precise comparison of two logged runs -- her second test deliberately skipped opening the More menu specifically to keep the data simple, and it worked. Same note, same view-mode transition, identical window width logged in every line -- one measurement read 6px (correctly not wrapped), another read 48px (wrapped), and the ONLY difference between their two visible-button lists (added in the last build specifically to catch this) was select-blocks-btn ("Select Lines"). Root cause, confirmed by reading the exact code order: applySmallScreenOverflow() ran PARTWAY through updateViewOnlyBtns() -- specifically, before select-blocks-btn (and everything else set after it, all the way to the end of the function) had its own visibility finalized for the CURRENT call. The check was measuring select-blocks-btn's STALE value left over from the PREVIOUS call, not what it was about to become moments later in the very same invocation -- a plain, deterministic ordering bug inside one function, never a timing issue of any kind, exactly matching what Lynn asked to rule out from the very start. Fixed by moving the overflow check to the true end of updateViewOnlyBtns(), after every single button it sets has been finalized for that call -- not just past select-blocks-btn specifically, since other buttons set later in the same function could plausibly have had the identical problem. Verified directly: engineered the exact stale-state scenario from the log (select-blocks-btn left hidden from a prior call, then switching to view mode) and confirmed the overflow check's own visible-button list now correctly includes select-blocks-btn in the SAME measurement that turns it visible, rather than one call behind. Suite unchanged: 332/332.
   v0.1744 - NEW: full visible-button-list logging, found necessary by actually tracing through Lynn's newest log line by line with the added stack traces. Real progress this round: the log clearly showed the SAME note, in the SAME view mode, with window.innerWidth logged as exactly 402 in every single line (the viewport genuinely never changed) -- yet one measurement read 6px (correctly not wrapped) and another, three seconds later, read 48px (wrapped), with only opening the More menu in between. Checked two plausible CSS-driven causes directly and ruled both out: neither the view-only-mode class nor the toolbar-collapsed class touch anything in the upper toolbar row at all (confirmed by reading their actual CSS rules, not assumed). Since the viewport didn't change, the row's own CONTENT must have -- but the logging so far only ever recorded the two measured positions, never which specific buttons were actually visible at each moment, so there was no way to see WHICH one differed. Added exactly that: every overflow check now lists every currently-visible button in the row by id at the moment of measurement, since updateViewOnlyBtns() (which runs immediately before every check) sets visibility for several other buttons based on note state, any of which is now the leading suspect for the real, additional cause. Verified directly: the new field correctly lists the actual visible buttons by id. Suite unchanged: 332/332.
   v0.1743 - NEW: verification-focused logging, per Lynn's specific, pointed questions -- not just logging the DECISION, but verifying the actual DOM state independently rather than trusting the decision's own claim, and investigating a concrete new hypothesis she raised (the More menu being rebuilt without the moved items) rather than only adding more logging blindly. Checked directly: the overflow items are NOT registered in MORE_MENU_ITEMS (so that table's own rebuild loop can't silently overwrite them), and confirmed structurally (not just by test) that #toolbar-more-hidden-items -- the container that DOES get its innerHTML wiped on every menu open -- is a completely separate, initially-empty element from where the overflow buttons actually live in the HTML, so that rebuild mechanism cannot be destroying them either. Along the way, the new call-stack logging surfaced something not previously known: opening the More menu itself triggers a full fresh re-check of its own, via openMoreMenu -> rebuildMoreMenuItems -> updateViewOnlyBtns -> applySmallScreenOverflow -- a real, additional trigger point beyond the three already known. Added exactly what Lynn asked for: showInMainBar() (the function that resets copy/cut/paste back to visible) now logs every single time it runs, with its own caller stack; openMoreMenu() now reads and logs the ACTUAL current DOM display values of both the overflow items and the main-bar buttons at the exact moment the menu is opened and looked at, independent of what any earlier "corrected" message claimed -- if these two ever disagree in a real log, that's direct, undeniable proof something changed them in between without going through the overflow-check code at all. Verified directly: triggered the real click handler (not a synthetic function call, since openMoreMenu isn't exposed globally) and confirmed the full logging chain fires correctly end to end, including correctly naming the newly-discovered rebuildMoreMenuItems call path. Suite unchanged: 332/332.
@@ -11132,7 +11133,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1745';
+const APP_VERSION = '0.1746';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -11242,6 +11243,28 @@ const APP_VERSION = '0.1745';
     }
   });
 })();
+
+// v0.1746: separate, independent visibilitychange listener, per Lynn's
+// request to start diagnosing the sometimes-missing-breadcrumb bug --
+// this exact app already has a precedented, documented bug class
+// (v0.1657) where iOS can suspend a PWA without firing expected events,
+// leaving stale state that predates the suspension. This only captures
+// facts across a background/foreground cycle (does the breadcrumb's
+// actual DOM state look different immediately before backgrounding vs.
+// immediately after resuming) -- not an assumption that backgrounding
+// IS the cause, just gathering the same kind of real evidence that
+// already found and fixed the toolbar-overflow bug.
+document.addEventListener('visibilitychange', function() {
+  try {
+    var _bc = document.getElementById('folder-breadcrumb');
+    var _onHome = !document.body.classList.contains('note-screen-active');
+    logSys('visibilitychange: state=' + document.visibilityState +
+      ' onHomeScreen=' + _onHome +
+      ' currentFolderId=' + (typeof currentFolderId !== 'undefined' ? currentFolderId : '?') +
+      ' breadcrumbExists=' + !!_bc +
+      ' breadcrumbMarginTop=' + (_bc ? _bc.style.marginTop : 'n/a'));
+  } catch (eVis2) {}
+});
 
 // ===== STORAGE NAMESPACE (v0.1508) =====
 // All three deployments (remember/, remember-stable/, remember-dev/)
@@ -12711,6 +12734,29 @@ function pinHomeScreenElements() {
     if (selectBar) selectBar.style.marginTop = (firstVisible === 'select') ? headerH + 'px' : '';
     if (breadcrumb) breadcrumb.style.marginTop = (firstVisible === 'breadcrumb') ? headerH + 'px' : '';
     if (list) list.style.paddingTop = (firstVisible === 'list') ? (headerH + 16) + 'px' : '16px';
+    // v0.1746: logging, per Lynn's request to start diagnosing the
+    // sometimes-missing-breadcrumb bug the same way the toolbar-overflow
+    // one was just solved. Only logs when a breadcrumb element actually
+    // exists right now (getElementById found one) -- otherwise this
+    // would fire on every single normal Home Screen render at root
+    // level, drowning out the useful entries. Includes a call stack,
+    // since this function has multiple trigger points (end of
+    // renderNotesList, window resize).
+    if (breadcrumb) {
+      var _pinCaller = '?';
+      try {
+        var _pinStack = (new Error()).stack.split('\n').slice(1, 4);
+        _pinCaller = _pinStack.map(function(l) {
+          var m = l.match(/at (\S+)/);
+          return m ? m[1] : l.trim();
+        }).join(' < ');
+      } catch (ePin) {}
+      logSys('pinHomeScreenElements: breadcrumb margin decision — firstVisible=' + firstVisible +
+        ' headerH=' + headerH +
+        ' marginTopSet=' + breadcrumb.style.marginTop +
+        ' currentFolderId=' + (typeof currentFolderId !== 'undefined' ? currentFolderId : '?') +
+        ' calledFrom=[' + _pinCaller + ']');
+    }
   }
   if (fab) {
     applyZoomPositionCompensation(fab, { right: 24, bottom: 28 }, '', 'bottom right');
@@ -15920,6 +15966,14 @@ function renderNotesList() {
   // Update breadcrumb
   var existingBC = document.getElementById('folder-breadcrumb');
   if (existingBC) existingBC.remove();
+  // v0.1746: logging, per Lynn's request to start diagnosing the
+  // sometimes-missing-breadcrumb bug the same way the toolbar-overflow
+  // one was just solved -- log every decision here, not just when
+  // something looks wrong, so a "worked" run and a "didn't" run can be
+  // compared directly later.
+  logSys('renderNotesList: breadcrumb decision — currentFolderId=' + currentFolderId +
+    ' folderExists=' + !!(currentFolderId && folders[currentFolderId]) +
+    ' willCreateBreadcrumb=' + !!(currentFolderId && folders[currentFolderId]));
   if (currentFolderId && folders[currentFolderId]) {
     var bc = document.createElement('div');
     bc.id = 'folder-breadcrumb';
@@ -15930,6 +15984,11 @@ function renderNotesList() {
       '</button>' +
       '<span class="folder-breadcrumb-name">' + escHtml(folders[currentFolderId].name) + '</span>';
     list.parentElement.insertBefore(bc, list);
+    // v0.1746: verify the element actually landed in the DOM where
+    // expected, right after inserting it -- don't assume insertBefore
+    // succeeded silently.
+    logSys('renderNotesList: breadcrumb created — inDOM=' + !!document.getElementById('folder-breadcrumb') +
+      ' folderName=' + folders[currentFolderId].name);
     var bcBack = document.getElementById('folder-breadcrumb-back');
     if (bcBack) bcBack.addEventListener('click', function() {
       logDebugAction('Left folder: "' + folders[currentFolderId].name + '"');
