@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1756 -->
+<!-- Remember App - Version 0.1757 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1756
+  Version 0.1757
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1757 - NEW: Stage 2 of device-aware sizing, per Lynn's request to proceed using Stage 1's numbers as a working model rather than waiting to finalize the exact relative sizes first -- everything here is driven through --ui-scale (already defined per size tier AND touch/mouse input mode, per Stage 1), so a future adjustment to those numbers automatically propagates everywhere touched here with no further per-component changes needed, exactly as requested. Covers all six items from the original Stage 2 list: (1) note editor header's own padding and internal gap; (2) both FABs (note-fab, quiet-more-fab) -- their own circle size didn't even vary by size tier before this, a gap beyond just touch/mouse; (3) the floating Home Screen pill and logo's internal padding -- deliberately left their outer position (top/left/right) untouched, since applyZoomPositionCompensation() hardcodes that exact anchor (confirmed directly in its call site) and would desync if the position itself moved with the tier/input mode, so only padding scales there; (4) folder breadcrumb, home search bar, and select-notes bar padding -- the search bar's was in an inline style attribute, moved into a proper CSS rule since inline styles can't be overridden by any selector; (5) the toolbar row's own inter-button gap; (6) note list and folder list entry padding/gap/margin. Every value uses the exact prior touch/medium pixel number as its base, so --ui-scale=1 there reproduces the original layout exactly -- confirmed by direct arithmetic, not just by construction. Verified structurally (the same jsdom limitation noted in Stage 1 applies here too: calc()/var() chains can't be resolved into rendered pixels in this environment) -- CSS brace balance confirmed unchanged (1038/1038), and every touched rule confirmed to correctly reference var(--ui-scale) in place of its old hardcoded value. Suite unchanged: 332/332.
   v0.1756 - TWO refinements to the new font-size buttons, per Lynn's first-round testing feedback. (1) Both glyphs made significantly larger and equal in size (0.9x icon size, up from 0.62x/0.42x) -- the smaller 'a' had deliberately echoed "smaller font" the same way the bottom sheet's own icon does, but these buttons are specifically for low-vision users, so a small, hard-to-see glyph was actively counterproductive regardless of what it was meant to symbolize. (2) Added hold-to-repeat, reusing the exact same pattern already established by the caret nudge buttons (wireCaretNudge): Pointer Events, immediate first step on press, 450ms delay, then repeats at ~11/s until released -- same alarm-clock-style behavior Lynn asked for. saveSettings() is deferred to fire exactly once when the hold ends, rather than on every rapid repeat step, to avoid unnecessary repeated writes; the visible size change and live toast still update on every single step throughout the hold. Verified directly: a quick tap still increments once and saves once; holding continues past the initial step and saves exactly once on release, not per repeat; both glyphs now render at the same, larger size. Suite unchanged: 332/332.
   v0.1755 - THREE pieces, per Lynn. (1) FIX: the entire zoom-cap system never once checked the separate "Disable Pinch to Zoom" setting -- capping was harmless to leave as-is with that setting on, but every release path was unconditional, meaning the system would keep re-enabling actual zoom capability at the OS level even after the user explicitly turned pinch-zoom off. Gated the 350ms timer's restore and the force-release function behind the setting; capping itself untouched. (2) FIX: repeated pinch attempts in EMNI became progressively harder (an unusual ~2-second hold needed) even though the very first attempt worked cleanly after v0.1754. Theory, flagged honestly since it involves iOS's own undocumented gesture-recognition timing, invisible to JS logging: v0.1754 still capped the first finger's touch immediately then un-capped it a moment later once a second finger confirmed a pinch -- a real, if brief, maximum-scale=1.0 moment right as the gesture begins, which may be enough for iOS's recognizer to decide up front "no zoom for this gesture" and not reconsider mid-gesture, only on a fresh touch sequence (matching the ~2-second-hold pattern). Redesigned so the cap is delayed 60ms and fully cancelable -- if a second finger arrives within that window, the cap is never applied at all for that gesture, not applied-then-undone. A genuine tap still caps correctly (60ms is well within a normal tap's hold time). (3) NEW: two one-touch lower toolbar buttons in the note editor, per Lynn's own testing with elderly users showing even the existing text-size bottom sheet is too much friction for some. Capital 'A' increases note text size, lowercase 'a' decreases -- reuses the exact same increment/bounds (12-72px) as the sheet's own buttons, saves immediately, and shows a brief toast confirming the new size. Fully registered alongside every other toolbar button: hideable/reorderable (HIDEABLE_BUTTONS, DEFAULT_TOOLBAR_ORDER), paired as one settings row like undo/redo (SETTINGS_ROW_PAIRS), and documented in the Toolbar Help panel. Verified all three directly: the setting-respecting release paths correctly stay capped when Disable Pinch to Zoom is on; the delayed cap correctly never touches the capped state at all during a simulated two-finger pinch start while still correctly capping a genuine single tap after the delay; the new buttons correctly adjust, clamp at both bounds, update the live CSS variable, and show the confirmation toast. Suite unchanged: 332/332.
   v0.1754 - FIX: found the actual, final root cause -- every prior fix correctly restored zoom at the MOMENT of transition into EMNI, but Lynn's log showed it breaking again barely half a second later, with no focus or typing event anywhere in between: zoom correctly freed at timestamp .079, then capped again at .641, both from the exact same touchstart listener. Root cause: the editor remains the visible, on-screen element throughout EMNI (until switching back to R&R) -- and the touchstart listener caps on ANY touch landing on it, with no way to distinguish a genuine tap-to-type gesture from the first finger of a pinch-to-zoom gesture. The very act of touching the screen to BEGIN pinching was itself immediately re-capping the zoom before the gesture could ever happen, which is exactly why the bug persisted despite every transition-point fix working correctly in isolation. A pinch's first finger necessarily touches slightly before its second, and that first touch alone still reports touches.length===1 -- so simply skipping multi-touch touchstarts doesn't help, since the cap is already applied by the first finger before the second one ever arrives. Fixed instead by detecting the moment a SECOND finger lands and immediately undoing whatever the first finger's touch may have just capped, since that retroactively proves it was never a single tap-to-type gesture -- the brief cap-then-uncap for the first finger alone happens in a sub-frame window before any real gesture is underway. Verified directly: a genuine single-finger tap still correctly caps (the actual intended trade-off, unaffected); a second finger arriving immediately and correctly releases the cap, confirmed in a clean instance with no state carried over from a prior test. Suite unchanged: 332/332.
@@ -644,7 +645,11 @@ body.in-iframe #home-screen {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px 16px;
+  /* v0.1757 Stage 2: internal padding scales with --ui-scale -- position
+     (top/left) deliberately left untouched, since applyZoomPositionCompensation()
+     hardcodes this exact anchor (see its call site) and would desync if
+     the position itself moved with the tier/input mode. */
+  padding: calc(4px * var(--ui-scale)) calc(16px * var(--ui-scale));
   box-shadow: var(--shadow);
   line-height: 1.3;
 }
@@ -664,7 +669,8 @@ body.in-iframe #home-screen {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px;
+  /* v0.1757 Stage 2: same reasoning as .home-title above. */
+  padding: calc(4px * var(--ui-scale));
   box-shadow: var(--shadow);
 }
 
@@ -1110,12 +1116,13 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
   background: var(--notes-list-entry-bg, var(--bg2));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 6px 12px; /* v0.1673: vertical 8px->6px, first pass per Lynn -- expect iteration */
-  margin-bottom: 6px;
+  /* v0.1757 Stage 2: scales with --ui-scale */
+  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale)); /* v0.1673: vertical 8px->6px, first pass per Lynn -- expect iteration */
+  margin-bottom: calc(6px * var(--ui-scale));
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--ui-scale));
   transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
   box-shadow: var(--shadow);
@@ -1799,15 +1806,16 @@ polyline.cb-draw-anim {
 .folder-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 16px; /* v0.1674: vertical 8px->6px, further tightening per Lynn -- iteration 2 */
+  gap: calc(12px * var(--ui-scale));
+  /* v0.1757 Stage 2: scales with --ui-scale */
+  padding: calc(6px * var(--ui-scale)) calc(16px * var(--ui-scale)); /* v0.1674: vertical 8px->6px, further tightening per Lynn -- iteration 2 */
   background: var(--bg-card, var(--bg2));
   border-radius: var(--radius);
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  margin-bottom: 6px;
+  margin-bottom: calc(6px * var(--ui-scale));
   border: 1px solid var(--border);
 }
 @media (hover: hover) {
@@ -1865,7 +1873,8 @@ polyline.cb-draw-anim {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 6px 4px;
+  /* v0.1757 Stage 2 */
+  padding: calc(8px * var(--ui-scale)) calc(6px * var(--ui-scale)) calc(4px * var(--ui-scale));
   font-family: var(--font-body);
   font-size: var(--font-ui);
   color: var(--fg2);
@@ -1875,7 +1884,7 @@ polyline.cb-draw-anim {
 .folder-breadcrumb-back {
   background: none;
   border: none;
-  padding: 6px 12px 6px 4px;
+  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale)) calc(6px * var(--ui-scale)) calc(4px * var(--ui-scale));
   cursor: pointer;
   color: var(--fg); /* chevron uses this color */
   font-family: var(--font-body);
@@ -1898,12 +1907,20 @@ polyline.cb-draw-anim {
   color: var(--fg);
 }
 
+/* v0.1757 Stage 2: moved out of an inline style attribute so it can
+   scale with --ui-scale -- inline styles can't be overridden by any
+   CSS selector, including this one. */
+#home-search-bar {
+  padding: calc(6px * var(--ui-scale)) calc(12px * var(--ui-scale)) calc(4px * var(--ui-scale));
+}
+
 /* Select notes mode */
 .home-select-bar {
   display: none;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 12px;
+  /* v0.1757 Stage 2 */
+  padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
 }
@@ -2075,8 +2092,12 @@ body.select-notes-mode .folder-item-select-check { display: flex; }
   color: var(--accent);
   border: 2.5px solid var(--accent);
   border-radius: 50%;
-  width: 56px;
-  height: 56px;
+  /* v0.1757 Stage 2: circle size now scales with --ui-scale, consistent
+     with the icon-btn treatment -- this element didn't previously vary
+     by size tier OR input mode at all; base value is the exact prior
+     touch/medium 56px, so --ui-scale=1 there is unchanged. */
+  width: calc(56px * var(--ui-scale));
+  height: calc(56px * var(--ui-scale));
   display: none; /* shown via JS when setting enabled */
   align-items: center;
   justify-content: center;
@@ -2175,13 +2196,14 @@ body.reading-mode #note-fab,
   display: none; /* shown via CSS when note-screen-active */
   position: fixed;
   z-index: 32; /* above note-header (z-index 30) */
-  right: calc(12px + env(safe-area-inset-right, 0px)); /* clear landscape notch/corner */
-  top: 6px; /* vertically centered in upper toolbar */
+  right: calc((12px * var(--ui-scale)) + env(safe-area-inset-right, 0px)); /* clear landscape notch/corner */
+  top: calc(6px * var(--ui-scale)); /* vertically centered in upper toolbar */
   background: var(--bg2);
   border: 1.5px solid var(--border);
   border-radius: 50%;
-  width: 40px;
-  height: 40px;
+  /* v0.1757 Stage 2: scales with --ui-scale, same treatment as note-fab. */
+  width: calc(40px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -3330,10 +3352,17 @@ body.has-mouse .font-face-arrow { display: block; }
      ourselves. Insets are 0 in portrait / Android / iPad / desktop, so
      these calcs collapse to the original values there.
      Extra bottom padding is for the toolbar collapse tab. */
-  padding: 6px calc(4px + env(safe-area-inset-right, 0px)) 14px calc(4px + env(safe-area-inset-left, 0px));
+  /* v0.1757 Stage 2, per Lynn's request: padding/gap now scale with
+     --ui-scale (already varies by both size tier and touch/mouse input,
+     per the Stage 1 mechanism) rather than being fixed touch-calibrated
+     pixel values -- consistent with the toolbar-button treatment Lynn
+     specifically wanted extended further. Base values are the exact
+     prior touch/medium numbers (6px/14px/4px), so --ui-scale=1 there
+     reproduces the original pixel values exactly. */
+  padding: calc(6px * var(--ui-scale)) calc((4px * var(--ui-scale)) + env(safe-area-inset-right, 0px)) calc(14px * var(--ui-scale)) calc((4px * var(--ui-scale)) + env(safe-area-inset-left, 0px));
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(4px * var(--ui-scale));
   /* position:fixed keeps the header pinned to the top of the screen even
      when iOS Safari scrolls the page to bring the cursor into view.
      top/left/right/width are set; actual top value is always 0. */
@@ -3361,7 +3390,7 @@ body:not(.toolbar-collapsed) .note-header { box-shadow: none; }
 }
 
 .note-header-left { display: flex; align-items: center; gap: 0px; flex-shrink: 0; }
-.note-header-right { display: flex; align-items: center; gap: 4px; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+.note-header-right { display: flex; align-items: center; gap: calc(4px * var(--ui-scale)); width: 100%; justify-content: flex-start; flex-wrap: wrap; }
 
 /* ===== KEYBOARD-OPEN MODE ===== */
 /* Hide top row and title when keyboard is open to save space */
@@ -6473,7 +6502,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 
 
 <!-- ===== HOME SEARCH BAR ===== -->
-<div id="home-search-bar" style="display:none;padding:6px 12px 4px;background:var(--bg);border-bottom:1px solid var(--border);">
+<div id="home-search-bar" style="display:none;background:var(--bg);border-bottom:1px solid var(--border);">
   <div class="search-field" style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:clamp(16px,calc(var(--icon-size)*0.65),28px);height:clamp(16px,calc(var(--icon-size)*0.65),28px);flex-shrink:0;color:var(--fg3);pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input id="home-search-input" type="text" placeholder="Search notes…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
@@ -11148,7 +11177,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1756';
+const APP_VERSION = '0.1757';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
