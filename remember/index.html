@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1757 -->
+<!-- Remember App - Version 0.1758 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1757
+  Version 0.1758
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1758 - FIX: find-in-note losing track of matches in R&R mode, per Lynn's report of hitting "next" and landing on unrelated highlighted text -- happened specifically while searching the debug log, which was the key clue. Root cause: runFind() marks match boundaries by inserting null-byte (\x00) placeholder tokens into the raw text before it's passed through urlsToLinks() for rendering, then swaps those placeholders for real <mark> elements afterward. The plain-URL-detection regex in urlsToLinks() excluded whitespace, angle brackets, and quotes from a URL's body, but not the null byte -- so if a placeholder landed directly adjacent to a URL with no whitespace between them, the greedy URL match swallowed the placeholder whole, burying it inside the generated <a> tag where the later placeholder-to-<mark> replacement could never find it. That silently dropped one match from the list without erroring, shifting every later match's index out of alignment with what was actually highlighted on screen -- exactly the reported symptom. The debug log is especially prone to this since it's dense with repeated stack-trace URLs from diagnostic logging. Fixed by adding \x00 to the regex's excluded characters, so a URL match always stops cleanly at a placeholder boundary rather than consuming it. Verified directly: reproduced the exact scenario (a stack-trace URL immediately followed by a find-match placeholder, no whitespace between them) and confirmed the placeholder now survives the render fully intact instead of being absorbed into the link. Two other bugs Lynn reported in the same session -- an export-reminder nag appearing despite a JSON export the day before, and an iOS text-selection copy landing two lines off from what was visually selected -- were investigated directly (the JSON export path does correctly call markFullExportDone(); the shared download function is fully synchronous with nothing that should throw) but not conclusively reproduced from code alone; no fix attempted for either without stronger evidence. Suite unchanged: 332/332.
   v0.1757 - NEW: Stage 2 of device-aware sizing, per Lynn's request to proceed using Stage 1's numbers as a working model rather than waiting to finalize the exact relative sizes first -- everything here is driven through --ui-scale (already defined per size tier AND touch/mouse input mode, per Stage 1), so a future adjustment to those numbers automatically propagates everywhere touched here with no further per-component changes needed, exactly as requested. Covers all six items from the original Stage 2 list: (1) note editor header's own padding and internal gap; (2) both FABs (note-fab, quiet-more-fab) -- their own circle size didn't even vary by size tier before this, a gap beyond just touch/mouse; (3) the floating Home Screen pill and logo's internal padding -- deliberately left their outer position (top/left/right) untouched, since applyZoomPositionCompensation() hardcodes that exact anchor (confirmed directly in its call site) and would desync if the position itself moved with the tier/input mode, so only padding scales there; (4) folder breadcrumb, home search bar, and select-notes bar padding -- the search bar's was in an inline style attribute, moved into a proper CSS rule since inline styles can't be overridden by any selector; (5) the toolbar row's own inter-button gap; (6) note list and folder list entry padding/gap/margin. Every value uses the exact prior touch/medium pixel number as its base, so --ui-scale=1 there reproduces the original layout exactly -- confirmed by direct arithmetic, not just by construction. Verified structurally (the same jsdom limitation noted in Stage 1 applies here too: calc()/var() chains can't be resolved into rendered pixels in this environment) -- CSS brace balance confirmed unchanged (1038/1038), and every touched rule confirmed to correctly reference var(--ui-scale) in place of its old hardcoded value. Suite unchanged: 332/332.
   v0.1756 - TWO refinements to the new font-size buttons, per Lynn's first-round testing feedback. (1) Both glyphs made significantly larger and equal in size (0.9x icon size, up from 0.62x/0.42x) -- the smaller 'a' had deliberately echoed "smaller font" the same way the bottom sheet's own icon does, but these buttons are specifically for low-vision users, so a small, hard-to-see glyph was actively counterproductive regardless of what it was meant to symbolize. (2) Added hold-to-repeat, reusing the exact same pattern already established by the caret nudge buttons (wireCaretNudge): Pointer Events, immediate first step on press, 450ms delay, then repeats at ~11/s until released -- same alarm-clock-style behavior Lynn asked for. saveSettings() is deferred to fire exactly once when the hold ends, rather than on every rapid repeat step, to avoid unnecessary repeated writes; the visible size change and live toast still update on every single step throughout the hold. Verified directly: a quick tap still increments once and saves once; holding continues past the initial step and saves exactly once on release, not per repeat; both glyphs now render at the same, larger size. Suite unchanged: 332/332.
   v0.1755 - THREE pieces, per Lynn. (1) FIX: the entire zoom-cap system never once checked the separate "Disable Pinch to Zoom" setting -- capping was harmless to leave as-is with that setting on, but every release path was unconditional, meaning the system would keep re-enabling actual zoom capability at the OS level even after the user explicitly turned pinch-zoom off. Gated the 350ms timer's restore and the force-release function behind the setting; capping itself untouched. (2) FIX: repeated pinch attempts in EMNI became progressively harder (an unusual ~2-second hold needed) even though the very first attempt worked cleanly after v0.1754. Theory, flagged honestly since it involves iOS's own undocumented gesture-recognition timing, invisible to JS logging: v0.1754 still capped the first finger's touch immediately then un-capped it a moment later once a second finger confirmed a pinch -- a real, if brief, maximum-scale=1.0 moment right as the gesture begins, which may be enough for iOS's recognizer to decide up front "no zoom for this gesture" and not reconsider mid-gesture, only on a fresh touch sequence (matching the ~2-second-hold pattern). Redesigned so the cap is delayed 60ms and fully cancelable -- if a second finger arrives within that window, the cap is never applied at all for that gesture, not applied-then-undone. A genuine tap still caps correctly (60ms is well within a normal tap's hold time). (3) NEW: two one-touch lower toolbar buttons in the note editor, per Lynn's own testing with elderly users showing even the existing text-size bottom sheet is too much friction for some. Capital 'A' increases note text size, lowercase 'a' decreases -- reuses the exact same increment/bounds (12-72px) as the sheet's own buttons, saves immediately, and shows a brief toast confirming the new size. Fully registered alongside every other toolbar button: hideable/reorderable (HIDEABLE_BUTTONS, DEFAULT_TOOLBAR_ORDER), paired as one settings row like undo/redo (SETTINGS_ROW_PAIRS), and documented in the Toolbar Help panel. Verified all three directly: the setting-respecting release paths correctly stay capped when Disable Pinch to Zoom is on; the delayed cap correctly never touches the capped state at all during a simulated two-finger pinch start while still correctly capping a genuine single tap after the delay; the new buttons correctly adjust, clamp at both bounds, update the live CSS variable, and show the confirmation toast. Suite unchanged: 332/332.
@@ -11177,7 +11178,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1757';
+const APP_VERSION = '0.1758';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -16974,7 +16975,22 @@ function urlsToLinks(text, addLineWrappers) {
     return '<span class="note-tag' + _pillColorClass + '" data-tag="' + tag + '">@' + tag + '</span>';
   });
   // Render URLs — detect bare image URLs and render inline
-  escaped = escaped.replace(/(https?:\/\/[^\s<>"']+)/g, function(url) {
+  // v0.1758 FIX, per Lynn's report of find-in-note losing track of
+  // matches (highlighting the wrong text after "next") specifically in
+  // the debug log, which is dense with repeated URLs from diagnostic
+  // stack traces. Root cause: this character class excluded whitespace/
+  // angle-brackets/quotes, but not the null-byte (\x00) placeholder
+  // tokens runFind() inserts into the raw text before this function
+  // runs to mark match boundaries. If a placeholder landed directly
+  // adjacent to a URL with no whitespace between them, the greedy match
+  // swallowed the placeholder whole, burying it inside the generated
+  // <a> tag where the later placeholder-to-<mark> replacement could
+  // never find it -- silently dropping that match and shifting every
+  // later match's index out of alignment with what's actually
+  // highlighted. Added \x00 to the excluded characters so the URL match
+  // always stops cleanly at a placeholder boundary instead of consuming
+  // it.
+  escaped = escaped.replace(/(https?:\/\/[^\s<>"'\x00]+)/g, function(url) {
     var trail = '';
     // Strip trailing punctuation, but preserve ) if the URL has balanced parens
     // e.g. https://en.wikipedia.org/wiki/Tux_(mascot) — the ) should NOT be stripped
