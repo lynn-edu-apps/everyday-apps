@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1755 -->
+<!-- Remember App - Version 0.1756 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1755
+  Version 0.1756
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,7 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1756 - TWO refinements to the new font-size buttons, per Lynn's first-round testing feedback. (1) Both glyphs made significantly larger and equal in size (0.9x icon size, up from 0.62x/0.42x) -- the smaller 'a' had deliberately echoed "smaller font" the same way the bottom sheet's own icon does, but these buttons are specifically for low-vision users, so a small, hard-to-see glyph was actively counterproductive regardless of what it was meant to symbolize. (2) Added hold-to-repeat, reusing the exact same pattern already established by the caret nudge buttons (wireCaretNudge): Pointer Events, immediate first step on press, 450ms delay, then repeats at ~11/s until released -- same alarm-clock-style behavior Lynn asked for. saveSettings() is deferred to fire exactly once when the hold ends, rather than on every rapid repeat step, to avoid unnecessary repeated writes; the visible size change and live toast still update on every single step throughout the hold. Verified directly: a quick tap still increments once and saves once; holding continues past the initial step and saves exactly once on release, not per repeat; both glyphs now render at the same, larger size. Suite unchanged: 332/332.
   v0.1755 - THREE pieces, per Lynn. (1) FIX: the entire zoom-cap system never once checked the separate "Disable Pinch to Zoom" setting -- capping was harmless to leave as-is with that setting on, but every release path was unconditional, meaning the system would keep re-enabling actual zoom capability at the OS level even after the user explicitly turned pinch-zoom off. Gated the 350ms timer's restore and the force-release function behind the setting; capping itself untouched. (2) FIX: repeated pinch attempts in EMNI became progressively harder (an unusual ~2-second hold needed) even though the very first attempt worked cleanly after v0.1754. Theory, flagged honestly since it involves iOS's own undocumented gesture-recognition timing, invisible to JS logging: v0.1754 still capped the first finger's touch immediately then un-capped it a moment later once a second finger confirmed a pinch -- a real, if brief, maximum-scale=1.0 moment right as the gesture begins, which may be enough for iOS's recognizer to decide up front "no zoom for this gesture" and not reconsider mid-gesture, only on a fresh touch sequence (matching the ~2-second-hold pattern). Redesigned so the cap is delayed 60ms and fully cancelable -- if a second finger arrives within that window, the cap is never applied at all for that gesture, not applied-then-undone. A genuine tap still caps correctly (60ms is well within a normal tap's hold time). (3) NEW: two one-touch lower toolbar buttons in the note editor, per Lynn's own testing with elderly users showing even the existing text-size bottom sheet is too much friction for some. Capital 'A' increases note text size, lowercase 'a' decreases -- reuses the exact same increment/bounds (12-72px) as the sheet's own buttons, saves immediately, and shows a brief toast confirming the new size. Fully registered alongside every other toolbar button: hideable/reorderable (HIDEABLE_BUTTONS, DEFAULT_TOOLBAR_ORDER), paired as one settings row like undo/redo (SETTINGS_ROW_PAIRS), and documented in the Toolbar Help panel. Verified all three directly: the setting-respecting release paths correctly stay capped when Disable Pinch to Zoom is on; the delayed cap correctly never touches the capped state at all during a simulated two-finger pinch start while still correctly capping a genuine single tap after the delay; the new buttons correctly adjust, clamp at both bounds, update the live CSS variable, and show the confirmation toast. Suite unchanged: 332/332.
   v0.1754 - FIX: found the actual, final root cause -- every prior fix correctly restored zoom at the MOMENT of transition into EMNI, but Lynn's log showed it breaking again barely half a second later, with no focus or typing event anywhere in between: zoom correctly freed at timestamp .079, then capped again at .641, both from the exact same touchstart listener. Root cause: the editor remains the visible, on-screen element throughout EMNI (until switching back to R&R) -- and the touchstart listener caps on ANY touch landing on it, with no way to distinguish a genuine tap-to-type gesture from the first finger of a pinch-to-zoom gesture. The very act of touching the screen to BEGIN pinching was itself immediately re-capping the zoom before the gesture could ever happen, which is exactly why the bug persisted despite every transition-point fix working correctly in isolation. A pinch's first finger necessarily touches slightly before its second, and that first touch alone still reports touches.length===1 -- so simply skipping multi-touch touchstarts doesn't help, since the cap is already applied by the first finger before the second one ever arrives. Fixed instead by detecting the moment a SECOND finger lands and immediately undoing whatever the first finger's touch may have just capped, since that retroactively proves it was never a single tap-to-type gesture -- the brief cap-then-uncap for the first finger alone happens in a sub-frame window before any real gesture is underway. Verified directly: a genuine single-finger tap still correctly caps (the actual intended trade-off, unaffected); a second finger arriving immediately and correctly releases the cap, confirmed in a clean instance with no state carried over from a prior test. Suite unchanged: 332/332.
   v0.1753 - FIX: v0.1752 only fixed R&R mode -- EMNI (Typing mode with the keyboard NOT showing) was still broken, per Lynn's own precise correction, which also caught a real gap in the fix being planned: EMNI can be reached two genuinely different ways -- fresh entry into Typing mode from R&R (never having been in EMTIP at all this session), and dismissing the keyboard while already in Typing mode -- and a fix aimed only at the second path would have completely missed the first, exactly the scenario she flagged before it was built. Root cause of the fresh-entry case: setViewMode()'s switch-to-Typing branch calls editor.focus({preventScroll:true}) to prepare the cursor for typing -- necessary and correct -- but the zoom-cap system's focusin listener can't tell "editor is programmatically focused" apart from "the keyboard is genuinely showing," and caps regardless, landing fresh EMNI entry incorrectly zoom-locked despite no keyboard ever appearing. Fixed by force-releasing the cap immediately after that focus() call -- it fires synchronously during focus(), so by the time execution resumes the cap is already wrongly applied and needs undoing right there. If the user then genuinely taps into the text, the normal touchstart/focusin path still correctly re-caps at that point, unchanged. Also added the same force-release to the EMTIP-exit blur handler (the actual keyboard-dismiss-while-staying-in-Typing-mode path), as belt and suspenders alongside the existing timer-based restore, which has already been shown unreliable twice. Verified directly, covering all three real states: fresh EMNI entry now correctly stays zoom-free despite the programmatic focus; genuinely tapping into the text still correctly caps (preserving the actual intended trade-off); dismissing the keyboard while remaining in Typing mode now correctly releases. Suite unchanged: 332/332.
@@ -6786,8 +6787,8 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <!-- v0.1755: one-touch note text size buttons, per Lynn's request --
            same increment/decrement and bounds as the existing text-size
            bottom sheet, just without needing to open it first. -->
-      <button class="icon-btn" id="font-size-up-btn" tabindex="-1" aria-label="Increase note text size" title="Increase text size" style="font-family:var(--font-body);font-weight:700;font-size:calc(var(--icon-size) * 0.62);line-height:1;">A</button>
-      <button class="icon-btn" id="font-size-down-btn" tabindex="-1" aria-label="Decrease note text size" title="Decrease text size" style="font-family:var(--font-body);font-weight:700;font-size:calc(var(--icon-size) * 0.42);line-height:1;">a</button>
+      <button class="icon-btn" id="font-size-up-btn" tabindex="-1" aria-label="Increase note text size" title="Increase text size" style="font-family:var(--font-body);font-weight:700;font-size:calc(var(--icon-size) * 0.9);line-height:1;">A</button>
+      <button class="icon-btn" id="font-size-down-btn" tabindex="-1" aria-label="Decrease note text size" title="Decrease text size" style="font-family:var(--font-body);font-weight:700;font-size:calc(var(--icon-size) * 0.9);line-height:1;">a</button>
       <!-- Add blank line (stage 3d "tap item" — R&R mode only, toolbar-only,
            tap to arm, then tap a note line to insert a blank line above it) -->
       <button class="icon-btn view-only-btn" id="add-blank-line-btn" tabindex="-1" aria-label="Add blank line" title="Add blank line" style="display:none">
@@ -11147,7 +11148,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1755';
+const APP_VERSION = '0.1756';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -34612,27 +34613,48 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   document.getElementById('undo-btn').addEventListener('click', function() { applyUndo(); });
   document.getElementById('redo-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
   document.getElementById('redo-btn').addEventListener('click', function() { applyRedo(); });
-  // v0.1755: one-touch note text size buttons, per Lynn's request for a
-  // lower-friction alternative to the text-size bottom sheet for
-  // elderly users -- reuses the exact same increment/decrement and
-  // bounds (12-72px) as that sheet's own up/down buttons. Saves
-  // immediately, same as other toolbar actions (bold, italic, etc.) --
-  // no separate "save" step needed, since this is a standalone toolbar
-  // action, not part of the Settings dialog's own session.
-  document.getElementById('font-size-up-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-  document.getElementById('font-size-up-btn').addEventListener('click', function() {
-    settings.editorFontSize = Math.min(72, (settings.editorFontSize || 20) + 1);
-    applySettings();
-    saveSettings();
-    showToast('Text size: ' + settings.editorFontSize + 'px');
-  });
-  document.getElementById('font-size-down-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-  document.getElementById('font-size-down-btn').addEventListener('click', function() {
-    settings.editorFontSize = Math.max(12, (settings.editorFontSize || 20) - 1);
-    applySettings();
-    saveSettings();
-    showToast('Text size: ' + settings.editorFontSize + 'px');
-  });
+  // v0.1756: one-touch note text size buttons now also support hold-to-
+  // repeat, per Lynn's request -- same pattern as the caret nudge
+  // buttons (wireCaretNudge below): 450ms initial delay, then repeats
+  // at ~11/s until released. Reuses the exact same increment/decrement
+  // and bounds (12-72px) as the text-size bottom sheet's own buttons.
+  // saveSettings() is deferred to only run once the hold ends, rather
+  // than on every rapid step, to avoid unnecessary repeated writes --
+  // applySettings() (the visible size change) and the live toast still
+  // update on every single step during the hold.
+  function wireFontSizeNudge(id, delta) {
+    var btn = document.getElementById(id);
+    if (!btn) return;
+    var delayTimer = null, repeatTimer = null;
+    function step() {
+      settings.editorFontSize = delta > 0
+        ? Math.min(72, (settings.editorFontSize || 20) + 1)
+        : Math.max(12, (settings.editorFontSize || 20) - 1);
+      applySettings();
+      showToast('Text size: ' + settings.editorFontSize + 'px');
+    }
+    function stopRepeat() {
+      clearTimeout(delayTimer); clearInterval(repeatTimer);
+      delayTimer = repeatTimer = null;
+    }
+    btn.addEventListener('pointerdown', function(e) {
+      e.preventDefault();
+      step();
+      stopRepeat();
+      delayTimer = setTimeout(function() {
+        repeatTimer = setInterval(step, 90);
+      }, 450);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(ev) {
+      btn.addEventListener(ev, function() {
+        stopRepeat();
+        saveSettings();
+      });
+    });
+    btn.addEventListener('click', function(e) { e.preventDefault(); });
+  }
+  wireFontSizeNudge('font-size-up-btn', 1);
+  wireFontSizeNudge('font-size-down-btn', -1);
 
   // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo
   // Ctrl/Cmd+B = bold, Ctrl/Cmd+I = italic (Typing mode only)
