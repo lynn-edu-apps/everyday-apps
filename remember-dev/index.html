@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1766 -->
+<!-- Remember App - Version 0.1770 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1766
+  Version 0.1770
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,10 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1770 - REFINE: made the v0.1769 theme-color fix genuinely future-proof, per Lynn's direct follow-up question -- correctly pointed out that the fix as shipped hardcoded '#1e1c1a'/'#f5f0e8' as a second, separate copy of the palette values, meaning a future change to --bg would need someone to remember to also update this specific line, or the exact same staleness bug (the old dark value having silently drifted out of sync with the app's real background) would eventually repeat itself. Replaced the hardcoded pair with a live read via the existing resolveCSSVarToHex('--bg') utility (already built for the Bubble feature) -- confirmed directly that its probe element is appended to document.body specifically, making it a correct descendant of body.dark and therefore able to see that override properly (the opposite of an unrelated bug found earlier this session in a standalone prototype, where a probe was incorrectly scoped relative to a dark-mode override). Now any future change to --bg's actual value is automatically reflected here with no separate step to remember. Verified the full flow runs correctly end to end with no errors and confirmed the live-read function is genuinely being called and applied, not skipped. Suite unchanged: 332/332.
+  v0.1769 - FIX: re-diagnosed and fixed the regressed "Android dark mode PWA" bug Lynn recalled from a prior chat, predating this file's detailed changelog -- the system status bar (and other OS chrome outside the app's own content) staying the wrong color in dark mode. Root cause, found by direct inspection rather than guessing: theme-color was set via two static &lt;meta&gt; tags gated by CSS media="(prefers-color-scheme: ...)", which only ever reflects the OS's raw light/dark preference -- never this app's own actual current theme, which can be explicitly overridden independent of the OS via settings.theme. If a user's OS preference and their own app-level override disagreed (a real, fully supported case here), the browser picked whichever static tag matched the OS preference regardless of what the app was actually rendering -- producing a status bar that didn't match the app's own background at all, exactly the reported symptom. A second, related bug found while verifying the fix: the old dark value (#1a1a1a) had also silently drifted out of sync with this app's actual current dark background (#1e1c1a) at some point, a smaller but related staleness problem confirming this whole mechanism had been disconnected from the live theme system for a while. Fixed by replacing both static tags with a single JS-controlled one, updated from the exact same useDark computation (accounting for OS preference, explicit override, and 'auto') the rest of this app's dark-mode logic already uses, with the current --bg hex values directly so it can't drift out of sync with the actual palette again. Verified directly by reproducing the precise mismatch scenario that would have triggered the bug: OS reporting a light preference while the app is explicitly overridden to dark -- confirmed the meta tag correctly shows the app's real dark background rather than the OS's light preference. Suite unchanged: 332/332.
+  v0.1768 - CHANGE: default UI font and note font switched from Atkinson Hyperlegible to Atkinson Hyperlegible Next, per Lynn's request -- confirmed directly this had never actually happened: v0.1656 added the Next variant as a selectable option alongside the original specifically so it could be compared and the default switched over later, but that follow-up never occurred, exactly matching Lynn's own recollection. Updated the two CSS :root fallback variables and the two JS default-settings values (fresh-install only -- existing users' own saved settings are unaffected, same as any other default-value change), plus three third-level JS fallback expressions for consistency. Deliberately left untouched: the font-picker's own UI (pill button, all four dropdown <option> lists), which correctly needs to keep offering both variants as real choices; the weight-range registry entry describing the plain font's own supported weights, unrelated to which one is the default; and four named sample theme presets (Dyslexia Friendly, Poetry Page, Task Master, Fun & Bright) that specifically chose the plain variant for their own themed presentation, not simply because it happened to be the app's default at the time. Verified directly: a fresh install's DEFAULT_SETTINGS.font/noteFont and the live settings.font/noteFont both correctly resolve to the Next variant. Suite unchanged: 332/332.
+  v0.1767 - TWO things, per Lynn. (1) NEW: the note title now gets its own bubble too, mirroring all four variants exactly the way .viewer-line already does -- previously left entirely outside the bubble system, so its text color never matched the rest of the note (most visibly wrong in Solid mode, where the body turns white-on-color but the title stayed the ordinary page color). Its own full-width divider is suppressed once it has a bubble boundary instead. Caught a real scoping gap before shipping: the title row is shared between Typing and R&R mode, unlike .viewer-line's own rules (naturally R&R-only via #note-viewer), so applying this unconditionally would have made the title bubble incorrectly show up while actively typing too. No existing hook tracked current view/edit mode at the body level (confirmed directly: setViewMode() only ever toggled the button's own active state) -- added a new body.note-in-view-mode class specifically for this, and scoped every new selector to require it. (2) NEW setting: "Reopen last note on launch" (App Theme/General), per Lynn's report that always landing on the last-open note -- previously unconditional, no setting existed at all, confirmed directly by reading the actual launch code -- confuses some users who expect to start on the Home Screen every time. Default true, exactly matching the app's existing behavior, so this is purely additive. Verified directly: the note-in-view-mode class correctly toggles false while typing and true in R&R mode, the actual mechanism the new CSS scoping depends on; the new setting's default correctly matches prior behavior, and toggling it off in Settings correctly updates the underlying value. Suite unchanged: 332/332.
   v0.1766 - FIX: custom colors for Bubble Accent Color / Bubble Interior Color silently never applied, per Lynn's report that presets worked but a custom color didn't. This codebase already has a documented precedent for exactly this bug class (v0.1541, light/dark-preview-color): the custom color picker's Apply handler looks up which actual setting to write to via a keyMap keyed by row name, and these two rows -- both added this session (v0.1761/v0.1765) -- were never added to that map at all. The picker's own button still visually updated (it always does, regardless of the lookup), giving no indication anything had failed, while settings.bubbleAccentColor/bubbleInteriorColor were silently never written. Added both missing entries. Verified through the real, complete flow rather than testing the fix in isolation: opened the actual custom color dialog via its real button, typed a hex value into the real input, clicked the real Apply button, and confirmed settings.bubbleAccentColor correctly ends up with that exact value afterward. Suite unchanged: 332/332.
   v0.1765 - TWO things, per Lynn. (1) Paragraph rules / List item rules now correctly suppressed while a bubble style is active, with a notice explaining why in Settings -- both draw a border-bottom/border-top marking paragraph or list-item boundaries, which would visually leak through underneath a bubble's own rounded shape (most obviously on Tinted/Solid, which have no competing border to mask it). Unlike Ruled Lines & Grid, these two toggles deliberately stay fully interactive -- per Lynn's request, just a notice this time, not disabling the controls -- CSS suppression alone makes them harmlessly inert while bubbles are active, resuming automatically the moment bubbles are turned back off with no separate action needed. Uses the same higher-specificity-override technique (an #note-viewer id selector outweighing the base rule's plain class selector) already proven correct for the Select Lines highlight fix a few builds back. (2) NEW setting: Bubble Interior Color, for Outline/Stripe specifically -- previously just hardcoded to --bg2 in the CSS with no way to adjust it, confirmed directly with Lynn this was never actually built despite being discussed. Row visibility is tied to the currently selected bubble STYLE (shown only for Outline/Stripe, since Tinted/Solid derive their own fill from the accent color instead), separate from the existing accent-color row's own match-toggle-based visibility. When left unset (the default), the CSS custom property is cleared entirely rather than resolved to a concrete hex in JS -- the stylesheet's own var(--bubble-interior, var(--bg2)) fallback then applies natively, staying correctly theme-aware with no computation needed for the common, non-customized case. Verified directly: both new notices correctly show/hide with bubble state while their toggles remain fully interactive; the interior color CSS property correctly sets when customized and correctly clears (letting the fallback apply) when reset to default; the new settings row correctly shows only for Outline/Stripe and hides for Tinted/Solid. Suite unchanged: 332/332.
   v0.1764 - TWO things, per Lynn. (1) Confirmed directly: the discussed "separate interior color for Outline/Stripe bubbles" setting was never actually built -- only the existing --bg2 (this app's card tone) was reused directly in the CSS, addressing whether it should differ from the rear background, but never exposed as its own adjustable setting. Logged as a known, honest gap on the existing bubble-mode to-do note rather than silently claimed as done; not fixed in this build. (2) NEW: diagnostic logging for the "scroll to last position" Settings button, per Lynn's report that it's regressed. Investigated directly rather than re-patching blind: verified the underlying save/restore of settings.settingsScrollPosition still works correctly on both the Save and Cancel close paths (tested directly); verified getDialogSectionKey()'s section-identity scheme is stable (id-based, not positional, so new sections added elsewhere -- including this session's own Bubble feature and device-aware-sizing work -- shouldn't have disrupted existing sections' saved open/closed state). Neither line of investigation found the actual root cause, so rather than guess further, the button's click handler now logs the saved target position, the sheet's actual current scrollHeight at the moment of the click (if a relevant section isn't expanded, this will be far shorter than the target expects, which would directly explain the symptom), and which sections are currently open -- real evidence from the next actual occurrence, rather than more theorizing from code alone. Verified the logging itself fires correctly and captures the right data. Suite unchanged: 332/332.
@@ -317,10 +321,20 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Remember">
-<!-- theme-color: light uses off-white, dark uses near-black -->
-<!-- Android uses these for the system status bar in PWA mode -->
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f0e8">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1a1a">
+<!-- theme-color: JS-controlled (see applySettings()), not the static
+     media-query approach this used to be. That approach only reflected
+     the OS's raw prefers-color-scheme, never the app's own actual
+     current theme -- if the OS preference and this app's explicit
+     settings.theme override disagree (a real, supported case here,
+     since this app's theme can be explicitly overridden independent of
+     the OS), the browser picks whichever static tag matches the OS
+     preference regardless of what the app is actually rendering,
+     producing a status bar that doesn't match the app's own background
+     at all. A single tag, updated in JS from the same useDark
+     computation the rest of the app's own dark-mode logic already uses,
+     stays correct in every case. Android uses this for the system
+     status bar in PWA mode. -->
+<meta name="theme-color" id="theme-color-meta" content="#f5f0e8">
 <title>Remember</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -333,8 +347,8 @@
 
 /* ===== CSS VARIABLES ===== */
 :root {
-  --font-body: 'Atkinson Hyperlegible', sans-serif;  /* UI font */
-  --font-note: 'Atkinson Hyperlegible', sans-serif;  /* Note content font */
+  --font-body: 'Atkinson Hyperlegible Next', sans-serif;  /* UI font */
+  --font-note: 'Atkinson Hyperlegible Next', sans-serif;  /* Note content font */
   --font-size-base: 20px;
   --font-size-editor: 20px;
   --font-size-title: 28px;
@@ -2537,6 +2551,54 @@ body.bubbles-active #note-viewer .viewer-line.block-selected {
   background: rgba(59,130,246,0.25) !important;
   outline: 2px solid rgba(59,130,246,0.55);
   outline-offset: -1px;
+}
+
+/* v0.1767 NEW, per Lynn's report: the note title previously sat entirely
+   outside the bubble system, so its text color never matched the rest
+   of the note once bubbles changed the body text's own color (most
+   obviously wrong in Solid mode, where the body turns white-on-color
+   but the title stayed the ordinary page text color). Gives the title
+   row its own bubble, mirroring all four variants exactly the same way
+   .viewer-line already does, and suppresses its own full-width divider
+   (::after below) -- redundant, and visually conflicting, once the
+   title has its own bubble boundary instead. Scoped with the new
+   body.note-in-view-mode class (added specifically for this) so it only
+   applies in R&R mode -- the title row is shared between both modes,
+   unlike .viewer-line's own rules, which are naturally R&R-only since
+   they're scoped inside #note-viewer. */
+body.bubbles-active.note-in-view-mode .note-inline-title-row {
+  border-radius: calc(var(--bubble-radius, 14px) * var(--ui-scale));
+  padding: calc(var(--bubble-padding, 12px) * var(--ui-scale)) 16px;
+  margin-bottom: calc(var(--bubble-spacing, 18px) * var(--ui-scale));
+  box-shadow: var(--bubble-shadow, none);
+}
+body.bubbles-active.note-in-view-mode .note-inline-title-row::after {
+  display: none;
+}
+body.bubbles-active.note-in-view-mode.bubbles-tinted .note-inline-title-row {
+  background: var(--bubble-fill-tinted, var(--bg2));
+}
+body.bubbles-active.note-in-view-mode.bubbles-solid .note-inline-title-row {
+  background: var(--bubble-fill-solid, var(--accent));
+}
+/* Same reasoning as the heading override: #note-title sets its own
+   explicit color rather than inheriting, so it needs the same override
+   the parent alone can't reach, at higher specificity to actually win. */
+body.bubbles-active.note-in-view-mode.bubbles-solid .note-inline-title-row #note-title {
+  color: var(--bubble-solid-text, white);
+}
+body.bubbles-active.note-in-view-mode.bubbles-solid .note-inline-title-row #note-title:empty::before {
+  color: rgba(255,255,255,0.6);
+}
+body.bubbles-active.note-in-view-mode.bubbles-outline .note-inline-title-row {
+  background: var(--bubble-interior, var(--bg2));
+  border: 2px solid var(--bubble-accent, var(--accent));
+}
+body.bubbles-active.note-in-view-mode.bubbles-stripe .note-inline-title-row {
+  background: var(--bubble-interior, var(--bg2));
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--bubble-accent, var(--accent));
+  border-radius: 4px calc(var(--bubble-radius, 14px) * var(--ui-scale)) calc(var(--bubble-radius, 14px) * var(--ui-scale)) 4px;
 }
 
 /* Theme pill */
@@ -9002,6 +9064,16 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Reopen last note on launch</div>
+          <div class="settings-row-desc">When you start a new session, automatically open the note you had open last time, instead of starting on the Home Screen. Turn off to always start on the Home Screen.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Reopen last note on launch">
+          <input type="checkbox" id="reopen-last-note-toggle" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
       <!-- v0.1651: from the spreadsheet's original planned-settings list.
            App Theme bucket per profiles-note-styles-plan-v2.md — ready to
            fold into a named App Theme once that save/apply UI exists. -->
@@ -11367,7 +11439,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1766';
+const APP_VERSION = '0.1770';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13167,6 +13239,7 @@ const DEFAULT_SETTINGS = {
   // transformation, same reasoning that setting already defaults on).
   convertBulletsOnPaste: true,
   edgeSwipeToHome: true, // swipe right from the left screen edge returns to the notes list
+  reopenLastNoteOnLaunch: true, // v0.1767, per Lynn -- some users find always landing on the last-open note (rather than the Home Screen) confusing; default true matches the app's existing, unconditional behavior exactly
   scratchPadText: '', // content of the experimental side scratch panel, page 1
   scratchPadText2: '', // page 2
   scratchPadText3: '', // page 3
@@ -13226,10 +13299,10 @@ const DEFAULT_SETTINGS = {
   alwaysSpeakWholeNote: false,
   theme: 'auto',
   uiSize: 'medium',
-  font: "'Atkinson Hyperlegible', sans-serif",      // UI font
+  font: "'Atkinson Hyperlegible Next', sans-serif",      // UI font -- v0.1768, per Lynn: Next was added alongside the original in v0.1656 but the default was never actually switched over
   tripleTapToEdit: true,                             // double-tap in view mode enters edit mode (setting key name predates the double-tap change; left as-is to avoid an unnecessary migration)
   customColors: {},                                  // custom color picker values per row
-  noteFont: "'Atkinson Hyperlegible', sans-serif",  // Note content font
+  noteFont: "'Atkinson Hyperlegible Next', sans-serif",  // Note content font -- v0.1768, same reasoning as font above
   fontWeight: '400',
   uiFontSize: 20,
   // v0.1677: custom tooltip font size, per Lynn -- independent of every
@@ -13529,7 +13602,7 @@ const SETTING_BUCKETS_EXCLUDED = 'excluded';
 const SETTING_BUCKETS = {
   // ---- GENERAL (48) ----
   accentColor: SETTING_BUCKETS_GENERAL, convertTabsOnPaste: SETTING_BUCKETS_GENERAL, convertBulletsOnPaste: SETTING_BUCKETS_GENERAL, darkBgColor: SETTING_BUCKETS_GENERAL, darkFgColor: SETTING_BUCKETS_GENERAL, darkNotePreviewColor: SETTING_BUCKETS_GENERAL,
-  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disablePinchZoom: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL, hideLogo: SETTING_BUCKETS_GENERAL, homeFloatingHeader: SETTING_BUCKETS_GENERAL,
+  darkNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, deleteGuardChars: SETTING_BUCKETS_GENERAL, deleteGuardEnabled: SETTING_BUCKETS_GENERAL, disablePinchZoom: SETTING_BUCKETS_GENERAL, disableScratchPad: SETTING_BUCKETS_GENERAL, edgeSwipeToHome: SETTING_BUCKETS_GENERAL, reopenLastNoteOnLaunch: SETTING_BUCKETS_GENERAL, font: SETTING_BUCKETS_GENERAL, hideLogo: SETTING_BUCKETS_GENERAL, homeFloatingHeader: SETTING_BUCKETS_GENERAL,
   globalViewOnly: SETTING_BUCKETS_GENERAL, lastSuffix: SETTING_BUCKETS_GENERAL, lightBgColor: SETTING_BUCKETS_GENERAL, lightFgColor: SETTING_BUCKETS_GENERAL, lightNotePreviewColor: SETTING_BUCKETS_GENERAL,
   lightNotesListEntryBgColor: SETTING_BUCKETS_GENERAL, listMarginLeft: SETTING_BUCKETS_GENERAL, listMarginRight: SETTING_BUCKETS_GENERAL, matchGeneralNotesListEntryColors: SETTING_BUCKETS_GENERAL, noteEditingMode: SETTING_BUCKETS_GENERAL,
   notesListNoteNameFont: SETTING_BUCKETS_GENERAL, notesListNoteNameFontSize: SETTING_BUCKETS_GENERAL, notesListNoteNameFontWeight: SETTING_BUCKETS_GENERAL, notesListPreviewFont: SETTING_BUCKETS_GENERAL, notesListPreviewFontSize: SETTING_BUCKETS_GENERAL, notesListPreviewFontWeight: SETTING_BUCKETS_GENERAL, retainQuietMode: SETTING_BUCKETS_GENERAL,
@@ -15281,6 +15354,29 @@ function applySettings() {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const useDark = settings.theme === 'dark' || (settings.theme === 'auto' && prefersDark);
   body.classList.toggle('dark', useDark);
+  // v0.1769 FIX, per Lynn's report of a regressed Android PWA bug: the
+  // system status bar (and other OS chrome outside the app's own
+  // content) stayed the wrong color in dark mode. Previously handled by
+  // two static <meta name="theme-color"> tags gated by CSS media
+  // queries matching the OS's raw prefers-color-scheme -- but that never
+  // reflected this app's own actual theme, which can be explicitly
+  // overridden independent of the OS (settings.theme = 'light'/'dark').
+  // If the OS preference and the app's own override disagreed, the
+  // browser picked whichever static tag matched the OS, regardless of
+  // what the app was actually rendering. Updated here instead, from the
+  // exact same useDark computation (via body.classList.toggle('dark', ...)
+  // just above, which switches which --bg is actually active) the rest
+  // of this app's dark-mode logic already uses. Deliberately reads --bg
+  // LIVE via resolveCSSVarToHex() rather than a hardcoded pair of hex
+  // values (the original version of this fix did hardcode them, and got
+  // called out for it, correctly -- the old static tags' own dark value,
+  // #1a1a1a, had already silently drifted out of sync with this app's
+  // actual dark background at some point, exactly the failure mode a
+  // second hardcoded copy would eventually repeat). This way, any future
+  // change to --bg's actual value is automatically reflected here with
+  // no separate step to remember.
+  var _themeColorMeta = document.getElementById('theme-color-meta');
+  if (_themeColorMeta) _themeColorMeta.setAttribute('content', resolveCSSVarToHex('--bg'));
 
   // UI size
   body.classList.remove('ui-small', 'ui-large', 'ui-xlarge');
@@ -18378,6 +18474,15 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
   }
   if (!on && typeof _findActive !== 'undefined' && _findActive) closeFind();
   isViewMode = on;
+  // v0.1767 NEW: tracks current view/edit mode at the body level -- no
+  // such hook existed before (confirmed directly: this function only
+  // ever toggled the view-mode-btn's own .active state, nothing
+  // broader). Needed so the new note-title bubble CSS can be scoped to
+  // R&R mode only, the same way .viewer-line's own bubble rules already
+  // are via #note-viewer -- without this, the title would incorrectly
+  // pick up bubble styling while actively typing too, since the title
+  // row itself is shared between both modes.
+  document.body.classList.toggle('note-in-view-mode', on);
   var editor = document.getElementById('note-editor');
   var viewer = document.getElementById('note-viewer');
   var btn = document.getElementById('view-mode-btn');
@@ -22254,7 +22359,7 @@ function openSettings() {
   // load/reopen, the actual setting (settings.noteFont) was correctly
   // saved and applied to notes, but this dropdown never reflected it.
   var nfs = document.getElementById('note-font-select');
-  var _curNoteFont = settings.noteFont || settings.font || "'Atkinson Hyperlegible', sans-serif";
+  var _curNoteFont = settings.noteFont || settings.font || "'Atkinson Hyperlegible Next', sans-serif";
   if (nfs) nfs.value = _curNoteFont;
   // Same gap for the preview text right next to it — its font was only
   // ever set inside the dropdown's own 'change' handler, never here.
@@ -22494,6 +22599,7 @@ function openSettings() {
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
   var cbToggle=document.getElementById('convert-bullets-toggle'); if(cbToggle)cbToggle.checked=(settings.convertBulletsOnPaste !== false);
   var esToggle=document.getElementById('edge-swipe-home-toggle'); if(esToggle)esToggle.checked=(settings.edgeSwipeToHome !== false);
+  var rlnToggle=document.getElementById('reopen-last-note-toggle'); if(rlnToggle)rlnToggle.checked=(settings.reopenLastNoteOnLaunch !== false);
   var dspToggle=document.getElementById('disable-scratch-pad-toggle'); if(dspToggle)dspToggle.checked=!!settings.disableScratchPad;
   var pzToggle=document.getElementById('disable-pinch-zoom-toggle'); if(pzToggle)pzToggle.checked=!!settings.disablePinchZoom;
   var logoToggle=document.getElementById('hide-logo-toggle'); if(logoToggle)logoToggle.checked=!!settings.hideLogo;
@@ -30799,7 +30905,7 @@ function makeImportFolderName(label) {
     // Show current font face name
     var fnlbl = document.getElementById('font-size-bar-font-name');
     if (fnlbl) {
-      var fontVal = settings.noteFont || settings.font || "'Atkinson Hyperlegible', sans-serif";
+      var fontVal = settings.noteFont || settings.font || "'Atkinson Hyperlegible Next', sans-serif";
       // Extract readable name: strip surrounding quotes, take only the first font name
       var fnName = fontVal.replace(/^['"]/, '').split(/['",]/)[0].trim();
       fnlbl.textContent = fnName || fontVal;
@@ -30857,7 +30963,7 @@ function makeImportFolderName(label) {
 
   // Font face bar
   function updateFontFaceBar() {
-    var cur = settings.noteFont || settings.font || "'Atkinson Hyperlegible', sans-serif";
+    var cur = settings.noteFont || settings.font || "'Atkinson Hyperlegible Next', sans-serif";
     document.querySelectorAll('#font-face-pills .font-face-pill').forEach(function(p) {
       p.classList.toggle('active', p.dataset.font === cur);
     });
@@ -33281,6 +33387,10 @@ function makeImportFolderName(label) {
   }
   document.getElementById('edge-swipe-home-toggle').addEventListener('change', function() {
     settings.edgeSwipeToHome = this.checked;
+    updateSaveBtnState();
+  });
+  document.getElementById('reopen-last-note-toggle').addEventListener('change', function() {
+    settings.reopenLastNoteOnLaunch = this.checked;
     updateSaveBtnState();
   });
   document.getElementById('disable-scratch-pad-toggle').addEventListener('change', function() {
@@ -36474,7 +36584,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   document.addEventListener('click', onFirstGesture, true);
   document.addEventListener('touchend', onFirstGesture, true);
   document.addEventListener('keydown', onFirstGesture, true);
-  if (currentNoteId && notes[currentNoteId]) {
+  if (currentNoteId && notes[currentNoteId] && settings.reopenLastNoteOnLaunch !== false) {
     openNote(currentNoteId, 'ongesture');
   } else {
     goToHomeScreen();
