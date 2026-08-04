@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1758 -->
+<!-- Remember App - Version 0.1766 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1758
+  Version 0.1766
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -35,6 +35,14 @@
   Every build MUST append its own one-line entry here, in the same script
   write that makes the change. One or two sentences maximum per build.
 
+  v0.1766 - FIX: custom colors for Bubble Accent Color / Bubble Interior Color silently never applied, per Lynn's report that presets worked but a custom color didn't. This codebase already has a documented precedent for exactly this bug class (v0.1541, light/dark-preview-color): the custom color picker's Apply handler looks up which actual setting to write to via a keyMap keyed by row name, and these two rows -- both added this session (v0.1761/v0.1765) -- were never added to that map at all. The picker's own button still visually updated (it always does, regardless of the lookup), giving no indication anything had failed, while settings.bubbleAccentColor/bubbleInteriorColor were silently never written. Added both missing entries. Verified through the real, complete flow rather than testing the fix in isolation: opened the actual custom color dialog via its real button, typed a hex value into the real input, clicked the real Apply button, and confirmed settings.bubbleAccentColor correctly ends up with that exact value afterward. Suite unchanged: 332/332.
+  v0.1765 - TWO things, per Lynn. (1) Paragraph rules / List item rules now correctly suppressed while a bubble style is active, with a notice explaining why in Settings -- both draw a border-bottom/border-top marking paragraph or list-item boundaries, which would visually leak through underneath a bubble's own rounded shape (most obviously on Tinted/Solid, which have no competing border to mask it). Unlike Ruled Lines & Grid, these two toggles deliberately stay fully interactive -- per Lynn's request, just a notice this time, not disabling the controls -- CSS suppression alone makes them harmlessly inert while bubbles are active, resuming automatically the moment bubbles are turned back off with no separate action needed. Uses the same higher-specificity-override technique (an #note-viewer id selector outweighing the base rule's plain class selector) already proven correct for the Select Lines highlight fix a few builds back. (2) NEW setting: Bubble Interior Color, for Outline/Stripe specifically -- previously just hardcoded to --bg2 in the CSS with no way to adjust it, confirmed directly with Lynn this was never actually built despite being discussed. Row visibility is tied to the currently selected bubble STYLE (shown only for Outline/Stripe, since Tinted/Solid derive their own fill from the accent color instead), separate from the existing accent-color row's own match-toggle-based visibility. When left unset (the default), the CSS custom property is cleared entirely rather than resolved to a concrete hex in JS -- the stylesheet's own var(--bubble-interior, var(--bg2)) fallback then applies natively, staying correctly theme-aware with no computation needed for the common, non-customized case. Verified directly: both new notices correctly show/hide with bubble state while their toggles remain fully interactive; the interior color CSS property correctly sets when customized and correctly clears (letting the fallback apply) when reset to default; the new settings row correctly shows only for Outline/Stripe and hides for Tinted/Solid. Suite unchanged: 332/332.
+  v0.1764 - TWO things, per Lynn. (1) Confirmed directly: the discussed "separate interior color for Outline/Stripe bubbles" setting was never actually built -- only the existing --bg2 (this app's card tone) was reused directly in the CSS, addressing whether it should differ from the rear background, but never exposed as its own adjustable setting. Logged as a known, honest gap on the existing bubble-mode to-do note rather than silently claimed as done; not fixed in this build. (2) NEW: diagnostic logging for the "scroll to last position" Settings button, per Lynn's report that it's regressed. Investigated directly rather than re-patching blind: verified the underlying save/restore of settings.settingsScrollPosition still works correctly on both the Save and Cancel close paths (tested directly); verified getDialogSectionKey()'s section-identity scheme is stable (id-based, not positional, so new sections added elsewhere -- including this session's own Bubble feature and device-aware-sizing work -- shouldn't have disrupted existing sections' saved open/closed state). Neither line of investigation found the actual root cause, so rather than guess further, the button's click handler now logs the saved target position, the sheet's actual current scrollHeight at the moment of the click (if a relevant section isn't expanded, this will be far shorter than the target expects, which would directly explain the symptom), and which sections are currently open -- real evidence from the next actual occurrence, rather than more theorizing from code alone. Verified the logging itself fires correctly and captures the right data. Suite unchanged: 332/332.
+  v0.1763 - FIVE things, per Lynn. (1) Extended the note-specific accent color to view-mode-btn, check-mode-btn, and add-blank-line-btn -- Lynn correctly identified the original v0.1544 scoping (some toggle buttons follow the note's own accent, some don't) as an unexplainable inconsistency rather than a deliberate design worth keeping; agreed, found no good rationale for it either. speak-btn and toggle-checkbox-btn were confirmed to have no comparable persistent glow state to convert at all (the former swaps to a separate stop-btn element while speaking; the latter is a momentary action, not a toggled mode) -- until Lynn specifically pushed back on speak-btn, which turned up a second, genuine miss: its own BASE/default color (not a .active state, just its normal always-visible background) was still plain --accent, missed by only checking .active-style rules the first time through. Fixed. Also found and fixed two more genuine misses from a comprehensive sweep of the actual current CSS rather than trusting the changelog summary alone: #tag-filter-indicator and #hide-completed-indicator (the pill badges, not the toolbar buttons) were also still on plain --accent. (2) NEW setting: "Match note editor accent" for the Bubble accent color, following the exact pattern of the existing note-accent toggle, per Lynn's report that she'd set an explicit bubble color override without meaning to and it kept silently applying afterward. Default on -- while on, bubbleAccentColor is bypassed ENTIRELY (not just used as a null fallback), so an old override can't reassert itself; the color swatch row stays hidden the same way the existing note-accent-color-own row does. (3) FIX: the tag-filter-indicator long-press menu "won't stay open" bug, which Lynn correctly remembered being fixed twice before (v0.1659 built it, v0.1694 patched a regression) yet kept recurring. Root cause, confirmed directly by testing rather than re-patching blind: v0.1694's fix only guarded the 'click' event against iOS's delayed synthetic click after a long-press -- but the menu's own "tap outside closes it" logic runs on SEPARATE 'touchstart' and 'mousedown' listeners that were never covered by that guard at all. iOS's synthetic touch sequence can include a touchstart landing outside the menu (which isn't positioned exactly at the original touch point), closing it through this completely unguarded path regardless of the click guard being active -- meaning v0.1694 was a real but incomplete fix, not something that later got lost. Extended the same eat-clicks guard to both listeners. Verified through the real long-press mechanism end to end, matching v0.1694's own verification rigor: a genuine 500ms long-press correctly opens the menu; an outside touchstart landing during the guard window now correctly leaves it open (confirmed this reproduced the bug precisely before the fix, and confirmed it's fixed after); a genuine outside tap after the guard window expires still correctly closes it, so normal dismissal isn't broken. Suite unchanged: 332/332.
+  v0.1762 - TWO fixes to the new Bubble/Cloud Paragraphs feature, per Lynn's first-round testing. (1) Markdown headings inside a Solid bubble kept the normal page text color instead of the computed light/dark text that variant uses for contrast against its own colored fill. Root cause: .viewer-h1 through .viewer-h6 explicitly set their own color rather than inheriting the parent .viewer-line's, so the solid-variant override never reached them -- fixed with an explicit, higher-specificity override for headings specifically. Confirmed the other three variants (Tinted/Outline/Stripe) don't need this, since their interiors stay page-like enough that the normal text color already has correct contrast. (2) The Select Lines tool's blue highlight was invisible while a bubble style was active, per Lynn's report -- considered and explicitly recommended AGAINST temporarily disabling bubble mode during selection (would be more work to get right and more visually jarring than the actual fix) after finding the real cause: the highlight was never broken or needing a redesign, just losing a CSS specificity fight, since the bubble variant rules include #note-viewer in their selector and so out-specify the plain .viewer-line.block-selected rule, silently replacing its background entirely rather than blending with it (CSS doesn't layer separate rules' background declarations). Restored with a higher-specificity override re-asserting the exact same existing translucent blue -- not a new design, just making the already-correct rule win the cascade again. Verified directly: heading color confirmed correctly picking up the new override rule rather than the old one; the selection highlight confirmed correctly computing to its intended translucent blue rather than the bubble's own fill color. Suite unchanged: 332/332.
+  v0.1761 - NEW: Bubble/Cloud Paragraph appearance for R&R mode, per Lynn's multi-turn design discussion this session. Each raw non-blank line becomes its own visually distinct card -- confirmed directly with Lynn this means one bubble per raw line, not merging multiple lines into one paragraph -- styled entirely via CSS on the EXISTING .viewer-line elements with zero DOM restructuring, so select-lines, move-lines, checkboxes, and every other line-based feature keep working exactly as before. Four style variants (Tinted/Solid/Outline/Stripe), all derived from a SINGLE new color setting (Bubble Accent Color, defaulting to the note's current accent) rather than four separate colors -- resolved through direct back-and-forth with Lynn: outline/stripe reuse the existing card tone (--bg2) for their interior, matching what she confirmed she wanted after questioning the original "just reuses the page background" design; solid's fill is programmatically darkened from the active accent (not pulled from the other theme's palette, which would often make contrast WORSE, not better -- dark mode's accent is lighter than light mode's, the opposite of what a dark solid fill needs) with its text color computed via the same WCAG luminance formula already used elsewhere in this app, not a hardcoded white that would fail for light custom accent colors. Fixed the stripe variant's fuzzy top edge (flagged from the standalone prototype) with a subtle uniform border, overridden to a thicker accent stripe on the left only. Shadow angle fixed at 35 degrees per Lynn's explicit choice, not a user-facing setting. All four numeric settings (padding, spacing, corner radius, shadow intensity) are stored as reference/touch-tier pixel values and scaled through var(--ui-scale) at render time, exactly matching the Stage 1/2 device-aware-sizing convention Lynn specifically asked to reuse. Ruled Lines & Grid is force-disabled (not just visually greyed out -- genuinely non-interactive) the moment a bubble style is active, with an explicit notice explaining why, per Lynn's request; does not auto-restore when bubbles are turned back off. New global color utilities added (mixHex, darkenHex, relativeLuminanceHex, resolveCSSVarToHex), following this app's own established convention of plain JS hex math over CSS color-mix() for broader browser support. Two real bugs caught and fixed before shipping, both found by testing rather than assumed away: (1) a stray extra closing div in the new Settings HTML, caught by the existing structural harness; (2) a genuine cross-scope bug where the ruled-lines conflict sync function was invisible to the Settings-open initialization code (confirmed directly by testing, not assumed) -- the exact class of mistake this codebase's own v0.1543 fix already documented once for markRow() -- fixed by making the function truly global. Also caught and fixed a harness-flagged unclosed-CSS-comment warning that turned out to be an accidental literal "less-than style greater-than" string inside an unrelated JS comment, confusing the file's tag-boundary detection. Verified extensively: DOM structure confirmed unchanged (same element count, same blank-line detection) with bubbles on; all four variant body classes confirmed mutually exclusive; the color derivation math confirmed correct once verified independent of a known, pre-existing jsdom limitation (already confirmed present in this app's own existing, shipped code) that prevents resolving CSS custom properties in this specific test environment; the ruled-lines force-disable and notice confirmed correctly appearing on Settings open, not just after a change event. Suite unchanged: 332/332.
+  v0.1760 - NEW: Ctrl/Cmd+F now opens the Home Screen's own search bar, per Lynn's confirmed request -- previously fell through to the browser's native find there, inconsistent with the note editor, where the same shortcut has always opened this app's own find bar. Wired directly to the existing openHomeSearch()/closeHomeSearch() pair rather than building anything new -- press again to close, matching the note editor's own toggle behavior exactly. Guarded against firing while some other dialog (Settings, Help, etc.) happens to be open on top of the Home Screen, so the shortcut still reaches whatever's actually on screen -- every one of the app's modal overlays follows the same "*-overlay" id + .open class convention, confirmed directly, so one generic check covers all of them without needing to name each individually. Verified directly: Ctrl+F on a bare Home Screen correctly suppresses the browser's native find and opens the app's own search bar; pressing it again correctly closes it; pressing it while Settings is open correctly does neither, leaving native find available for Settings' own content instead. Suite unchanged: 332/332.
+  v0.1759 - NEW: closed three remaining Ctrl+wheel zoom-compensation gaps, per Lynn's report -- all three were explicitly flagged as known, deliberate gaps back in the changelogs when this whole system was first built (v0.1716), never addressed since. (1) The Settings dialog's own floating bottom control (checkmark/scroll/X) never had compensation at all. Caught a real conflict before shipping: it also has separate wide-window logic recomputing its position based on the sheet's current width, and the shared compensation helper's own "no mouse present" behavior (clearing the anchor back to an empty string, relying on a static CSS default) would have silently broken that wide-window centering the moment no mouse was present, since this element's correct value is dynamic, not a static default. Fixed properly: computes the current correct position first, always, then layers the zoom-scale correction on top only when actually needed. (2) The Settings dialog's own floating search bar (position:sticky) never had compensation. (3) The Help dialog's floating header and search bar (also position:sticky, stacked -- the search bar's position depends on the header's own height) never had compensation; applied it before the existing height-measurement code runs, since a compensated element's getBoundingClientRect() correctly reflects its true, corrected size, so measuring after compensation gives the search bar the right offset instead of one based on an inflated, uncompensated height. All three use applyZoomSizeCompensation(), the same function the Home Screen's own sticky header ended up using after its own earlier back-and-forth (v0.1727-v0.1729) -- reused for consistency with what was actually kept, rather than trying yet another scale-only variant already tried once and abandoned. Verified directly with a simulated zoomed-in mouse device: all four elements (Settings search bar, Settings floating control, Help header, Help search bar) correctly receive the compensating scale transform; the floating control's position correctly reflects the scaled-down DYNAMIC wide-window value, not the static default, confirming the two systems compose correctly rather than fighting each other. Suite unchanged: 332/332.
   v0.1758 - FIX: find-in-note losing track of matches in R&R mode, per Lynn's report of hitting "next" and landing on unrelated highlighted text -- happened specifically while searching the debug log, which was the key clue. Root cause: runFind() marks match boundaries by inserting null-byte (\x00) placeholder tokens into the raw text before it's passed through urlsToLinks() for rendering, then swaps those placeholders for real <mark> elements afterward. The plain-URL-detection regex in urlsToLinks() excluded whitespace, angle brackets, and quotes from a URL's body, but not the null byte -- so if a placeholder landed directly adjacent to a URL with no whitespace between them, the greedy URL match swallowed the placeholder whole, burying it inside the generated <a> tag where the later placeholder-to-<mark> replacement could never find it. That silently dropped one match from the list without erroring, shifting every later match's index out of alignment with what was actually highlighted on screen -- exactly the reported symptom. The debug log is especially prone to this since it's dense with repeated stack-trace URLs from diagnostic logging. Fixed by adding \x00 to the regex's excluded characters, so a URL match always stops cleanly at a placeholder boundary rather than consuming it. Verified directly: reproduced the exact scenario (a stack-trace URL immediately followed by a find-match placeholder, no whitespace between them) and confirmed the placeholder now survives the render fully intact instead of being absorbed into the link. Two other bugs Lynn reported in the same session -- an export-reminder nag appearing despite a JSON export the day before, and an iOS text-selection copy landing two lines off from what was visually selected -- were investigated directly (the JSON export path does correctly call markFullExportDone(); the shared download function is fully synchronous with nothing that should throw) but not conclusively reproduced from code alone; no fix attempted for either without stronger evidence. Suite unchanged: 332/332.
   v0.1757 - NEW: Stage 2 of device-aware sizing, per Lynn's request to proceed using Stage 1's numbers as a working model rather than waiting to finalize the exact relative sizes first -- everything here is driven through --ui-scale (already defined per size tier AND touch/mouse input mode, per Stage 1), so a future adjustment to those numbers automatically propagates everywhere touched here with no further per-component changes needed, exactly as requested. Covers all six items from the original Stage 2 list: (1) note editor header's own padding and internal gap; (2) both FABs (note-fab, quiet-more-fab) -- their own circle size didn't even vary by size tier before this, a gap beyond just touch/mouse; (3) the floating Home Screen pill and logo's internal padding -- deliberately left their outer position (top/left/right) untouched, since applyZoomPositionCompensation() hardcodes that exact anchor (confirmed directly in its call site) and would desync if the position itself moved with the tier/input mode, so only padding scales there; (4) folder breadcrumb, home search bar, and select-notes bar padding -- the search bar's was in an inline style attribute, moved into a proper CSS rule since inline styles can't be overridden by any selector; (5) the toolbar row's own inter-button gap; (6) note list and folder list entry padding/gap/margin. Every value uses the exact prior touch/medium pixel number as its base, so --ui-scale=1 there reproduces the original layout exactly -- confirmed by direct arithmetic, not just by construction. Verified structurally (the same jsdom limitation noted in Stage 1 applies here too: calc()/var() chains can't be resolved into rendered pixels in this environment) -- CSS brace balance confirmed unchanged (1038/1038), and every touched rule confirmed to correctly reference var(--ui-scale) in place of its old hardcoded value. Suite unchanged: 332/332.
   v0.1756 - TWO refinements to the new font-size buttons, per Lynn's first-round testing feedback. (1) Both glyphs made significantly larger and equal in size (0.9x icon size, up from 0.62x/0.42x) -- the smaller 'a' had deliberately echoed "smaller font" the same way the bottom sheet's own icon does, but these buttons are specifically for low-vision users, so a small, hard-to-see glyph was actively counterproductive regardless of what it was meant to symbolize. (2) Added hold-to-repeat, reusing the exact same pattern already established by the caret nudge buttons (wireCaretNudge): Pointer Events, immediate first step on press, 450ms delay, then repeats at ~11/s until released -- same alarm-clock-style behavior Lynn asked for. saveSettings() is deferred to fire exactly once when the hold ends, rather than on every rapid repeat step, to avoid unnecessary repeated writes; the visible size change and live toast still update on every single step throughout the hold. Verified directly: a quick tap still increments once and saves once; holding continues past the initial step and saves exactly once on release, not per repeat; both glyphs now render at the same, larger size. Suite unchanged: 332/332.
@@ -2440,6 +2448,97 @@ body.tag-color-borders .tag-border-9::before { background: var(--color-rose); }
 body.tag-color-borders .tag-border-10::before { background: var(--color-violet); }
 .viewer-line.blank-viewer-line { height: calc(var(--blank-line-height-factor, 1) * var(--font-size-editor, 20px)); display: block; }
 .viewer-line.paragraph-end { border-bottom: 1px solid var(--border); padding-bottom: 0.35em; }
+
+/* ===== BUBBLE/CLOUD PARAGRAPH APPEARANCE (v0.1761) ===== */
+/* R&R mode only -- applyBubbleAppearance() toggles body.bubbles-active
+   plus a bubbles-<variant> class, and sets the CSS custom properties
+   referenced below (--bubble-padding etc. are the raw setting values;
+   the calc()s here are what actually multiply by --ui-scale, exactly
+   like every other device-aware-sizing value in this app). Deliberately
+   targets .viewer-line directly rather than restructuring the DOM into
+   new wrapper groups -- every raw non-blank line becomes its own
+   complete bubble (confirmed directly with Lynn: this matches her own
+   intent, and keeps every existing line-based feature -- select-lines,
+   move-lines, checkboxes -- working exactly as before, since the DOM
+   tree itself never changes shape). */
+body.bubbles-active #note-viewer .viewer-line.blank-viewer-line {
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+body.bubbles-active #note-viewer .viewer-line:not(.blank-viewer-line) {
+  border-radius: calc(var(--bubble-radius, 14px) * var(--ui-scale));
+  padding: calc(var(--bubble-padding, 12px) * var(--ui-scale)) 16px;
+  margin-bottom: calc(var(--bubble-spacing, 18px) * var(--ui-scale));
+  box-shadow: var(--bubble-shadow, none);
+}
+body.bubbles-active.bubbles-tinted #note-viewer .viewer-line:not(.blank-viewer-line) {
+  background: var(--bubble-fill-tinted, var(--bg2));
+}
+body.bubbles-active.bubbles-solid #note-viewer .viewer-line:not(.blank-viewer-line) {
+  background: var(--bubble-fill-solid, var(--accent));
+  color: var(--bubble-solid-text, white);
+}
+/* v0.1762 FIX, per Lynn's report: headings inside a solid bubble kept
+   the normal page text color instead of the light/dark text this
+   variant computes for contrast against its own colored fill. Root
+   cause: .viewer-h1 through .viewer-h6 (below) explicitly set their own
+   color rather than inheriting it, so the parent rule above never
+   reached them -- they need the same override explicitly, at higher
+   specificity than the base heading rule so it actually wins. */
+body.bubbles-active.bubbles-solid #note-viewer .viewer-line:not(.blank-viewer-line) .viewer-h1,
+body.bubbles-active.bubbles-solid #note-viewer .viewer-line:not(.blank-viewer-line) .viewer-h2,
+body.bubbles-active.bubbles-solid #note-viewer .viewer-line:not(.blank-viewer-line) .viewer-h3,
+body.bubbles-active.bubbles-solid #note-viewer .viewer-line:not(.blank-viewer-line) .viewer-h4,
+body.bubbles-active.bubbles-solid #note-viewer .viewer-line:not(.blank-viewer-line) .viewer-h5,
+body.bubbles-active.bubbles-solid #note-viewer .viewer-line:not(.blank-viewer-line) .viewer-h6 {
+  color: var(--bubble-solid-text, white);
+}
+body.bubbles-active.bubbles-outline #note-viewer .viewer-line:not(.blank-viewer-line) {
+  background: var(--bubble-interior, var(--bg2));
+  border: 2px solid var(--bubble-accent, var(--accent));
+}
+body.bubbles-active.bubbles-stripe #note-viewer .viewer-line:not(.blank-viewer-line) {
+  background: var(--bubble-interior, var(--bg2));
+  /* v0.1761 FIX, per Lynn's report on the prototype: the top (and other
+     non-striped) edges had no defined boundary against the page
+     background, reading as unfinished/fuzzy when the shadow didn't
+     fully cover them. A subtle uniform border first, then border-left
+     overridden to the thicker accent stripe -- CSS applies declarations
+     in order, so the later, more specific border-left wins on that side
+     only, leaving the other three sides with just the subtle border. */
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--bubble-accent, var(--accent));
+  border-radius: 4px calc(var(--bubble-radius, 14px) * var(--ui-scale)) calc(var(--bubble-radius, 14px) * var(--ui-scale)) 4px;
+}
+/* Ruled lines/grid are force-disabled in JS (settings.ruledLineStyle
+   set to 'none') the moment a bubble style is turned on -- see the
+   settings-row wiring below -- rather than hidden here via CSS, since
+   applyRuledLines() already skips all rendering for that value. */
+
+/* v0.1765: Paragraph rules / List item rules, per Lynn -- both draw a
+   border-bottom/border-top marking paragraph or list-item boundaries,
+   which would visually leak through underneath a bubble's own rounded
+   shape (most obviously on Tinted/Solid, which have no competing border
+   to mask it). Unlike Ruled Lines & Grid, the settings themselves stay
+   ON and interactive here -- just suppressed while bubbles are active,
+   taking effect again automatically the moment bubbles are turned off,
+   with a notice explaining why in Settings rather than disabling the
+   controls outright. */
+body.bubbles-active #note-viewer .viewer-line.paragraph-end,
+body.bubbles-active #note-viewer .viewer-line.block-rule,
+body.bubbles-active #note-viewer .viewer-line.block-rule-top {
+  border-bottom: none;
+  border-top: initial;
+}
+
+body.bubbles-active #note-viewer .viewer-line.block-selected {
+  background: rgba(59,130,246,0.25) !important;
+  outline: 2px solid rgba(59,130,246,0.55);
+  outline-offset: -1px;
+}
+
 /* Theme pill */
 #theme-indicator-pill{display:none;align-items:center;gap:3px;font-size:calc(var(--font-ui)*0.60);color:var(--fg3);background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:1px 5px 1px 4px;margin-left:3px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;cursor:pointer;user-select:none;-webkit-user-select:none;}
 #theme-indicator-pill.active{display:inline-flex;}
@@ -2782,7 +2881,7 @@ body.tag-color-pills .note-tag.tag-color-10 { background: var(--color-violet);  
 #tag-filter-indicator,
 #hide-completed-indicator {
   display: none; align-items: center; gap: 4px;
-  background: var(--accent); color: #fff;
+  background: var(--note-accent, var(--accent)); color: #fff;
   border-radius: 999px; padding: 0 10px; height: 1.8em;
   font-family: var(--font-body); font-size: 0.78em; font-weight: 600;
   cursor: pointer; touch-action: manipulation;
@@ -4077,7 +4176,7 @@ body.has-mouse .toolbar-drag-handle.dragging {
   box-sizing: border-box;
 }
 #speak-btn {
-  background: var(--accent);
+  background: var(--note-accent, var(--accent));
   color: white;
 }
 
@@ -4614,9 +4713,9 @@ body.pinch-zoom-disabled #settings-sheet {
   .check-mode .viewer-line:hover { background: rgba(128,128,128,0.08); }
 }
 #check-mode-btn.active {
-  color: var(--accent);
+  color: var(--note-accent, var(--accent));
   background: transparent;
-  box-shadow: 0 0 0 2px var(--accent);
+  box-shadow: 0 0 0 2px var(--note-accent, var(--accent));
   border-radius: var(--radius-sm);
 }
 /* Add blank line mode — every line gets a large tap target */
@@ -4625,9 +4724,9 @@ body.pinch-zoom-disabled #settings-sheet {
   .add-blank-line-mode .viewer-line:hover { background: rgba(128,128,128,0.08); }
 }
 #add-blank-line-btn.active {
-  color: var(--accent);
+  color: var(--note-accent, var(--accent));
   background: transparent;
-  box-shadow: 0 0 0 2px var(--accent);
+  box-shadow: 0 0 0 2px var(--note-accent, var(--accent));
   border-radius: var(--radius-sm);
 }
 
@@ -4765,7 +4864,7 @@ body:not(.dark) .note-item {
 }
 #speak-btn.dimmed:hover { background: var(--bg3); }
 #view-mode-btn.active {
-  color: var(--accent);
+  color: var(--note-accent, var(--accent));
   background: transparent;
 }
 
@@ -9601,6 +9700,93 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       </div>
 
     
+<!-- v0.1761: Bubble/Cloud Paragraph appearance, per Lynn -- displays
+     each paragraph in R&R mode as its own visually distinct "cloud",
+     rather than plain running text. Placed right before Ruled Lines &
+     Grid since the two are mutually exclusive (a ruled/grid background
+     wouldn't make visual sense with paragraphs shown as separate
+     bubbles) -- the JS below keeps them in sync in both directions. -->
+<div class="settings-subsection-title" style="margin-top:10px">Bubble/Cloud Paragraphs</div>
+      <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div>
+          <div class="settings-row-label">Paragraph style</div>
+          <div class="settings-row-desc">Read &amp; Revise mode only. Shows each paragraph as its own distinct card, making them easier to tell apart at a glance. Blank lines are treated purely as spacing between bubbles, never shown as an empty bubble of their own.</div>
+        </div>
+        <div class="settings-radio-group" id="bubble-style-seg">
+          <label class="settings-radio-label"><input type="radio" name="bubble-style" value="none" checked> Off</label>
+          <label class="settings-radio-label"><input type="radio" name="bubble-style" value="tinted"> Tinted</label>
+          <label class="settings-radio-label"><input type="radio" name="bubble-style" value="solid"> Solid</label>
+          <label class="settings-radio-label"><input type="radio" name="bubble-style" value="outline"> Outline</label>
+          <label class="settings-radio-label"><input type="radio" name="bubble-style" value="stripe"> Stripe</label>
+        </div>
+      </div>
+      <div id="bubble-appearance-rows" style="display:none;">
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Match note editor accent</div>
+            <div class="settings-row-desc">When on, bubbles automatically use the same accent color as the note editor's other buttons (Move line, Outline mode, etc.) -- whatever that's currently set to. Turn off to give bubbles their own, independent color.</div>
+          </div>
+          <label class="toggle-switch" aria-label="Match note editor accent color for bubbles">
+            <input type="checkbox" id="match-note-accent-bubbles-toggle" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div id="bubble-accent-color-own" style="display:none;">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+          <div class="settings-row-label">Bubble Accent Color</div>
+          <div class="settings-row-desc" style="font-size:0.85em;color:var(--fg3);">Used for the Outline/Stripe line color, and as the basis for the Tinted and Solid fill colors (lightened for Tinted, darkened for Solid, computed automatically).</div>
+          <div class="color-swatch-row" id="bubble-accent-color-swatches">
+            <button class="settings-color-swatch" data-value="#5b7c6e" style="background:#5b7c6e" title="Sage (default)"></button>
+            <button class="settings-color-swatch" data-value="#3b82c4" style="background:#3b82c4" title="Blue"></button>
+            <button class="settings-color-swatch" data-value="#8b5cf6" style="background:#8b5cf6" title="Purple"></button>
+            <button class="settings-color-swatch" data-value="#e07b2a" style="background:#e07b2a" title="Orange"></button>
+            <button class="settings-color-swatch" data-value="#a0235a" style="background:#a0235a" title="Rose"></button>
+            <button class="custom-color-btn" id="ccp-btn-bubble-accent-color" data-rowkey="bubble-accent-color" title="Custom color">+</button>
+            <span class="swatch-hex-label" id="hex-label-bubble-accent-color">#5b7c6e</span>
+          </div>
+        </div>
+        </div>
+        <!-- v0.1765: Bubble Interior Color, per Lynn -- only meaningful
+             for Outline/Stripe (Tinted/Solid derive their own fill from
+             the accent color instead), so shown/hidden based on the
+             selected style rather than the match-accent toggle above.
+             Neutral, subtle defaults appropriate for a card background,
+             not the vivid accent-line palette used for Bubble Accent. -->
+        <div id="bubble-interior-color-row" style="display:none;">
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+          <div class="settings-row-label">Bubble Interior Color (Outline/Stripe)</div>
+          <div class="settings-row-desc" style="font-size:0.85em;color:var(--fg3);">The fill inside each bubble, separate from its accent-colored line or stripe. Defaults to this app's usual card background tone.</div>
+          <div class="color-swatch-row" id="bubble-interior-color-swatches">
+            <button class="settings-color-swatch" data-value="#ede8de" style="background:#ede8de;border:1px solid var(--border)" title="Default card tone"></button>
+            <button class="settings-color-swatch" data-value="#e0dbd0" style="background:#e0dbd0;border:1px solid var(--border)" title="Warm gray"></button>
+            <button class="settings-color-swatch" data-value="#dde3e0" style="background:#dde3e0;border:1px solid var(--border)" title="Cool gray"></button>
+            <button class="settings-color-swatch" data-value="#ffffff" style="background:#ffffff;border:1px solid var(--border)" title="White"></button>
+            <button class="settings-color-swatch" data-value="#2a2723" style="background:#2a2723" title="Dark"></button>
+            <button class="custom-color-btn" id="ccp-btn-bubble-interior-color" data-rowkey="bubble-interior-color" title="Custom color">+</button>
+            <span class="swatch-hex-label" id="hex-label-bubble-interior-color">#ede8de</span>
+          </div>
+        </div>
+        </div>
+        <div class="settings-row range-row" style="margin-top:8px">
+          <div class="settings-row-label">Bubble padding <span id="bubble-padding-val">12</span>px</div>
+          <input type="range" id="bubble-padding-slider" min="4" max="28" step="1" value="12" style="width:100%">
+        </div>
+        <div class="settings-row range-row">
+          <div class="settings-row-label">Bubble spacing <span id="bubble-spacing-val">18</span>px</div>
+          <input type="range" id="bubble-spacing-slider" min="4" max="32" step="1" value="18" style="width:100%">
+        </div>
+        <div class="settings-row range-row">
+          <div class="settings-row-label">Corner radius <span id="bubble-radius-val">14</span>px</div>
+          <input type="range" id="bubble-radius-slider" min="0" max="28" step="1" value="14" style="width:100%">
+        </div>
+        <div class="settings-row range-row">
+          <div class="settings-row-label">Drop shadow <span id="bubble-shadow-val">0</span></div>
+          <input type="range" id="bubble-shadow-slider" min="0" max="30" step="1" value="0" style="width:100%">
+        </div>
+        <div class="settings-row-desc" style="font-size:0.85em;color:var(--fg3);margin-top:-4px;">These four values are relative to your device's UI size setting (Small/Medium/Large/XL) and whether a mouse is present, the same way toolbar buttons and other UI elements already are — a single value here looks proportionally correct across all device sizes rather than becoming oversized on larger screens.</div>
+      </div>
+
+    
 <div class="settings-subsection-title" style="margin-top:10px">Ruled Lines &amp; Grid</div>
 
 
@@ -9608,6 +9794,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <div>
           <div class="settings-row-label">Ruled lines / grid</div>
           <div class="settings-row-desc">A decorative paper-style background, in both Typing and Read &amp; Revise mode — never changes your note's actual text. Works with whatever background color you've already chosen. When active, the <em>Blank Line Height</em> setting (in Text) is overridden so blank lines stay on the ruled grid.</div>
+          <div class="settings-row-desc" id="ruled-lines-bubble-conflict-notice" style="display:none;color:var(--danger);font-weight:600;">Unavailable while Bubble/Cloud Paragraphs (above) is turned on — the two aren't compatible with each other visually.</div>
         </div>
         <div class="settings-radio-group" id="ruled-line-style-seg">
           <label class="settings-radio-label"><input type="radio" name="ruled-line-style" value="none"> Off</label>
@@ -9706,6 +9893,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <div>
           <div class="settings-row-label">Paragraph rules (Read &amp; Revise mode)</div>
           <div class="settings-row-desc">Show a subtle horizontal line between paragraphs in Read &amp; Revise mode. A paragraph boundary is a non-blank line followed by one or more blank lines.</div>
+          <div class="settings-row-desc" id="paragraph-rules-bubble-conflict-notice" style="display:none;color:var(--danger);font-weight:600;">Won't take effect while Bubble/Cloud Paragraphs is turned on -- each paragraph already has its own visually distinct bubble shape, so this line wouldn't fit visually alongside it.</div>
         </div>
         <label class="toggle-switch" aria-label="Show paragraph rules in Read &amp; Revise mode">
           <input type="checkbox" id="paragraph-rules-toggle">
@@ -9720,6 +9908,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <div>
           <div class="settings-row-label">List item rules (Read &amp; Revise mode)</div>
           <div class="settings-row-desc">Show a subtle horizontal line below each checkbox or hyphen list item in Read &amp; Revise mode.</div>
+          <div class="settings-row-desc" id="block-rules-bubble-conflict-notice" style="display:none;color:var(--danger);font-weight:600;">Won't take effect while Bubble/Cloud Paragraphs is turned on -- each list item already has its own visually distinct bubble shape, so this line wouldn't fit visually alongside it.</div>
           </div>
         <label class="toggle-switch" aria-label="Show list item rules in Read &amp; Revise mode">
           <input type="checkbox" id="block-rules-toggle">
@@ -11178,7 +11367,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1758';
+const APP_VERSION = '0.1766';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13117,6 +13306,27 @@ const DEFAULT_SETTINGS = {
   matchGeneralNotesListEntryColors: true,
   lightNotesListEntryBgColor: '#f5f0e8',  // = lightBgColor default; inert while matching
   darkNotesListEntryBgColor: '#1e1c1a',   // = darkBgColor default; inert while matching
+  // -- Bubble/Cloud paragraph appearance (v0.1761), per Lynn -- R&R mode
+  // only. bubbleAccentColor is the ONLY new color setting: tinted and
+  // solid fills, and the outline/stripe accent line, are all DERIVED
+  // from this single color at render time (see applyBubbleAppearance()),
+  // not stored as separate colors -- matches Lynn's own instinct that a
+  // lighter/darker version of one accent covers tinted/solid, discussed
+  // and confirmed directly with her. The four numeric values below are
+  // reference (touch/medium-tier) pixel numbers, same convention as
+  // every other device-aware-sizing value in this app -- rendering
+  // multiplies each by var(--ui-scale) for the current tier/input mode,
+  // so these settings stay meaningfully "relative" the same way
+  // Stage 1/2 made the rest of the UI relative, with no separate
+  // per-tier settings needed.
+  bubbleStyle: 'none',        // 'none' | 'tinted' | 'solid' | 'outline' | 'stripe'
+  matchNoteAccentForBubbles: true,  // v0.1763, per Lynn -- while true, bubbleAccentColor below is bypassed entirely and the override swatch row stays hidden, so there's no way to accidentally set an explicit override while intending to just follow the note's own accent color.
+  bubbleAccentColor: null,    // null = derive from the note's current accent color
+  bubbleInteriorColor: null,  // v0.1765, per Lynn -- Outline/Stripe's own interior fill, independent of the accent line/stripe color. null = derive from --bg2 (this app's existing "card" tone), matching the original default before this became adjustable.
+  bubblePadding: 12,          // vertical padding inside each bubble, px (reference tier)
+  bubbleSpacing: 18,          // gap between bubbles, px (reference tier)
+  bubbleRadius: 14,           // corner radius, px (reference tier)
+  bubbleShadowIntensity: 0,   // 0-30, 0 = no shadow. Angle is fixed (35deg), not a setting.
   voiceURI: '',
   speechRate: 0.9,
   showSpeakBtn: true,        // show the Speak button at all
@@ -13329,7 +13539,7 @@ const SETTING_BUCKETS = {
   tooltipFontSize: SETTING_BUCKETS_GENERAL, tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL, exportReminderEnabled: SETTING_BUCKETS_GENERAL,
   uiLineHeight: SETTING_BUCKETS_GENERAL, uiBlankLineHeight: SETTING_BUCKETS_GENERAL,
   // ---- NOTE_APPEARANCE (50) ----
-  accentColorNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, blankLineHeight: SETTING_BUCKETS_NOTE_APPEARANCE, charsPerLine: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxColor: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorEnabled: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorWidth: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorColor: SETTING_BUCKETS_NOTE_APPEARANCE,
+  accentColorNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, blankLineHeight: SETTING_BUCKETS_NOTE_APPEARANCE, charsPerLine: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxColor: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorEnabled: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorWidth: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorColor: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleStyle: SETTING_BUCKETS_NOTE_APPEARANCE, matchNoteAccentForBubbles: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleAccentColor: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleInteriorColor: SETTING_BUCKETS_NOTE_APPEARANCE, bubblePadding: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleRadius: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleShadowIntensity: SETTING_BUCKETS_NOTE_APPEARANCE,
   customColor: SETTING_BUCKETS_NOTE_APPEARANCE, customColor2: SETTING_BUCKETS_NOTE_APPEARANCE, customColor3: SETTING_BUCKETS_NOTE_APPEARANCE, darkNotePaperBg: SETTING_BUCKETS_NOTE_APPEARANCE, darkNotePaperFg: SETTING_BUCKETS_NOTE_APPEARANCE,
   darkNoteTexture: SETTING_BUCKETS_NOTE_APPEARANCE, darkNoteToolbarBgColor: SETTING_BUCKETS_NOTE_APPEARANCE, disableLigatures: SETTING_BUCKETS_NOTE_APPEARANCE, editorFontSize: SETTING_BUCKETS_NOTE_APPEARANCE, fontVariantNumeric: SETTING_BUCKETS_NOTE_APPEARANCE,
   fontWeight: SETTING_BUCKETS_NOTE_APPEARANCE, gridLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, headingIndent: SETTING_BUCKETS_NOTE_APPEARANCE, highlightColor: SETTING_BUCKETS_NOTE_APPEARANCE, letterSpacing: SETTING_BUCKETS_NOTE_APPEARANCE,
@@ -14585,6 +14795,60 @@ function attachLongPress(el, opts) {
 function resolveThemedColor(matchGeneral, ownValue, generalValue) {
   return (matchGeneral !== false) ? generalValue : (ownValue || generalValue);
 }
+// v0.1761: generalizes lightenHex to blend toward ANY target color, not
+// just white -- needed for the bubble feature's tinted fill, which must
+// blend the accent toward the page background specifically (could be
+// light OR dark depending on theme), not toward a fixed white. Same
+// colorimetrically-correct proportional blend lightenHex already uses,
+// just with the target color as a parameter instead of hardcoded.
+function mixHex(hexA, hexB, percent) {
+  hexA = hexA.replace('#', ''); if (hexA.length === 3) hexA = hexA[0]+hexA[0]+hexA[1]+hexA[1]+hexA[2]+hexA[2];
+  hexB = hexB.replace('#', ''); if (hexB.length === 3) hexB = hexB[0]+hexB[0]+hexB[1]+hexB[1]+hexB[2]+hexB[2];
+  var frac = Math.max(0, Math.min(100, percent)) / 100;
+  var ar = parseInt(hexA.substring(0,2),16), ag = parseInt(hexA.substring(2,4),16), ab = parseInt(hexA.substring(4,6),16);
+  var br = parseInt(hexB.substring(0,2),16), bg = parseInt(hexB.substring(2,4),16), bb = parseInt(hexB.substring(4,6),16);
+  var r = Math.round(ar + (br - ar) * frac);
+  var g = Math.round(ag + (bg - ag) * frac);
+  var b = Math.round(ab + (bb - ab) * frac);
+  return '#' + [r,g,b].map(function(v){ return Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0'); }).join('');
+}
+// v0.1761: mirrors lightenHex but blends toward black -- for the bubble
+// feature's solid-fill variant, which needs a reliably dark version of
+// whatever accent color is active so light text stays readable on it,
+// regardless of which theme or which accent the user has chosen.
+function darkenHex(hex, percent) {
+  return mixHex(hex, '#000000', percent);
+}
+// v0.1761: WCAG relative luminance, same formula already used locally
+// inside the custom-color-picker grid code -- exposed globally here so
+// the bubble feature's solid-fill text color can be computed correctly
+// (dark text on a light fill, light text on a dark fill) rather than
+// assuming white always works, which fails for light custom accents.
+function relativeLuminanceHex(hex) {
+  hex = hex.replace('#', ''); if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  var r = parseInt(hex.substring(0,2),16), g = parseInt(hex.substring(2,4),16), b = parseInt(hex.substring(4,6),16);
+  var a = [r,g,b].map(function(v){ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
+  return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+}
+// v0.1761: resolves a CSS custom property (which may be any valid CSS
+// color, not necessarily hex) to a concrete hex string, using the same
+// technique already established in the custom-color-picker grid code --
+// a throwaway hidden element, reading its computed background color, and
+// parsing the browser's own resolved rgb(...) output. Needed since the
+// bubble color derivations (mixHex, darkenHex, luminance) all operate on
+// hex, but --bg/--accent are CSS variables whose live value depends on
+// the current theme.
+function resolveCSSVarToHex(varName) {
+  var el = document.createElement('div');
+  el.style.cssText = 'position:fixed;width:1px;height:1px;visibility:hidden;background:var(' + varName + ')';
+  document.body.appendChild(el);
+  var rgb = getComputedStyle(el).backgroundColor;
+  document.body.removeChild(el);
+  var m = rgb.match(/(\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return '#5b7c6e';
+  return '#' + [+m[1],+m[2],+m[3]].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
+}
+
 function lightenHex(hex, percent) {
   // Blends toward white by `percent` (0-100), rather than adding a flat
   // amount to each channel. A flat add lightens dark colors much more
@@ -15407,12 +15671,136 @@ function applySettings() {
   // setting. (Replacing #note-viewer's innerHTML doesn't disturb scroll
   // position, since the actual scrollable element is its ancestor
   // #note-content-area, not #note-viewer itself.)
+  applyBubbleAppearance();
   if (isViewMode && currentNoteId && notes[currentNoteId]) {
     var _nvForRefresh = document.getElementById('note-viewer');
     if (_nvForRefresh) {
       renderViewer(notes[currentNoteId].content || '');
     }
   }
+}
+
+// v0.1761: computes and applies the Bubble/Cloud Paragraph appearance,
+// per Lynn's design -- called from applySettings() so it stays in sync
+// automatically on load and every settings change, same as every other
+// appearance setting. Toggles body.bubbles-active plus a bubbles-VARIANT
+// class (the CSS rules that actually render bubbles reference these),
+// and sets the CSS custom properties those rules read: the four numeric
+// settings pass through as-is (the CSS itself multiplies by
+// var(--ui-scale) for device-aware sizing, not this function), while the
+// three fill/text colors are computed here since they require real hex
+// math (mixHex/darkenHex/luminance) that CSS alone can't do.
+function applyBubbleAppearance() {
+  var style = settings.bubbleStyle || 'none';
+  document.body.classList.toggle('bubbles-active', style !== 'none');
+  ['tinted', 'solid', 'outline', 'stripe'].forEach(function(v) {
+    document.body.classList.toggle('bubbles-' + v, style === v);
+  });
+  if (style === 'none') return;
+
+  var root = document.documentElement;
+  root.style.setProperty('--bubble-padding', (settings.bubblePadding != null ? settings.bubblePadding : 12) + 'px');
+  root.style.setProperty('--bubble-spacing', (settings.bubbleSpacing != null ? settings.bubbleSpacing : 18) + 'px');
+  root.style.setProperty('--bubble-radius', (settings.bubbleRadius != null ? settings.bubbleRadius : 14) + 'px');
+
+  // Bubble accent: while "Match note editor accent" is on (the default),
+  // ALWAYS derives from the note's current accent color, ignoring
+  // bubbleAccentColor entirely even if one was set previously -- per
+  // Lynn's report that she'd set an explicit override without meaning
+  // to, and it kept silently applying afterward. Only when matching is
+  // explicitly turned off does bubbleAccentColor take effect.
+  var accentHex;
+  if (settings.matchNoteAccentForBubbles !== false) {
+    accentHex = (settings.matchAppThemeNoteAccentColor !== false)
+      ? resolveCSSVarToHex('--accent')
+      : (settings.accentColorNoteEditor || resolveCSSVarToHex('--accent'));
+  } else {
+    accentHex = settings.bubbleAccentColor || resolveCSSVarToHex('--accent');
+  }
+  root.style.setProperty('--bubble-accent', accentHex);
+
+  // Interior fill for Outline/Stripe, per Lynn's request for this to be
+  // an independently adjustable color (previously just hardcoded to
+  // --bg2 in the CSS). When unset, the property is cleared entirely
+  // rather than resolved to a concrete hex here -- the CSS rule's own
+  // var(--bubble-interior, var(--bg2)) fallback then applies natively,
+  // staying correctly theme-aware (tracks whatever --bg2 currently is)
+  // with no JS computation needed for the common, non-customized case.
+  if (settings.bubbleInteriorColor) {
+    root.style.setProperty('--bubble-interior', settings.bubbleInteriorColor);
+  } else {
+    root.style.removeProperty('--bubble-interior');
+  }
+
+  var bgHex = resolveCSSVarToHex('--bg');
+  var tintedFill = mixHex(bgHex, accentHex, 16);
+  var solidFill = darkenHex(accentHex, 22);
+  var solidText = relativeLuminanceHex(solidFill) > 0.45 ? '#1a1a1a' : '#ffffff';
+  root.style.setProperty('--bubble-fill-tinted', tintedFill);
+  root.style.setProperty('--bubble-fill-solid', solidFill);
+  root.style.setProperty('--bubble-solid-text', solidText);
+
+  // Shadow: intensity is the only user-facing control (0-30); the
+  // direction is fixed at 35 degrees (Lynn's explicit choice, not a
+  // setting). Same tight-shadow formula (negative spread) established
+  // for the prototype, but each length additionally scales by
+  // --ui-scale here, so the shadow itself stays device-aware too, not
+  // just the padding/spacing/radius.
+  var intensity = settings.bubbleShadowIntensity || 0;
+  if (intensity <= 0) {
+    root.style.setProperty('--bubble-shadow', 'none');
+  } else {
+    var uiScale = parseFloat(getComputedStyle(root).getPropertyValue('--ui-scale')) || 1;
+    var distance = intensity * 0.35 * uiScale;
+    var rad = 35 * Math.PI / 180;
+    var offsetX = (distance * Math.sin(rad)).toFixed(1);
+    var offsetY = (distance * Math.cos(rad)).toFixed(1);
+    var blur = (intensity * 0.45 * uiScale).toFixed(1);
+    var spread = (-(1 + intensity * 0.05) * uiScale).toFixed(1);
+    var alpha = Math.min(0.42, intensity * 0.021).toFixed(3);
+    root.style.setProperty('--bubble-shadow', offsetX + 'px ' + offsetY + 'px ' + blur + 'px ' + spread + 'px rgba(0,0,0,' + alpha + ')');
+  }
+}
+
+// v0.1761: kept as a true global function (not nested inside any local
+// wiring scope) specifically because it needs to be callable from TWO
+// different places that don't share a scope with each other: the
+// settings-open initialization code (so the notice/disabled state is
+// correct the instant Settings opens, not just after a change event)
+// and the bubble-style radio's own change handler. Confirmed directly
+// by testing that nesting it locally left it silently uncallable from
+// the initialization code -- the exact class of bug this codebase's own
+// v0.1543 fix (markRow(), a similar case) already documented once.
+// Forces ruled lines off AND disables its controls -- not just greys
+// them out -- the moment a bubble style is active, with an explicit
+// notice explaining why, per Lynn's request. Does NOT restore ruled
+// lines automatically when bubbles are turned back off; the setting is
+// left wherever it was, which was already 'none' by that point.
+function _syncBubbleRuledLinesConflict() {
+  var active = (settings.bubbleStyle || 'none') !== 'none';
+  var notice = document.getElementById('ruled-lines-bubble-conflict-notice');
+  if (notice) notice.style.display = active ? 'block' : 'none';
+  document.querySelectorAll('#ruled-line-style-seg input[type="radio"], #ruled-line-tone-seg input[type="radio"]').forEach(function(radio) {
+    radio.disabled = active;
+  });
+  if (active && settings.ruledLineStyle && settings.ruledLineStyle !== 'none') {
+    settings.ruledLineStyle = 'none';
+    var offRadio = document.querySelector('#ruled-line-style-seg input[value="none"]');
+    if (offRadio) offRadio.checked = true;
+    if (typeof _updateRuledLineRowVisibility === 'function') _updateRuledLineRowVisibility();
+    applyRuledLines();
+  }
+  // v0.1765, per Lynn: same active/inactive state also drives the
+  // Paragraph rules / List item rules notices -- unlike Ruled Lines
+  // above, these two toggles stay fully interactive and their setting
+  // values are left untouched; only the notice is shown, since the CSS
+  // suppression (see the stylesheet) already makes them harmlessly
+  // inert while bubbles are active, and they resume working the moment
+  // bubbles are turned back off with no separate action needed.
+  var parNotice = document.getElementById('paragraph-rules-bubble-conflict-notice');
+  if (parNotice) parNotice.style.display = active ? 'block' : 'none';
+  var blockNotice = document.getElementById('block-rules-bubble-conflict-notice');
+  if (blockNotice) blockNotice.style.display = active ? 'block' : 'none';
 }
 
 // ===== SCREENS =====
@@ -21621,7 +22009,13 @@ var _COLOR_ROW_SETTING_MAP = [
   ['note-accent-color', 'accentColorNoteEditor'],
   // v0.1548: Profiles & Note Styles Phase A, build 5 (final Phase A build)
   ['light-notes-list-entry-bg', 'lightNotesListEntryBgColor'],
-  ['dark-notes-list-entry-bg', 'darkNotesListEntryBgColor']
+  ['dark-notes-list-entry-bg', 'darkNotesListEntryBgColor'],
+  // v0.1761: Bubble/Cloud Paragraphs -- bubbleAccentColor may be null
+  // (meaning "derive from the note's current accent"), which simply
+  // results in no preset swatch being marked selected here, correctly
+  // reflecting that no explicit override has been chosen.
+  ['bubble-accent-color', 'bubbleAccentColor'],
+  ['bubble-interior-color', 'bubbleInteriorColor']
 ];
 
 function updateSwatches() {
@@ -22048,6 +22442,54 @@ function openSettings() {
   if (_mlnSlider) _mlnSlider.value = (settings.marginLineNudge !== undefined ? settings.marginLineNudge : 0);
   if (_mlnVal) _mlnVal.textContent = (settings.marginLineNudge !== undefined ? settings.marginLineNudge : 0);
   if (typeof _updateRuledLineRowVisibility === 'function') _updateRuledLineRowVisibility();
+
+  // v0.1761: Bubble/Cloud Paragraphs
+  var _bStyle = settings.bubbleStyle || 'none';
+  var _bStyleRadio = document.querySelector('#bubble-style-seg input[value="' + _bStyle + '"]');
+  if (_bStyleRadio) _bStyleRadio.checked = true;
+  var _bAppearanceRows = document.getElementById('bubble-appearance-rows');
+  if (_bAppearanceRows) _bAppearanceRows.style.display = (_bStyle !== 'none') ? 'block' : 'none';
+  var _bPadSlider = document.getElementById('bubble-padding-slider');
+  var _bPadVal = document.getElementById('bubble-padding-val');
+  if (_bPadSlider) _bPadSlider.value = (settings.bubblePadding != null ? settings.bubblePadding : 12);
+  if (_bPadVal) _bPadVal.textContent = (settings.bubblePadding != null ? settings.bubblePadding : 12);
+  var _bGapSlider = document.getElementById('bubble-spacing-slider');
+  var _bGapVal = document.getElementById('bubble-spacing-val');
+  if (_bGapSlider) _bGapSlider.value = (settings.bubbleSpacing != null ? settings.bubbleSpacing : 18);
+  if (_bGapVal) _bGapVal.textContent = (settings.bubbleSpacing != null ? settings.bubbleSpacing : 18);
+  var _bRadSlider = document.getElementById('bubble-radius-slider');
+  var _bRadVal = document.getElementById('bubble-radius-val');
+  if (_bRadSlider) _bRadSlider.value = (settings.bubbleRadius != null ? settings.bubbleRadius : 14);
+  if (_bRadVal) _bRadVal.textContent = (settings.bubbleRadius != null ? settings.bubbleRadius : 14);
+  var _bShadowSlider = document.getElementById('bubble-shadow-slider');
+  var _bShadowVal = document.getElementById('bubble-shadow-val');
+  if (_bShadowSlider) _bShadowSlider.value = (settings.bubbleShadowIntensity || 0);
+  if (_bShadowVal) _bShadowVal.textContent = (settings.bubbleShadowIntensity || 0);
+  var _mgBubbleAccent = document.getElementById('match-note-accent-bubbles-toggle');
+  if (_mgBubbleAccent) _mgBubbleAccent.checked = settings.matchNoteAccentForBubbles !== false;
+  var _bubbleAccentOwn = document.getElementById('bubble-accent-color-own');
+  if (_bubbleAccentOwn) _bubbleAccentOwn.style.display = (settings.matchNoteAccentForBubbles !== false) ? 'none' : '';
+  // Hex label reflects whichever value is ACTUALLY in effect right now --
+  // matches applyBubbleAppearance()'s own derivation exactly, including
+  // bypassing bubbleAccentColor entirely while matching is on.
+  var _bAccentHex;
+  if (settings.matchNoteAccentForBubbles !== false) {
+    _bAccentHex = (settings.matchAppThemeNoteAccentColor !== false)
+      ? resolveCSSVarToHex('--accent')
+      : (settings.accentColorNoteEditor || resolveCSSVarToHex('--accent'));
+  } else {
+    _bAccentHex = settings.bubbleAccentColor || resolveCSSVarToHex('--accent');
+  }
+  updateHexLabel('bubble-accent-color', _bAccentHex);
+  // v0.1765: Bubble Interior Color -- row visibility depends on the
+  // CURRENTLY SELECTED style (only Outline/Stripe use it), and the hex
+  // label shows the actual resolved value (--bg2's real color) when
+  // nothing's been explicitly chosen, matching how the accent row above
+  // already handles its own null case.
+  var _bInteriorRow = document.getElementById('bubble-interior-color-row');
+  if (_bInteriorRow) _bInteriorRow.style.display = (_bStyle === 'outline' || _bStyle === 'stripe') ? '' : 'none';
+  updateHexLabel('bubble-interior-color', settings.bubbleInteriorColor || resolveCSSVarToHex('--bg2'));
+  if (typeof _syncBubbleRuledLinesConflict === 'function') _syncBubbleRuledLinesConflict();
 
   var ctToggle=document.getElementById('convert-tabs-toggle'); if(ctToggle)ctToggle.checked=(settings.convertTabsOnPaste !== false);
   var cbToggle=document.getElementById('convert-bullets-toggle'); if(cbToggle)cbToggle.checked=(settings.convertBulletsOnPaste !== false);
@@ -23880,6 +24322,27 @@ function init() {
   // sticky position no longer matched, leaving Jump-to-section landing
   // a bit short of the true top of the visible content area, since the
   // sticky stack's real height didn't match what scroll math assumed.
+  // v0.1759 NEW, per Lynn's report: the Help dialog's own floating
+  // header and search bar never had zoom compensation applied at all --
+  // both are position:sticky, same category as the Home Screen's own
+  // header, which after its own back-and-forth (v0.1727-v0.1729) ended
+  // up using applyZoomSizeCompensation() (the width-override version)
+  // as the accepted, shipped approach -- reused here for consistency
+  // with what actually stuck, rather than trying yet another scale-only
+  // variant already tried and abandoned once. Compensation is applied
+  // BEFORE _positionHelpSearchWrap()'s own height measurement below:
+  // getBoundingClientRect() correctly reflects the post-transform,
+  // visually-compensated size, so measuring after compensation (not
+  // before) means the search bar's dynamic top offset is based on the
+  // header's true, corrected height rather than whatever inflated size
+  // the browser's uncompensated zoom rendering would have produced.
+  function pinHelpElements() {
+    var header = document.querySelector('#help-sheet .help-header');
+    var searchWrap = document.getElementById('help-search-wrap');
+    if (header) applyZoomSizeCompensation(header);
+    if (searchWrap) applyZoomSizeCompensation(searchWrap);
+    _positionHelpSearchWrap();
+  }
   function _positionHelpSearchWrap() {
     var header = document.querySelector('#help-sheet .help-header');
     var searchWrap = document.getElementById('help-search-wrap');
@@ -23887,6 +24350,9 @@ function init() {
       searchWrap.style.top = header.getBoundingClientRect().height + 'px';
     }
   }
+  window.addEventListener('resize', function() {
+    if (document.getElementById('help-sheet').classList.contains('open')) pinHelpElements();
+  });
 
   document.getElementById('help-btn').addEventListener('click', function() {
     logDebugAction('Opened Help');
@@ -23894,7 +24360,7 @@ function init() {
     document.getElementById('help-overlay').classList.add('open');
     document.getElementById('help-sheet').classList.add('open');
     document.getElementById('help-sheet').scrollTop = 0;
-    _positionHelpSearchWrap();
+    pinHelpElements();
   });
   var APP_URL = 'https://lynn-edu-apps.github.io/everyday-apps/remember/';
 
@@ -29010,7 +29476,40 @@ function makeImportFolderName(label) {
     var fab = document.getElementById('settings-fab');
     if (!sheet || !fab) return;
     var sheetRect = sheet.getBoundingClientRect();
-    fab.style.right = (window.innerWidth - sheetRect.right + 16) + 'px';
+    var desiredRight = window.innerWidth - sheetRect.right + 16;
+    // v0.1759 FIX, per Lynn's report: this element never had zoom
+    // compensation applied at all, despite the note editor's own FAB
+    // (the same category of small, fixed, anchored island) having had
+    // it since v0.1716 -- flagged as a known gap in that very build's
+    // own changelog, unaddressed until now.
+    // CAUGHT before shipping: the shared applyZoomPositionCompensation()
+    // clears its anchor property to empty string when no mouse is
+    // present, relying on the plain CSS default to take over -- correct
+    // for its other callers (whose desired value IS that static CSS
+    // default), but wrong here, since the correct right value is
+    // dynamic (depends on the sheet's current width) and has no
+    // meaningful static CSS fallback to clear back to. Reusing the
+    // shared function as-is would have silently broken wide-window
+    // centering the moment no mouse was present. Sets the correct,
+    // freshly-computed value directly first -- always right regardless
+    // of mouse/zoom state -- then layers the zoom-scale correction on
+    // top only when a mouse is actually present and zoomed, using the
+    // exact same math applyZoomPositionCompensation() itself uses.
+    fab.style.right = desiredRight + 'px';
+    fab.style.bottom = '20px';
+    if (_mouseZoomCompensationActive()) {
+      var zf = _zoomFactor();
+      var prevTransition = fab.style.transition;
+      fab.style.transition = 'none';
+      fab.style.right = (desiredRight / zf) + 'px';
+      fab.style.bottom = (20 / zf) + 'px';
+      fab.style.transform = 'scale(' + (1 / zf) + ')';
+      fab.style.transformOrigin = 'bottom right';
+      void fab.offsetHeight;
+      fab.style.transition = prevTransition;
+    } else {
+      fab.style.transform = '';
+    }
   }
   (function() {
     var sheet = document.getElementById('settings-sheet');
@@ -29020,16 +29519,44 @@ function makeImportFolderName(label) {
     // the moment the dialog opens, and again on any resize while it's
     // still open (covers a window being resized with Settings up).
     var _fabPosObserver = new MutationObserver(function() {
-      if (sheet.classList.contains('open')) positionSettingsFab();
+      if (sheet.classList.contains('open')) { positionSettingsFab(); pinSettingsSearchBar(); }
     });
     _fabPosObserver.observe(sheet, { attributes: true, attributeFilter: ['class'] });
     window.addEventListener('resize', function() {
-      if (sheet.classList.contains('open')) positionSettingsFab();
+      if (sheet.classList.contains('open')) { positionSettingsFab(); pinSettingsSearchBar(); }
     });
   })();
+  // v0.1759 NEW, per Lynn's report: the Settings dialog's own floating
+  // (position:sticky) search bar never had zoom compensation applied at
+  // all -- same applyZoomSizeCompensation() treatment used for the Help
+  // dialog's analogous elements, for consistency.
+  function pinSettingsSearchBar() {
+    var wrap = document.getElementById('settings-search-wrap');
+    if (wrap) applyZoomSizeCompensation(wrap);
+  }
   document.getElementById('settings-scroll-to-last-btn').addEventListener('click', function() {
     var sheet = document.getElementById('settings-sheet');
     if (!sheet) return;
+    // v0.1764: diagnostic logging, per Lynn's report that this button has
+    // regressed -- verified directly that the underlying save/restore of
+    // settings.settingsScrollPosition still works correctly on both the
+    // Save and Cancel close paths, and that getDialogSectionKey()'s
+    // section-identity scheme is stable (id-based, not positional -- new
+    // sections added elsewhere shouldn't disrupt it). Couldn't find the
+    // actual root cause from inspection or testing the save/restore path
+    // alone, so this captures the real state at the moment of the click
+    // instead: the saved target, the sheet's actual current scrollHeight
+    // (if a relevant section isn't expanded, this will be far shorter
+    // than the saved target expects), and which sections are currently
+    // open, so a real occurrence gives us evidence instead of more theory.
+    var _openSections = Array.prototype.map.call(
+      document.querySelectorAll('#settings-sheet .settings-section.open'),
+      function(s) { return s.id || '(no id)'; }
+    );
+    logSys('settings-scroll-to-last-btn: target=' + settings.settingsScrollPosition +
+      ' sheet.scrollHeight=' + sheet.scrollHeight +
+      ' sheet.scrollTop(before)=' + sheet.scrollTop +
+      ' openSections=[' + _openSections.join(',') + ']');
     // v0.1561: per Lynn, a saved position of 0 (or none recorded yet --
     // e.g. first-ever use) should scroll to the BOTTOM rather than do
     // nothing indistinguishable from "already there" -- avoids the button
@@ -29693,7 +30220,18 @@ function makeImportFolderName(label) {
                   // v0.1548: Profiles & Note Styles Phase A, build 5 (final Phase A build)
                   'note-accent-color':'accentColorNoteEditor','note-accent-color-2':'accentColorNoteEditor','note-accent-color-3':'accentColorNoteEditor',
                   'light-notes-list-entry-bg':'lightNotesListEntryBgColor','light-notes-list-entry-bg-2':'lightNotesListEntryBgColor','light-notes-list-entry-bg-3':'lightNotesListEntryBgColor',
-                  'dark-notes-list-entry-bg':'darkNotesListEntryBgColor','dark-notes-list-entry-bg-2':'darkNotesListEntryBgColor','dark-notes-list-entry-bg-3':'darkNotesListEntryBgColor'};
+                  'dark-notes-list-entry-bg':'darkNotesListEntryBgColor','dark-notes-list-entry-bg-2':'darkNotesListEntryBgColor','dark-notes-list-entry-bg-3':'darkNotesListEntryBgColor',
+                  // v0.1766 FIX, per Lynn's report: these two rows (added
+                  // in v0.1761/v0.1765) were missing from this keyMap
+                  // entirely, the exact same bug class already documented
+                  // above for light/dark-preview-color (v0.1541) -- a
+                  // custom color's Apply button updated its own button's
+                  // appearance and settings.customColors (the "was this
+                  // slot ever set" memory), but silently never wrote to
+                  // the actual setting, since settingKey resolved to
+                  // undefined and `if(settingKey)` skipped the write.
+                  'bubble-accent-color':'bubbleAccentColor',
+                  'bubble-interior-color':'bubbleInteriorColor'};
       var settingKey=keyMap[_ccpRowKey];
       if(settingKey) settings[settingKey]=_ccpColor;
       if(_ccpRowKey==='ruler-color') { applyRuler(); }
@@ -32863,6 +33401,59 @@ function makeImportFolderName(label) {
     var marginNudgeRow = document.getElementById('margin-line-nudge-row');
     if (marginNudgeRow) marginNudgeRow.style.display = (style === 'legalPad') ? '' : 'none';
   };
+  // v0.1761: Bubble/Cloud Paragraphs, per Lynn -- mutually exclusive
+  // with Ruled Lines & Grid (a paper-ruled background wouldn't make
+  // visual sense with paragraphs shown as separate cards). Forces ruled
+  // lines off AND disables its controls -- not just greys them out --
+  // the moment a bubble style is active, with an explicit notice
+  // explaining why, per Lynn's request. Does NOT restore ruled lines
+  // automatically when bubbles are turned back off; the setting is left
+  // wherever it was, which was already 'none' by that point.
+  // _syncBubbleRuledLinesConflict is now a global function (see its
+  // definition near applyBubbleAppearance()), so it's callable both from
+  // here and from the settings-open initialization code earlier in the
+  // file, which lives in a different local scope than this one -- moved
+  // there specifically to fix that cross-scope gap (confirmed directly:
+  // it was silently invisible from that other scope before the move,
+  // the exact class of bug this codebase's own v0.1543 fix warned about).
+  document.querySelectorAll('#bubble-style-seg input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      settings.bubbleStyle = this.value;
+      document.getElementById('bubble-appearance-rows').style.display = (this.value !== 'none') ? 'block' : 'none';
+      // v0.1765: Bubble Interior Color only applies to Outline/Stripe --
+      // Tinted/Solid derive their own fill from the accent color instead.
+      var interiorRow = document.getElementById('bubble-interior-color-row');
+      if (interiorRow) interiorRow.style.display = (this.value === 'outline' || this.value === 'stripe') ? '' : 'none';
+      _syncBubbleRuledLinesConflict();
+      applyBubbleAppearance();
+      updateSaveBtnState();
+    });
+  });
+  wireSwatchRow('bubble-accent-color-swatches', 'bubbleAccentColor');
+  wireSwatchRow('bubble-interior-color-swatches', 'bubbleInteriorColor');
+  document.getElementById('match-note-accent-bubbles-toggle').addEventListener('change', function() {
+    settings.matchNoteAccentForBubbles = this.checked;
+    var own = document.getElementById('bubble-accent-color-own');
+    if (own) own.style.display = this.checked ? 'none' : '';
+    applyBubbleAppearance();
+    updateSaveBtnState();
+  });
+  function _wireBubbleSlider(sliderId, valId, settingKey) {
+    var slider = document.getElementById(sliderId);
+    var valEl = document.getElementById(valId);
+    if (!slider) return;
+    slider.addEventListener('input', function() {
+      settings[settingKey] = parseFloat(slider.value);
+      if (valEl) valEl.textContent = slider.value;
+      applyBubbleAppearance();
+      updateSaveBtnState();
+    });
+  }
+  _wireBubbleSlider('bubble-padding-slider', 'bubble-padding-val', 'bubblePadding');
+  _wireBubbleSlider('bubble-spacing-slider', 'bubble-spacing-val', 'bubbleSpacing');
+  _wireBubbleSlider('bubble-radius-slider', 'bubble-radius-val', 'bubbleRadius');
+  _wireBubbleSlider('bubble-shadow-slider', 'bubble-shadow-val', 'bubbleShadowIntensity');
+
   document.querySelectorAll('#ruled-line-style-seg input[type="radio"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
       settings.ruledLineStyle = this.value;
@@ -33164,7 +33755,22 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     _cbLpEatClicks = true;
     setTimeout(function() { _cbLpEatClicks = false; }, 600);
   }
+  // v0.1763 FIX, per Lynn's report that this bug kept recurring despite
+  // v0.1694's fix: found the real reason. That fix only guarded the
+  // 'click' event -- but these two "tap outside closes the menu"
+  // listeners run on 'touchstart' and 'mousedown' instead, completely
+  // bypassing the eat-clicks flags entirely. iOS's delayed synthetic
+  // touch sequence after a long-press's touchend isn't necessarily just
+  // a click -- it can include a touchstart landing outside the menu
+  // (which isn't positioned exactly at the original touch point), and
+  // that alone was enough to close the menu right after it opened,
+  // regardless of whether the click guard was active. Confirmed directly
+  // by testing: a touchstart landing outside the menu during the guard
+  // window closed it every time, before this fix. Extended the exact
+  // same guard to both paths, so ALL THREE ways the "outside tap"
+  // behavior could fire are covered consistently, not just one of them.
   document.addEventListener('touchstart', function(e) {
+    if (_cbLpEatClicks || _tfLpEatClicks) return;
     if (_cbLpMenu && _cbLpMenu.style.display !== 'none') {
       if (!_cbLpMenu.contains(e.target)) closeCbMenu();
     }
@@ -33173,6 +33779,7 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     }
   }, { passive: true });
   document.addEventListener('mousedown', function(e) {
+    if (_cbLpEatClicks || _tfLpEatClicks) return;
     if (_cbLpMenu && _cbLpMenu.style.display !== 'none') {
       if (!_cbLpMenu.contains(e.target)) closeCbMenu();
     }
@@ -34898,6 +35505,23 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
       if (document.getElementById('note-screen').classList.contains('active')) {
         e.preventDefault();
         if (_findActive) { closeFind(); } else { openFind(); }
+      } else if (!document.querySelector('[id$="-overlay"].open')) {
+        // v0.1760 NEW, per Lynn's request: Ctrl/Cmd+F previously fell
+        // through to the browser's own native find on the Home Screen,
+        // even though there's already a dedicated search feature right
+        // there -- inconsistent with the note editor, where the same
+        // shortcut opens this app's own find bar. Wired to the existing
+        // openHomeSearch()/closeHomeSearch() pair rather than building
+        // anything new, matching the note editor's own toggle behavior
+        // (press again to close). Guarded on no other dialog (Settings,
+        // Help, etc.) currently being open on top of the Home Screen --
+        // every one of the app's modal overlays follows the same
+        // "*-overlay" id + .open class convention, so this one check
+        // covers all of them without needing to name each individually.
+        e.preventDefault();
+        var homeSearchBar = document.getElementById('home-search-bar');
+        if (homeSearchBar && homeSearchBar.style.display !== 'none') closeHomeSearch();
+        else openHomeSearch();
       }
     }
     if ((e.metaKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
