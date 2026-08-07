@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1782 -->
+<!-- Remember App - Version 0.1783 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1782
+  Version 0.1783
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,7 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1783 - THE real Firefox/Chrome rounded-corner fix, plus a tweak, per Lynn. (1) FIX: Settings and Help dialogs showing square (not rounded) corners on the side the scrollbar sits, confirmed by Lynn to affect Chrome too once v0.1782's scrollbar-width:thin mitigation was tried (that mitigation is reverted here, since it made things worse rather than better). Root cause confirmed: .modal-sheet/.help-sheet were BOTH the rounded/positioned box AND the actual scrolling container on the same element -- neither browser reliably clips a native scrollbar to its own element's border-radius. Restructured properly this time: each dialog's outer element (#settings-sheet, #help-sheet, #export-format-sheet -- fixed all three sharing this pattern, not just the one reported, per the project's reuse/consolidate philosophy) now only positions, rounds, and clips (overflow:hidden, never scrolls itself); a new inner wrapper (#settings-sheet-scroll, #help-sheet-scroll, #export-format-sheet-scroll -- shared .modal-sheet-scroll class) does the actual overflow-y:auto scrolling. Clipping a scrollable descendant's native scrollbar via an ANCESTOR's overflow:hidden + border-radius is the standard, reliable cross-browser pattern for this. Every one of the 16 existing call sites that read/wrote #settings-sheet or #help-sheet directly was individually reviewed and classified: open/close class toggles, the FAB's own position measurement, and the change-event delegation listener correctly stay on the OUTER element (still the visible/positioned box, and delegation still works via normal event bubbling through the new wrapper); every scrollTop/scrollTo/scrollHeight usage and the sticky search bar's jump-to-section math were redirected to the new INNER scrolling element, since that's where real scrolling now actually happens. Each dialog's own bottom padding (extra breathing room after the last scrolled item, per Lynn's standing preference) moved from the old outer box to the new inner one, so it now correctly shows up as trailing space after the actual scrolled content instead of just unused space in a box that no longer scrolls. Verified directly: Settings opens, renders with intact rounded corners, and genuinely scrolls via the new inner element (confirmed scrollTop actually moves and clamps correctly at true scrollHeight-clientHeight). The regression suite's own settings-section nesting-depth check needed updating for this -- see Test Harness v8 below -- since every section is now, correctly and uniformly, one DOM level deeper. (2) TWEAK: "Back" label nudged further left again (margin-left 0px -> -3px, pulling it into the chevron SVG's own built-in whitespace without touching the drawn glyph), per Lynn's follow-up request, verified visually. Suite: 332/332 on harness v8 (v7 would report a false failure here -- see that file's own header comment).
   v0.1782 - ONE tweak, one mitigation, per Lynn. (1) TWEAK: "Back" label nudged closer to the chevron again (margin-left 2px -> 0px), per Lynn's follow-up request, verified visually. (2) PARTIAL MITIGATION for the Firefox rounded-corner/scrollbar issue flagged in v0.1781: added scrollbar-width:thin (a Firefox-originated, now-standard property, harmlessly ignored elsewhere) to both #settings-sheet and .help-sheet -- narrows Firefox's native scrollbar substantially, reducing how much straight edge clashes with the border-radius. Explicitly NOT the complete fix: that requires separating the rounding/clipping container from the actual scrolling container, a larger restructuring deliberately deferred as its own dedicated build (16+ existing call sites read/write #settings-sheet directly as both the dialog box and the live scroll container) -- discussed directly with Lynn rather than restructured unilaterally. Suite unchanged: 332/332.
   v0.1781 - TWO fixes plus a tweak, per Lynn's continued desktop testing (Windows/Chrome and Firefox). (1) FIX: the Settings dialog's floating Save/Cancel/Scroll pill was still escaping the dialog under Ctrl+wheel zoom even after v0.1780's listener fix, worse in Firefox and escaping LEFT specifically on zoom-out. Root cause was a genuine math bug, confirmed by direct measurement with simulated zoom via CDP device-metrics override: positionSettingsFab() divided its right/bottom offsets by the zoom factor (right = desiredRight / zf), but desiredRight is derived from sheetRect, a LIVE getBoundingClientRect() measurement taken in that same call -- already correctly expressed in the current coordinate frame, unlike a hardcoded CSS constant (e.g. the note editor's own "+" FAB, whose static anchor genuinely does need that division). Dividing an already-live value by zf a second time double-compensated: measured directly, the pill's right edge landed 49px PAST the dialog's own right edge when zoomed in, and 100px INSIDE it (a large leftward jump) when zoomed out -- versus a stable, correct 16px inset in BOTH directions once the redundant /zf on right/bottom was removed. The scale(1/zf) transform itself is kept (still needed to hold the pill's own rendered size constant under zoom) since transform-origin sits at the same anchored corner, so removing the redundant division doesn't disturb it. Verified directly with simulated zoom-in and zoom-out: overhang past the dialog's edge is now a constant, correct -16px in both directions (was +49px / -100px). Not separately re-verified in real Firefox (unavailable in this sandbox and not downloadable here), but this is a pure position-math bug, not browser-specific rendering, so the fix applies the same way there. (2) INVESTIGATED, not yet fixed: the Settings/Help dialogs showing rounded corners on the left but not the right in Firefox on Windows. Likely root cause identified: .modal-sheet has both border-radius and overflow-y:auto on the SAME element -- a well-documented cross-browser inconsistency where Firefox's native (non-overlay) scrollbar isn't clipped to the element's own border-radius the way Chrome's typically is, leaving the corner nearest the scrollbar looking square. The standard fix (separate an outer non-scrolling wrapper that owns the border-radius/overflow:hidden from an inner element that owns the actual overflow-y:auto scrolling) is a genuinely invasive restructuring here -- 16+ separate JS call sites read/write #settings-sheet directly as both the positioned dialog box AND the active scroll container (scrollTop, jump-nav, sticky search bar, FAB positioning, scroll-position memory). Flagged for discussion with Lynn before attempting, rather than restructuring unilaterally. (3) TWEAK: "Back" label moved closer to the chevron (margin-left 4px -> 2px) with added separation before the next toolbar button (Speak), via a new margin-right: 10px on the label -- per Lynn's explicit request, verified visually. Suite unchanged: 332/332.
   v0.1780 - THREE fixes, per Lynn's desktop/Windows testing report. (1) FIX: "Show 'Back' label" mode never benefited from the earlier taller-chevron fix (v0.1771) -- root cause: applyToolbarIconSizes()'s JS-injected, !important-tagged style block sizes all '#note-top-bar .icon-btn svg' elements identically, which also matches #back-btn svg and silently overrode the dedicated 1.3x CSS rule every time it ran (confirmed directly: computed chevron size was 20px, matching siblings, instead of the intended 26px). #back-btn is now excluded from the generic rule and given its own 1.3x rule in the same injected block, computed from the same _iconPx the rest of the function already uses. Also gave the 'Back' label its own inline-flex + slightly looser line-height (was inline with line-height:1 inherited from .icon-btn, leaving uppercase text's vertical position dependent on the platform's own default UI font metrics) so it self-centers consistently rather than only happening to look right on some platforms. (2) FIX: the Settings dialog's floating Save/Cancel/Scroll control could escape the dialog horizontally on Ctrl+wheel zoom (Windows/Chrome) -- its position-recompute was wired only to plain window 'resize', unlike the note editor's own equivalent (pinToolbars()), which has always also listened on visualViewport resize/scroll since Ctrl+wheel zoom reliably fires those and not always a plain resize. Added the same two listeners here. (3) FIX: the Settings dialog's search bar was clipping/extending off-screen horizontally under zoom -- applyZoomSizeCompensation() always compensated against window.innerWidth, correct for genuinely full-viewport-width elements (the note header/toolbar it was built for) but wrong for this search bar, which lives inside the dialog's own narrower, capped width. Added an optional targetWidth parameter (default unchanged, window.innerWidth, so every other existing caller is unaffected) and the Settings search bar now passes the dialog's own current rendered width. Verified directly: chevron computed size now 26px (was 20px) with the label's own centering independently confirmed; both Settings zoom listeners now fire on visualViewport events, matching pinToolbars()'s wiring exactly; the search bar's compensated width now derives from the dialog's own bounding rect, not the viewport. Suite unchanged: 332/332.
@@ -867,7 +868,7 @@ body.hide-remember-logo .home-title {
     align-items: center;
     align-self: center;
     line-height: 1.2;
-    margin-left: 0px;
+    margin-left: -3px;
     margin-right: 10px;
     color: inherit;
     font-size: calc(var(--font-ui) * 1.1);
@@ -5110,6 +5111,21 @@ body:not(.dark) .note-item {
 .modal-overlay.open { display: block; }
 
 .modal-sheet {
+  /* v0.1783 FIX, per Lynn's report (rounded corners square on the side
+     the scrollbar sits on, worse in Firefox but confirmed present in
+     Chrome too once scrollbar-width:thin was tried): this element used
+     to be BOTH the rounded/clipped box AND the actual scrolling
+     container in one -- a well-documented cross-browser inconsistency,
+     since a native scrollbar isn't reliably clipped to its own
+     element's border-radius. Restructured: this outer element now only
+     positions, rounds, and CLIPS (overflow:hidden, never scrolls
+     itself); the actual scrolling moved to a new inner wrapper
+     (.modal-sheet-scroll) added as this element's only child. Clipping
+     a scrollable descendant's native scrollbar via an ANCESTOR's
+     overflow:hidden + border-radius is the standard, reliable pattern
+     for this -- unlike border-radius+overflow-y:auto on the SAME
+     element, ancestor-clipping a scrollbar this way works consistently
+     in both Chrome and Firefox. */
   background: var(--bg-dialog, var(--bg));
   border-radius: 20px;
   width: 100%;
@@ -5119,14 +5135,35 @@ body:not(.dark) .note-item {
   left: 50%;
   transform: translateX(-50%);
   bottom: 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
-  padding: 0 0 8px;
-  overscroll-behavior: contain;
+  padding: 0;
   display: none;
   z-index: 101;
 }
+/* v0.1783 NEW: the actual scrolling container, nested one level inside
+   each rounded/clipped outer dialog box (.modal-sheet or .help-sheet).
+   Shared across all three current users (Settings, Help, the Export
+   Format dialog) since the scrolling mechanics themselves are
+   identical; each dialog's own bottom padding (its own "extra space
+   after the end of scrolled content", per Lynn's standing preference)
+   stays scoped per-dialog by ID below, exactly matching each dialog's
+   previous effective value -- only WHERE that padding lives changed
+   (moved from the old non-scrolling-adjacent outer box to this actual
+   scrolling box, where it now correctly shows up as trailing space
+   AFTER the last scrolled item, not just unused space in a box that
+   no longer scrolls). */
+.modal-sheet-scroll {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+}
+#settings-sheet-scroll { padding: 0 0 84px; }
+#help-sheet-scroll { padding: 0 0 32px; }
+#export-format-sheet-scroll { padding: 0 0 8px; }
 .modal-sheet.open { display: block; }
 /* v0.1556: Settings specifically uses the REGULAR (unlightened) --bg as
    its main background, not the shared --bg-dialog (lightenHex(bg,15) in
@@ -5143,7 +5180,7 @@ body:not(.dark) .note-item {
    when scrolled all the way down. Scoped to #settings-sheet specifically
    rather than the shared .modal-sheet class, since Settings is the only
    dialog with this always-visible FAB. */
-#settings-sheet { background: var(--bg); padding-bottom: 84px; scrollbar-width: thin; }
+#settings-sheet { background: var(--bg); }
 /* v0.1557: the Settings dialog's own chrome uses a FIXED font SIZE
    captured from your last SAVED settings (not live in-progress changes),
    to avoid disorienting auto-scroll while a size slider is being dragged.
@@ -6319,6 +6356,14 @@ body.scratch-pad-disabled #scratch-pad-edge-tab,
 
 /* ===== HELP SHEET ===== */
 .help-sheet {
+  /* v0.1783 FIX: same restructuring as .modal-sheet above, and for the
+     same reason -- see that rule's comment for the full explanation.
+     v0.1782's scrollbar-width:thin mitigation is removed here: per
+     Lynn's direct report it made the problem WORSE, newly appearing in
+     Chrome too (Chrome added support for the standard scrollbar-width
+     property since that mitigation was written, and its own thin-
+     scrollbar rendering apparently doesn't clip to the border-radius
+     either) -- superseded by the real structural fix instead. */
   background: var(--bg);
   border-radius: 20px;
   width: 100%;
@@ -6328,26 +6373,11 @@ body.scratch-pad-disabled #scratch-pad-edge-tab,
   left: 50%;
   transform: translateX(-50%);
   bottom: 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
-  padding: 0 0 32px;
-  overscroll-behavior: contain;
+  padding: 0;
   display: none;
   z-index: 101;
-  /* v0.1782 PARTIAL MITIGATION, per Lynn's report (Firefox/Windows): this
-     element has both border-radius and its own overflow-y:auto scrolling
-     -- Firefox doesn't clip its native scrollbar to the element's own
-     rounded corner the way Chrome typically does, leaving that corner
-     looking square. scrollbar-width:thin (Firefox-originated, now a
-     standard property, harmlessly ignored by browsers that don't support
-     it) makes the scrollbar much narrower, substantially reducing the
-     straight edge that clashes with the curve. Not a complete fix -- the
-     real fix is separating the rounding/clipping container from the
-     actual scrolling container, flagged separately as a larger,
-     dedicated restructuring since #settings-sheet (the analogous element)
-     is read/written directly by 16+ other places in the code. */
-  scrollbar-width: thin;
 }
 .help-sheet.open { display: block; }
 /* Allow text selection in help sheet — users may want to copy tips, URLs, examples.
@@ -8624,7 +8654,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 
 <!-- ===== SETTINGS MODAL ===== -->
 <div class="modal-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-label="Settings"></div>
-<div class="modal-sheet" id="settings-sheet" tabindex="-1">
+<div class="modal-sheet" id="settings-sheet" tabindex="-1"><div class="modal-sheet-scroll" id="settings-sheet-scroll">
     <div class="modal-title-row">
       <div class="settings-btn-row" style="justify-content:flex-end;">
         <button class="settings-cancel-btn" id="settings-cancel-btn-top">Cancel</button>
@@ -10867,7 +10897,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     <div class="reset-row" style="margin-top:0;padding-bottom:32px">
       <button class="reset-defaults-btn" id="reset-zoom-size-btn" style="background:var(--bg3);color:var(--fg2);border-color:var(--border)">Reset Zoom Size</button>
     </div>
-    </div>
+    </div></div>
     </div>
     </div>
 </div>
@@ -11042,7 +11072,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 
 <!-- ===== EXPORT FORMAT SHEET ===== -->
 <div class="modal-overlay" id="export-format-overlay"></div>
-<div class="modal-sheet" id="export-format-sheet" style="max-width:420px;margin:0 auto;">
+<div class="modal-sheet" id="export-format-sheet" style="max-width:420px;margin:0 auto;"><div class="modal-sheet-scroll" id="export-format-sheet-scroll">
   <h2 class="modal-title" style="padding:8px 20px 14px;border-bottom:1px solid var(--border);">Export note as…</h2>
   <div style="padding:8px 0 4px;">
     <button id="export-fmt-json-btn" style="display:flex;align-items:center;gap:14px;width:100%;padding:14px 20px;background:none;border:none;color:var(--fg);font-family:var(--font-body);font-size:var(--font-ui);font-weight:var(--font-weight-ui);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;box-sizing:border-box;">
@@ -11081,7 +11111,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
   <div style="padding:8px 16px 16px;">
     <button class="modal-close-btn-plain" id="export-format-close-btn">Cancel</button>
   </div>
-</div>
+</div></div>
 
 <!-- ===== RENAME MODAL ===== -->
 <div class="modal-overlay" id="rename-overlay" style="z-index:200"></div>
@@ -11119,7 +11149,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 
 <!-- ===== HELP SHEET ===== -->
 <div class="modal-overlay" id="help-overlay"></div>
-<div class="help-sheet" id="help-sheet">
+<div class="help-sheet" id="help-sheet"><div class="modal-sheet-scroll" id="help-sheet-scroll">
   <div class="help-header">
     <div style="display:flex;align-items:center;gap:6px;">
       <h2 class="modal-title" style="margin:0;">Help <span id="help-version" style="font-size:0.6em; font-weight:400; color:var(--fg3); letter-spacing:0;"></span></h2>
@@ -11708,7 +11738,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     </div>
 
   </div>
-</div>
+</div></div>
 
 <!-- ===== CONFIRM DIALOG ===== -->
 <div class="confirm-overlay" id="confirm-overlay" role="dialog" aria-modal="true">
@@ -11729,7 +11759,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1782';
+const APP_VERSION = '0.1783';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -23076,7 +23106,7 @@ function openSettings() {
 
   document.getElementById('settings-overlay').classList.add('open');
   document.getElementById('settings-sheet').classList.add('open');
-  document.getElementById('settings-sheet').scrollTop = 0;
+  document.getElementById('settings-sheet-scroll').scrollTop = 0;
 }
 
 function clearSettingsSearch() {
@@ -23158,7 +23188,7 @@ function jumpToSettingsSection(sectionId) {
     // flush to the very top, which then sits partly hidden underneath
     // the sticky search bar. Measure its actual current height and
     // scroll just short of that instead, with a little breathing room.
-    var sheet = document.getElementById('settings-sheet');
+    var sheet = document.getElementById('settings-sheet-scroll');
     var searchWrap = document.getElementById('settings-search-wrap');
     var stickyHeight = searchWrap ? searchWrap.getBoundingClientRect().height : 0;
     if (sheet) {
@@ -23371,7 +23401,7 @@ function closeSettings() {
   // both branches, and cancelSettings() below), regardless of whether
   // anything else was saved -- this is sticky UI state (Excluded bucket),
   // same category as scratchPadPage/toolbarCollapsed, not a real setting.
-  var _sheetForScroll = document.getElementById('settings-sheet');
+  var _sheetForScroll = document.getElementById('settings-sheet-scroll');
   var _scrollPos = _sheetForScroll ? _sheetForScroll.scrollTop : 0;
   if (!settingsDirty()) {
     settings.settingsScrollPosition = _scrollPos;
@@ -23410,7 +23440,7 @@ function closeSettings() {
 }
 
 function cancelSettings() {
-  var _sheetForScroll2 = document.getElementById('settings-sheet');
+  var _sheetForScroll2 = document.getElementById('settings-sheet-scroll');
   var _scrollPos2 = _sheetForScroll2 ? _sheetForScroll2.scrollTop : 0;
   logDebugAction(settingsDirty() ? 'Cancelled Settings (discarded changes)' : 'Cancelled Settings (no changes)');
   settingsSnapshot = null;
@@ -24560,7 +24590,7 @@ function init() {
       // (rather than a hardcoded offset, which silently went wrong the
       // moment the Collapse-All row was added between them) and scroll
       // to exactly that far short of the container's own top instead.
-      var sheet = document.getElementById('help-sheet');
+      var sheet = document.getElementById('help-sheet-scroll');
       var header = document.querySelector('#help-sheet .help-header');
       var searchWrap = document.getElementById('help-search-wrap');
       var stickyHeight = (header ? header.getBoundingClientRect().height : 0) +
@@ -24593,7 +24623,7 @@ function init() {
     group.forEach(function(m) { m.classList.add('help-highlight-current'); });
     var el = group[0]; // scroll position is based on the match's first piece
     setTimeout(function() {
-      var sheet = document.getElementById('help-sheet');
+      var sheet = document.getElementById('help-sheet-scroll');
       var header = document.querySelector('#help-sheet .help-header');
       var searchWrap = document.getElementById('help-search-wrap');
       var stickyHeight = (header ? header.getBoundingClientRect().height : 0) +
@@ -24883,7 +24913,7 @@ function init() {
     document.getElementById('help-version').textContent = 'v' + APP_VERSION;
     document.getElementById('help-overlay').classList.add('open');
     document.getElementById('help-sheet').classList.add('open');
-    document.getElementById('help-sheet').scrollTop = 0;
+    document.getElementById('help-sheet-scroll').scrollTop = 0;
     pinHelpElements();
   });
   var APP_URL = 'https://lynn-edu-apps.github.io/everyday-apps/remember/';
@@ -30097,12 +30127,17 @@ function makeImportFolderName(label) {
     // the dialog instead of the old default (window.innerWidth), which
     // is what was pushing the search bar's right edge/clear buttons
     // past the dialog's own boundary and clipping them.
+    // v0.1783: now measures #settings-sheet-scroll (the actual scrolling
+    // element the search bar's position:sticky is relative to) rather
+    // than the outer #settings-sheet -- the outer no longer scrolls
+    // after this build's restructuring, so its width no longer reflects
+    // any scrollbar-gutter space the inner element reserves.
     var wrap = document.getElementById('settings-search-wrap');
-    var sheet = document.getElementById('settings-sheet');
+    var sheet = document.getElementById('settings-sheet-scroll');
     if (wrap && sheet) applyZoomSizeCompensation(wrap, sheet.getBoundingClientRect().width);
   }
   document.getElementById('settings-scroll-to-last-btn').addEventListener('click', function() {
-    var sheet = document.getElementById('settings-sheet');
+    var sheet = document.getElementById('settings-sheet-scroll');
     if (!sheet) return;
     // v0.1764: diagnostic logging, per Lynn's report that this button has
     // regressed -- verified directly that the underlying save/restore of
@@ -30138,7 +30173,7 @@ function makeImportFolderName(label) {
     }
   });
   document.getElementById('settings-fab-scroll').addEventListener('click', function() {
-    var sheet = document.getElementById('settings-sheet');
+    var sheet = document.getElementById('settings-sheet-scroll');
     if (!sheet) return;
     // If near the top (within 80px), scroll to bottom; otherwise scroll to top.
     // "Already at top → go to bottom" mirrors the scroll-top/bottom buttons in
