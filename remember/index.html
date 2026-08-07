@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1779 -->
+<!-- Remember App - Version 0.1780 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1779
+  Version 0.1780
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,7 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1780 - THREE fixes, per Lynn's desktop/Windows testing report. (1) FIX: "Show 'Back' label" mode never benefited from the earlier taller-chevron fix (v0.1771) -- root cause: applyToolbarIconSizes()'s JS-injected, !important-tagged style block sizes all '#note-top-bar .icon-btn svg' elements identically, which also matches #back-btn svg and silently overrode the dedicated 1.3x CSS rule every time it ran (confirmed directly: computed chevron size was 20px, matching siblings, instead of the intended 26px). #back-btn is now excluded from the generic rule and given its own 1.3x rule in the same injected block, computed from the same _iconPx the rest of the function already uses. Also gave the 'Back' label its own inline-flex + slightly looser line-height (was inline with line-height:1 inherited from .icon-btn, leaving uppercase text's vertical position dependent on the platform's own default UI font metrics) so it self-centers consistently rather than only happening to look right on some platforms. (2) FIX: the Settings dialog's floating Save/Cancel/Scroll control could escape the dialog horizontally on Ctrl+wheel zoom (Windows/Chrome) -- its position-recompute was wired only to plain window 'resize', unlike the note editor's own equivalent (pinToolbars()), which has always also listened on visualViewport resize/scroll since Ctrl+wheel zoom reliably fires those and not always a plain resize. Added the same two listeners here. (3) FIX: the Settings dialog's search bar was clipping/extending off-screen horizontally under zoom -- applyZoomSizeCompensation() always compensated against window.innerWidth, correct for genuinely full-viewport-width elements (the note header/toolbar it was built for) but wrong for this search bar, which lives inside the dialog's own narrower, capped width. Added an optional targetWidth parameter (default unchanged, window.innerWidth, so every other existing caller is unaffected) and the Settings search bar now passes the dialog's own current rendered width. Verified directly: chevron computed size now 26px (was 20px) with the label's own centering independently confirmed; both Settings zoom listeners now fire on visualViewport events, matching pinToolbars()'s wiring exactly; the search bar's compensated width now derives from the dialog's own bounding rect, not the viewport. Suite unchanged: 332/332.
   v0.1771 - THREE things, per Lynn. (1) FIX: back button chevron made taller -- found that even at its existing 1.3x SVG scale, the chevron shape itself only filled half its own 24x24 viewBox vertically (12 of 24 units), noticeably less proportionally than sibling icons like Undo (14 of 24); scaling the whole SVG box up doesn't fix that underlying proportion, so the shape's own points were changed to span 16 of 24 units instead, same width as before per Lynn's request to try taller without necessarily wider first. (2) FIX: back button vertical misalignment relative to sibling buttons -- found a concrete, confirmed difference from every correctly-aligned sibling: min-height/min-width had been fully removed (unset) rather than matching the shared var(--icon-btn-min) every other icon-btn uses, breaking box-model consistency with the row it sits in. Restored to standard, keeping the button's own deliberate tighter/asymmetric padding and larger ink scale intact, both clearly intentional per the existing code comment. Flagged honestly that fine vertical alignment may still need one more round of visual confirmation, since this can't be rendered and checked directly in this environment. (3) NEW setting: "Show 'Back' label on large screens" -- adds the word "Back" next to the chevron, per Lynn's report that alpha testers have gotten stuck in a note not realizing how to get out. Styled to match the existing folder-breadcrumb-back-label. Gated behind BOTH the new setting (off by default -- purely an opt-in aid, not a behavior change) AND a 700px-wide CSS media query, chosen specifically to exclude even large phones in landscape, not just portrait phones -- confirmed directly that no existing width-breakpoint convention already existed in this app to reuse, so this establishes a new one specifically for this purpose. Verified directly: the chevron's updated points, the setting's off-by-default state and its class-toggle wiring, and the label element's correct text all confirmed working. Suite unchanged: 332/332.
   v0.1770 - REFINE: made the v0.1769 theme-color fix genuinely future-proof, per Lynn's direct follow-up question -- correctly pointed out that the fix as shipped hardcoded '#1e1c1a'/'#f5f0e8' as a second, separate copy of the palette values, meaning a future change to --bg would need someone to remember to also update this specific line, or the exact same staleness bug (the old dark value having silently drifted out of sync with the app's real background) would eventually repeat itself. Replaced the hardcoded pair with a live read via the existing resolveCSSVarToHex('--bg') utility (already built for the Bubble feature) -- confirmed directly that its probe element is appended to document.body specifically, making it a correct descendant of body.dark and therefore able to see that override properly (the opposite of an unrelated bug found earlier this session in a standalone prototype, where a probe was incorrectly scoped relative to a dark-mode override). Now any future change to --bg's actual value is automatically reflected here with no separate step to remember. Verified the full flow runs correctly end to end with no errors and confirmed the live-read function is genuinely being called and applied, not skipped. Suite unchanged: 332/332.
   v0.1769 - FIX: re-diagnosed and fixed the regressed "Android dark mode PWA" bug Lynn recalled from a prior chat, predating this file's detailed changelog -- the system status bar (and other OS chrome outside the app's own content) staying the wrong color in dark mode. Root cause, found by direct inspection rather than guessing: theme-color was set via two static &lt;meta&gt; tags gated by CSS media="(prefers-color-scheme: ...)", which only ever reflects the OS's raw light/dark preference -- never this app's own actual current theme, which can be explicitly overridden independent of the OS via settings.theme. If a user's OS preference and their own app-level override disagreed (a real, fully supported case here), the browser picked whichever static tag matched the OS preference regardless of what the app was actually rendering -- producing a status bar that didn't match the app's own background at all, exactly the reported symptom. A second, related bug found while verifying the fix: the old dark value (#1a1a1a) had also silently drifted out of sync with this app's actual current dark background (#1e1c1a) at some point, a smaller but related staleness problem confirming this whole mechanism had been disconnected from the live theme system for a while. Fixed by replacing both static tags with a single JS-controlled one, updated from the exact same useDark computation (accounting for OS preference, explicit override, and 'auto') the rest of this app's dark-mode logic already uses, with the current --bg hex values directly so it can't drift out of sync with the actual palette again. Verified directly by reproducing the precise mismatch scenario that would have triggered the bug: OS reporting a light preference while the app is explicitly overridden to dark -- confirmed the meta tag correctly shows the app's real dark background rather than the OS's light preference. Suite unchanged: 332/332.
@@ -849,7 +850,21 @@ body.hide-remember-logo .home-title {
 .back-btn-label { display: none; }
 @media (min-width: 700px) {
   body.show-back-label .back-btn-label {
-    display: inline;
+    /* v0.1780 FIX, per Lynn's report (desktop/Windows): was display:inline
+       with no explicit line-height, so it inherited .icon-btn's
+       line-height:1 -- a line box exactly equal to font-size. Uppercase
+       glyphs' cap-height sits differently within that box depending on
+       the platform's default UI font metrics (confirmed centered in one
+       environment, reported off-center on Windows), unlike the chevron
+       SVG, which has real symmetric space built into its own viewBox.
+       inline-flex + align-items:center + a slightly looser line-height
+       gives the text its own small, font-metric-independent centering
+       buffer instead of relying on line-box-equals-font-size to happen
+       to look centered. */
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    line-height: 1.2;
     margin-left: 4px;
     color: inherit;
     font-size: calc(var(--font-ui) * 1.1);
@@ -11698,7 +11713,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1779';
+const APP_VERSION = '0.1780';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13134,7 +13149,23 @@ function _zoomFactor() {
 // Fixed by explicitly setting the PRE-scale layout width so the
 // POST-scale rendered result always exactly equals the true current
 // viewport width, confirmed correct in both zoom directions.
-function applyZoomSizeCompensation(el) {
+// v0.1780: optional targetWidth param, per Lynn's report that the
+// Settings dialog's search bar was clipping/overflowing horizontally.
+// This function was written for genuinely full-viewport-width elements
+// (the note header/toolbar) and always compensated against
+// window.innerWidth -- correct for those, but the Settings search bar
+// lives INSIDE the dialog, whose own rendered width is capped well
+// below the viewport on desktop (max-width, centered). Reusing this
+// function unmodified for it meant the pre-scale layout width was set
+// to the full browser viewport width regardless, so even after the
+// compensating scale pulled its VISUAL size back down, its actual
+// laid-out box (and therefore its right edge) still extended out to
+// the viewport width -- past the dialog's own boundary, clipped by the
+// dialog's overflow. targetWidth defaults to window.innerWidth so
+// every existing caller (note header/toolbar, Help dialog elements) is
+// completely unaffected; only a caller that passes its own bounding
+// width gets the corrected math.
+function applyZoomSizeCompensation(el, targetWidth) {
   if (!el) return;
   if (!_mouseZoomCompensationActive()) {
     // No mouse present (or matchMedia unavailable): leave this element
@@ -13143,6 +13174,7 @@ function applyZoomSizeCompensation(el) {
     el.style.width = '';
     return;
   }
+  var _targetW = (typeof targetWidth === 'number' && targetWidth > 0) ? targetWidth : window.innerWidth;
   var zf = _zoomFactor();
   var scale = 1 / zf;
   // v0.1719 REVERT, per Lynn's report of the header/toolbar growing huge
@@ -13162,7 +13194,7 @@ function applyZoomSizeCompensation(el) {
   // reintroduced here.
   el.style.transform = 'scale(' + scale + ')';
   el.style.transformOrigin = 'top left';
-  el.style.width = (window.innerWidth * zf) + 'px';
+  el.style.width = (_targetW * zf) + 'px';
 }
 
 // POSITION compensation: for elements anchored via top/left/right/bottom
@@ -23726,14 +23758,30 @@ function applyToolbarIconSizes() {
   // only ever engages far below any real icon size (smallest is 22 ->
   // 32px), so it can never again cap a larger icon's button.
   var _iconBtnMin = Math.max(28, _iconPx + 10);
+  // v0.1780 FIX, per Lynn's report (desktop/Windows): this block's
+  // '#note-top-bar .icon-btn svg' selector also matches #back-btn svg,
+  // and being !important it silently overrode the dedicated "taller
+  // chevron" CSS rule (#back-btn svg { width/height: calc(var(--icon-size)
+  // * 1.3) }) every time this function ran -- confirmed directly, the
+  // chevron's computed size was equal to sibling icons (20px) instead of
+  // the intended 26px. #back-btn is now explicitly excluded from the
+  // generic rule (:not(#back-btn)) and given its own !important rule
+  // in this same block, computed from the SAME _iconPx this function
+  // already uses, so the 1.3x relationship can never drift out of sync
+  // with whatever the current icon size actually is.
+  var _backIconPx = Math.round(_iconPx * 1.3);
   _iconSizeStyleEl.textContent =
     '#note-bottom-bar .icon-btn svg, #toolbar-scroll .icon-btn svg {' +
     '  width: ' + _iconPx + 'px !important;' +
     '  height: ' + _iconPx + 'px !important;' +
     '}' +
-    '#note-top-bar .icon-btn svg, #note-top-bar .btn svg {' +
+    '#note-top-bar .icon-btn:not(#back-btn) svg, #note-top-bar .btn svg {' +
     '  width: ' + _iconPx + 'px !important;' +
     '  height: ' + _iconPx + 'px !important;' +
+    '}' +
+    '#note-top-bar #back-btn svg {' +
+    '  width: ' + _backIconPx + 'px !important;' +
+    '  height: ' + _backIconPx + 'px !important;' +
     '}' +
     '#note-bottom-bar .icon-btn, #toolbar-scroll .icon-btn {' +
     '  min-width: ' + _iconBtnMin + 'px !important;' +
@@ -29988,17 +30036,38 @@ function makeImportFolderName(label) {
       if (sheet.classList.contains('open')) { positionSettingsFab(); pinSettingsSearchBar(); }
     });
     _fabPosObserver.observe(sheet, { attributes: true, attributeFilter: ['class'] });
-    window.addEventListener('resize', function() {
+    // v0.1780 FIX, per Lynn's report (desktop/Windows): Ctrl+wheel zoom
+    // was only wired to plain window 'resize' here, but the note
+    // editor's own equivalent recompute (pinToolbars()) has always
+    // listened on window resize AND visualViewport resize/scroll --
+    // Ctrl+wheel zoom reliably fires the visualViewport events on
+    // Windows/Chrome, and does not reliably fire plain window resize.
+    // Missing those two listeners is why this FAB and the search bar
+    // never recomputed during an actual zoom gesture, only on a real
+    // window-size change. Now matches pinToolbars()'s wiring exactly.
+    function _recomputeSettingsFloats() {
       if (sheet.classList.contains('open')) { positionSettingsFab(); pinSettingsSearchBar(); }
-    });
+    }
+    window.addEventListener('resize', _recomputeSettingsFloats);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', _recomputeSettingsFloats);
+      window.visualViewport.addEventListener('scroll', _recomputeSettingsFloats);
+    }
   })();
   // v0.1759 NEW, per Lynn's report: the Settings dialog's own floating
   // (position:sticky) search bar never had zoom compensation applied at
   // all -- same applyZoomSizeCompensation() treatment used for the Help
   // dialog's analogous elements, for consistency.
   function pinSettingsSearchBar() {
+    // v0.1780 FIX, per Lynn's report: this search bar lives inside the
+    // Settings dialog, not the full viewport -- pass the dialog's own
+    // current rendered width so the compensation math bounds itself to
+    // the dialog instead of the old default (window.innerWidth), which
+    // is what was pushing the search bar's right edge/clear buttons
+    // past the dialog's own boundary and clipping them.
     var wrap = document.getElementById('settings-search-wrap');
-    if (wrap) applyZoomSizeCompensation(wrap);
+    var sheet = document.getElementById('settings-sheet');
+    if (wrap && sheet) applyZoomSizeCompensation(wrap, sheet.getBoundingClientRect().width);
   }
   document.getElementById('settings-scroll-to-last-btn').addEventListener('click', function() {
     var sheet = document.getElementById('settings-sheet');
