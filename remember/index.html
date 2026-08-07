@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1785 -->
+<!-- Remember App - Version 0.1786 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1785
+  Version 0.1786
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,7 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1786 - NEW FEATURE, per Lynn: the Quick Action Bar, for her father (advanced macular degeneration). An optional docked row of up to 4 huge, single-letter buttons at the true bottom of the note editor screen (not the confusingly-named #note-bottom-bar, which actually renders near the top) -- each permanently wired to ONE fixed action, deliberately NOT a cycling/long-press design: after discussion, a hidden mode someone has to remember (and verify by re-reading a tiny letter) was judged a worse fit for very low vision than simply configuring 1-4 separate buttons. New single object-valued setting, settings.quickActionBar (enabled/size/shape/colorScheme/buttons), Note Behavior bucket. A central QUICK_ACTION_BAR_ACTIONS registry (Print, Copy, Mail, Message, Share, Speak, Find in note, Toggle quiet mode, Back to notes list, Show/hide toolbar) is the single source of truth for both the Settings dropdown and the actual click wiring, so they can never drift apart -- and so a future action (a microphone/dictation toggle, per Lynn's stated plan once dictation support exists) is a one-line addition, not a redesign. Mail and Message deliberately go STRAIGHT to compose (mailto:/sms:), bypassing navigator.share()'s native picker entirely -- that picker is exactly the kind of small-icon obstacle this feature exists to route around; generic Share remains available as its own separate action for anyone who wants the picker. sms: reliably opens Messages with a recipient (confirmed against Apple's own developer docs) but pre-filling the body is NOT officially supported by Apple and is known to be inconsistent across iOS versions -- documented honestly in the code rather than overpromising; even a bare launch-into-Messages is real standalone value given how Lynn describes her father's current copy/paste workflow. Bottom placement was a deliberate, discussed decision: this project's own past attempts at any bottom-docked toolbar broke on iOS PWA because the on-screen keyboard's height can't be reliably measured -- rather than re-attempt keeping the bar correctly positioned WHILE the keyboard is up (the part that actually broke before), it's hidden outright the instant the keyboard opens (reusing the exact #note-screen.keyboard-open selector pattern #note-fab already relies on) and restored the instant it closes -- costing nothing in practice, since Print/Copy/Mail/Message are all things done when NOT actively typing. Deliberately DOCKED, not floating over note text like #note-fab -- #note-content-area gets a real padding-bottom reservation measured from the bar's own actual rendered height (matching pinToolbars()'s established measure-don't-guess approach for the top toolbars), re-synced on every resize/zoom event via the same listeners pinToolbars() already has (split into a lightweight space-only re-measure for that high-frequency path, versus the full button/handler rebuild only needed on actual settings changes). Locked, theme-INDEPENDENT high-contrast color pairs (black-on-white / white-on-black), plus an explicit opt-in 'match app theme' third choice -- a general-purpose accent color has no guaranteed contrast level, which matters more here than usual. Settings UI: enable toggle, a size slider (40-140px), a square/circle shape picker, the 3-way color picker, and 4 action-dropdown-plus-single-letter-box rows, added as a new subsection at the end of Note Behavior. Verified end to end: default four (Print/P, Copy/C, Mail/M, Message/T) render correctly with real screenshots at both default (64px) and a much larger (110px) size; the Copy button genuinely writes real note content to the clipboard (confirmed with clipboard permissions granted); the Mail button's mailto: URL is correctly subject/body-encoded; the Print button's click handler correctly maps to the same, already-shipped doPrintNote() the regular toolbar button uses; keyboard-open correctly hides and un-hides the bar; settings changes (shape, color, action, enabled) correctly save to localStorage, survive a reload, and correctly apply live -- including confirming a per-slot letter customization is preserved when only the ACTION is changed, not silently overwritten back to that action's own default; Settings search correctly surfaces the new rows. Suite unchanged: 332/332 (harness v8).
   v0.1785 - FOUR fixes, per Lynn's continued testing. (1) FIX (real bug, introduced by v0.1784): Import/Export stopped scrolling entirely. Root cause confirmed directly: unlike Settings/Help/Export-Format (genuinely DEFINITE-height dialogs from fixed top+bottom offsets), Import/Export deliberately uses an auto, shrink-to-fit-content height capped by max-height (top:auto + a bottom offset + max-height:420px), so it hugs short content tightly instead of always being a large box. v0.1784's shared inner-scroll-wrapper fix used position:absolute, which removes a child from normal flow -- the OUTER's own auto-height calculation had nothing left to measure and collapsed to 0 (confirmed directly: computed height read exactly "0px"). Settings/Help/Export-Format were unaffected since their height doesn't depend on their children at all. Fixed by giving Import/Export's inner wrapper its own different treatment: a normal in-flow block (not absolutely positioned) with its own matching max-height, so short content still shrinks the outer tightly (verified: 71px for minimal content, not always 420px) while long content hits the inner's own cap and scrolls internally, landing the outer at essentially the same value as its own independent cap. Verified directly: outer/inner heights now match at 420px for full content, scrollTop genuinely moves and a scrolled screenshot shows different content in view. Per Lynn's specific request, also checked the Export Format dialog (the other one restructured in v0.1783) for the same latent bug -- it wasn't actually broken, since it has a genuinely definite height like Settings/Help, but it's using the same shared, now-corrected class regardless. (2) FIX: Help dialog showing two overlapping 'x' clear icons in Chrome (desktop and Android), not in Firefox, not reliably in Safari/iOS -- and occasionally two magnifying-glass icons in either dialog, not reliably reproducible. Root cause: input[type=search] gets native, non-stylable Chrome/WebKit decorations (a search icon and a clear button) rendered in the browser's own accent color, on top of the app's own custom versions of both. Settings had already suppressed the native clear button specifically (an existing, undocumented-here rule found during investigation) but never the search-icon decoration; Help had neither suppressed at all. Firefox doesn't render these WebKit-specific pseudo-elements, explaining why it was never seen there. Added the same suppression (::-webkit-search-cancel-button and the three related ::-webkit-search-* pseudo-elements) to BOTH search inputs, closing the gap completely rather than patching one browser's one icon at a time. Verified directly with real Chromium screenshots: both search bars now show exactly one magnifying glass and one clear button with text entered. (3) TWEAK: Help's "Collapse all sections" button nudged down 1px further (5px/1px padding split, was 4px/2px), per Lynn's follow-up that it could still scoot down a tiny bit more -- Settings' wasn't mentioned this time so left alone. Verified live: row height unchanged, still a pure redistribution. Suite unchanged: 332/332 (harness v8).
   v0.1784 - THREE fixes, per Lynn's continued testing after v0.1783. (1) FIX: the Import/Export dialog still had the rounded-corner-vs-scrollbar problem -- it was missed in v0.1783 because it's a third, separate CSS class (.importexport-sheet, not .modal-sheet or .help-sheet) with the identical underlying issue. Same fix applied: outer element now only positions/rounds/clips, a new inner #importexport-sheet-scroll wrapper (reusing the existing shared .modal-sheet-scroll class) does the actual scrolling. This dialog had no scrollTop/scrollTo JS to redirect (only open/close class toggles), so the fix was purely structural. Verified directly: outer overflow:hidden, inner overflow-y:auto, border-radius intact. (2) FIX: the Help dialog's search bar (and its Next/Previous match arrows) was clipping/landing off-screen -- same root cause as the Settings search bar fixed in v0.1780, just never applied here: applyZoomSizeCompensation() was called with no targetWidth for both the sticky header and the search bar, silently defaulting to the full window.innerWidth instead of the dialog's own bounded width. Fixed the same way, passing #help-sheet-scroll's own current width. Also added the matching visualViewport resize/scroll listeners here (previously only plain window 'resize', the same gap Settings had before v0.1780), so both recompute reliably during an actual Ctrl+wheel zoom gesture, not only on a genuine window-size change. Verified directly with simulated zoom: search bar's right edge now lands exactly at the dialog's right edge (was overflowing past it). (3) TWEAK: "Collapse all sections" button in both Settings and Help nudged down 2px, per Lynn's report that it sat too high in its row and could clip at the top under some zoom levels. Fixed by swapping each row's own top/bottom padding (2px/4px -> 4px/2px) -- a redistribution, not an addition, so the row's total height and padding budget are unchanged; verified live that this shifts the button down 2px with the row's rendered height identical before and after. Suite unchanged: 332/332 (harness v8).
   v0.1783 - THE real Firefox/Chrome rounded-corner fix, plus a tweak, per Lynn. (1) FIX: Settings and Help dialogs showing square (not rounded) corners on the side the scrollbar sits, confirmed by Lynn to affect Chrome too once v0.1782's scrollbar-width:thin mitigation was tried (that mitigation is reverted here, since it made things worse rather than better). Root cause confirmed: .modal-sheet/.help-sheet were BOTH the rounded/positioned box AND the actual scrolling container on the same element -- neither browser reliably clips a native scrollbar to its own element's border-radius. Restructured properly this time: each dialog's outer element (#settings-sheet, #help-sheet, #export-format-sheet -- fixed all three sharing this pattern, not just the one reported, per the project's reuse/consolidate philosophy) now only positions, rounds, and clips (overflow:hidden, never scrolls itself); a new inner wrapper (#settings-sheet-scroll, #help-sheet-scroll, #export-format-sheet-scroll -- shared .modal-sheet-scroll class) does the actual overflow-y:auto scrolling. Clipping a scrollable descendant's native scrollbar via an ANCESTOR's overflow:hidden + border-radius is the standard, reliable cross-browser pattern for this. Every one of the 16 existing call sites that read/wrote #settings-sheet or #help-sheet directly was individually reviewed and classified: open/close class toggles, the FAB's own position measurement, and the change-event delegation listener correctly stay on the OUTER element (still the visible/positioned box, and delegation still works via normal event bubbling through the new wrapper); every scrollTop/scrollTo/scrollHeight usage and the sticky search bar's jump-to-section math were redirected to the new INNER scrolling element, since that's where real scrolling now actually happens. Each dialog's own bottom padding (extra breathing room after the last scrolled item, per Lynn's standing preference) moved from the old outer box to the new inner one, so it now correctly shows up as trailing space after the actual scrolled content instead of just unused space in a box that no longer scrolls. Verified directly: Settings opens, renders with intact rounded corners, and genuinely scrolls via the new inner element (confirmed scrollTop actually moves and clamps correctly at true scrollHeight-clientHeight). The regression suite's own settings-section nesting-depth check needed updating for this -- see Test Harness v8 below -- since every section is now, correctly and uniformly, one DOM level deeper. (2) TWEAK: "Back" label nudged further left again (margin-left 0px -> -3px, pulling it into the chevron SVG's own built-in whitespace without touching the drawn glyph), per Lynn's follow-up request, verified visually. Suite: 332/332 on harness v8 (v7 would report a false failure here -- see that file's own header comment).
@@ -2274,6 +2275,84 @@ body.ui-large #note-fab svg, body.ui-xlarge #note-fab svg { width: 34px; height:
 body.reading-mode #note-fab,
 #note-screen.keyboard-open #note-fab { display: none !important; }
 
+/* ===== QUICK ACTION BAR (v0.1786) =====
+   Per Lynn, for her father (advanced macular degeneration): an optional
+   docked row of up to 4 huge, single-letter buttons at the true bottom
+   of the note editor screen -- deliberately DOCKED (reserves its own
+   space via #note-content-area's padding-bottom below), not floating
+   over note text the way #note-fab does, since covering the exact text
+   someone with low vision is trying to read would defeat the purpose.
+   Hidden while the on-screen keyboard is open (same selector pattern
+   #note-fab already uses) rather than trying to keep it correctly
+   positioned WHILE the keyboard is up -- the specific thing that broke
+   in this project's earlier attempts at any bottom-docked toolbar on
+   iOS PWA. His actions (Print/Copy/Mail/Message) are all things done
+   when NOT actively typing, so this costs him nothing in practice. */
+#quick-action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: none; /* shown via body.qab-enabled below, when the setting is on */
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--qab-size, 64px) * 0.14);
+  padding: 10px env(safe-area-inset-right, 0px) calc(10px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
+  background: var(--note-toolbar-bg, var(--bg2));
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
+  box-sizing: border-box;
+}
+body.qab-enabled #quick-action-bar { display: flex; }
+#note-screen.keyboard-open #quick-action-bar { display: none !important; }
+body.reading-mode #quick-action-bar { display: none !important; }
+
+.qab-btn {
+  width: var(--qab-size, 64px);
+  height: var(--qab-size, 64px);
+  flex-shrink: 0;
+  border: 3px solid currentColor;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: calc(var(--qab-size, 64px) * 0.42);
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.1s;
+}
+.qab-btn[data-empty="true"] { display: none; }
+body.qab-shape-circle .qab-btn { border-radius: 50%; }
+body.qab-shape-square .qab-btn { border-radius: 14%; }
+
+/* Locked, theme-INDEPENDENT high-contrast pairs -- deliberately not
+   tied to var(--accent)/var(--bg) etc, since an accent color chosen for
+   general aesthetics has no guarantee of meeting the higher contrast
+   this feature exists for. 'theme' is offered as a third, explicit
+   opt-in for anyone who wants it to match anyway. */
+body.qab-scheme-blackOnWhite .qab-btn { background: #ffffff; color: #000000; border-color: #000000; }
+body.qab-scheme-whiteOnBlack .qab-btn { background: #000000; color: #ffffff; border-color: #ffffff; }
+body.qab-scheme-theme .qab-btn { background: var(--bg); color: var(--accent); border-color: var(--accent); }
+
+@media (hover: hover) {
+  .qab-btn:hover { filter: brightness(0.9); }
+}
+.qab-btn:active { transform: scale(0.94); }
+
+/* Reserve real space so note content never scrolls underneath the bar
+   -- exact height measured live in renderQuickActionBar() (matching
+   pinToolbars()'s own measure-the-real-rendered-height approach)
+   rather than guessed, so it can never drift out of sync with the
+   user's own size-slider choice. Scoped to qab-enabled only; the
+   existing keyboard-open padding-bottom override (320px, for the
+   iOS caret-visibility fix) is a completely separate rule scoped to
+   a mutually exclusive state (keyboard-open implies the bar itself
+   is hidden, per the rule above), so the two can never conflict. */
 
 /* ===== VIEWER HEADINGS ===== */
 .viewer-h1, .viewer-h2, .viewer-h3, .viewer-h4, .viewer-h5, .viewer-h6 {
@@ -7813,6 +7892,21 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     </svg>
   </button>
 
+  <!-- v0.1786 NEW: Quick Action Bar, per Lynn (for her father, advanced
+       macular degeneration) -- an optional docked row of up to 4 huge,
+       single-letter buttons at the very bottom of the note editor.
+       Inside note-screen so the same keyboard-open selector pattern as
+       #note-fab applies (hidden while the on-screen keyboard is up).
+       Button count/letters/actions/size/color/shape are all applied by
+       renderQuickActionBar() from settings.quickActionBar -- nothing
+       here is hardcoded beyond the 4 placeholder slots themselves. -->
+  <div id="quick-action-bar" role="toolbar" aria-label="Quick actions">
+    <button class="qab-btn" id="qab-btn-0" data-slot="0"></button>
+    <button class="qab-btn" id="qab-btn-1" data-slot="1"></button>
+    <button class="qab-btn" id="qab-btn-2" data-slot="2"></button>
+    <button class="qab-btn" id="qab-btn-3" data-slot="3"></button>
+  </div>
+
   </div>
 </div>
 
@@ -10853,6 +10947,73 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
+
+<!-- v0.1786 NEW, per Lynn (for her father, advanced macular degeneration):
+     an optional docked row of up to 4 huge, single-letter buttons at the
+     bottom of the note editor. Each button is permanently wired to one
+     fixed action -- deliberately not a cycling/long-press design, see
+     build changelog for the reasoning. -->
+<div class="settings-subsection-title" style="margin-top:10px">Quick Action Bar</div>
+<div class="settings-row-desc" style="padding:0 20px 6px;margin-top:-4px">A row of up to 4 large, single-letter buttons at the bottom of the note editor, for anyone who finds the regular toolbar hard to see or aim for.</div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Show Quick Action Bar</div>
+          <div class="settings-row-desc">Adds the button row to the bottom of the note editor. Hidden automatically while the on-screen keyboard is open.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show Quick Action Bar">
+          <input type="checkbox" id="qab-enabled-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="settings-row range-row" id="qab-size-row">
+        <div class="settings-row-label">Button Size</div>
+        <input type="range" class="settings-range" id="qab-size-range" min="40" max="140" step="2" value="64">
+        <span class="range-val" id="qab-size-val">64px</span>
+      </div>
+
+      <div class="settings-row" id="qab-shape-row">
+        <div class="settings-row-label">Button Shape</div>
+        <div class="seg-control" id="qab-shape-seg">
+          <button type="button" class="seg-btn" data-val="square">Square</button>
+          <button type="button" class="seg-btn" data-val="circle">Circle</button>
+        </div>
+      </div>
+
+      <div class="settings-row" id="qab-color-row">
+        <div class="settings-row-label">Button Colors</div>
+        <div style="flex:1">
+          <select class="settings-select" id="qab-color-select">
+            <option value="blackOnWhite">Black on white (high contrast)</option>
+            <option value="whiteOnBlack">White on black (high contrast)</option>
+            <option value="theme">Match app theme</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="qab-slots-container">
+        <div class="settings-row" style="gap:10px">
+          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 1</div>
+          <select class="settings-select qab-slot-action" id="qab-slot-0-action" data-slot="0" style="flex:1"></select>
+          <input type="text" class="qab-slot-letter" id="qab-slot-0-letter" data-slot="0" maxlength="1" aria-label="Button 1 letter" style="width:44px;text-align:center;text-transform:uppercase;">
+        </div>
+        <div class="settings-row" style="gap:10px">
+          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 2</div>
+          <select class="settings-select qab-slot-action" id="qab-slot-1-action" data-slot="1" style="flex:1"></select>
+          <input type="text" class="qab-slot-letter" id="qab-slot-1-letter" data-slot="1" maxlength="1" aria-label="Button 2 letter" style="width:44px;text-align:center;text-transform:uppercase;">
+        </div>
+        <div class="settings-row" style="gap:10px">
+          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 3</div>
+          <select class="settings-select qab-slot-action" id="qab-slot-2-action" data-slot="2" style="flex:1"></select>
+          <input type="text" class="qab-slot-letter" id="qab-slot-2-letter" data-slot="2" maxlength="1" aria-label="Button 3 letter" style="width:44px;text-align:center;text-transform:uppercase;">
+        </div>
+        <div class="settings-row" style="gap:10px">
+          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 4</div>
+          <select class="settings-select qab-slot-action" id="qab-slot-3-action" data-slot="3" style="flex:1"></select>
+          <input type="text" class="qab-slot-letter" id="qab-slot-3-letter" data-slot="3" maxlength="1" aria-label="Button 4 letter" style="width:44px;text-align:center;text-transform:uppercase;">
+        </div>
+      </div>
     
     </div>
     </div>
@@ -11806,7 +11967,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1785';
+const APP_VERSION = '0.1786';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13456,6 +13617,13 @@ function pinToolbars() {
   area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + findBarH + 12) + 'px';
   // (overflow detection removed — use applySmallScreenOverflow instead)
   applyRuledLines();
+  // v0.1786: keep the Quick Action Bar's reserved bottom space in sync
+  // with every resize/zoom event pinToolbars() itself already reacts
+  // to, rather than wiring up a fully separate set of listeners for it.
+  // Lightweight re-measure only (see _qabReserveSpace()'s own comment) --
+  // not the full renderQuickActionBar(), which also rebuilds button
+  // click handlers and would be wasteful to repeat this often.
+  if (typeof _qabReserveSpace === 'function') _qabReserveSpace();
 }
 
 // v0.1726: Home Screen zoom compensation, per Lynn -- the first two
@@ -13625,6 +13793,25 @@ const DEFAULT_SETTINGS = {
   edgeSwipeToHome: true, // swipe right from the left screen edge returns to the notes list
   reopenLastNoteOnLaunch: true, // v0.1767, per Lynn -- some users find always landing on the last-open note (rather than the Home Screen) confusing; default true matches the app's existing, unconditional behavior exactly
   showBackLabelOnLargeScreens: false, // v0.1771, per Lynn -- adds the word "Back" next to the note editor's back chevron, on screens wide enough to fit it (the chevron alone can be too subtle for some users). Off by default -- some people don't want to see extra words, and this is purely an accessibility aid, not a behavior change.
+  // v0.1786 NEW, per Lynn -- for her father (advanced macular degeneration):
+  // an optional docked row of up to 4 huge, single-letter buttons at the
+  // bottom of the note editor, each permanently wired to one fixed action
+  // (deliberately NOT a cycling/long-press design -- see build changelog
+  // for the reasoning). Off by default; a single object-valued setting
+  // (same pattern as sectionStates) rather than several flat keys, since
+  // the whole feature is one coherent unit that's saved/read together.
+  quickActionBar: {
+    enabled: false,
+    size: 64,                 // px -- base button height; width tracks via CSS aspect-ratio
+    shape: 'square',           // 'square' | 'circle'
+    colorScheme: 'blackOnWhite', // 'blackOnWhite' | 'whiteOnBlack' | 'theme'
+    buttons: [
+      { action: 'print', letter: 'P' },
+      { action: 'copy', letter: 'C' },
+      { action: 'mail', letter: 'M' },
+      { action: 'message', letter: 'T' },
+    ],
+  },
   showHomeItemArrow: true, // v0.1779, per Lynn -- the small navigation arrow on each Home Screen folder/note entry. True matches current behavior exactly; off frees that space back to the name (display:none, not just hidden) rather than leaving a gap.
   // v0.1778, per Lynn -- Home Screen item metadata (folder item counts,
   // note last-opened times) appearance, for low-vision readability.
@@ -14020,13 +14207,13 @@ const SETTING_BUCKETS = {
   ruledLineTone: SETTING_BUCKETS_NOTE_APPEARANCE, rulerColor: SETTING_BUCKETS_NOTE_APPEARANCE, rulerOpacity: SETTING_BUCKETS_NOTE_APPEARANCE, rulerThickness: SETTING_BUCKETS_NOTE_APPEARANCE, showBlockRules: SETTING_BUCKETS_NOTE_APPEARANCE,
   showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE, showWhitespace: SETTING_BUCKETS_NOTE_APPEARANCE, circularCheckboxes: SETTING_BUCKETS_NOTE_APPEARANCE, hideMarkerForChecklistIsh: SETTING_BUCKETS_NOTE_APPEARANCE, skipFirstLevelIndentWhenHidden: SETTING_BUCKETS_NOTE_APPEARANCE,
   tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE,
-  // ---- NOTE_BEHAVIOR (35) ----
+  // ---- NOTE_BEHAVIOR (36) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
   confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, collapseToolbarOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, indentUsesTabs: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   insertDateTimeMode: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDateStyle: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeDayOfWeek: SETTING_BUCKETS_NOTE_BEHAVIOR, insertDateTimeSeconds: SETTING_BUCKETS_NOTE_BEHAVIOR,
   moveCompletedConfirm: SETTING_BUCKETS_NOTE_BEHAVIOR, moveCompletedToBottom: SETTING_BUCKETS_NOTE_BEHAVIOR, newItemDefaultTags: SETTING_BUCKETS_NOTE_BEHAVIOR, checkAnimation: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineCollapseOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, outlineMode: SETTING_BUCKETS_NOTE_BEHAVIOR, paragraphContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
   plusBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, plusBlankLineBefore: SETTING_BUCKETS_NOTE_BEHAVIOR, plusCheckbox: SETTING_BUCKETS_NOTE_BEHAVIOR, plusHyphen: SETTING_BUCKETS_NOTE_BEHAVIOR, plusPosition: SETTING_BUCKETS_NOTE_BEHAVIOR, plusSortedByTag: SETTING_BUCKETS_NOTE_BEHAVIOR,
-  quietMode: SETTING_BUCKETS_NOTE_BEHAVIOR, showSpeakBtn: SETTING_BUCKETS_NOTE_BEHAVIOR, skipListMarkers: SETTING_BUCKETS_NOTE_BEHAVIOR, smartIndentBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColor: SETTING_BUCKETS_NOTE_BEHAVIOR,
+  quietMode: SETTING_BUCKETS_NOTE_BEHAVIOR, quickActionBar: SETTING_BUCKETS_NOTE_BEHAVIOR, showSpeakBtn: SETTING_BUCKETS_NOTE_BEHAVIOR, skipListMarkers: SETTING_BUCKETS_NOTE_BEHAVIOR, smartIndentBlankLine: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColor: SETTING_BUCKETS_NOTE_BEHAVIOR,
   speakBtnIconOnly: SETTING_BUCKETS_NOTE_BEHAVIOR, speakInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speakBtnAccentColorInQuiet: SETTING_BUCKETS_NOTE_BEHAVIOR, speechPause: SETTING_BUCKETS_NOTE_BEHAVIOR, speechRate: SETTING_BUCKETS_NOTE_BEHAVIOR, tagScope: SETTING_BUCKETS_NOTE_BEHAVIOR,
   voiceURI: SETTING_BUCKETS_NOTE_BEHAVIOR,
   // ---- EXCLUDED (13) ----
@@ -15747,6 +15934,7 @@ function applySettings() {
   document.body.classList.toggle('speak-in-quiet', !!settings.speakInQuiet);
   document.body.classList.toggle('speak-accent-in-quiet', !!settings.speakBtnAccentColorInQuiet);
   document.body.classList.toggle('show-back-label', !!settings.showBackLabelOnLargeScreens);
+  renderQuickActionBar();
   const body = document.body;
 
   // Theme
@@ -19147,6 +19335,10 @@ function openNote(id, speakDelay) {
   // Re-pin toolbars now that note-screen is visible and has layout dimensions.
   // On Android the second toolbar may be hidden until this runs post-display.
   setTimeout(pinToolbars, 0);
+  // Same reasoning as pinToolbars() just above: the Quick Action Bar's
+  // reserved bottom space is measured from its own real rendered height,
+  // which needs note-screen to actually be visible/laid-out first.
+  setTimeout(renderQuickActionBar, 0);
   // A per-note theme could have just changed font/size/line-height —
   // re-measure, not just re-apply with whatever was cached before.
   setTimeout(recalibrateRuledLines, 0);
@@ -23079,6 +23271,7 @@ function openSettings() {
   var esToggle=document.getElementById('edge-swipe-home-toggle'); if(esToggle)esToggle.checked=(settings.edgeSwipeToHome !== false);
   var rlnToggle=document.getElementById('reopen-last-note-toggle'); if(rlnToggle)rlnToggle.checked=(settings.reopenLastNoteOnLaunch !== false);
   var blToggle=document.getElementById('back-label-toggle'); if(blToggle)blToggle.checked=!!settings.showBackLabelOnLargeScreens;
+  syncQuickActionBarSettingsUI();
   var dspToggle=document.getElementById('disable-scratch-pad-toggle'); if(dspToggle)dspToggle.checked=!!settings.disableScratchPad;
   var pzToggle=document.getElementById('disable-pinch-zoom-toggle'); if(pzToggle)pzToggle.checked=!!settings.disablePinchZoom;
   var logoToggle=document.getElementById('hide-logo-toggle'); if(logoToggle)logoToggle.checked=!!settings.hideLogo;
@@ -31336,6 +31529,58 @@ function makeImportFolderName(label) {
     settings.skipListMarkers = this.checked;
     updateSaveBtnState();
   });
+
+  // v0.1786: Quick Action Bar settings wiring
+  document.getElementById('qab-enabled-toggle').addEventListener('change', function() {
+    settings.quickActionBar.enabled = this.checked;
+    updateSaveBtnState();
+  });
+  document.getElementById('qab-size-range').addEventListener('input', function() {
+    settings.quickActionBar.size = parseInt(this.value, 10);
+    document.getElementById('qab-size-val').textContent = this.value + 'px';
+    updateSaveBtnState();
+  });
+  document.getElementById('qab-shape-seg').addEventListener('click', function(e) {
+    var btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    settings.quickActionBar.shape = btn.dataset.val;
+    setSegActive('qab-shape-seg', settings.quickActionBar.shape);
+    updateSaveBtnState();
+  });
+  document.getElementById('qab-color-select').addEventListener('change', function() {
+    settings.quickActionBar.colorScheme = this.value;
+    updateSaveBtnState();
+  });
+  for (var _qabI = 0; _qabI < 4; _qabI++) {
+    (function(slot) {
+      var actionSel = document.getElementById('qab-slot-' + slot + '-action');
+      var letterInp = document.getElementById('qab-slot-' + slot + '-letter');
+      if (actionSel) {
+        actionSel.addEventListener('change', function() {
+          settings.quickActionBar.buttons[slot] = settings.quickActionBar.buttons[slot] || { action: '', letter: '' };
+          settings.quickActionBar.buttons[slot].action = this.value;
+          // Picking a new action with no letter set yet (or the slot was
+          // previously empty) offers that action's own default letter,
+          // rather than leaving the box blank -- one less thing to fill in.
+          var act = _qabActionById(this.value);
+          if (act && !settings.quickActionBar.buttons[slot].letter) {
+            settings.quickActionBar.buttons[slot].letter = act.defaultLetter;
+            if (letterInp) letterInp.value = act.defaultLetter;
+          }
+          updateSaveBtnState();
+        });
+      }
+      if (letterInp) {
+        letterInp.addEventListener('input', function() {
+          var v = this.value.replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase();
+          this.value = v;
+          settings.quickActionBar.buttons[slot] = settings.quickActionBar.buttons[slot] || { action: '', letter: '' };
+          settings.quickActionBar.buttons[slot].letter = v;
+          updateSaveBtnState();
+        });
+      }
+    })(_qabI);
+  }
   document.getElementById('default-view-mode-toggle').addEventListener('change', function() {
     settings.defaultViewMode = this.checked;
     updateSaveBtnState();
@@ -37415,6 +37660,189 @@ function shareNote() {
     });
   } else {
     showToast('Sharing is not available on this browser', true);
+  }
+}
+
+// ===== QUICK ACTION BAR (v0.1786) =====
+// Two of its available actions -- Mail and Message -- deliberately go
+// STRAIGHT to compose, bypassing navigator.share()'s native picker
+// entirely. That picker is exactly the kind of small-icon obstacle this
+// whole feature exists to route around, not something to hide behind
+// again. Generic "Share" (whatever else the OS offers) remains available
+// as its own separate action for anyone who does want that picker.
+function quickActionMail() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  var note = notes[currentNoteId];
+  var subject = note.name || 'Note';
+  var text = stripForShare(note.content);
+  logDebugAction('Quick Action Bar: Mail');
+  window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) +
+    '&body=' + encodeURIComponent(text || '');
+}
+function quickActionMessage() {
+  if (!currentNoteId || !notes[currentNoteId]) return;
+  var note = notes[currentNoteId];
+  var text = stripForShare(note.content);
+  // sms: reliably opens the Messages app on iOS (confirmed directly
+  // against Apple's own developer documentation) -- that much is solid.
+  // Pre-filling the message BODY is a different story: Apple's own docs
+  // explicitly say the sms: URL "must not include any message text",
+  // and the widely-used &body= trick is unofficial and inconsistently
+  // honored across iOS versions (some reports: only works if a prior
+  // conversation thread with that recipient already exists). iOS uses
+  // '&body=', Android uses '?body=' -- included for whichever platform
+  // this ends up running on, but deliberately not promised as reliable
+  // either way; even a bare "jump straight to Messages" with no
+  // pre-filled text (falling back to copy/paste, exactly how this is
+  // already done today) is real, working value on its own.
+  var isIOS = (typeof _isIOSDevice === 'function') && _isIOSDevice();
+  var sep = isIOS ? '&' : '?';
+  logDebugAction('Quick Action Bar: Message');
+  window.location.href = 'sms:' + sep + 'body=' + encodeURIComponent(text || '');
+}
+
+// Central action registry -- the single source of truth for both the
+// Settings UI's action dropdown (each button slot) and the actual
+// click behavior wired up in renderQuickActionBar(). Adding a future
+// action (e.g. a microphone/dictation toggle, per Lynn's stated future
+// plan) means adding one entry here, nothing else.
+var QUICK_ACTION_BAR_ACTIONS = [
+  { id: 'print',    label: 'Print',                  defaultLetter: 'P', run: function() { doPrintNote(); } },
+  { id: 'copy',     label: 'Copy note',               defaultLetter: 'C', run: function() { copyNoteAsPlainText(); } },
+  { id: 'mail',     label: 'Mail (direct compose)',   defaultLetter: 'M', run: function() { quickActionMail(); } },
+  { id: 'message',  label: 'Message (direct compose)',defaultLetter: 'T', run: function() { quickActionMessage(); } },
+  { id: 'share',    label: 'Share (system menu)',     defaultLetter: 'H', run: function() { shareNote(); } },
+  { id: 'speak',    label: 'Speak note',              defaultLetter: 'S', run: function() { speakNote(); } },
+  { id: 'find',     label: 'Find in note',            defaultLetter: 'F', run: function() { openFind(); } },
+  { id: 'quiet',    label: 'Toggle quiet mode',       defaultLetter: 'Q', run: function() { toggleReadingMode(); } },
+  { id: 'backHome', label: 'Back to notes list',      defaultLetter: 'B', run: function() { goHome(); } },
+  { id: 'toolbar',  label: 'Show/hide toolbar',        defaultLetter: 'O', run: function() { toggleToolbarCollapse(); } },
+];
+function _qabActionById(id) {
+  for (var i = 0; i < QUICK_ACTION_BAR_ACTIONS.length; i++) {
+    if (QUICK_ACTION_BAR_ACTIONS[i].id === id) return QUICK_ACTION_BAR_ACTIONS[i];
+  }
+  return null;
+}
+
+// Renders the whole Quick Action Bar from settings.quickActionBar. Safe
+// to call unconditionally and often (applySettings() already does, on
+// every settings save) -- idempotent, and cheap when the feature is off.
+function renderQuickActionBar() {
+  var cfg = settings.quickActionBar;
+  var bar = document.getElementById('quick-action-bar');
+  var body = document.body;
+  if (!cfg || !bar) return;
+
+  body.classList.toggle('qab-enabled', !!cfg.enabled);
+  body.classList.remove('qab-shape-square', 'qab-shape-circle');
+  body.classList.add('qab-shape-' + (cfg.shape === 'circle' ? 'circle' : 'square'));
+  body.classList.remove('qab-scheme-blackOnWhite', 'qab-scheme-whiteOnBlack', 'qab-scheme-theme');
+  var scheme = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite';
+  body.classList.add('qab-scheme-' + scheme);
+
+  var size = (typeof cfg.size === 'number' && cfg.size >= 40 && cfg.size <= 160) ? cfg.size : 64;
+  bar.style.setProperty('--qab-size', size + 'px');
+
+  var buttons = Array.isArray(cfg.buttons) ? cfg.buttons : [];
+  for (var i = 0; i < 4; i++) {
+    var btn = document.getElementById('qab-btn-' + i);
+    if (!btn) continue;
+    var slotCfg = buttons[i];
+    var action = slotCfg ? _qabActionById(slotCfg.action) : null;
+    if (!action) {
+      btn.setAttribute('data-empty', 'true');
+      btn.textContent = '';
+      btn.onclick = null;
+      btn.removeAttribute('aria-label');
+      continue;
+    }
+    btn.removeAttribute('data-empty');
+    var letter = (slotCfg.letter || action.defaultLetter || '?').charAt(0).toUpperCase();
+    btn.textContent = letter;
+    btn.setAttribute('aria-label', action.label);
+    btn.title = action.label;
+    // Plain assignment (not addEventListener) is deliberate: this
+    // function can run many times over a session as settings change,
+    // and .onclick replaces cleanly each time rather than stacking a
+    // new listener on top of every previous one.
+    btn.onclick = action.run;
+  }
+
+  // Reserve real space so note content never scrolls underneath the
+  // bar -- measures the bar's own actual rendered height rather than
+  // assuming a formula, matching pinToolbars()'s own approach for the
+  // top toolbars. Only meaningful while note-screen is actually
+  // visible; harmless (just measures 0/hidden) otherwise, and gets
+  // re-run via the setTimeout(renderQuickActionBar, 0) in openNote()
+  // once it truly is.
+  _qabReserveSpace();
+}
+
+// Split out from renderQuickActionBar() so pinToolbars() (called on
+// every resize/zoom/scroll event, potentially many times per second
+// during an active zoom gesture) only re-measures space, rather than
+// also re-toggling body classes and reassigning all 4 button click
+// handlers on every single call -- correct either way since both are
+// idempotent, but this is the cheap, high-frequency-safe path.
+function _qabReserveSpace() {
+  var cfg = settings.quickActionBar;
+  var bar = document.getElementById('quick-action-bar');
+  var contentArea = document.getElementById('note-content-area');
+  if (!cfg || !bar || !contentArea) return;
+  if (cfg.enabled) {
+    var barH = bar.getBoundingClientRect().height;
+    contentArea.style.paddingBottom = barH > 0 ? (barH + 12) + 'px' : '';
+  } else {
+    contentArea.style.paddingBottom = '';
+  }
+}
+
+// Populates each action <select>'s options from QUICK_ACTION_BAR_ACTIONS
+// (the SAME registry the click-wiring in renderQuickActionBar() reads),
+// so the Settings dropdown and actual button behavior can never drift
+// out of sync with each other. Safe to call every time Settings opens --
+// clears and rebuilds the option list rather than checking whether it's
+// already populated, which is simpler and cheap for a 10-item list.
+function _qabPopulateActionSelect(sel) {
+  if (!sel) return;
+  sel.innerHTML = '<option value="">(none)</option>';
+  QUICK_ACTION_BAR_ACTIONS.forEach(function(a) {
+    var opt = document.createElement('option');
+    opt.value = a.id;
+    opt.textContent = a.label;
+    sel.appendChild(opt);
+  });
+}
+function syncQuickActionBarSettingsUI() {
+  var cfg = settings.quickActionBar || {};
+  var buttons = Array.isArray(cfg.buttons) ? cfg.buttons : [];
+
+  var enToggle = document.getElementById('qab-enabled-toggle');
+  if (enToggle) enToggle.checked = !!cfg.enabled;
+
+  var sizeRange = document.getElementById('qab-size-range');
+  var sizeVal = document.getElementById('qab-size-val');
+  var size = (typeof cfg.size === 'number') ? cfg.size : 64;
+  if (sizeRange) sizeRange.value = size;
+  if (sizeVal) sizeVal.textContent = size + 'px';
+
+  setSegActive('qab-shape-seg', cfg.shape === 'circle' ? 'circle' : 'square');
+
+  var colorSel = document.getElementById('qab-color-select');
+  if (colorSel) colorSel.value = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite';
+
+  for (var i = 0; i < 4; i++) {
+    var actionSel = document.getElementById('qab-slot-' + i + '-action');
+    var letterInp = document.getElementById('qab-slot-' + i + '-letter');
+    if (actionSel) {
+      _qabPopulateActionSelect(actionSel);
+      actionSel.value = (buttons[i] && buttons[i].action) || '';
+    }
+    if (letterInp) {
+      var action = buttons[i] ? _qabActionById(buttons[i].action) : null;
+      letterInp.value = (buttons[i] && buttons[i].letter) || (action ? action.defaultLetter : '');
+    }
   }
 }
 
