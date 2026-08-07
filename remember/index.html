@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1787 -->
+<!-- Remember App - Version 0.1788 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1787
+  Version 0.1788
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,7 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1788 - THREE more Quick Action Bar pieces, per Lynn. (1) TWEAK: a few trailing blank lines added to the Mail body -- Gmail's on-screen keyboard leaves very little room to edit or add a signature otherwise; added before the blank-line-preservation pass so they get the same anti-stripping treatment as the note's own content. (2) REAL FIX: the Quick Action Bar was disappearing on Lynn's Chromebook (physical keyboard) the instant she clicked into a note, with no huge button left to get back out -- precisely the "can't see small toolbar buttons" problem this whole feature exists to solve, just relocated to the escape hatch instead of actually fixed. Root cause: the bar's hide-while-typing rule keyed off #note-screen.keyboard-open, which (confirmed by reading its own trigger code) fires on EVERY tap into the editor regardless of platform -- correct for a touch device (a real on-screen keyboard genuinely needs the space), completely wrong for a physical keyboard (nothing ever appears to make room for). Fixed with a new, separate, precise check (_isRealKeyboardOpen()) that measures actual visualViewport shrink -- the same technique _applyKeyboardScrollRoom() and pinToolbars() already trust elsewhere in this file -- rather than widening or removing the existing, much broader keyboard-open class, which stays completely untouched for everything else that correctly depends on it (note-fab, content padding, the main toolbar's own kb-hide/kb-only rules). Verified directly, both directions: a simulated 300px real keyboard shrink correctly hides the bar; no shrink at all (the physical-keyboard case) correctly leaves it visible. (3) NEW, general (not just for Lynn's father): a small "Done typing" escape button added to the note header -- the one bar that never collapses -- shown ONLY in the specific scenario that can genuinely trap someone (toolbar collapsed AND a real keyboard open), for anyone without the Quick Action Bar enabled at all. Root cause of THAT trap, found while investigating: the existing dismiss-keyboard-btn (and its More-menu equivalent) both live inside #note-bottom-bar, which the collapse rule hides with !important -- no CSS on a descendant can override a non-rendered ancestor, so neither was ever actually reachable once collapsed, regardless of R&R mode availability. The existing view-mode-btn only ever seemed to provide an escape route by accident, being structurally outside that container. Verified directly: hidden normally, appears only when both conditions are true simultaneously, disappears again the instant either one isn't. Suite unchanged: 332/332 (harness v8).
   v0.1787 - TWO Quick Action Bar fixes, per Lynn's first real device testing (iOS). (1) FIX: Print threw "Can't find variable doPrintNote". Root cause confirmed by checking function scope directly: every other action in the registry (copyNoteAsPlainText, shareNote, speakNote, etc.) is a top-level/global function, but doPrintNote is uniquely declared INSIDE init(), a closure-scoped local function invisible to the top-level QUICK_ACTION_BAR_ACTIONS registry -- exactly why Print alone failed while Copy/Mail/Message all worked. Fixed by exposing it on window at its own existing definition site; its existing call sites (print-btn/more-print-btn, also inside init()) are completely unaffected, since they already reference the local closure variable directly. Verified directly: the button's onclick now reaches doPrintNote with no error. (2) ATTEMPTED FIX: Mail losing all blank lines specifically on iOS's Gmail app (confirmed by Lynn NOT an issue with iOS Apple Mail or Android Gmail -- narrowing it to that one specific app). No authoritative source found describing that app's exact internal behavior -- this is a different issue from the separate, well-documented, since-patched Apple Mail iOS 14.6 bug that turned %0D%0A into a literal "<BR>". Applied two independent, broadly-recommended mailto: techniques together as a best effort, flagged honestly as unconfirmed rather than promised: explicit CRLF line endings (the most widely-cited general fix across mail clients) plus a zero-width non-breaking marker (U+FEFF) on genuinely blank lines, so nothing can treat them as purely-empty whitespace to collapse away -- targets the specific "blank lines vanish" symptom, which plain CRLF alone may not fix if Gmail normalizes the body through an HTML-rendering step internally (where consecutive blank lines commonly collapse by default). Scoped to Mail only -- Message/sms: was confirmed already working correctly and left untouched. Verified the transform itself produces exactly the intended output (CRLF between all lines, U+FEFF on blank ones); the actual fix for the Gmail app itself still needs Lynn's real on-device retest to confirm one way or the other. Suite unchanged: 332/332 (harness v8).
   v0.1786 - NEW FEATURE, per Lynn: the Quick Action Bar, for her father (advanced macular degeneration). An optional docked row of up to 4 huge, single-letter buttons at the true bottom of the note editor screen (not the confusingly-named #note-bottom-bar, which actually renders near the top) -- each permanently wired to ONE fixed action, deliberately NOT a cycling/long-press design: after discussion, a hidden mode someone has to remember (and verify by re-reading a tiny letter) was judged a worse fit for very low vision than simply configuring 1-4 separate buttons. New single object-valued setting, settings.quickActionBar (enabled/size/shape/colorScheme/buttons), Note Behavior bucket. A central QUICK_ACTION_BAR_ACTIONS registry (Print, Copy, Mail, Message, Share, Speak, Find in note, Toggle quiet mode, Back to notes list, Show/hide toolbar) is the single source of truth for both the Settings dropdown and the actual click wiring, so they can never drift apart -- and so a future action (a microphone/dictation toggle, per Lynn's stated plan once dictation support exists) is a one-line addition, not a redesign. Mail and Message deliberately go STRAIGHT to compose (mailto:/sms:), bypassing navigator.share()'s native picker entirely -- that picker is exactly the kind of small-icon obstacle this feature exists to route around; generic Share remains available as its own separate action for anyone who wants the picker. sms: reliably opens Messages with a recipient (confirmed against Apple's own developer docs) but pre-filling the body is NOT officially supported by Apple and is known to be inconsistent across iOS versions -- documented honestly in the code rather than overpromising; even a bare launch-into-Messages is real standalone value given how Lynn describes her father's current copy/paste workflow. Bottom placement was a deliberate, discussed decision: this project's own past attempts at any bottom-docked toolbar broke on iOS PWA because the on-screen keyboard's height can't be reliably measured -- rather than re-attempt keeping the bar correctly positioned WHILE the keyboard is up (the part that actually broke before), it's hidden outright the instant the keyboard opens (reusing the exact #note-screen.keyboard-open selector pattern #note-fab already relies on) and restored the instant it closes -- costing nothing in practice, since Print/Copy/Mail/Message are all things done when NOT actively typing. Deliberately DOCKED, not floating over note text like #note-fab -- #note-content-area gets a real padding-bottom reservation measured from the bar's own actual rendered height (matching pinToolbars()'s established measure-don't-guess approach for the top toolbars), re-synced on every resize/zoom event via the same listeners pinToolbars() already has (split into a lightweight space-only re-measure for that high-frequency path, versus the full button/handler rebuild only needed on actual settings changes). Locked, theme-INDEPENDENT high-contrast color pairs (black-on-white / white-on-black), plus an explicit opt-in 'match app theme' third choice -- a general-purpose accent color has no guaranteed contrast level, which matters more here than usual. Settings UI: enable toggle, a size slider (40-140px), a square/circle shape picker, the 3-way color picker, and 4 action-dropdown-plus-single-letter-box rows, added as a new subsection at the end of Note Behavior. Verified end to end: default four (Print/P, Copy/C, Mail/M, Message/T) render correctly with real screenshots at both default (64px) and a much larger (110px) size; the Copy button genuinely writes real note content to the clipboard (confirmed with clipboard permissions granted); the Mail button's mailto: URL is correctly subject/body-encoded; the Print button's click handler correctly maps to the same, already-shipped doPrintNote() the regular toolbar button uses; keyboard-open correctly hides and un-hides the bar; settings changes (shape, color, action, enabled) correctly save to localStorage, survive a reload, and correctly apply live -- including confirming a per-slot letter customization is preserved when only the ACTION is changed, not silently overwritten back to that action's own default; Settings search correctly surfaces the new rows. Suite unchanged: 332/332 (harness v8).
   v0.1785 - FOUR fixes, per Lynn's continued testing. (1) FIX (real bug, introduced by v0.1784): Import/Export stopped scrolling entirely. Root cause confirmed directly: unlike Settings/Help/Export-Format (genuinely DEFINITE-height dialogs from fixed top+bottom offsets), Import/Export deliberately uses an auto, shrink-to-fit-content height capped by max-height (top:auto + a bottom offset + max-height:420px), so it hugs short content tightly instead of always being a large box. v0.1784's shared inner-scroll-wrapper fix used position:absolute, which removes a child from normal flow -- the OUTER's own auto-height calculation had nothing left to measure and collapsed to 0 (confirmed directly: computed height read exactly "0px"). Settings/Help/Export-Format were unaffected since their height doesn't depend on their children at all. Fixed by giving Import/Export's inner wrapper its own different treatment: a normal in-flow block (not absolutely positioned) with its own matching max-height, so short content still shrinks the outer tightly (verified: 71px for minimal content, not always 420px) while long content hits the inner's own cap and scrolls internally, landing the outer at essentially the same value as its own independent cap. Verified directly: outer/inner heights now match at 420px for full content, scrollTop genuinely moves and a scrolled screenshot shows different content in view. Per Lynn's specific request, also checked the Export Format dialog (the other one restructured in v0.1783) for the same latent bug -- it wasn't actually broken, since it has a genuinely definite height like Settings/Help, but it's using the same shared, now-corrected class regardless. (2) FIX: Help dialog showing two overlapping 'x' clear icons in Chrome (desktop and Android), not in Firefox, not reliably in Safari/iOS -- and occasionally two magnifying-glass icons in either dialog, not reliably reproducible. Root cause: input[type=search] gets native, non-stylable Chrome/WebKit decorations (a search icon and a clear button) rendered in the browser's own accent color, on top of the app's own custom versions of both. Settings had already suppressed the native clear button specifically (an existing, undocumented-here rule found during investigation) but never the search-icon decoration; Help had neither suppressed at all. Firefox doesn't render these WebKit-specific pseudo-elements, explaining why it was never seen there. Added the same suppression (::-webkit-search-cancel-button and the three related ::-webkit-search-* pseudo-elements) to BOTH search inputs, closing the gap completely rather than patching one browser's one icon at a time. Verified directly with real Chromium screenshots: both search bars now show exactly one magnifying glass and one clear button with text entered. (3) TWEAK: Help's "Collapse all sections" button nudged down 1px further (5px/1px padding split, was 4px/2px), per Lynn's follow-up that it could still scoot down a tiny bit more -- Settings' wasn't mentioned this time so left alone. Verified live: row height unchanged, still a pure redistribution. Suite unchanged: 332/332 (harness v8).
@@ -2283,12 +2284,28 @@ body.reading-mode #note-fab,
    space via #note-content-area's padding-bottom below), not floating
    over note text the way #note-fab does, since covering the exact text
    someone with low vision is trying to read would defeat the purpose.
-   Hidden while the on-screen keyboard is open (same selector pattern
-   #note-fab already uses) rather than trying to keep it correctly
-   positioned WHILE the keyboard is up -- the specific thing that broke
-   in this project's earlier attempts at any bottom-docked toolbar on
-   iOS PWA. His actions (Print/Copy/Mail/Message) are all things done
-   when NOT actively typing, so this costs him nothing in practice. */
+   Hidden while a REAL on-screen keyboard is actually consuming screen
+   space (see _isRealKeyboardOpen() in the JS) rather than trying to
+   keep it correctly positioned WHILE one is up -- the specific thing
+   that broke in this project's earlier attempts at any bottom-docked
+   toolbar on iOS PWA. His actions (Print/Copy/Mail/Message) are all
+   things done when NOT actively typing, so this costs him nothing in
+   practice on a touch device.
+   v0.1788 FIX, per Lynn's Chromebook report: this used to key off the
+   existing #note-screen.keyboard-open class, which (confirmed by
+   reading its own trigger code) is set on EVERY tap into the editor,
+   completely regardless of whether any real on-screen keyboard actually
+   appears -- correct for touch devices, but on a physical keyboard
+   (her Chromebook, and eventually her father's) there's no real keyboard
+   to make space for at all, so the bar was disappearing for no reason
+   the instant he clicked into a note, with no huge button left to get
+   back out -- precisely the "can't see small toolbar buttons" problem
+   this whole feature exists to solve, just relocated to the escape
+   hatch instead of fixed. Now driven by a separate, JS-computed signal
+   (body.qab-real-keyboard-open, toggled by _isRealKeyboardOpen()'s
+   actual visualViewport-shrink measurement) instead of the existing,
+   much broader keyboard-open class -- which stays completely untouched
+   for everything else that already correctly depends on it. */
 #quick-action-bar {
   position: fixed;
   left: 0;
@@ -2306,7 +2323,7 @@ body.reading-mode #note-fab,
   box-sizing: border-box;
 }
 body.qab-enabled #quick-action-bar { display: flex; }
-#note-screen.keyboard-open #quick-action-bar { display: none !important; }
+body.qab-real-keyboard-open #quick-action-bar { display: none !important; }
 body.reading-mode #quick-action-bar { display: none !important; }
 
 .qab-btn {
@@ -3758,6 +3775,20 @@ body:not(.toolbar-collapsed) .note-header { box-shadow: none; }
 #note-screen.keyboard-open .note-bottom-bar .kb-only {
   display: flex;
 }
+/* v0.1788 NEW, per Lynn's report (Windows/physical keyboard): getting
+   stuck in EMTIP with no way back if the toolbar is collapsed and R&R
+   mode isn't available to switch into as an escape route. The existing
+   dismiss-keyboard-btn lives inside #note-bottom-bar, which gets
+   display:none !important'd by the collapse rule below -- no CSS on a
+   descendant can override that, since a non-rendered ancestor never
+   renders its children at all, regardless of the child's own display
+   value. This header-scoped equivalent lives in #note-top-bar, which
+   never collapses, and appears ONLY in the specific scenario that
+   actually traps someone (toolbar collapsed AND keyboard open) -- not
+   shown the rest of the time, so it adds no visual clutter when the
+   existing dismiss-keyboard-btn is already reachable normally. */
+#note-top-bar .kb-only-header { display: none; }
+body.toolbar-collapsed #note-screen.keyboard-open #note-top-bar .kb-only-header { display: flex; }
 
 /* Delete line button — pulses red with background when active */
 #delete-line-btn.active {
@@ -7181,6 +7212,20 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
             <rect x="3" y="11" width="18" height="3" rx="1"/>
             <rect x="3" y="17" width="11" height="3" rx="1"/>
             <polyline points="18 16 21 19 18 22" stroke-width="2"/>
+          </svg>
+        </button>
+        <!-- v0.1788 NEW: header-scoped "Done typing" escape hatch, per
+             Lynn's report -- see the .kb-only-header CSS comment for
+             the full reasoning. Same action as dismiss-keyboard-btn
+             (blur the editor), just reachable from a location that
+             never gets hidden by the toolbar collapse. -->
+        <button class="icon-btn kb-only-header" id="header-dismiss-keyboard-btn" aria-label="Done typing (dismiss keyboard)" title="Done typing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <line x1="8" y1="10" x2="8" y2="10" stroke-width="3" stroke-linecap="round"/>
+            <line x1="12" y1="10" x2="12" y2="10" stroke-width="3" stroke-linecap="round"/>
+            <line x1="16" y1="10" x2="16" y2="10" stroke-width="3" stroke-linecap="round"/>
+            <line x1="8" y1="14" x2="16" y2="14" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </button>
         <!-- More button — always visible in top toolbar in normal mode -->
@@ -11968,7 +12013,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1787';
+const APP_VERSION = '0.1788';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13625,6 +13670,10 @@ function pinToolbars() {
   // not the full renderQuickActionBar(), which also rebuilds button
   // click handlers and would be wasteful to repeat this often.
   if (typeof _qabReserveSpace === 'function') _qabReserveSpace();
+  // v0.1788: same reasoning -- catches the actual moment a REAL
+  // on-screen keyboard finishes animating in/out, which can lag
+  // slightly behind the initial tap/blur that toggles keyboard-open.
+  if (typeof _updateQabKeyboardVisibility === 'function') _updateQabKeyboardVisibility();
 }
 
 // v0.1726: Home Screen zoom compensation, per Lynn -- the first two
@@ -28623,6 +28672,11 @@ function makeImportFolderName(label) {
   document.getElementById('dismiss-keyboard-btn').addEventListener('click', function() {
     document.getElementById('note-editor').blur();
   });
+  // v0.1788: header-scoped equivalent, per Lynn's report -- see its own
+  // HTML/CSS comments for the full reasoning.
+  document.getElementById('header-dismiss-keyboard-btn').addEventListener('click', function() {
+    document.getElementById('note-editor').blur();
+  });
   document.getElementById('more-done-typing-btn').addEventListener('click', function() {
     closeMoreMenu();
     document.getElementById('note-editor').blur();
@@ -28691,6 +28745,15 @@ function makeImportFolderName(label) {
     _typingSessionStartLen = (ed.value || '').length;
     logDebugAction('Entered typing mode');
     noteScreen.classList.add('keyboard-open');
+    // v0.1788: immediate check for instant response on physical-keyboard
+    // devices (no real keyboard ever appears there, so this correctly
+    // finds none and the Quick Action Bar never needlessly disappears).
+    // A genuine on-screen keyboard on a touch device hasn't finished
+    // animating in yet at this exact instant -- caught a little later by
+    // the delayed pinToolbars() calls already scheduled elsewhere in
+    // EMTIP entry, matching this codebase's established pattern for
+    // keyboard-height measurements that need a moment to settle.
+    if (typeof _updateQabKeyboardVisibility === 'function') _updateQabKeyboardVisibility();
     // Deliberately NOT auto-expanding a collapsed toolbar when the keyboard
     // opens (changed by request — it used to auto-expand here): with a large
     // font on a small screen, the collapsed toolbar's extra room matters
@@ -29528,6 +29591,9 @@ function makeImportFolderName(label) {
           _typingSessionStartLen = null;
         }
         noteScreen.classList.remove('keyboard-open');
+        // v0.1788: same immediate re-check as EMTIP entry, so the bar
+        // reliably reappears the instant typing stops.
+        if (typeof _updateQabKeyboardVisibility === 'function') _updateQabKeyboardVisibility();
         // v0.1753: force-release here too, per the same reasoning as the
         // setViewMode(false) fix above -- this is the other real path
         // into EMNI (dismissing the keyboard while staying in Typing
@@ -37716,7 +37782,13 @@ function quickActionMail() {
   if (!currentNoteId || !notes[currentNoteId]) return;
   var note = notes[currentNoteId];
   var subject = note.name || 'Note';
-  var text = _mailBodyPreserveBlankLines(stripForShare(note.content));
+  // v0.1788: a few trailing blank lines, per Lynn's request -- Gmail's
+  // on-screen keyboard leaves very little visible room to edit or add
+  // a signature otherwise. Added BEFORE the blank-line-preservation
+  // pass below, so these get the same anti-stripping marker treatment
+  // as the note's own blank lines.
+  var rawText = (stripForShare(note.content) || '') + '\n\n\n\n';
+  var text = _mailBodyPreserveBlankLines(rawText);
   logDebugAction('Quick Action Bar: Mail');
   window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) +
     '&body=' + encodeURIComponent(text || '');
@@ -37782,6 +37854,9 @@ function renderQuickActionBar() {
   body.classList.remove('qab-scheme-blackOnWhite', 'qab-scheme-whiteOnBlack', 'qab-scheme-theme');
   var scheme = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite';
   body.classList.add('qab-scheme-' + scheme);
+  // v0.1788: covers the edge case of the setting being toggled on while
+  // already mid-typing.
+  if (typeof _updateQabKeyboardVisibility === 'function') _updateQabKeyboardVisibility();
 
   var size = (typeof cfg.size === 'number' && cfg.size >= 40 && cfg.size <= 160) ? cfg.size : 64;
   bar.style.setProperty('--qab-size', size + 'px');
@@ -37838,6 +37913,27 @@ function _qabReserveSpace() {
   } else {
     contentArea.style.paddingBottom = '';
   }
+}
+
+// v0.1788, per Lynn's Chromebook report: distinguishes a REAL on-screen
+// keyboard actually consuming screen space from simply being focused
+// (which the existing, much broader #note-screen.keyboard-open class
+// doesn't -- it fires on every tap into the editor regardless of
+// platform). Reuses the same technique _applyKeyboardScrollRoom() and
+// pinToolbars() already trust elsewhere in this file: a real on-screen
+// keyboard measurably shrinks visualViewport.height below
+// window.innerHeight; a physical keyboard never does, since nothing
+// visually pops up to consume space. The 100px threshold tolerates
+// minor browser-chrome/URL-bar height changes that aren't a keyboard.
+function _isRealKeyboardOpen() {
+  var noteScreen = document.getElementById('note-screen');
+  if (!noteScreen || !noteScreen.classList.contains('keyboard-open')) return false;
+  if (!window.visualViewport) return false; // can't measure -- assume no real keyboard rather than wrongly hiding the bar
+  var shrink = window.innerHeight - window.visualViewport.height;
+  return shrink > 100;
+}
+function _updateQabKeyboardVisibility() {
+  document.body.classList.toggle('qab-real-keyboard-open', _isRealKeyboardOpen());
 }
 
 // Populates each action <select>'s options from QUICK_ACTION_BAR_ACTIONS
