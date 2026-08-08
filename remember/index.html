@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1798 -->
+<!-- Remember App - Version 0.1799 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1798
+  Version 0.1799
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,7 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1799 - FIX: concurrent-instance detection only blocked the eventual SAVE, per Lynn's direct report that both windows still let her open and edit notes while the banner was showing. Real gap: someone could type into a note believing it was being saved while saveNotes() silently discarded every one of those edits underneath them -- recreating the exact silent-data-loss problem this whole feature exists to prevent, just wearing a different disguise. Blocked at the interaction level now, not just the save: openNote(), createNewNote(), and createFolder() all refuse outright while blocked (with a toast explaining why), and a backstop makes the note editor read-only immediately if someone is already mid-edit at the exact moment a conflict is detected (deliberately not navigating them away, so whatever they'd already typed stays visible to copy out by hand if they want to) -- restored automatically the instant the block clears. Also found and fixed a completely unguarded function while auditing this: saveFolders() had no protection at all, notes/settings/backups aside -- this is the exact function whose gap explained Lynn's very first symptom in this whole investigation (a new folder appeared correctly while the note created inside it did not, since folders and notes save independently). Verified directly: opening a note, creating a note, and creating a folder are all confirmed refused while blocked (with folders/notes counts unchanged and openNote() confirmed to never navigate); a direct test of the mid-edit backstop confirms the editor goes read-only the instant a block is triggered and correctly restores when cleared; solo, single-instance use (opening, creating notes, creating folders) is confirmed completely unaffected and works exactly as before. Suite: 332/332 (harness v8).
   v0.1798 - MAJOR: concurrent-instance detection, plus a storage-exhaustion hotfix, per Lynn's decision after an extensive debugging session (a toast flood, real crashes, and a save-quota failure, each traced and fixed in turn) that trying to fully support two genuinely concurrent, actively-used instances sharing one storage was the wrong target -- the more robust fix is detecting the dangerous situation directly and refusing to proceed. (1) HOTFIX: found and fixed the exact cause of Lynn's "storage may be full" report -- the per-conflict backup mechanism wrote a NEW, uniquely-timestamped key on every conflict with nothing ever cleaning old ones up, each a full serialization of the entire notes collection (including the ever-growing debug log note); over an extended session this can exhaust localStorage's quota entirely, which then makes EVERY subsequent save fail, and since a failed save showed its own untouched, unthrottled toast, directly explained the reported flood past #600. Now deletes existing backup keys before writing a new one (bounded to exactly one at any time), PLUS a startup cleanup pass that sweeps up any already-accumulated backup keys from before this fix existed -- fixing future growth alone wouldn't have helped Lynn's already-full storage. Also added a matching throttle to the previously-untouched SAVE FAILED toast itself, as defensive depth against any future cause of repeated failures. (2) NEW: concurrent-instance detection. A lightweight heartbeat -- a single, fixed key overwritten in place every ~3 seconds, deliberately never a growing set of keys, and deliberately bypassing saveNotes()/saveSettings() entirely so it can never itself contribute to a save cascade -- lets each instance detect whether another is already active. A newly-opening instance that finds an existing, recently-active heartbeat immediately pauses itself: a prominent, persistent top banner (deliberately a dedicated element, not a toast, since toasts proved losable/overwritable during this exact investigation) explains that another window is open and must be closed, and — as a hard guarantee independent of the banner or any other UI state — saveNotes() and saveSettings() both refuse to write anything at all while blocked, checked as the very first thing either function does. The earlier merge-on-save protection (v0.1794/1795) stays in place as defense-in-depth for the brief window before detection completes, not removed. Recovery is automatic: a blocked instance rechecks periodically, and the active instance releases its claim on page close (pagehide) for a fast handoff rather than making the waiting instance sit out the full staleness timeout. A brief claim-then-verify pattern (tentative write, short randomized delay, re-check) handles the rare case of two instances loading at nearly the exact same moment, resolving deterministically to exactly one active instance with no flapping between them. Verified directly and extensively with genuinely separate browser tabs (not simulated): a second tab opened while a first is active correctly detects and blocks itself while the first remains completely unaffected; a forced save attempt from the blocked tab is confirmed to never actually reach storage even though it succeeds in memory; closing the active tab correctly and automatically restores full, genuine save capability in the previously-blocked one within a few seconds; and a near-simultaneous open of two tabs resolves cleanly to exactly one active instance. Suite: 332/332 (harness v8).
   v0.1797 - CRITICAL HOTFIX: the actual root cause of the crashes, per Lynn's precise report that having both the PWA and a Chrome tab genuinely active together made the app unusable, crashing before she could even open a note. v0.1796's toast throttle helped but didn't address the real mechanism, confirmed directly this time via real call-stack capture rather than inference: saveNotes() <- logDebugAction() <- logSys(). The debug log is itself an ordinary note, and saveNotes() serializes the WHOLE notes object every time it's called -- meaning every single routine logSys() call anywhere in this file (there are dozens during perfectly normal use, almost none of which pass skipMirror) triggers its own saveNotes() call, which as of v0.1795 always ran the full conflict-check-and-merge machinery regardless of how trivial or automatic the underlying save was. With two tabs both actively logging routine activity (confirmed directly: opening a single note triggered 12 separate saveNotes() calls, not the 1 a person would expect), each tab's own incidental logging-triggered save looked like a genuine conflict to the other -- a self-sustaining storm with nothing to do with any actual user action, exactly matching Lynn's report of being unable to even open a note. Fixed by throttling the conflict CHECK itself (not just its notification, which v0.1796 already throttled): a real, meaningful conflict -- actual content genuinely changed in another tab -- is naturally spaced far more than a couple of seconds apart from routine internal logging, so skipping the check when one just ran within the last 1.5 seconds costs essentially nothing in real protection (the underlying write and generation-counter bump still happen every time regardless, so other tabs still learn about real changes promptly) while completely breaking this specific cascade. Applied identically to both the notes and settings conflict paths. Verified directly: the exact reproduction that previously showed 12 saveNotes() calls still shows 12 (the routine logging itself is unchanged, as expected), but the actual expensive merge operations and toasts both dropped to zero in that same scenario -- confirmed by instrumenting the merge function and toast calls directly, not just inferring from log counts. Separately re-confirmed a genuine cross-tab conflict (real, different notes created in each of two instances) still merges correctly and loses nothing once the brief throttle window has passed, so the actual data-safety protection Lynn's original report needed remains fully intact. Suite: 332/332 (harness v8).
   v0.1796 - URGENT HOTFIX: undismissable repeating toast and real tab/PWA crashes, per Lynn's report right after updating multiple tabs to v0.1795 at once. Investigated with direct measurement rather than guessing: reproduced with 4 tabs opened together and found 63 genuine conflict-merge events firing within about one second -- confirmed bounded (stabilizes, does not keep growing indefinitely -- ruled out a true infinite loop) but still a large burst of synchronous work (JSON parse/stringify, localStorage reads/writes, DOM manipulation) crammed into a very short window, on top of showToast()'s single, un-queued toast element: each of those 63 calls immediately overwrote whatever the previous one was still showing, so dismissing one just cleared the way for the next to appear a moment later -- exactly matching Lynn's precise description ("I was clicking to dismiss them but another one kept coming up") and her separate observation that crashes correlated with backgrounding/foregrounding (each tab switch, with several tabs open, triggers its own flush-on-hide save, capable of triggering its own fresh burst). The underlying merge protection was never the problem -- it was resolving every one of those 63 events correctly, confirmed by the syslog's own full count staying at 63 throughout. Fixed by rate-limiting the NOTIFICATION only, never the underlying safety merge: a 6-second grace period after the page's own load (exactly when a multi-tab startup race is expected and low-stakes, since nothing has actually been edited by a person yet) plus an 8-second cooldown between notifications afterward -- the merge and its full diagnostic log entry still happen every single time, unconditionally; only the user-facing toast is throttled. Verified directly: the exact 4-tab reproduction that produced 63 toast calls before now produces at most 1, while the underlying merge count stays exactly the same (53 in this specific measured run), confirming data safety is completely unaffected and only the notification flood was fixed. Also fixed a related, lower-severity false-positive found during this same investigation: the settings conflict check compared a defaults-merged baseline against raw, un-merged live storage, meaning any setting that only existed in DEFAULT_SETTINGS (never explicitly saved before) always looked like "the other instance changed this," triggering an unnecessary (if silent, non-toast) merge pass on literally every single settings save, even with zero other tabs involved -- now compares apples to apples. Also added, per Lynn's own request: a running message number prefixed to every toast ("#1 ...", "#2 ..."), so it's possible to tell directly whether toasts are genuinely new events firing versus a display glitch reshowing the same one, for this investigation and any future one. NOT YET CONFIRMED: whether this fully explains the crashes themselves (a large, bursty pile of synchronous work is a very plausible contributor, especially on real Chromebook hardware, but was not directly reproduced as an actual browser crash in this sandbox) -- Lynn's next real-device test will be the actual confirmation. Suite: 332/332 (harness v8).
@@ -12081,7 +12082,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1798';
+const APP_VERSION = '0.1799';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14634,6 +14635,13 @@ function _enterConcurrentInstanceBlock() {
   if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
   logSys('CONCURRENT INSTANCE DETECTED: another open copy of Remember is active. This instance is pausing edits until it closes.', true);
   _showConcurrentInstanceBanner();
+  // v0.1798 FIX, per Lynn's report: openNote()/createNewNote() block
+  // NEW entry into editing, but someone already mid-edit when this
+  // fires needs a backstop too -- deliberately just readonly, not
+  // navigating them away, so whatever they'd already typed stays
+  // visible and they can still copy it out by hand if they want to.
+  var _ed = document.getElementById('note-editor');
+  if (_ed) _ed.readOnly = true;
   setTimeout(_recheckIfCanRecoverFromBlock, HEARTBEAT_INTERVAL_MS);
 }
 function _showConcurrentInstanceBanner() {
@@ -14643,6 +14651,8 @@ function _showConcurrentInstanceBanner() {
 function _hideConcurrentInstanceBanner() {
   var el = document.getElementById('concurrent-instance-banner');
   if (el) el.classList.remove('visible');
+  var _ed = document.getElementById('note-editor');
+  if (_ed) _ed.readOnly = false;
   logSys('Concurrent-instance block cleared -- resuming normal operation.', true);
 }
 var _lastConflictToastAt = 0;
@@ -15574,6 +15584,15 @@ function saveNotes() {
   } catch(e3) {}
 }
 function saveFolders() {
+  // v0.1798 NEW: same hard safety net as saveNotes()/saveSettings().
+  // This is the exact function whose total lack of protection explained
+  // Lynn's very first symptom in this whole investigation -- a new
+  // folder appeared correctly while the note created inside it did not,
+  // since folders and notes save through completely separate functions.
+  if (_isBlockedByConcurrentInstance) {
+    logSys('saveFolders() blocked -- another instance is active.', true);
+    return;
+  }
   try { localStorage.setItem(storeKey('remember_folders'), JSON.stringify(folders)); } catch(e) {}
   // Refresh the backup during normal use too (folder created/renamed/
   // deleted), not just at app load — deliberately delayed rather than
@@ -17511,6 +17530,10 @@ function countFolderContents(folderId) {
 }
 
 function createFolder(name, parentId) {
+  if (_isBlockedByConcurrentInstance) {
+    showToast('Remember is open in another window \u2014 close it first to create folders here.', false);
+    return null;
+  }
   if (getFolderDepth(parentId) >= 8) {
     showToast('Maximum folder depth (8) reached', false);
     return null;
@@ -19857,6 +19880,16 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
 
 // ===== NOTE SCREEN =====
 function openNote(id, speakDelay) {
+  // v0.1798 FIX, per Lynn's report: the save-level guard alone wasn't
+  // enough -- someone could still open a note, type into it believing
+  // it was being saved, and have every one of those edits silently
+  // discarded, recreating the exact silent-data-loss problem this
+  // feature exists to prevent. Blocks opening a note at all while
+  // another instance is active, not just the eventual save.
+  if (_isBlockedByConcurrentInstance) {
+    showToast('Remember is open in another window \u2014 close it first to open notes here.', false);
+    return;
+  }
   if (notes[id] && !notes[id].isDebugLog) {
     logDebugAction('Opened note: "' + (notes[id].name || '(untitled)') + '"');
   }
@@ -19980,6 +20013,10 @@ function openNote(id, speakDelay) {
 }
 
 function createNewNote() {
+  if (_isBlockedByConcurrentInstance) {
+    showToast('Remember is open in another window \u2014 close it first to create notes here.', false);
+    return;
+  }
   const id = makeId();
   const name = uniqueNoteName();
   notes[id] = {
