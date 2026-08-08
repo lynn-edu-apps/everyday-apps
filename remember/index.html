@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1791 -->
+<!-- Remember App - Version 0.1795 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1791
+  Version 0.1795
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,10 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1795 - TWO more data-safety fixes, per Lynn's continued Chromebook investigation. Confirmed via chrome://version (Profile Path byte-for-byte identical on both her out-of-sync tabs) that this was never a separate-profile or separate-storage issue -- two tabs genuinely sharing one storage, one of them just sitting on a stale in-memory snapshot until it saved and silently overwrote the other, exactly the failure mode v0.1794 started addressing for notes. (1) FIX: settings changes (specifically Quick Action Bar, confirmed by Lynn) reverting the same way notes did. saveSettings() had the identical unprotected unconditional-overwrite vulnerability v0.1794 already fixed for saveNotes() -- confirmed by reading it directly, still completely unpatched. Settings has no per-field modification timestamp the way notes have editedAt, so "newer wins" doesn't apply here; used a 3-way baseline-diff merge instead (the same general strategy version control systems use): a snapshot of settings as of this instance's last load/save (the baseline) is compared against this instance's current in-memory value AND the live stored value, per key -- a key unchanged since baseline on this side defers entirely to storage (adopts the other instance's change); a key changed only here keeps this instance's value; a key changed identically on both sides is a non-issue; a key changed to genuinely different values on both sides is a real per-key conflict, resolved in favor of this instance (the one actively saving right now) and logged loudly, never silently. Verified directly: the exact scenario Lynn described (Quick Action Bar enabled here, an unrelated theme change saved elsewhere) merges correctly with both changes intact and no unnecessary toast, since there's no genuine per-key conflict; a real same-key conflict (uiSize set differently on both sides) correctly resolves to this instance's value with a toast and a syslog entry naming the specific conflicting key. (2) NEW: real-time cross-tab sync, using the browser's native storage event (fires in every OTHER same-origin tab the instant one of them writes to localStorage, never in the tab that made the write). The merge-on-save protection above only ever runs at save time, so a tab could still sit arbitrarily stale for as long as it happened to go without saving anything -- this closes that gap by keeping notes continuously current in the background: on the home screen, a live save elsewhere is adopted and the list re-renders immediately, with nothing to disrupt; with a note open, the SAME live refresh only happens if this tab has no unsaved edit of its own in progress (checked by comparing the editor's live DOM value against what this tab itself last knew as saved) -- if the user has typed something not yet saved, the editor is left completely untouched, and the merge-on-save protection remains the backstop for that case instead of risking a live overwrite mid-edit. Settings deliberately gets no equivalent live-sync handling: saveSettings() already does its own fresh, live read of storage at actual save time, so proactively touching the baseline here would only risk breaking the merge's correctness for keys the user hasn't touched, for no real benefit. Verified with two genuinely separate browser tabs sharing one context (required for real storage events, which never fire in the same tab that made the change): a new note created in tab A appears in tab B automatically with no reload; a tab B mid-typing an unsaved edit is completely undisturbed when tab A saves something unrelated, while that unrelated note is still correctly adopted into tab B's memory in the background. Suite: 332/332 (harness v8).
+  v0.1794 - Two DATA-SAFETY fixes (the priority of this build) plus a Move Lines improvement, per Lynn. (1) FIX: a note completely disappearing on a Chromebook after switching between a Chrome tab and the installed PWA. Investigated thoroughly before writing any code -- ruled out Chrome tab groups directly touching storage (confirmed: purely a UI/organizational feature), ruled out the three-deployment storage-prefix architecture (Lynn confirmed she'd only ever used the main remember/ path on this device), then found and closed two real, independent gaps. First: saveCurrentNote() runs on a 600ms debounce with no flush on backgrounding, so a tab discarded by Chrome's Memory Saver (a well-documented, RAM-sensitive behavior particularly aggressive on Chromebooks) between a keystroke and that 600ms window could lose the most recent edit -- added an immediate flush on visibilitychange-to-hidden (fires reliably before any possible discard, since Chrome only discards hidden tabs) and on pagehide as defense-in-depth, reusing the exact flush pattern already proven safe elsewhere in this file (setViewMode()). Second, and the more likely explanation for a note being COMPLETELY gone rather than just missing recent edits (confirmed createNewNote() itself saves synchronously and immediately, ruling out "never saved in the first place"): saveNotes() always unconditionally overwrote remember_notes with whatever was in THIS instance's memory, with no way to know if another tab/window/PWA instance -- holding its own, potentially staler, in-memory copy -- had saved more recently. Classic multi-instance "last write wins" data loss, and confirmed structurally invisible to the existing after-the-fact loss detector (remember_note_census): an overwriting save immediately updates its own census to match the new, already-corrupted state, leaving nothing for the next load to compare against. Fixed with a generation counter checked at the moment of writing (not after the fact) plus a conservative, per-note automatic merge -- never resolved by picking one side's entire note set wholesale, since this data model has no deletion tombstones and treating absence as intentional deletion would risk silently resurrecting exactly the class of permanent loss this mechanism exists to prevent: a note present on either side is always kept, and a note edited on both sides keeps whichever copy has the more recent editedAt/createdAt. A full pre-merge backup of this instance's own view is written regardless, as a last-resort safety net in case the merge logic itself has an edge case not yet discovered. Verified extensively and directly: a normal single-instance save still increments the generation counter and stays in sync with no false conflicts; a simulated genuine conflict (a note created in "this" instance, a different note saved by a simulated "other" instance) correctly merges and preserves BOTH notes with full content intact -- precisely the scenario Lynn described; the same-note-edited-on-both-sides case correctly keeps the newer edit; the pre-merge backup key and an always-on syslog entry (deliberately not mirrored into the visible debug-log note from inside saveNotes() itself, to avoid recursion -- logDebugAction indirectly calls back into saveNotes()) are both confirmed written on conflict. (2) NEW: arrow-key stepping in Move Lines is now bubble-mode-aware, per Lynn's report that it took multiple presses to skip an invisible blank line. In bubble mode, one press now hops over the next VISIBLE bubble as a single step, per her explicit design: implemented as pure DOM node manipulation (moving the actual blank-line elements along with everything else), never raw-text splicing, deliberately consistent with this exact function's own established, hard-learned safety rule (v0.1516, real data loss) that content must only ever be reconstructed by reading DOM order after genuine DOM moves. The underlying swap-only-the-two-content-spans algorithm leaves every blank-line run exactly where it already sat relative to whichever element it was adjacent to, so no separator is ever gained or lost -- an unconditional guarantee, not a best-effort cleanup pass, exceeding Lynn's stated requirement (a boundary that started with >=1 blank line always keeps >=1) by preserving exact counts rather than just a minimum. Plain (non-bubble) mode's existing per-raw-line stepping is completely unchanged. Verified directly: single bubble hopping up and down across a blank-line gap, a multi-line group with an interior blank line hopping as one unit, and both document-boundary edge cases (nothing above/below to hop over) all produce exactly the hand-derived expected output. NOT YET RESOLVED: Lynn's separate report that the move-lines indicator is still not visible during an actual live drag (as opposed to the arrow-key buttons) -- the underlying class-application and CSS mechanism was verified correct via real HTML5 dragover events, real touch-drag events, single- and multi-bubble selections, and both drop positions, in every scenario constructible in this sandbox; suspected but unconfirmed cause is the browser's own native drag-preview image visually covering the target during a genuine live drag gesture, which cannot be reproduced through synthetic event dispatch -- flagged honestly as needing more specific information (mouse vs. touch, exact device) rather than a guessed fix. Suite: 332/332 (harness v8).
+  v0.1793 - FIX: move-lines drag indicator color, per Lynn's report that it was "almost invisible" in bubble mode, then her further pushback that plain (non-bubble) mode needed the same contrast-safety, then her correction that a rough luminance threshold isn't the same as genuinely picking the higher-contrast option. All three addressed. Root cause of the original report: the indicator reused var(--note-accent), the SAME color source the bubble's own border/fill is styled with -- no amount of thickness (already fixed in v0.1791) could fix a genuine color collision. First attempt computed contrast using a >0.45 luminance threshold (matching this file's existing solidText pattern) -- verified numerically, per Lynn's direct correction, that this is measurably wrong for a real range of backgrounds: at luminance 0.3 or 0.45 (plausible greys), a >0.45-style threshold picks white when black actually gives 2-3x better contrast (7:1 or 10:1 vs only 3:1 or 2.1:1) -- the true crossover point is luminance ~0.179, not ~0.45. Replaced with a new shared function (_pickHighContrastBW) that computes actual WCAG contrast ratios against both pure black and white and picks whichever is genuinely higher, for any background -- guarantees a worst-case contrast of ~4.58:1 against literally any possible color, well above WCAG's 3:1 minimum for graphical/UI elements. Applied in both modes, per Lynn's follow-up that plain mode needed the same treatment: computed against the note's own resolved background there (--bg, what an indicator on a plain .viewer-line -- confirmed via its CSS to have no background of its own -- actually sits on top of); against whichever bubble fill is actually active in bubble mode (Tinted/Solid's own real computed fill, Outline/Stripe's interior color). Also found and fixed a second, independent bug while verifying visually: Outline and Stripe bubbles draw their own border via the `border` shorthand at higher specificity (#note-viewer in the selector), silently overriding the indicator's border-top/border-bottom entirely -- the exact same specificity pattern already proven and fixed once before for .block-selected -- confirmed directly: computed borderTop read the bubble's own 2px accent border, not the indicator's intended 5px high-contrast one, until a matching higher-specificity override (scoped to bubbles-outline/bubbles-stripe specifically; Tinted/Solid only ever set background, never border, so don't conflict and need no override) was added. Verified extensively: the contrast function tested across a full grey range (luminance 0.01 to 0.91) achieves at least 5.3:1 in every case, comfortably clearing the proven worst-case guarantee; all four bubble variants confirmed showing a correct 5px high-contrast border (black on Tinted/Outline/Stripe, white on Solid's dark fill); plain mode confirmed showing a bold black bar against the light page background via direct screenshot; the specific scenario that started this (Outline bubble with interior and accent both set to the same blue) confirmed via screenshot showing an unmistakable black bar cutting across the bubble, where the old accent-matched indicator would have been invisible. Suite unchanged: 332/332 (harness v8).
+  v0.1792 - DIAGNOSTIC build, per Lynn's report: bubbles stopped rendering at all, with any style, on any note, despite settings.bubbleStyle correctly showing a non-default value ('outline') in her own "Show Non-Default Settings" export. Investigated two concrete leads before adding logging: (1) reproduced directly with Lynn's exact settings snapshot (bubbleStyle/matchNoteAccentForBubbles/bubbleAccentColor/bubbleInteriorColor all copied verbatim) in a clean load -- bubbles rendered correctly (confirmed via screenshot: outline style, correct accent border, correct custom interior fill color, matching her settings exactly) -- meaning applyBubbleAppearance() itself is not structurally broken, and whatever's happening is specific to her real, live session rather than something a fresh reload of this exact settings state reproduces. (2) considered whether a saved per-note or global Theme (which only overwrites whatever keys it explicitly captured, confirmed by reading applyThemeValues() directly) could be silently resetting bubbleStyle back to 'none' after her own change -- ruled out by Lynn directly: the problem affects every note, not one specific note, which a per-note theme override could explain but a systemic problem couldn't be dismissed as easily. Rather than keep guessing blind, added targeted debug logging directly to applyBubbleAppearance() itself: logs the raw settings.bubbleStyle value actually read (and its full call stack) the instant the function runs, an explicit line when it early-returns for style='none', and on completion, the resulting body classes plus the actual computed --bubble-accent/--bubble-fill-tinted/--bubble-interior CSS values -- covers both "is the JS logic even reading what I think it's reading" and "did the right CSS custom properties actually get set" in one pass, without needing a second round-trip if the first hypothesis is wrong. Verified the logging itself fires correctly and produces exactly the intended detail (confirmed via a live test: settings.bubbleStyle, resolved style, full call chain, final body classes, and final CSS values all appear correctly in the debug log). No behavior change to bubble rendering itself in this build -- purely additive logging, so this build's own bubble behavior should be identical to v0.1791's, which the next real debug log from Lynn's actual session will help confirm or contradict. Suite unchanged: 332/332 (harness v8).
   v0.1791 - THREE Move Lines fixes, per Lynn, addressing a bug from the handoff notes (Bubble/Cloud Paragraphs' documented "known incompatibility with Move Lines"). (1) FIX: selecting two adjacent bubbles with a blank line between them made Move Lines completely unusable -- bubble mode intentionally never renders blank lines as selectable bubbles at all, so there was no way to satisfy the old strict adjacency check by manually including the blank line, unlike in plain (non-bubble) R&R mode. Fixed in the single shared function both Move Lines and Code Fence already use (_contiguousSelection()): a gap between two selected indices is now tolerated if every raw line inside it is blank/whitespace-only, checked directly against the note's own raw content rather than the DOM (works correctly whether bubble mode is on or not) -- those blank lines are automatically folded into the result, so the existing move logic (unchanged) carries them along verbatim, preserving them exactly as Lynn asked. Deliberately unconditional rather than bubble-mode-gated: a pure relaxation that can never change behavior for a selection that was already contiguous. Updated two now-stale toast messages (Move Lines and Code Fence) that used to instruct manually including blank lines, since that's automatic now. (2) FIX: no insertion-point indicator visible during a move while bubbles are active. Investigated directly rather than assumed a CSS-specificity conflict (the established root cause for two earlier, similar-sounding bubble-conflict bugs) -- confirmed instead that the border was already computing and applying correctly even with a bubble style on, just visually too subtle (2.5px) against a bubble's own background, shape, and shadow to actually notice. (3) TWEAK: the same indicator "has always been a bit thin," per Lynn, even before bubble mode existed -- turned out to be the SAME root cause as (2), not a second one: a single, uniformly bolder indicator (2.5px -> 5px, plus a matching colored glow) fixes both reports at once, verified directly with a real screenshot showing it now clearly visible sitting on top of an active bubble, with no bubble-specific CSS override needed. Verified extensively: selecting bubbles across a blank line now correctly returns the filled index list and successfully enters move mode; a genuine gap with real content in between still correctly blocks the move, unchanged; an already-contiguous selection is completely unaffected; a full move-and-commit end-to-end test confirmed the blank line survives byte-for-byte inside the moved group; a baseline comparison against the pre-existing, unmodified no-blank-lines case confirmed the boundary behavior (no line added where the moved group lands) is long-established, existing behavior, not a side effect of this fix. Suite unchanged: 332/332 (harness v8).
   v0.1790 - NEW: Quick Action Bar's Message button now supports Google Messages for Web, per Lynn's Chromebook plan for her father. Researched first rather than assuming: confirmed Google documents no public URL scheme to pre-address a conversation or pre-fill its text box on messages.google.com/web -- unlike sms: or WhatsApp's wa.me, the only such mechanism Google documents (a body= parameter) is for verified RCS Business Messaging agents, not personal use. Best available alternative built instead: on a real desktop/Chromebook, the button now copies the note's text to the clipboard (reusing the existing writeClipboardSafe() helper Copy already uses) and opens Messages for Web in a new tab, so the only remaining step is picking the conversation and pasting. Device branching reuses (hover: hover) -- the exact signal this app already relies on elsewhere (_mouseZoomCompensationActive() etc) to mean "a real mouse/trackpad is attached" -- rather than inventing new detection: iOS is unaffected (still sms:, exactly as before); a genuine Android phone (non-iOS, no hover) also still gets its own native sms: intent, not redirected to the web version, since a phone that already has the Messages app installed has no reason to be routed to a page meant for a keyboard-and-mouse device; only a real desktop/Chromebook gets the new Messages-for-Web path. Also independently confirmed via research (not assumed) that an Android phone texting an iPhone lands directly in the recipient's normal Messages app with zero setup on their end -- SMS/MMS or RCS, not technically "iMessage" (a green bubble rather than blue, Apple's own protocol name specifically meaning Apple-to-Apple), but functionally identical to receive and reply to, which is what actually matters for Lynn's father's kids not needing to install anything. Verified all three device paths directly: desktop/Chromebook (hover present, non-iOS) correctly opens Messages for Web and copies the note text to the clipboard; a simulated Android phone (no hover, non-iOS) correctly falls through to its own native sms: path rather than being redirected to the web version; iOS is confirmed completely unaffected. Suite unchanged: 332/332 (harness v8).
   v0.1789 - FIX: false-positive DEV WARNING, per Lynn's report (renaming a note triggered "Home Screen elements will NOT be positioned correctly"). Reproduced directly and traced exactly: applyRename() deliberately calls renderNotesList() while still inside the note editor (note-screen-active still true), specifically to keep the home screen's underlying list data fresh in the background for whenever the user navigates back -- a legitimate, intentional call, not the anomaly the v0.1749 warning system exists to catch. Root cause: that warning fires purely based on whether note-screen-active happens to be true when renderNotesList() reaches one of its own 3 internal endpoints, with no way to distinguish WHO called it or WHY -- its own comment already anticipated "other callers... can be completely legitimate" but never actually implemented a way to tell them apart. Fixed with a new optional suppressActiveScreenWarning parameter on renderNotesList(), defaulting to false so all ~44 other existing call sites are completely unaffected; applyRename()'s call now explicitly opts out. Found and fixed one more confirmed instance of the identical pattern while investigating: the "Remove" button next to each note in Settings' view-only-notes list, which -- like the rename dialog -- can be open while a note is active behind it. Did not attempt to blindly audit all ~44 other call sites without specific evidence each is actually reachable while a note screen is active; flagged honestly that other instances of this same shape may exist elsewhere and would need the same explicit, evidence-based fix if reported. Verified directly: the exact reported scenario (create a note, set its name) no longer shows any toast; a genuine anomaly (note-screen-active forced true, renderNotesList() called with no suppress flag) still correctly triggers the warning, confirming the guard itself wasn't weakened, only given two legitimate, confirmed exceptions. Suite unchanged: 332/332 (harness v8).
@@ -2486,8 +2490,24 @@ body.reading-mode #note-bottom-bar { display: none !important; }
 }
 .drag-handle:active { cursor: grabbing; opacity: 1; }
 .drag-handle svg { pointer-events: none; }
-.viewer-line.drag-over-above { border-top: 5px solid var(--note-accent, var(--accent)); box-shadow: 0 -2px 4px -1px var(--note-accent, var(--accent)); }
-.viewer-line.drag-over-below { border-bottom: 5px solid var(--note-accent, var(--accent)); box-shadow: 0 2px 4px -1px var(--note-accent, var(--accent)); }
+.viewer-line.drag-over-above { border-top: 5px solid var(--move-indicator-color, var(--note-accent, var(--accent))); box-shadow: 0 -2px 4px -1px var(--move-indicator-color, var(--note-accent, var(--accent))); }
+.viewer-line.drag-over-below { border-bottom: 5px solid var(--move-indicator-color, var(--note-accent, var(--accent))); box-shadow: 0 2px 4px -1px var(--move-indicator-color, var(--note-accent, var(--accent))); }
+/* v0.1793 FIX, per Lynn's report: Outline and Stripe bubbles draw their
+   OWN border via the `border` shorthand (body.bubbles-active.bubbles-
+   outline/stripe #note-viewer .viewer-line { border: ... }), which sets
+   all four sides at once and out-specifies the plain rules just above
+   (an #note-viewer id in the selector beats a bare class selector) --
+   the exact same specificity pattern already proven and fixed once for
+   .block-selected. Tinted/Solid only ever set `background`, never
+   `border`, so they don't conflict and need no override here. */
+body.bubbles-active.bubbles-outline #note-viewer .viewer-line.drag-over-above,
+body.bubbles-active.bubbles-stripe #note-viewer .viewer-line.drag-over-above {
+  border-top: 5px solid var(--move-indicator-color, var(--note-accent, var(--accent))) !important;
+}
+body.bubbles-active.bubbles-outline #note-viewer .viewer-line.drag-over-below,
+body.bubbles-active.bubbles-stripe #note-viewer .viewer-line.drag-over-below {
+  border-bottom: 5px solid var(--move-indicator-color, var(--note-accent, var(--accent))) !important;
+}
 .viewer-line.drag-ghost { opacity: 0.4; }
 
 
@@ -12016,7 +12036,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1791';
+const APP_VERSION = '0.1795';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14461,6 +14481,13 @@ let _selectNotesMode = false; // whether select-notes mode is active
 let _selectedNoteIds = new Set(); // selected note/folder ids in select mode
 let isSpeaking = false;
 let saveTimeout = null;
+// v0.1794: this instance's last-known storage generation for `notes` --
+// see loadState() and saveNotes() for the full explanation.
+var _myNotesGen = null;
+// v0.1795: settings' own baseline snapshot for the analogous conflict
+// protection -- see saveSettings()'s own comment for why this needs a
+// different merge strategy than notes.
+var _settingsBaseline = null;
 let confirmCallback = null;
 let cancelCallback = null;
 let pendingAutoSpeak = false;
@@ -14678,6 +14705,9 @@ function loadState() {
   try {
     const s = localStorage.getItem(storeKey('remember_settings'));
     if (s) settings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(s));
+    // v0.1795: baseline snapshot for settings' own conflict protection --
+    // see saveSettings()'s own comment for the full explanation.
+    _settingsBaseline = JSON.parse(JSON.stringify(settings));
   } catch(e) {}
   loadThemes();
   var _notesRaw = null;
@@ -14685,6 +14715,18 @@ function loadState() {
   try {
     _notesRaw = localStorage.getItem(storeKey('remember_notes'));
     if (_notesRaw) { _hadNotesKey = true; notes = JSON.parse(_notesRaw); }
+    // v0.1794 NEW, per Lynn's report (Chromebook, note completely gone
+    // after switching between a Chrome tab and the installed PWA): the
+    // classic multi-instance "stale write silently overwrites newer
+    // data" scenario -- two tabs/windows on the same origin each hold
+    // their own in-memory `notes`, and saveNotes() previously had no
+    // way to know if some OTHER instance had saved more recently than
+    // THIS one last synced. Records the generation counter's value at
+    // the moment THIS instance's in-memory notes were loaded, so
+    // saveNotes() can detect a conflict at the moment it's about to
+    // write, not just (uselessly, see that function's own comment)
+    // after the fact at a later load.
+    _myNotesGen = parseInt(localStorage.getItem(storeKey('remember_notes_gen')) || '0', 10) || 0;
   } catch(e) {
     // CRITICAL: never silently continue past a notes parse failure — the
     // app would boot with zero notes and the next saveNotes() would
@@ -15062,6 +15104,53 @@ function loadState() {
   } catch (eTssMigr) { logSys('MIGRATION: Tag Sort Sampler failed: ' + eTssMigr); }
 }
 
+// v0.1795: 3-way baseline-diff merge for settings, per Lynn's report
+// that her Quick Action Bar setting reverted after switching between a
+// Chrome tab and the PWA -- confirmed the same root cause as the notes
+// bug this instance's own saveNotes() protection already covers
+// (unconditional overwrite, no conflict detection), but settings is one
+// flat object with no per-field modification timestamp the way notes
+// have editedAt, so a "newer wins" comparison isn't available here --
+// this uses a 3-way diff instead (the same general idea as a version-
+// control merge): baseline = what this instance knew when it last
+// loaded/saved, mine = this instance's current in-memory value, stored
+// = what's actually in storage right now. A key unchanged since baseline
+// on THIS side defers entirely to storage (picks up whatever the other
+// instance changed); a key changed only on this side keeps this side's
+// value; a key changed identically on both sides is a non-issue; a key
+// changed to DIFFERENT values on both sides is a genuine per-key
+// conflict, resolved in favor of this instance's value (the one
+// actively saving right now, presumably reflecting the user's most
+// recent, deliberate action) -- logged loudly either way, never silent.
+function _mergeSettingsOnConflict(storedSettings, myBaseline, mySettings) {
+  var merged = {};
+  var conflictKeys = [];
+  var allKeys = {};
+  Object.keys(myBaseline || {}).forEach(function(k) { allKeys[k] = true; });
+  Object.keys(mySettings || {}).forEach(function(k) { allKeys[k] = true; });
+  Object.keys(storedSettings || {}).forEach(function(k) { allKeys[k] = true; });
+  Object.keys(allKeys).forEach(function(k) {
+    var baseStr = JSON.stringify(myBaseline ? myBaseline[k] : undefined);
+    var mineStr = JSON.stringify(mySettings ? mySettings[k] : undefined);
+    var storedStr = JSON.stringify(storedSettings ? storedSettings[k] : undefined);
+    if (mineStr === baseStr) {
+      // I didn't touch this key -- defer to whatever's actually stored
+      merged[k] = storedSettings.hasOwnProperty(k) ? storedSettings[k] : mySettings[k];
+    } else if (storedStr === baseStr) {
+      // Only I changed this key -- keep mine
+      merged[k] = mySettings[k];
+    } else if (mineStr === storedStr) {
+      // Both changed it, but to the same value -- no real conflict
+      merged[k] = mySettings[k];
+    } else {
+      // Genuine per-key conflict -- prefer this instance's value
+      merged[k] = mySettings[k];
+      conflictKeys.push(k);
+    }
+  });
+  return { merged: merged, conflictKeys: conflictKeys };
+}
+
 function saveSettings() {
   // If a per-note theme is active, save the snapshot (global settings) not the theme-modified settings
   var toSave = _noteThemeSnapshot ? _noteThemeSnapshot : settings;
@@ -15079,12 +15168,37 @@ function saveSettings() {
   if (_noteThemeSnapshot && settings.sectionStates) {
     toSave = Object.assign({}, toSave, { sectionStates: settings.sectionStates });
   }
+  // v0.1795: check for a conflict before writing -- see
+  // _mergeSettingsOnConflict()'s own comment for the full reasoning.
+  try {
+    if (_settingsBaseline) {
+      var _liveRaw = localStorage.getItem(storeKey('remember_settings'));
+      var _liveStored = _liveRaw ? JSON.parse(_liveRaw) : {};
+      if (JSON.stringify(_liveStored) !== JSON.stringify(_settingsBaseline)) {
+        var _result = _mergeSettingsOnConflict(_liveStored, _settingsBaseline, toSave);
+        toSave = _result.merged;
+        if (_result.conflictKeys.length > 0) {
+          logSys('SETTINGS SAVE CONFLICT: another instance changed settings since this one last synced. ' +
+            'Per-key conflicts on [' + _result.conflictKeys.join(', ') + '] resolved in favor of this instance; ' +
+            'all other changed keys merged cleanly from both sides.', true);
+          if (typeof showToast === 'function') {
+            showToast('Another open copy of Remember changed settings \u2014 merged automatically.', false);
+          }
+        } else {
+          logSys('SETTINGS SAVE: merged non-conflicting changes from another instance.', true);
+        }
+      }
+    }
+  } catch(eSettingsConflict) {}
   try {
     localStorage.setItem(storeKey('remember_settings'), JSON.stringify(toSave));
   } catch(e) {
     logSys('saveSettings FAILED: ' + e, true);
     try { if (typeof showToast === 'function') showToast('\u26a0\ufe0f Settings save failed \u2014 storage may be full.', true); } catch(eT) {}
   }
+  // v0.1795: update the baseline to reflect what we just wrote, so the
+  // next save's comparison is against this new, merged truth.
+  try { _settingsBaseline = JSON.parse(JSON.stringify(toSave)); } catch(eBaseline) {}
 }
 function saveThemes() {
   try {
@@ -15099,7 +15213,65 @@ function loadThemes() {
 }
 function genThemeId() { return 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
+// v0.1794 NEW: conservative per-note merge for the rare case where two
+// tabs/windows/PWA instances on the same origin have each saved
+// independently since this instance last synced with storage. Never
+// treats a note missing from one side as a deletion (this data model
+// has no deletion tombstones, only presence/absence, so treating
+// absence as "delete" would risk silently resurrecting exactly the
+// kind of permanent loss this whole mechanism exists to prevent) --
+// always keeps a note that exists on EITHER side, and for a note that
+// exists on both, keeps whichever copy was edited more recently.
+function _mergeNotesOnConflict(storedNotes, myNotes) {
+  var merged = {};
+  var allIds = {};
+  Object.keys(storedNotes || {}).forEach(function(id) { allIds[id] = true; });
+  Object.keys(myNotes || {}).forEach(function(id) { allIds[id] = true; });
+  Object.keys(allIds).forEach(function(id) {
+    var a = storedNotes[id], b = myNotes[id];
+    if (a && !b) { merged[id] = a; return; }
+    if (b && !a) { merged[id] = b; return; }
+    var aTime = a.editedAt || a.createdAt || 0;
+    var bTime = b.editedAt || b.createdAt || 0;
+    merged[id] = (bTime >= aTime) ? b : a;
+  });
+  return merged;
+}
+
 function saveNotes() {
+  // v0.1794 NEW, per Lynn's report (Chromebook, note completely gone
+  // after switching between a Chrome tab and the installed PWA): before
+  // writing, check whether some OTHER instance has saved more recently
+  // than THIS one is aware of (a generation mismatch). If so, this
+  // instance's in-memory `notes` is stale relative to what's already in
+  // storage -- writing it as-is right now would silently destroy
+  // whatever the other instance just saved. Merges per-note instead of
+  // picking one side wholesale (see _mergeNotesOnConflict's own
+  // comment), and backs up this instance's pre-merge view regardless,
+  // as a last-resort safety net.
+  try {
+    var _liveGenRaw = localStorage.getItem(storeKey('remember_notes_gen'));
+    var _liveGen = parseInt(_liveGenRaw || '0', 10) || 0;
+    if (_myNotesGen !== null && _liveGen !== _myNotesGen) {
+      var _storedRaw = localStorage.getItem(storeKey('remember_notes'));
+      var _storedNotes = {};
+      try { _storedNotes = _storedRaw ? JSON.parse(_storedRaw) : {}; } catch(eParse) { _storedNotes = {}; }
+      try {
+        localStorage.setItem(storeKey('remember_notes_conflict_backup_' + Date.now()),
+          JSON.stringify({ mine: notes, storedGen: _liveGen, myGen: _myNotesGen }));
+      } catch(eBackup) {}
+      var _beforeCount = Object.keys(notes).length;
+      notes = _mergeNotesOnConflict(_storedNotes, notes);
+      logSys('SAVE CONFLICT DETECTED: another instance saved (gen ' + _myNotesGen + ' -> ' + _liveGen +
+        ') since this one last synced. Merged per-note (mine=' + _beforeCount + ', stored=' +
+        Object.keys(_storedNotes).length + ', merged=' + Object.keys(notes).length +
+        '). Pre-merge copy backed up.', true);
+      if (typeof showToast === 'function') {
+        showToast('Another open copy of Remember saved changes \u2014 merged automatically, nothing should be lost.', false);
+      }
+    }
+  } catch(eConflict) {}
+
   try {
     localStorage.setItem(storeKey('remember_notes'), JSON.stringify(notes));
   } catch(e) {
@@ -15111,6 +15283,14 @@ function saveNotes() {
     if (typeof showToast === 'function') showToast('\u26a0\ufe0f SAVE FAILED \u2014 storage may be full. Recent changes may be lost.', true);
     return;
   }
+  // v0.1794: bump the generation counter on every successful write, and
+  // record it as this instance's own -- our own write obviously isn't a
+  // conflict with itself.
+  try {
+    var _newGen = (parseInt(localStorage.getItem(storeKey('remember_notes_gen')) || '0', 10) || 0) + 1;
+    localStorage.setItem(storeKey('remember_notes_gen'), String(_newGen));
+    _myNotesGen = _newGen;
+  } catch(eGen) {}
   // Census: record what this save contained (id+name only — tiny) and
   // who wrote it (version/path/time). Read back at next load to detect
   // and name any notes that disappear between runs.
@@ -15540,6 +15720,27 @@ function relativeLuminanceHex(hex) {
   var r = parseInt(hex.substring(0,2),16), g = parseInt(hex.substring(2,4),16), b = parseInt(hex.substring(4,6),16);
   var a = [r,g,b].map(function(v){ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
   return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+}
+// v0.1793: picks whichever of pure black or white gives GENUINELY higher
+// WCAG contrast against a given background hex, per Lynn's direct
+// correction -- a rough luminance threshold (this file's own solidText
+// used >0.45; an earlier draft of this exact function used the same
+// idea) is NOT equivalent to picking the actually-higher-contrast
+// option: the true crossover, where contrast-with-black equals
+// contrast-with-white, is luminance ~0.179, not ~0.45 or 0.5. Verified
+// numerically before shipping: at luminance 0.3 or 0.45 (real, plausible
+// greys), a >0.45-style threshold picks white when black actually gives
+// 2-3x better contrast (7:1 or 10:1 vs only 3:1 or 2.1:1). Computing
+// both real contrast ratios directly and comparing them, as done here,
+// is correct for any background color with no threshold to get wrong,
+// and guarantees a worst-case contrast of ~4.58:1 against literally any
+// possible background -- comfortably above WCAG's 3:1 minimum for
+// graphical/UI elements (not running text, so 3:1 is the relevant bar).
+function _pickHighContrastBW(bgHex) {
+  var L = relativeLuminanceHex(bgHex);
+  var contrastWithBlack = (L + 0.05) / 0.05;
+  var contrastWithWhite = 1.05 / (L + 0.05);
+  return contrastWithBlack >= contrastWithWhite ? '#000000' : '#ffffff';
 }
 // v0.1761: resolves a CSS custom property (which may be any valid CSS
 // color, not necessarily hex) to a concrete hex string, using the same
@@ -16430,11 +16631,36 @@ function applySettings() {
 // math (mixHex/darkenHex/luminance) that CSS alone can't do.
 function applyBubbleAppearance() {
   var style = settings.bubbleStyle || 'none';
+  // v0.1792 DIAGNOSTIC, per Lynn's report (bubbles not appearing, cause
+  // not obvious from settings alone): logs the raw value actually read
+  // and what results from it, every time this function runs.
+  logSys('applyBubbleAppearance: settings.bubbleStyle=' + JSON.stringify(settings.bubbleStyle) +
+    ' (resolved style=' + style + ') calledFrom=[' + (new Error().stack || '').split('\n').slice(1, 4).join(' < ').replace(/\s+/g, ' ') + ']');
   document.body.classList.toggle('bubbles-active', style !== 'none');
   ['tinted', 'solid', 'outline', 'stripe'].forEach(function(v) {
     document.body.classList.toggle('bubbles-' + v, style === v);
   });
-  if (style === 'none') return;
+
+  // v0.1793 FIX, per Lynn's report: the move-lines drag indicator needs
+  // contrast-safety against whatever it's actually rendered on top of,
+  // and that's true in PLAIN (non-bubble) mode too, not just bubble
+  // mode -- computed unconditionally here, before the bubble-specific
+  // early return below, since plain mode needs it too. .viewer-line has
+  // no explicit background of its own (confirmed by checking its CSS),
+  // so in plain mode the indicator sits directly on the note's own
+  // resolved background/paper color -- that's what it needs to contrast
+  // against there, not the accent color it used to just reuse
+  // unconditionally regardless of how close that accent might be to the
+  // background in a given theme.
+  var root = document.documentElement;
+  var plainBgHex = resolveCSSVarToHex('--bg');
+  if (style === 'none') {
+    var plainIndicatorColor = _pickHighContrastBW(plainBgHex);
+    root.style.setProperty('--move-indicator-color', plainIndicatorColor);
+    logSys('applyBubbleAppearance: style is none, early-returning. body classes now: ' + document.body.className +
+      ' --move-indicator-color=' + plainIndicatorColor + ' (contrast vs page bg ' + plainBgHex + ')');
+    return;
+  }
 
   var root = document.documentElement;
   root.style.setProperty('--bubble-padding', (settings.bubblePadding != null ? settings.bubblePadding : 12) + 'px');
@@ -16478,6 +16704,25 @@ function applyBubbleAppearance() {
   root.style.setProperty('--bubble-fill-solid', solidFill);
   root.style.setProperty('--bubble-solid-text', solidText);
 
+  // v0.1793 FIX, per Lynn's report: the move-lines drag indicator was
+  // "almost invisible" against a bubble -- reusing var(--note-accent)
+  // for its own color, the SAME source the bubble's own border/fill is
+  // styled with, so no amount of thickness alone could fix a genuine
+  // color collision. Computed here against whichever fill is ACTUALLY
+  // active for the current variant (not a generic guess against the
+  // page background), same relativeLuminanceHex contrast approach as
+  // solidText just above: Outline/Stripe show the bubble's own interior
+  // color (bubbleInteriorColor, or --bg2 when unset -- resolved for
+  // real here since the indicator needs a concrete color to contrast
+  // against, unlike the CSS fallback elsewhere that can stay symbolic),
+  // Tinted/Solid use their own real computed fill.
+  var indicatorAgainst =
+    style === 'solid'  ? solidFill :
+    style === 'tinted' ? tintedFill :
+    (settings.bubbleInteriorColor || resolveCSSVarToHex('--bg2'));
+  var indicatorColor = _pickHighContrastBW(indicatorAgainst);
+  root.style.setProperty('--move-indicator-color', indicatorColor);
+
   // Shadow: intensity is the only user-facing control (0-30); the
   // direction is fixed at 35 degrees (Lynn's explicit choice, not a
   // setting). Same tight-shadow formula (negative spread) established
@@ -16498,6 +16743,9 @@ function applyBubbleAppearance() {
     var alpha = Math.min(0.42, intensity * 0.021).toFixed(3);
     root.style.setProperty('--bubble-shadow', offsetX + 'px ' + offsetY + 'px ' + blur + 'px ' + spread + 'px rgba(0,0,0,' + alpha + ')');
   }
+  logSys('applyBubbleAppearance: DONE style=' + style + ' bodyClasses=' + document.body.className +
+    ' --bubble-accent=' + accentHex + ' --bubble-fill-tinted=' + tintedFill +
+    ' --bubble-interior(inline)=' + (root.style.getPropertyValue('--bubble-interior') || '(unset, using CSS fallback)'));
 }
 
 // v0.1778 NEW, per Lynn's request: Home Screen item metadata (folder
@@ -41058,6 +41306,37 @@ function _reanchorMoveGroup(firstEl) {
   _updateMoveBtns();
 }
 
+// v0.1794 NEW, per Lynn's report: in bubble mode, blank lines are
+// invisible and functionally nonexistent to the user, but the OLD
+// _moveStep() swapped with the single immediately-adjacent DOM block
+// regardless -- landing on a blank line (no visible change) and
+// requiring a second press to reach the next actual bubble. This finds
+// the next VISIBLE bubble in the given direction, skipping over any
+// run of blank .viewer-line elements, and returns both that bubble
+// (tEl) and the skipped blank elements (gapEls) so the caller can move
+// them as real DOM nodes -- never by touching raw text directly.
+// Returns null if there's no bubble to hop over in that direction.
+function _findBubbleHopTarget(dir, groupEls) {
+  var gapEls = [];
+  if (dir === -1) {
+    var i = _moveBlocks.indexOf(groupEls[0]) - 1;
+    while (i >= 0 && _moveBlocks[i].classList.contains('blank-viewer-line')) {
+      gapEls.unshift(_moveBlocks[i]);
+      i--;
+    }
+    if (i < 0) return null;
+    return { tEl: _moveBlocks[i], gapEls: gapEls };
+  } else {
+    var j = _moveBlocks.indexOf(groupEls[groupEls.length - 1]) + 1;
+    while (j < _moveBlocks.length && _moveBlocks[j].classList.contains('blank-viewer-line')) {
+      gapEls.push(_moveBlocks[j]);
+      j++;
+    }
+    if (j >= _moveBlocks.length) return null;
+    return { tEl: _moveBlocks[j], gapEls: gapEls };
+  }
+}
+
 function _moveStep(dir) {
   _refreshMoveBlocks();
   if (_moveSelIdx < 0) return;
@@ -41068,7 +41347,34 @@ function _moveStep(dir) {
   var lastIdx = _moveSelIdx + _moveGroupSize - 1;
 
   var _srcNeighbors, _destNeighbors;
-  if (dir === -1) { // up — insert group before the block above the top
+  var bubblesOn = document.body.classList.contains('bubbles-active');
+
+  if (bubblesOn) {
+    // v0.1794: hop over the next VISIBLE bubble as a single step,
+    // carrying every blank line along unmodified -- this swaps only
+    // the two CONTENT spans (the moving group and the bubble it hops
+    // over) while leaving every blank-line run exactly where it sits
+    // relative to whichever element it was already adjacent to, so no
+    // separator is ever gained or lost, satisfying Lynn's requirement
+    // (a boundary that started with >=1 blank line always keeps >=1)
+    // as an unconditional guarantee, not a best-effort cleanup pass.
+    var hop = _findBubbleHopTarget(dir, groupEls);
+    if (!hop) return;
+    var tEl = hop.tEl, gapEls = hop.gapEls;
+    _srcNeighbors = _viewerLineNeighbors(groupEls[0], groupEls[groupEls.length - 1]);
+    if (dir === -1) {
+      groupEls.forEach(function(el) { viewer.insertBefore(el, tEl); });
+      var afterGapUp = gapEls.length ? gapEls[gapEls.length - 1].nextSibling : tEl.nextSibling;
+      viewer.insertBefore(tEl, afterGapUp);
+    } else {
+      viewer.insertBefore(tEl, groupEls[0]);
+      var afterGapDown = gapEls.length ? gapEls[gapEls.length - 1].nextSibling : null;
+      groupEls.forEach(function(el) {
+        if (afterGapDown) viewer.insertBefore(el, afterGapDown);
+        else viewer.appendChild(el);
+      });
+    }
+  } else if (dir === -1) { // up — insert group before the block above the top
     if (_moveSelIdx <= 0) return;
     _srcNeighbors = _viewerLineNeighbors(groupEls[0], groupEls[groupEls.length - 1]);
     var anchor = _moveBlocks[_moveSelIdx - 1];
@@ -42996,6 +43302,18 @@ if ('serviceWorker' in navigator) {
 // the button stayed lit, fooling the user into thinking it was active.
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState !== 'hidden') return;
+  // v0.1794 FIX, per Lynn's report (Chromebook, note created then lost
+  // after switching tabs): flush any pending debounced save IMMEDIATELY
+  // on backgrounding, before Chrome's Memory Saver gets a chance to
+  // fully discard this tab (which only ever targets hidden tabs, so
+  // this handler is guaranteed to run first). Same flush pattern
+  // already proven safe elsewhere in this file (setViewMode()).
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveCurrentNote();
+    logSys('visibilitychange-hidden: flushed a pending debounced save for note "' +
+      (currentNoteId && notes[currentNoteId] ? notes[currentNoteId].name : '?') + '"');
+  }
   selectMode = false;
   clearSelectedBlocks();
   updateSelectModeBtn();  // un-light the button to match the real state
@@ -43003,6 +43321,88 @@ document.addEventListener('visibilitychange', function() {
   if (isSpeaking) stopSpeaking();
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 });
+window.addEventListener('pagehide', function() {
+  // v0.1794: additional safety net alongside the visibilitychange flush
+  // above -- pagehide fires on actual navigation/tab close/bfcache
+  // eviction, a distinct lifecycle event from visibilitychange, cheap
+  // defense-in-depth for the same class of "pending edit not yet
+  // persisted" data loss.
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveCurrentNote();
+    logSys('pagehide: flushed a pending debounced save for note "' +
+      (currentNoteId && notes[currentNoteId] ? notes[currentNoteId].name : '?') + '"');
+  }
+});
+
+// ===== CROSS-TAB REAL-TIME SYNC (v0.1795) =====
+// Per Lynn's Chromebook report (a note and a settings change both
+// silently lost after switching between a Chrome tab and the installed
+// PWA) and her direct confirmation both were running under the exact
+// same Chrome profile -- genuinely the same storage, just two tabs each
+// holding their own stale in-memory snapshot until one of them saved
+// and clobbered the other. The generation-counter/baseline-diff merge
+// added to saveNotes()/saveSettings() is the real safety net for that,
+// but it only ever runs AT SAVE TIME -- a tab can sit arbitrarily stale
+// for as long as it happens to go without saving anything. The native
+// `storage` event fires in every OTHER same-origin tab/window the
+// instant one of them writes to localStorage (never in the tab that
+// made the write itself) -- used here to keep this tab's own
+// conflict-detection baseline continuously current, so by the time this
+// tab does eventually save, a genuine conflict is rare rather than
+// simply a matter of how long it's been since the last save anywhere.
+window.addEventListener('storage', function(e) {
+  if (!e.key) return; // some browsers fire a bare "everything cleared" event with no key
+  try {
+    if (e.key === storeKey('remember_notes_gen')) {
+      // Another tab saved notes. Keep our own generation marker current
+      // regardless of anything else below -- this alone is what keeps
+      // a future save's conflict check accurate.
+      _myNotesGen = parseInt(e.newValue || '0', 10) || 0;
+      var _otherNotes = null;
+      try { _otherNotes = JSON.parse(localStorage.getItem(storeKey('remember_notes')) || '{}'); } catch(ePN) {}
+      if (!_otherNotes) return;
+      if (!document.body.classList.contains('note-screen-active')) {
+        // Home screen, nothing to disrupt -- safe to just adopt the
+        // latest data and re-render live.
+        notes = _otherNotes;
+        renderNotesList(true);
+      } else if (currentNoteId && _otherNotes[currentNoteId]) {
+        // A note is open. Only refresh it live if THIS tab has no
+        // unsaved edit of its own in progress -- if the editor's
+        // current value doesn't match what this tab itself last knew
+        // as saved, the user is actively mid-edit; leave it completely
+        // alone and let the merge-on-save protection handle it later
+        // instead of risking overwriting something they just typed.
+        var _ed = document.getElementById('note-editor');
+        var _myOwnKnownContent = notes[currentNoteId] ? notes[currentNoteId].content : undefined;
+        var _noUnsavedEdit = _ed && _ed.value === _myOwnKnownContent;
+        if (_noUnsavedEdit && _otherNotes[currentNoteId].content !== _myOwnKnownContent) {
+          notes = _otherNotes;
+          _ed.value = notes[currentNoteId].content;
+          _ed._lastLength = _ed.value.length;
+          if (isViewMode) renderViewer(notes[currentNoteId].content);
+          logSys('storage event: live-refreshed the open note from another tab\u2019s save (no local unsaved edit to protect).');
+        } else {
+          // Just adopt the data in memory for anything NOT currently
+          // being displayed, without touching the visible editor/viewer.
+          notes = _otherNotes;
+        }
+      } else {
+        notes = _otherNotes;
+      }
+    }
+    // Deliberately no handling here for e.key === storeKey('remember_settings'):
+    // saveSettings() already does its own fresh, live read of storage at
+    // the moment it actually saves, comparing against the baseline fixed
+    // at load time -- that's sufficient on its own. Proactively updating
+    // the baseline here (without also updating live `settings` to match)
+    // would make every key the user hasn't touched incorrectly look like
+    // a self-made change at the next save, breaking the merge for the
+    // common case. See saveSettings()'s own comment for the full logic.
+  } catch(eStorage) {}
+});
+
 window.addEventListener('beforeunload', function() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 });
