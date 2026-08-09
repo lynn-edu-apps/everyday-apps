@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1802 -->
+<!-- Remember App - Version 0.1820 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1802
+  Version 0.1820
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,24 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1820 - NEW: toggle-type Quick Action Bar buttons now "light up" (solid accent-color background, contrast-checked foreground) while their underlying state is active, per Lynn's request -- same visual language as the slider default/reset buttons, reusing the exact same contrast-picking helper rather than a new one. Systematically reviewed every action in the registry for toggle-ness rather than guessing, per Lynn's own follow-up catches: confirmed THREE genuine toggles -- Tap to Edit, Quiet mode, and (caught on Lynn's second follow-up) Show/hide toolbar, each wired to refresh at its real underlying state-change point (enterEditBlockMode/exitEditBlockMode, toggleReadingMode/clearReadingMode, applyToolbarCollapsed -- the last one deliberately chosen as a single hook since every toolbar-collapse code path, including on load, already routes through it). Also explicitly considered and deliberately excluded two borderline cases rather than silently guessing either way: Speak and Find both have an underlying active state, but neither of their actions actually TOGGLES it on repeat press (Speak restarts rather than stops; Find re-opens rather than closes) -- lighting them up would misrepresent how tapping them actually behaves, and changing that behavior would be a real design change beyond what was asked. Confirmed there's no existing toggle-classification data structure anywhere in the codebase to reuse (checked directly, per Lynn's own question, rather than assumed) -- DUAL_MODE_BUTTON_IDS is a different, unrelated concept (toolbar vs. More-menu placement). Extensible design: any action can now optionally provide an isActive() function; only genuine toggles need one. ALSO FIXED, a real pre-existing bug found while extending this same mechanism: the accent-contrast color (introduced for the slider buttons) was cached but never invalidated when the accent color itself changed, meaning changing your theme's accent would leave a stale, potentially illegible contrast color in place for the rest of the session -- fixed at the one place accent actually gets applied. Verified directly and thoroughly: all three toggles correctly light up on entry and correctly un-light on exit; a non-toggle action (Print) confirmed never receiving the active class under any condition; actual computed background colors confirmed switching between accent-green and the normal scheme's white; the accent-cache fix confirmed producing correct black-on-light-accent and white-on-dark-accent contrast after changing accent color twice; screenshot confirmation of two simultaneously-active toggle buttons alongside two inactive ones, visually correct. Suite: 332/332 (harness v8).
+  v0.1819 - MAJOR: Quick Action Bar redesigned from a fixed 4-button row into a scrollable bar supporting any number of buttons, per Lynn's request (motivated by her father specifically needing large Undo/Redo alongside his existing buttons). Also added: Tap to Edit, Undo, and Redo as new available actions, reusing the exact same underlying functions the real toolbar buttons already call. ARCHITECTURE: deliberately mirrors the lower toolbar's own proven scroll-arrow pattern rather than inventing a new one, per Lynn's own suggestion -- a genuinely scrollable inner container (which gets native swipe scrolling for free, not something needing separate implementation) plus explicit arrow buttons for a precise, discoverable, big alternative to swiping; same show-only-on-overflow, dim-and-disable-at-limits, hold-to-repeat behavior as the toolbar's arrows, for both mouse and touch. Buttons are now created/destroyed dynamically based on however many are actually configured, not a fixed loop of 4 -- confirmed fully backward compatible with existing saved 4-button configs (a plain array of 4 already worked correctly under the old fixed-loop code; the new forEach-based render produces an identical result for that same array, no migration needed). Settings UI: the old 4 static rows replaced with a dynamically-rendered list (each row's own listeners wired inline at creation, since rows now come and go rather than being fixed elements wired once) plus an explicit "+ Add another button" control and a per-row Remove button. Verified directly and extensively: 7 configured buttons correctly overflow a 400px viewport with both scroll arrows appearing; arrow dim/enable state confirmed correct at both the start and end of the scrollable range (with real settle-time verification, not just an immediate check); clicking an arrow correctly scrolls and updates the opposite arrow's state; the full Settings add/configure/remove lifecycle confirmed correct end to end (adding a 5th slot, picking an action for it with the letter auto-filling correctly, then removing a different row, correctly shrinks both the rendered rows and the underlying settings array back to the right length); a pre-existing plain 4-button saved config confirmed rendering identically under the new code. Suite: 332/332 (harness v8).
+  v0.1818 - CRITICAL FIX: crash when switching to R&R mode with an active Find in Note search, per Lynn's exact report ("undefined is not an object (evaluating 'el.classList.remove')"). Root cause confirmed precisely: _findMatches has a completely different shape depending on mode -- plain {start,end} position objects in typing mode (used with the textarea's own native selection), real DOM <mark> elements in R&R mode (used for click-to-jump and highlight styling) -- and nothing ever converted between the two shapes on a mode switch. Switching to R&R mode left the stale typing-mode position-objects in place; the very next 'next match' press then tried to call .classList on a plain object instead of a real element. Per Lynn's explicit request that this actually work rather than just avoid crashing (typing mode's keyboard popping back up on every 'next' press being the specific annoyance driving the request) -- rather than just guard against the crash, the search now genuinely survives a mode switch in EITHER direction: reuses runFind()'s own existing per-mode match-building logic (rather than duplicating it) to correctly rebuild _findMatches in whichever shape the new mode needs, then restores the same match INDEX she was on (clamped, in case the match count somehow changed) rather than resetting to the first match -- fixed a related bug found while implementing this: runFind()'s R&R-mode branch never actually respected its own skipJump parameter, unlike the typing-mode branch, which would have silently discarded her position even with a naive fix. Previously, leaving R&R mode always silently cancelled an active search entirely (never crashed, but never explained why); now both directions behave the same, consistent way. Verified directly, end to end: the exact reported crash scenario (search 'apple' in a 4-match note, advance to the third match, switch to R&R mode) produces zero errors, correctly rebuilds all 4 matches as real DOM elements, and correctly marks the SAME third match as current in the new mode; switching back to typing mode correctly restores the exact right text selection (confirmed character-precise); separately verified three edge cases produce no errors: a mode switch with no active search at all, an active search with zero matches, and that explicitly closing Find still works normally afterward. Suite: 332/332 (harness v8).
+  v0.1817 - NEW: Copy for Speech and Share for Speech added to the Quick Action Bar's available actions, per Lynn's request (for routing note text into external, more natural-sounding text-to-speech apps like ElevenReader). Reuses the exact same copyNoteForSpeech()/shareNoteForSpeech() functions the existing toolbar buttons and More menu items already call, rather than reimplementing the behavior -- guarantees identical behavior with zero risk of the two versions drifting apart. Since the Settings dropdown for each of the 4 Quick Action Bar slots is already dynamically generated from the same central QUICK_ACTION_BAR_ACTIONS registry the actual click-handling reads from, this was a pure data addition -- no separate UI wiring needed, confirmed directly rather than assumed. Verified directly: both new actions correctly call their real underlying functions (not placeholder or duplicated logic), and both correctly appear as selectable options in the actual rendered Settings dropdown. Suite: 332/332 (harness v8).
+  v0.1816 - FIX: 11 sliders the original survey genuinely missed, per Lynn's report -- bold cursor width, ruler thickness/transparency, all four "line position" sliders (ruled/dot-grid/checkbox-line/margin-line), and four bubble-mode sliders (padding/spacing/radius/shadow) found while re-auditing. Confirmed root cause directly rather than guessed: every one of these uses a plain range input with no settings-range class at all, an exact-match gap in the original class-based search, not something ambiguous. Also confirmed and fixed a second, genuinely separate bug Lynn flagged as a possibility: bold cursor width's slider and value sit inline together in one flex row, competing for space -- a new button there really could push off-screen. Fixed generally (not specific to this one row) by having the button-insertion logic set flex-wrap on whatever row it lands in; verified directly with a real bounding-box measurement (button's right edge lands at 480px in a 500px viewport, not clipped) plus a screenshot confirming a clean wrap. Caught a related third issue while wiring these: several rows put their unit (px, %) as separate text AFTER the value span rather than inside it, which would have wedged the new button between the number and its unit -- fixed by attaching to the row generally instead of directly after the number, confirmed backward-compatible with every slider from the last build too. NEW: a genuine Bold Cursor preview, per Lynn's report that one never existed. Deliberately reuses the app's actual, hard-won caret-measurement system (the same one powering the real note editor, Quick Add, and Edit Paragraph) on a real, focusable preview textarea registered into the same instance list, rather than building a simplified mockup that could end up looking different from the real thing. Verified directly via screenshot: the real colored cursor renders correctly mid-word in sample text, and a width change correctly shows once the preview is refocused -- confirmed this refocus requirement matches the real feature's own authentic behavior (a cursor only shows while its text box is actually focused) rather than being a bug. Suite: 332/332 (harness v8).
+  v0.1815 - MAJOR: default/reset buttons extended to all 23 remaining sliders in Settings, per Lynn's request, plus a much stronger visual treatment applied everywhere this pattern now exists. (1) STRONGER STYLING: per Lynn's explicit feedback that the previous text-color-only version didn't "light up" enough -- changed/non-default state is now solid accent-color BACKGROUND with a properly contrast-checked foreground, reusing the exact same contrast-picking approach already established for the move-line indicator (_pickHighContrastBW) rather than guessing at a color that might not read clearly against every theme's accent. Applied consistently to all three places this pattern now lives: the 23 sliders below, the axis sliders from v0.1814, and the original letter/word-spacing rows. (2) NEW: a general, reusable _wireSliderDefaultButton() helper wired to all 23 remaining sliders (UI/note/notes-list font sizes and weights, tooltip size, line heights, margins, editor font size and weight, view indent width, chars per line, speech rate/pause, quick-action-bar size). Deliberately non-invasive: adds a SEPARATE 'input' listener purely for button styling rather than touching any of the 23 existing, already-tested value-setting listeners, and inserts the button via generic DOM placement right after each slider's existing value-display span so it works regardless of each row's specific surrounding layout. Handles three real complications found while surveying every slider rather than assumed away: settings that default to null ("inherit contextually" -- several font-size/weight settings), a nested settings path (quickActionBar.size), and a genuine type mismatch (fontWeight's literal default is stored as the STRING '400' while the slider always writes a number, which a strict comparison would have misread as "changed" for anyone who'd never touched the slider at all -- caught before shipping and fixed with a loose-equality comparison). Verified directly across five representative, deliberately varied cases: a plain numeric default, a null/contextual default, the nested quick-action-bar path, the string-vs-number fontWeight edge case (confirmed correctly muted on a fresh, untouched load), and a float value with custom formatting -- plus three callback-dependent sliders specifically (tooltip preview sync, chars-per-line's "Off" label, speech rate's distinct apply path), all confirmed working correctly end to end, not just assumed from the shared mechanism. Suite: 332/332 (harness v8).
+  v0.1814 - NEW: default-value indicator and reset button for variable-font axis sliders, per Lynn's request -- the first landing spot for a general mechanism she wants extended to other sliders next, starting here specifically because she flagged axes as what she's most anxious about not knowing a default for. Deliberately did NOT invent a new UI pattern -- checked the existing letter/word-spacing rows first (which Lynn already said she likes) and extended that exact same established design instead: an always-present small pill button reading "Default", muted gray when the axis is already at its default, accent-colored the moment it's changed, tap to reset. CAUGHT AND FIXED a real regression before shipping: the settings search specifically queries for the .settings-row-label class on each row, which the first draft of this restructuring omitted entirely (would have made every axis row permanently unfindable by search) -- fixed by placing the class on the correct element, matching exactly where the letter/word-spacing precedent puts it. Verified directly: moving a slider correctly turns both the value and the Default button accent-colored; clicking Default correctly resets the slider position, the displayed value, and the underlying setting (confirmed the stored override is genuinely deleted, not just set to the default number, matching the null-based precedent); searching an axis name by itself (e.g. "bounce") still correctly finds and shows only that row. Suite: 332/332 (harness v8).
+  v0.1813 - TWO fixes, per Lynn's report. (1) FIX: font dropdown menus weren't honoring UI Font Size at all -- looked tiny even with a large size saved. Root cause: the closed select box itself was already correctly sized, but individual option/optgroup elements had no font-size rule of their own, so the open dropdown popup fell back to the browser's native default -- a well-known cross-browser quirk where that popup is partially rendered by an OS-level layer that doesn't always inherit page CSS the way regular content does. Added explicit font-size/font-family to both, the standard remedy. Verified directly: an option element's own computed font-size now correctly matches a large saved UI Font Size (confirmed 32px on both), though the actual native popup's on-device rendering is something only real-device testing can fully confirm, given its partially OS-native nature. (2) NEW: every font-CHOICE label now consistently says "Font Face", per Lynn's request for searchability -- "Note & Folder Name Font" and "Note Preview Font" renamed to end in "Font Face" (the other three -- UI Font Face, Note Font Face, and the home-item-meta Font Face row -- already said it correctly). Confirmed the settings search reads labels live from the DOM rather than a separate maintained index, so no other change was needed for the renamed rows to become findable. Verified directly: searching "font face" now surfaces all four font-choice rows correctly. Suite: 332/332 (harness v8).
+  v0.1812 - Full audit of every variable font already in the app, per Lynn's request, to check for unhandled axes beyond weight. Checked all 23 fonts registered as genuinely variable (confirmed each individually rather than assumed, mostly via Fontsource's per-font axis listings, cross-checked against official sources for the more consequential ones). FOUND AND FIXED TWO REAL GAPS: IBM Plex Sans has a Width axis (75-100) that was never requested in the import or exposed as a control -- added to both. Literata has an Optical Size axis (7-72) that was actually already being requested in the app's own import string from earlier work, but had never been turned into an actual slider -- added the missing registry entry to finally expose it. CONFIRMED WEIGHT-ONLY, no gaps found: Atkinson Hyperlegible Next (confirmed directly, "1 axis"), Atkinson Hyperlegible Mono, Lexend (confirmed directly from its own official GitHub repo history), Mulish, Roboto Mono (confirmed -- Fontsource notes its no-extra-axes "full" variant doesn't even exist), Playwrite Ireland (consistent with the same single-axis pattern independently confirmed for every other individual Playwrite country variant checked this session), plus Nunito, Rubik, Noto Sans, Afacad, Lora, Playpen Sans, and Source Sans 3 via the same established pattern. Fonts already correctly handled from earlier sessions, reconfirmed rather than re-researched from scratch: Shantell Sans, Inter, Open Sans, Google Sans Flex, Roboto Flex, Merriweather, Inconsolata, Noto Sans Mono. Verified directly: selecting IBM Plex Sans now generates exactly one correctly-labeled Width slider; selecting Literata now generates exactly one correctly-labeled Optical Size slider with the exact 7-72 range already present in the import. Suite: 332/332 (harness v8).
+  v0.1811 - NEW: Open Sans's width axis added, per Lynn's request (75-100, confirmed as its only axis beyond weight). DELETED: Comic Neue, per Lynn's decision it wasn't worth keeping -- while removing it, found and cleaned up a genuine duplicate entry in the weight registry left over from an earlier edit (both a sans-serif and a stray cursive key existed for it simultaneously), now moot since the font is gone entirely. Verified directly: Open Sans generates exactly one correctly-labeled Width slider; Comic Neue confirmed completely absent from the dropdown's actual rendered options. Suite: 332/332 (harness v8).
+  v0.1810 - Smooth-weight audit, per Lynn's request. Researched every font's actual variable status directly rather than assume, since the app had been registering several genuinely variable fonts with only a handful of discrete weight stops instead of their real, full continuous range -- confirmed each one specifically (mostly via Fontsource, whose page titles reliably say "variable" only when a font genuinely has a continuous-range release, cross-checked against official sources for the more consequential ones). WIDENED to true continuous ranges, confirmed variable: Lexend (100-900), Roboto Mono (100-700, both specifically requested), Nunito (200-1000), Rubik (300-900), Open Sans (300-800), Noto Sans (100-900), IBM Plex Sans (100-700), Source Sans 3 (200-900, confirmed directly from a live CDN CSS file), Lora (400-700), Afacad (400-700), Literata (widened from just 400-600 to its full 200-900). CONFIRMED GENUINELY STATIC (Lynn's requested list, verified rather than guessed): Atkinson Hyperlegible (original), Andika, Alegreya Sans (notably NOT its serif sibling Alegreya, which is variable), Comic Relief, Spectral (7 fixed weights, no variable release exists), Georgia (system font). Also fixed a small pre-existing bug found while touching this same code: Comic Relief's weight-registry key said cursive while every actual dropdown/pill entry for it said sans-serif, meaning the two never matched and its weight registry silently never applied at all -- corrected to match. DELETED: Edu SA Beginner, per Lynn's decision that more weights didn't change her mind about the font itself. ADDED: Comic Neue (300/400/700, genuinely static, added purely to see it against real notes per Lynn's own explicit request), placed alongside Comic Relief in the Sans-serif group across all three dropdowns and the pill row, matching how visually similar the two fonts are. Verified directly: every widened font's registry entry confirmed holding its real min/max range, not just the old discrete stops; Edu SA Beginner confirmed absent from the actual dropdown; Comic Neue confirmed present and correctly registered. Suite: 332/332 (harness v8).
+  v0.1809 - FIX: Playwrite Ireland's stylistic-set registry corrected against the font's own real, confirmed data, per Lynn's request after investigating why the sets weren't working. Downloaded Playwrite Ireland's actual variable font file directly from TypeTogether's own GitHub (bypassing Google Fonts entirely, since GitHub is reachable from this sandbox when Google's font CDN currently isn't) and inspected its embedded GSUB feature table directly -- found the general nine-set Playwrite documentation (which the original registry was built from) does not match this specific country variant's file past ss07. Confirmed: ss08 is not "Cursive Uppercase" as documented, it's a set called simply "Print" with no further embedded description; ss09 does not exist in this file at all; "Cursive Uppercase" and "Decorative Uppercase" are both real, but live at ss19 and ss20, not ss08/ss09. Also definitively confirmed, by actually rendering all ten real sets from the original font file in a real browser (not just inspecting metadata), that every single one produces a genuinely different, visible letterform change -- ss20 in particular gives capital letters a real decorative flourish. This settles the open question from the last several versions: the feature itself is completely real and working in the font; it simply does not survive Google Fonts' specific packaging of this file, confirmed by the exact same CSS producing zero effect through Google's CDN and a clear, visible effect from the original source. Registry now reflects Playwrite Ireland's own confirmed mapping specifically, with a note that any future Playwrite country variant needs its own mapping confirmed the same way rather than assumed to match. Verified directly: selecting Playwrite Ireland now generates exactly 10 checkboxes (up from 9) with the corrected labels, confirmed exactly matching the font's own embedded names. Suite: 332/332 (harness v8).
+  v0.1808 - MAJOR font library update, per Lynn's request. DELETED (removed from every dropdown, pill row, and the weight registry, confirmed zero remaining references anywhere in the file): Caveat, Playwrite NZ Basic, Patrick Hand SC. ADDED: Playpen Sans (wght 100-800, same TypeTogether family as Playwrite, Handwriting group), Roboto Flex (wght 100-1000 plus 12 additional axes -- confirms Lynn's own memory of "13 variables" for this font exactly), Inconsolata (wdth 50-200 + wght 200-900, confirmed directly from the font's own official dev repo), Noto Sans Mono (wdth 62.5-100 + wght 100-900, confirmed via three independent sources including Google's own METADATA.pb directly), Atkinson Hyperlegible Mono (wght 200-800). EXTENDED with axis support: Google Sans Flex gained its other 5 axes (Optical Size, Slant, Width, Grade, Roundness) on top of its existing weight support; Merriweather gained Width support, confirmed as a genuinely new axis this font only gained in a 2024-2025 update (and its weight upgraded from disconnected stops to the continuous range the font now fully supports, since leaving it awkward while adding continuous width would have been inconsistent). FIXED, per Lynn's own correct diagnosis: Edu SA Beginner was registered as just two disconnected weight stops (400 and 700) despite the font's real, confirmed range being the full continuous 400-700 band -- exactly the missing-intermediate-weights problem Lynn identified by eye. ALSO CAUGHT while auditing: Google Sans Flex's weight registry entry was simply wrong (said 300-700, confirmed actual range is 1-1000) -- fixed alongside everything else. ARCHITECTURAL FIX applied proactively rather than waiting to be rediscovered: width (wdth) is, like slant, a "standard" OpenType axis with its own dedicated CSS property (font-stretch) that browsers can favor over the generic mechanism -- applied the exact same belt-and-suspenders treatment learned from the slant investigation before Lynn could hit the same silent-no-op bug a second time, for all three newly width-enabled fonts. On the remembered "dense weights 300-700, sparse outside" pattern: searched thoroughly and found no trace of it anywhere in the file or its import URLs -- every variable-weight font already uses a simple continuous range, which gives full smooth access to literally every integer weight already; continued that same approach for Roboto Flex and Google Sans Flex rather than inventing a discrete-stops scheme with no established precedent. Verified directly, not assumed: Roboto Flex generates exactly 12 correctly-labeled sliders; Google Sans Flex generates exactly 5; Merriweather's width slider produces both "95%" on the real font-stretch property and the belt-and-suspenders font-variation-settings value simultaneously; Noto Sans Mono's slider correctly starts at its true 62.5 minimum with a 0.5 step (its range isn't a whole number); every deleted font confirmed absent from the actual rendered dropdown's options, not just the source; the app's own settings-bucket validator confirms 191 settings, all classified, no drift. Suite: 332/332 (harness v8).
+  v0.1807 - NEW: Playwrite Ireland font added, per Lynn's request, plus OpenType stylistic-set toggles for it -- her earlier-researched, independently reconfirmed nine sets (Modern Cursive, Joined Modern Cursive, Full Cursive, Speed Loops, Curved Entry Stroke, Mirrored Loops, Micro Loops, Cursive Uppercase, Decorative Uppercase), confirmed again this session across TypeTogether's own official Playwrite article and Grokipedia, matching what Lynn found independently. Font added following the established recipe (import with a continuous 100-400 weight range rather than the existing Playwrite NZ Basic entry's two fixed stops, giving the weight slider full fine control; Handwriting-group dropdown option; quick-pick pill; weight registry entry). Stylistic sets are a DIFFERENT mechanism from the variable-font axes built two versions ago -- font-feature-settings, not font-variation-settings -- so this is new machinery: a FONT_STYLISTIC_SETS registry (keyed to work for any future Playwrite country variant, not just Ireland), a new per-context setting (noteFontStylisticSets, note-context only since handwriting fonts only live in that one dropdown), and a new dynamically-generated checkbox UI (not sliders, since these are independent on/off toggles) placed right after the axis sliders. Deliberately independent, freely-combinable toggles rather than a mutually-exclusive group -- OpenType stylistic sets can be combined by spec, and documentation alone doesn't make clear which of these 9 are meant as alternative base styles versus layerable refinements, so this lets Lynn discover working combinations herself rather than have that guessed at and enforced. Applied at the same five locations already established for the axis work (both note-content textareas, the content-area container, and both preview boxes). UNVERIFIED, flagged clearly rather than assumed: found a real, repeatedly-reported community pattern (including an open issue on Google's own font repository) of font-feature-settings simply not working for some fonts served via the Google Fonts CDN specifically, even when the original font has the features -- this sandbox is currently blocked from reaching Google Fonts (confirmed via a direct 403 test) so this could not be verified end-to-end. Everything checkable without an actual font file downloading was verified directly: selecting Playwrite Ireland generates exactly 9 correctly-labeled checkboxes; toggling one produces the correct font-feature-settings value and persists to settings; switching to a font with no registered sets correctly clears them. The one open question -- whether these toggles produce any visible effect at all -- needs a real check on Lynn's own device before further investment here. Suite: 332/332 (harness v8).
+  v0.1806 - Attempted fix for Inter's Slant slider, per Lynn's iOS report that -1 and -10 looked visually identical despite v0.1804's fix already confirmed producing genuinely different CSS values for each position. Researched rather than guessed at cause: found real, documented evidence this is a genuinely unsettled area of browser support, not clearly "our bug" or "the font's bug" -- a WebKit bug report titled exactly "Variable fonts with 'slnt' or 'ital' axes are not rendered correctly with font-style:italic, etc." (WebKit being exactly what iOS uses), a separate Firefox bug about browsers historically getting the slant DIRECTION backwards when mapping between font-style and the raw slnt axis, and an open discussion on Inter's own GitHub about its slant sign convention being inconsistent with the OpenType spec. Given v0.1804's switch to font-style specifically addressed a CONFIRMED issue (raw font-variation-settings being silently ignored in favor of font-style) but WebKit may have its own separate, incomplete handling of the font-style side of that exact interaction -- now sets slnt through BOTH mechanisms simultaneously rather than font-style alone, so whichever one a given engine actually implements correctly for this specific, historically inconsistent combination gets a chance to take effect. Verified directly: Inter at slnt=-8 now correctly shows both "oblique -8deg" AND "slnt -8" simultaneously in its computed style (previously only the former); Shantell Sans confirmed completely unaffected, still correctly using only font-variation-settings with font-style staying neutral, since it has no slnt axis at all. Flagged honestly: this is a genuine attempt at a real, researched hypothesis, not a confirmed fix -- Safari/WebKit's exact behavior can't be reproduced from this sandbox (Chromium only), so whether this actually resolves what Lynn is seeing on iOS needs her own next test to confirm either way. Suite: 332/332 (harness v8).
+  v0.1805 - FIX: a third preview box -- the larger, editable one sitting directly above Note Text Size -- never reflected any variable-font axis change either, per Lynn's report. Same root cause as the textareas and the smaller font-face preview fixed the last two versions: this element sets font-family/size/weight explicitly (via an inline style attribute this time, not even a CSS class rule) and was simply never given the two new properties. Checked directly whether any OTHER similar element had been missed rather than assume this was the last one -- confirmed by searching the whole file that this is the only contenteditable preview box that exists, so no further instances of this same gap remain. Verified directly: this box now correctly shows the exact live Bounce value for Shantell Sans, and correctly shows "oblique -6deg" (not a raw font-variation-settings string) for Inter's Slant, confirming both the custom-axis and standard-axis (font-style) code paths both correctly reach this element now. Suite: 332/332 (harness v8).
+  v0.1804 - TWO fixes to the variable-font axis prototype, per Lynn's real-device testing. (1) FIX: Inter's Slant slider had no visible effect at all, even with italic toggled on. Root cause: slnt is a REGISTERED (standard) OpenType axis with its own dedicated CSS property (font-style: oblique Xdeg) -- confirmed directly against this same investigation's own earlier research that browsers can and do silently ignore a raw font-variation-settings "slnt" value in favor of whatever font-style already resolves to, which is exactly why toggling italic didn't help either -- that sets font-style: italic, a completely different value than the oblique-angle form slnt actually needs. _buildFontVariationCSS now returns the variation and style pieces separately: genuine custom axes with no dedicated property of their own (Shantell Sans's Bounce/Informality/Spacing) still go through font-variation-settings exactly as before; slnt specifically now goes through font-style instead, applied via a new pair of CSS custom properties (--font-style-ui/-editor) alongside the existing variation ones. Checked before applying broadly that this couldn't conflict with the app's own existing italic text-formatting feature -- confirmed every existing font-style: italic rule in this file is scoped to a specific, more specific selector (e.g. .note-viewer em), which correctly wins over this new, broader base-level rule via normal CSS specificity, so real italic formatting inside notes is unaffected. (2) FIX: the font preview boxes in Settings never reflected any axis change at all, per Lynn's report. These preview elements sit inside the Settings dialog, entirely outside the note-content-area/body-scoped inheritance chain the sliders' live-update already targeted -- same root cause as the earlier textarea fix, same resolution: added both new properties explicitly to both preview elements, matching the exact pattern already established there for font-weight. Verified directly: Inter's editor and CSS variable both now correctly show "oblique -8deg" (not a font-variation-settings string) for a -8 slant value; Shantell Sans's preview box now correctly reflects a live Bounce change (previously confirmed NOT updating); Shantell Sans itself confirmed unaffected by this change, still correctly routing entirely through font-variation-settings with font-style staying neutral, since it has no slnt axis. Suite: 332/332 (harness v8).
+  v0.1803 - NEW (prototype): variable-font axis sliders, per Lynn's request, scoped to the two fonts discussed -- Shantell Sans (Bounce/Informality/Spacing) and Inter (Slant). Inline placement, as chosen: sliders appear directly under each context's existing weight slider (UI Font Weight / Note Font Weight), only for a font that actually has registered extra axes, invisible for every other font. Manual per-font registry (FONT_EXTRA_AXES), matching the exact shape of the existing FONT_WEIGHT_SUPPORT registry -- ranges confirmed directly rather than assumed: Shantell Sans's Bounce/Informality/Spacing from the font's own documentation, Inter's Slant range (-10 to 0) confirmed against a real, working Google Fonts API URL rather than a secondary source. Storage is per-context (fontExtraAxes for the UI font, noteFontExtraAxes for the note font), mirroring the existing uiFontWeight/fontWeight split rather than one global value per font family, so the same font can be tuned differently in each role. Applied via font-variation-settings, inherited from a single body-level (UI) and content-area-level (note) declaration rather than touching the many individual selectors that already set font-weight explicitly -- font-variation-settings is a naturally inherited CSS property, so one declaration point correctly cascades everywhere. CAUGHT AND FIXED two real bugs before shipping, both found through direct verification rather than assumed correct: (1) the note editor and edit-block textareas don't inherit ambient font properties from ancestors the way normal elements do -- confirmed directly (computed style showed the CSS variable correctly cascading all the way to the content-area container, but not reaching the textarea itself) and fixed by adding the same property explicitly to both textareas, exactly matching how this codebase already handles font-family/size/weight there for the identical reason; (2) the app's own SETTING_BUCKETS validator (built specifically to catch exactly this) correctly flagged both new settings as unclassified -- fixed by placing fontExtraAxes in GENERAL (matching its counterpart 'font') and noteFontExtraAxes in NOTE_APPEARANCE (matching noteFont/fontWeight). Verified directly: selecting Shantell Sans generates exactly 3 correctly-labeled sliders ("Bounce"/"Informality"/"Spacing"), Inter generates 1 ("Slant"); moving a slider updates the live CSS variable, persists into settings, and correctly disappears when switching to a font with no registered axes; the fixed textarea now correctly shows the exact axis values in its own computed style, confirmed directly (previously confirmed reaching the container but not the textarea, now confirmed reaching the textarea itself); the SETTING_BUCKETS validator confirms 190 settings, all classified, no drift. ONE CAVEAT, disclosed rather than hidden: could not get a final visual (screenshot) confirmation that the axis values visibly change the rendered glyphs, since a direct test confirmed Google Fonts is currently returning HTTP 403 to this sandbox (almost certainly from the sheer volume of repeated automated requests this session has made, not a code issue -- earlier tests this same session did show correct, distinctive font rendering before this). Every other layer has been verified structurally correct; the final visual step needs confirming on a real device with normal network access, which Lynn's own testing will settle directly. Suite: 332/332 (harness v8).
   v0.1802 - CRITICAL HOTFIX: the real cause of Lynn's PWA crash, traced directly from her own debug log rather than inferred -- a genuine, self-sustaining cross-tab infinite loop, confirmed by thousands of identical log entries firing 5-10 milliseconds apart for about 7 straight seconds. Root cause: renderNotesList()'s own internal diagnostic log call runs on every single invocation and previously always mirrored into the persisted debug-log note -- which means it silently triggered its own saveNotes() call every time. That save bumps the shared generation counter unconditionally (confirmed: v0.1797's earlier throttle only ever guarded the expensive MERGE comparison, never the underlying write+bump), which the real-time-sync listener in any OTHER open tab reacts to by calling renderNotesList() there too -- which logs, which saves, which bumps the counter again, forever, with zero user involvement, entirely independent of anything Lynn was actually doing. Fixed at the root (that specific log call no longer mirrors into the note, only the ephemeral syslog ring buffer, fully sufficient for diagnostics and where it always belonged for a trace line firing on every single render) plus a defensive rate-limit on the real-time-sync listener's own re-render call, as depth against the same class of loop recurring via any other not-yet-audited path. Verified directly with two genuinely separate tabs: a single real save in one tab now produces exactly one reaction in the other (confirmed before the fix, this same single-save test already showed the other tab both rendering AND saving in response -- the exact mechanism, caught red-handed); ten realistic saves spread over three seconds produced only three throttled renders and, critically, zero cascading saves in the other tab, down from what was an unbounded, self-sustaining loop. (2) NEW: Shantell Sans added, per Lynn's request, to the Handwriting group specifically (confirmed via research it's a genuine 5-axis variable font, 300-800 weight range on the standard axis, marker-style and built for creative/handwriting-style expression) -- added to the ONE dropdown (Note Content Text) that actually has a Handwriting optgroup, deliberately not the other four (three of which don't offer handwriting fonts at all, being UI-chrome-adjacent contexts; the fourth is a curated abbreviated list that already only includes one of the four existing handwriting fonts, so a new fifth wasn't added there either, matching that same established curation). Verified directly: both weight extremes (300 and 800) confirmed actually downloaded via the browser's own font-loading API, and a live screenshot confirms its distinctive marker-style letterforms rendering correctly. (3) CONFIRMED, no change needed: Atkinson Hyperlegible Next is already the default font for both UI and note content on a fresh install, verified directly against a genuinely clean browser context with zero prior storage -- this was already correctly done at v0.1768, Lynn's request is already fully satisfied. Suite: 332/332 (harness v8).
   v0.1801 - NEW: Andika font added, per Lynn's request (400 and 700 weights) -- a real Google Font designed by SIL for literacy, beginning readers, dyslexia support, and broad international-language coverage. Followed the exact existing recipe for adding a font (established at v0.1656 for Atkinson Hyperlegible Next/Mulish) rather than improvising: added to the single shared Google Fonts @import every other font in this app already loads from; a quick-pick pill placed alongside the other literacy/accessibility-focused fonts (Atkinson family); an <option> in all five font dropdowns (confirmed the exact count directly by search, not assumed -- one more than the four the v0.1656 changelog mentioned, since a fifth was added since then); and a weight-support registry entry using the plain [400, 700] fixed-array form already used by other exactly-two-weight fonts (matching plain Atkinson Hyperlegible itself), not the {min,max} variable-range form used for genuinely variable fonts like Inter or Atkinson Hyperlegible Next. Verified directly: selecting Andika correctly updates the live font CSS variable; both weights are confirmed actually downloaded and available via the browser's own font-loading API (document.fonts.check), not just referenced; a live screenshot confirms Andika's distinctive open, rounded letterforms rendering correctly in a real note. Suite: 332/332 (harness v8).
   v0.1800 - FIX: the active window's claim never expired, per Lynn's report that the PWA (opened first) kept blocking the Chrome tab indefinitely, even after she'd switched entirely to using only the tab. Also directly addresses her follow-up questions: whether both windows freezing until manual closing would be safer (concluded no -- risks a worse failure mode, being unable to find/close a forgotten window and getting fully locked out), and whether an inactivity timeout should apply (yes). Heartbeat renewal is now gated on actual visibility, not just "the tab is open": a window only keeps renewing its claim while genuinely visible, so a window that's been backgrounded and not returned to naturally lets its claim expire. Staleness threshold increased from 8 seconds to 60 (matching Lynn's own suggested timeout) since visibility is now the real gate -- an actively-used window renews every 3 seconds regardless and can never go stale while someone's actually looking at it; the longer window only governs how long a genuinely abandoned window's claim lingers before another window may take over, generous enough to avoid disruptive flapping from brief window-switching. Also added an immediate re-check the moment a blocked window becomes visible again, rather than waiting out whatever's left of the next scheduled check, so switching TO the other window feels responsive rather than laggy. This design guarantees whichever window is actually in front of the person eventually wins automatically, with no manual closing ever required -- directly addressing the "could get stuck" risk Lynn flagged with the alternative both-freeze approach. Verified directly: a window whose heartbeat has gone stale (simulating an abandoned, backgrounded PWA) correctly and automatically hands off to the previously-blocked window the moment it rechecks; heartbeat renewal is confirmed to be genuinely skipped while a window is hidden, using real visibility-state manipulation, not just inference; the full original two-window detection and every UI-level block (opening notes, creating notes, creating folders) are all reconfirmed working correctly on top of these changes. Suite: 332/332 (harness v8).
@@ -386,7 +404,7 @@
 
 <style>
 /* ===== GOOGLE FONTS ===== */
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Atkinson+Hyperlegible:wght@400;700&family=Atkinson+Hyperlegible+Next:wght@200..800&family=Mulish:wght@200..1000&family=Merriweather:wght@300;400;700&family=Source+Sans+3:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&family=Nunito:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;700&family=Caveat:wght@400;700&family=Patrick+Hand+SC&family=Google+Sans+Flex:wght@300..700&family=Afacad:ital,wght@0,400;0,700;1,400;1,700&family=Alegreya+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@300..700&family=Comic+Relief:wght@400;700&family=Edu+SA+Beginner:wght@400;700&family=Playwrite+NZ+Basic:wght@100;400&family=Spectral:ital,wght@0,300;0,400;0,700;1,400&family=Andika:wght@400;700&family=Shantell+Sans:wght@300..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400..700&family=Atkinson+Hyperlegible:wght@400;700&family=Atkinson+Hyperlegible+Next:wght@200..800&family=Atkinson+Hyperlegible+Mono:wght@200..800&family=Mulish:wght@200..1000&family=Merriweather:wdth,wght@87..112,300..900&family=Source+Sans+3:wght@200..900&family=Literata:opsz,wght@7..72,200..900&family=Nunito:wght@200..1000&family=Lexend:wght@100..900&family=IBM+Plex+Sans:wdth,wght@75..100,100..700&family=Open+Sans:wdth,wght@75..100,300..800&family=Noto+Sans:wght@100..900&family=Noto+Sans+Mono:wdth,wght@62.5..100,100..900&family=Rubik:wght@300..900&family=Roboto+Mono:wght@100..700&family=Roboto+Flex:opsz,slnt,wdth,wght,GRAD,XOPQ,XTRA,YOPQ,YTAS,YTDE,YTFI,YTLC,YTUC@8..144,-10..0,25..151,100..1000,-200..150,27..175,323..603,25..135,649..854,-305..-98,560..788,416..570,528..760&family=Inconsolata:wdth,wght@50..200,200..900&family=Playpen+Sans:wght@100..800&family=Google+Sans+Flex:opsz,slnt,wdth,wght,GRAD,ROND@6..144,-10..0,25..151,1..1000,0..100,0..100&family=Afacad:ital,wght@0,400..700;1,400..700&family=Alegreya+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Inter:slnt,wght@-10..0,300..700&family=Comic+Relief:wght@400;700&family=Playwrite+IE:wght@100..400&family=Spectral:ital,wght@0,300;0,400;0,700;1,400&family=Andika:wght@400;700&family=Shantell+Sans:wght,BNCE,INFM,SPAC@300..800,-100..100,0..100,0..100&display=swap');
 
 /* ===== CSS VARIABLES ===== */
 :root {
@@ -633,6 +651,9 @@ html {
 body {
   font-family: var(--font-body);
   font-weight: var(--font-weight-ui);
+  font-variation-settings: var(--font-variation-ui, normal);
+  font-style: var(--font-style-ui, normal);
+  font-stretch: var(--font-stretch-ui, normal);
   background: var(--bg);
   color: var(--fg);
   height: 100%;
@@ -2328,8 +2349,6 @@ body.reading-mode #note-fab,
   z-index: 20;
   display: none; /* shown via body.qab-enabled below, when the setting is on */
   align-items: center;
-  justify-content: center;
-  gap: calc(var(--qab-size, 64px) * 0.14);
   padding: 10px env(safe-area-inset-right, 0px) calc(10px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
   background: var(--note-toolbar-bg, var(--bg2));
   border-top: 1px solid var(--border);
@@ -2339,6 +2358,48 @@ body.reading-mode #note-fab,
 body.qab-enabled #quick-action-bar { display: flex; }
 body.qab-real-keyboard-open #quick-action-bar { display: none !important; }
 body.reading-mode #quick-action-bar { display: none !important; }
+
+/* v0.1819 NEW, per Lynn's request: a genuinely scrollable container
+   (not a fixed 4-slot row) so more than 4 actions can be configured --
+   mirrors .toolbar-scroll's proven approach exactly, including native
+   swipe scrolling coming along for free since this is a real scrollable
+   element, not something needing to be reimplemented. */
+.qab-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--qab-size, 64px) * 0.14);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1 1 auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.qab-scroll::-webkit-scrollbar { display: none; }
+/* Arrow buttons, same show/hide-on-overflow and dim-at-limits behavior
+   as the toolbar's, sized to sit comfortably alongside much larger QAB
+   buttons rather than the toolbar's own small icon-sized arrows. */
+.qab-scroll-arrow {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: calc(var(--qab-size, 64px) * 0.7);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg);
+  opacity: 0.45;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.qab-scroll-arrow:active { opacity: 0.25; }
+.qab-scroll-arrow svg { width: 28px; height: 28px; }
 
 .qab-btn {
   width: var(--qab-size, 64px);
@@ -2358,9 +2419,21 @@ body.reading-mode #quick-action-bar { display: none !important; }
   touch-action: manipulation;
   transition: transform 0.1s;
 }
-.qab-btn[data-empty="true"] { display: none; }
 body.qab-shape-circle .qab-btn { border-radius: 50%; }
 body.qab-shape-square .qab-btn { border-radius: 14%; }
+/* v0.1820 NEW, per Lynn's request: toggle-type QAB actions (currently
+   just Tap to Edit) "light up" while their underlying state is active
+   -- same visual language as the slider default/reset buttons (accent
+   background, contrast-checked foreground via --qab-active-fg, kept in
+   sync with the live accent color by _accentContrastColor()). Applied
+   with !important since it needs to override whichever of the three
+   color schemes (black-on-white/white-on-black/theme) is currently
+   active on the bar as a whole. */
+.qab-btn.qab-active {
+  background: var(--accent) !important;
+  color: var(--qab-active-fg, #ffffff) !important;
+  border-color: var(--accent) !important;
+}
 
 /* Locked, theme-INDEPENDENT high-contrast pairs -- deliberately not
    tied to var(--accent)/var(--bg) etc, since an accent color chosen for
@@ -2906,6 +2979,10 @@ body.edit-block-mode #note-viewer .viewer-line:not(.blank-viewer-line) { cursor:
   font-family: var(--font-note);
   font-size: var(--font-size-editor);
   font-weight: var(--font-weight-editor);
+  font-variation-settings: var(--font-variation-editor, normal);
+  font-style: var(--font-style-editor, normal);
+  font-stretch: var(--font-stretch-editor, normal);
+  font-feature-settings: var(--font-feature-editor, normal);
   line-height: var(--line-height);
   color: var(--fg);
   background: var(--bg2);
@@ -4724,6 +4801,10 @@ body.has-mouse .toolbar-drag-handle.dragging {
      mid-measurement. */
   scrollbar-gutter: stable;
   padding: 0 calc(16px + var(--note-margin-right) + env(safe-area-inset-right, 0px)) 16px calc(22px + var(--note-margin-left) + env(safe-area-inset-left, 0px));
+  font-variation-settings: var(--font-variation-editor, normal);
+  font-style: var(--font-style-editor, normal);
+  font-stretch: var(--font-stretch-editor, normal);
+  font-feature-settings: var(--font-feature-editor, normal);
   overflow-y: auto;
   overflow-x: hidden;
   /* v0.1679: bottom scroll shadow, per Lynn -- a genuine box-shadow (like
@@ -4811,6 +4892,10 @@ body.pinch-zoom-disabled #settings-sheet {
   font-family: var(--font-note);
   font-size: var(--font-size-editor);
   font-weight: var(--font-weight-editor);
+  font-variation-settings: var(--font-variation-editor, normal);
+  font-style: var(--font-style-editor, normal);
+  font-stretch: var(--font-stretch-editor, normal);
+  font-feature-settings: var(--font-feature-editor, normal);
   line-height: var(--line-height);
   color: var(--fg);
   background: transparent;
@@ -5937,6 +6022,23 @@ select.settings-select {
      row actually has instead of an arbitrary fixed cap. */
   max-width: 100%;
 }
+/* v0.1813 FIX, per Lynn's report: the dropdown POPUP (the actual list
+   of options shown when tapped) wasn't honoring UI font size at all --
+   it looked tiny even with a large font size saved. The closed select
+   box itself was already correctly sized above, but option elements
+   had no font-size rule of their own, so they fell back to the
+   browser's native default in the open popup -- a well-known quirk
+   where that popup is partially rendered by an OS-level layer that
+   doesn't always inherit page CSS the same way regular content does.
+   Explicit font-size/font-family here is the standard remedy. */
+select.settings-select option {
+  font-size: var(--font-ui);
+  font-family: var(--font-body);
+}
+select.settings-select optgroup {
+  font-size: var(--font-ui);
+  font-family: var(--font-body);
+}
 /* Voice preview button */
 @media (hover: hover) {
   #voice-preview-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -6115,6 +6217,19 @@ input[type="range"].settings-range::-webkit-slider-thumb {
   color: var(--accent);
   font-weight: 700;
   margin-top: 4px;
+}
+.slider-default-btn {
+  font-size: 0.78em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  touch-action: manipulation;
+  line-height: 1.4;
+  user-select: none;
+  -webkit-user-select: none;
+  margin-left: 8px;
+  font-family: var(--font-body);
 }
 
 .seg-control {
@@ -6462,8 +6577,8 @@ body.scratch-pad-disabled #scratch-pad-edge-tab,
   line-height: 1.4;
 }
 /* UI font preview uses UI weight; note font preview uses note/editor weight */
-#font-preview-text      { font-weight: var(--font-weight-ui); }
-#note-font-preview-text { font-weight: var(--font-weight-editor); }
+#font-preview-text      { font-weight: var(--font-weight-ui); font-variation-settings: var(--font-variation-ui, normal); font-style: var(--font-style-ui, normal); font-stretch: var(--font-stretch-ui, normal); }
+#note-font-preview-text { font-weight: var(--font-weight-editor); font-variation-settings: var(--font-variation-editor, normal); font-style: var(--font-style-editor, normal); font-stretch: var(--font-stretch-editor, normal); font-feature-settings: var(--font-feature-editor, normal); }
 
 /* ===== UTILITY ===== */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
@@ -7930,6 +8045,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <button class="font-face-pill" data-font="'Noto Sans', sans-serif" style="font-family:'Noto Sans', sans-serif">Noto Sans</button>
       <button class="font-face-pill" data-font="'Inter', sans-serif" style="font-family:'Inter', sans-serif">Inter</button>
       <button class="font-face-pill" data-font="'Google Sans Flex', sans-serif" style="font-family:'Google Sans Flex', sans-serif">Google Sans</button>
+      <button class="font-face-pill" data-font="'Roboto Flex', sans-serif" style="font-family:'Roboto Flex', sans-serif">Roboto Flex</button>
       <button class="font-face-pill" data-font="'Afacad', sans-serif" style="font-family:'Afacad', sans-serif">Afacad</button>
       <button class="font-face-pill" data-font="'Alegreya Sans', sans-serif" style="font-family:'Alegreya Sans', sans-serif">Alegreya</button>
       <button class="font-face-pill" data-font="'Comic Relief', sans-serif" style="font-family:'Comic Relief', sans-serif">Comic Relief</button>
@@ -7938,12 +8054,13 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <button class="font-face-pill" data-font="'Literata', serif" style="font-family:'Literata', serif">Literata</button>
       <button class="font-face-pill" data-font="'Spectral', serif" style="font-family:'Spectral', serif">Spectral</button>
       <button class="font-face-pill" data-font="Georgia, serif" style="font-family:Georgia, serif">Georgia</button>
-      <button class="font-face-pill" data-font="'Caveat', cursive" style="font-family:'Caveat', cursive">Caveat</button>
-      <button class="font-face-pill" data-font="'Patrick Hand SC', cursive" style="font-family:'Patrick Hand SC', cursive">Patrick Hand</button>
-      <button class="font-face-pill" data-font="'Edu SA Beginner', cursive" style="font-family:'Edu SA Beginner', cursive">Edu SA</button>
-      <button class="font-face-pill" data-font="'Playwrite NZ Basic', cursive" style="font-family:'Playwrite NZ Basic', cursive">Playwrite</button>
+      <button class="font-face-pill" data-font="'Playpen Sans', cursive" style="font-family:'Playpen Sans', cursive">Playpen Sans</button>
+      <button class="font-face-pill" data-font="'Playwrite IE', cursive" style="font-family:'Playwrite IE', cursive">Playwrite IE</button>
       <button class="font-face-pill" data-font="'Shantell Sans', cursive" style="font-family:'Shantell Sans', cursive">Shantell Sans</button>
       <button class="font-face-pill" data-font="'Roboto Mono', 'Courier New', monospace" style="font-family:'Roboto Mono', 'Courier New', monospace">Roboto Mono</button>
+      <button class="font-face-pill" data-font="'Inconsolata', 'Courier New', monospace" style="font-family:'Inconsolata', 'Courier New', monospace">Inconsolata</button>
+      <button class="font-face-pill" data-font="'Noto Sans Mono', 'Courier New', monospace" style="font-family:'Noto Sans Mono', 'Courier New', monospace">Noto Sans Mono</button>
+      <button class="font-face-pill" data-font="'Atkinson Hyperlegible Mono', 'Courier New', monospace" style="font-family:'Atkinson Hyperlegible Mono', 'Courier New', monospace">Atkinson Mono</button>
     </div>
     <button class="font-face-arrow" id="font-face-arrow-right" aria-label="Scroll right">&#8250;</button>
     </div>
@@ -8021,10 +8138,13 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
        renderQuickActionBar() from settings.quickActionBar -- nothing
        here is hardcoded beyond the 4 placeholder slots themselves. -->
   <div id="quick-action-bar" role="toolbar" aria-label="Quick actions">
-    <button class="qab-btn" id="qab-btn-0" data-slot="0"></button>
-    <button class="qab-btn" id="qab-btn-1" data-slot="1"></button>
-    <button class="qab-btn" id="qab-btn-2" data-slot="2"></button>
-    <button class="qab-btn" id="qab-btn-3" data-slot="3"></button>
+    <button class="qab-scroll-arrow" id="qab-scroll-left" aria-label="Scroll quick actions left" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div id="qab-scroll" class="qab-scroll"></div>
+    <button class="qab-scroll-arrow" id="qab-scroll-right" aria-label="Scroll quick actions right" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
   </div>
 
   </div>
@@ -9107,6 +9227,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <option value="'Noto Sans', sans-serif">Noto Sans</option>
           <option value="'Inter', sans-serif">Inter</option>
           <option value="'Google Sans Flex', sans-serif">Google Sans Flex</option>
+          <option value="'Roboto Flex', sans-serif">Roboto Flex</option>
           <option value="'Afacad', sans-serif">Afacad</option>
           <option value="'Alegreya Sans', sans-serif">Alegreya Sans</option>
           <option value="'Comic Relief', sans-serif">Comic Relief</option>
@@ -9120,6 +9241,9 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           </optgroup>
           <optgroup label="— Monospace —">
           <option value="'Roboto Mono', 'Courier New', monospace">Roboto Mono</option>
+          <option value="'Inconsolata', 'Courier New', monospace">Inconsolata</option>
+          <option value="'Noto Sans Mono', 'Courier New', monospace">Noto Sans Mono</option>
+          <option value="'Atkinson Hyperlegible Mono', 'Courier New', monospace">Atkinson Hyperlegible Mono</option>
           </optgroup>
         </select>
       </div>
@@ -9135,6 +9259,10 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <input type="range" class="settings-range" id="ui-font-weight-range" min="100" max="900" step="100" value="400">
         <span class="range-val" id="ui-font-weight-val">400</span>
       </div>
+      <!-- v0.1803 NEW: dynamically populated only when the currently
+           selected UI font has extra tunable axes (see FONT_EXTRA_AXES) --
+           empty and invisible otherwise. -->
+      <div id="ui-font-extra-axes-container"></div>
       <!-- v0.1677: per Lynn -- our own tooltips (replacing native browser
            title-attribute tooltips, whose font/position/wrap we have no
            control over at all) need their own size, independent from
@@ -9158,7 +9286,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       </div>
       <div class="settings-row">
         <div>
-          <div class="settings-row-label">Note &amp; Folder Name Font</div>
+          <div class="settings-row-label">Note &amp; Folder Name Font Face</div>
           <div class="settings-row-desc">Font for note and folder names on the home screen. Leave as Default to match the general UI font.</div>
         </div>
         <select class="settings-select" id="notes-list-name-font-select">
@@ -9178,7 +9306,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <option value="'Lora', serif">Lora</option>
           <option value="'Merriweather', serif">Merriweather</option>
           <option value="Georgia, serif">Georgia</option>
-          <option value="'Caveat', cursive">Caveat</option>
           <option value="'Roboto Mono', 'Courier New', monospace">Roboto Mono</option>
         </select>
       </div>
@@ -9199,7 +9326,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       </div>
       <div class="settings-row">
         <div>
-          <div class="settings-row-label">Note Preview Font</div>
+          <div class="settings-row-label">Note Preview Font Face</div>
           <div class="settings-row-desc">Font for the note preview line on the home screen. Leave as Default to match the note editor's own font.</div>
         </div>
         <select class="settings-select" id="notes-list-preview-font-select">
@@ -9219,7 +9346,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <option value="'Lora', serif">Lora</option>
           <option value="'Merriweather', serif">Merriweather</option>
           <option value="Georgia, serif">Georgia</option>
-          <option value="'Caveat', cursive">Caveat</option>
           <option value="'Roboto Mono', 'Courier New', monospace">Roboto Mono</option>
         </select>
       </div>
@@ -9526,6 +9652,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
               <option value="'Noto Sans', sans-serif">Noto Sans</option>
               <option value="'Inter', sans-serif">Inter</option>
               <option value="'Google Sans Flex', sans-serif">Google Sans Flex</option>
+              <option value="'Roboto Flex', sans-serif">Roboto Flex</option>
               <option value="'Afacad', sans-serif">Afacad</option>
               <option value="'Alegreya Sans', sans-serif">Alegreya Sans</option>
               <option value="'Comic Relief', sans-serif">Comic Relief</option>
@@ -9850,6 +9977,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <option value="'Noto Sans', sans-serif">Noto Sans</option>
           <option value="'Inter', sans-serif">Inter</option>
           <option value="'Google Sans Flex', sans-serif">Google Sans Flex</option>
+          <option value="'Roboto Flex', sans-serif">Roboto Flex</option>
           <option value="'Afacad', sans-serif">Afacad</option>
           <option value="'Alegreya Sans', sans-serif">Alegreya Sans</option>
           <option value="'Comic Relief', sans-serif">Comic Relief</option>
@@ -9862,14 +9990,15 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <option value="Georgia, serif">Georgia</option>
           </optgroup>
           <optgroup label="— Handwriting —">
-          <option value="'Caveat', cursive">Caveat</option>
-          <option value="'Patrick Hand SC', cursive">Patrick Hand SC</option>
-          <option value="'Edu SA Beginner', cursive">Edu SA Beginner</option>
-          <option value="'Playwrite NZ Basic', cursive">Playwrite NZ Basic</option>
+          <option value="'Playpen Sans', cursive">Playpen Sans</option>
+          <option value="'Playwrite IE', cursive">Playwrite Ireland</option>
           <option value="'Shantell Sans', cursive">Shantell Sans</option>
           </optgroup>
           <optgroup label="— Monospace —">
           <option value="'Roboto Mono', 'Courier New', monospace">Roboto Mono</option>
+          <option value="'Inconsolata', 'Courier New', monospace">Inconsolata</option>
+          <option value="'Noto Sans Mono', 'Courier New', monospace">Noto Sans Mono</option>
+          <option value="'Atkinson Hyperlegible Mono', 'Courier New', monospace">Atkinson Hyperlegible Mono</option>
           </optgroup>
         </select>
       </div>
@@ -9885,6 +10014,10 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           font-family: var(--font-note);
           font-size: var(--font-size-editor);
           font-weight: var(--font-weight-editor);
+          font-variation-settings: var(--font-variation-editor, normal);
+          font-style: var(--font-style-editor, normal);
+          font-stretch: var(--font-stretch-editor, normal);
+          font-feature-settings: var(--font-feature-editor, normal);
           line-height: var(--line-height);
           color: var(--fg);
           background: var(--bg2);
@@ -9911,6 +10044,12 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <input type="range" class="settings-range" id="note-font-weight-range" min="100" max="900" step="100" value="400">
         <span class="range-val" id="note-font-weight-val">400</span>
       </div>
+      <!-- v0.1803 NEW: same as ui-font-extra-axes-container, for the note font -->
+      <div id="note-font-extra-axes-container"></div>
+      <!-- v0.1807 NEW: dynamically populated only when the currently
+           selected note font has registered stylistic sets (see
+           FONT_STYLISTIC_SETS) -- empty and invisible otherwise. -->
+      <div id="note-font-stylistic-sets-container"></div>
 
       <!-- Advanced Typography — nested collapsible subsection (collapsed by default) -->
       <div class="settings-subsection" id="adv-typography-subsection">
@@ -10244,6 +10383,21 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <div style="display:flex;align-items:center;gap:10px;width:100%;">
           <input type="range" id="bold-cursor-width-slider" min="2" max="7" step="1" value="4" style="flex:1">
           <span id="bold-cursor-width-val" style="min-width:3em;text-align:right;">4px</span>
+        </div>
+      </div>
+      <!-- v0.1816 NEW, per Lynn's report that Bold Cursor never had a
+           preview: a genuine one, reusing the exact same real caret-
+           measurement system the actual feature uses (registered below
+           into _boldCursorInstances alongside the note editor and other
+           real text inputs) rather than a simplified mockup that could
+           end up looking different from the real thing. Tap in and
+           type to see the actual cursor at the actual current
+           width/color, live. -->
+      <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <div class="settings-row-desc">Preview — tap in and type to try it:</div>
+        <div id="bold-cursor-preview-wrap" style="position:relative;width:100%">
+          <textarea id="bold-cursor-preview-textarea" rows="2" placeholder="Tap here…"
+            style="width:100%;font-family:var(--font-note);font-size:var(--font-size-editor);background:var(--bg2);color:var(--fg);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;resize:none;outline:none;box-sizing:border-box;line-height:var(--line-height)">The quick brown fox</textarea>
         </div>
       </div>
       <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
@@ -11080,7 +11234,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
      fixed action -- deliberately not a cycling/long-press design, see
      build changelog for the reasoning. -->
 <div class="settings-subsection-title" style="margin-top:10px">Quick Action Bar</div>
-<div class="settings-row-desc" style="padding:0 20px 6px;margin-top:-4px">A row of up to 4 large, single-letter buttons at the bottom of the note editor, for anyone who finds the regular toolbar hard to see or aim for.</div>
+<div class="settings-row-desc" style="padding:0 20px 6px;margin-top:-4px">A row of large, single-letter buttons at the bottom of the note editor, for anyone who finds the regular toolbar hard to see or aim for. Add as many as you like — a scroll arrow appears automatically once there are more than fit on screen at once.</div>
 
       <div class="settings-row">
         <div>
@@ -11118,29 +11272,12 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </div>
       </div>
 
-      <div id="qab-slots-container">
-        <div class="settings-row" style="gap:10px">
-          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 1</div>
-          <select class="settings-select qab-slot-action" id="qab-slot-0-action" data-slot="0" style="flex:1"></select>
-          <input type="text" class="qab-slot-letter" id="qab-slot-0-letter" data-slot="0" maxlength="1" aria-label="Button 1 letter" style="width:44px;text-align:center;text-transform:uppercase;">
-        </div>
-        <div class="settings-row" style="gap:10px">
-          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 2</div>
-          <select class="settings-select qab-slot-action" id="qab-slot-1-action" data-slot="1" style="flex:1"></select>
-          <input type="text" class="qab-slot-letter" id="qab-slot-1-letter" data-slot="1" maxlength="1" aria-label="Button 2 letter" style="width:44px;text-align:center;text-transform:uppercase;">
-        </div>
-        <div class="settings-row" style="gap:10px">
-          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 3</div>
-          <select class="settings-select qab-slot-action" id="qab-slot-2-action" data-slot="2" style="flex:1"></select>
-          <input type="text" class="qab-slot-letter" id="qab-slot-2-letter" data-slot="2" maxlength="1" aria-label="Button 3 letter" style="width:44px;text-align:center;text-transform:uppercase;">
-        </div>
-        <div class="settings-row" style="gap:10px">
-          <div class="settings-row-label" style="flex:0 0 auto;min-width:64px">Button 4</div>
-          <select class="settings-select qab-slot-action" id="qab-slot-3-action" data-slot="3" style="flex:1"></select>
-          <input type="text" class="qab-slot-letter" id="qab-slot-3-letter" data-slot="3" maxlength="1" aria-label="Button 4 letter" style="width:44px;text-align:center;text-transform:uppercase;">
-        </div>
+      <div id="qab-slots-container"></div>
+      <div class="settings-row">
+        <button id="qab-add-slot-btn" class="settings-select" style="width:100%;text-align:center;cursor:pointer;">+ Add another button</button>
       </div>
     
+
     </div>
     </div>
     <div class="settings-section" id="settings-section-debugging">
@@ -12093,7 +12230,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1802';
+const APP_VERSION = '0.1820';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -12599,6 +12736,7 @@ var _pinnedToolbarH = 0;
 function applyToolbarCollapsed(collapsed) {
   document.body.classList.toggle('toolbar-collapsed', collapsed);
   pinToolbars();
+  if (typeof _qabRefreshActiveStates === 'function') _qabRefreshActiveStates();
 }
 
 function toggleToolbarCollapse() {
@@ -14019,6 +14157,17 @@ const DEFAULT_SETTINGS = {
   customColors: {},                                  // custom color picker values per row
   noteFont: "'Atkinson Hyperlegible Next', sans-serif",  // Note content font -- v0.1768, same reasoning as font above
   fontWeight: '400',
+  // v0.1803 NEW, per Lynn's request: per-context extra (non-weight)
+  // variable-font axis values, matching the fontWeight/uiFontWeight
+  // precedent (same font, different context, can be tuned separately).
+  // Each an object of {axisTag: value}; empty/missing means "use that
+  // axis's own neutral default," not "axis forced to zero."
+  fontExtraAxes: {},
+  noteFontExtraAxes: {},
+  // v0.1807 NEW, per Lynn's request: OpenType stylistic set toggles for
+  // Playwrite. Note-context only -- Playwrite, like every handwriting
+  // font in this app, only lives in the note-font dropdown.
+  noteFontStylisticSets: {},
   uiFontSize: 20,
   // v0.1677: custom tooltip font size, per Lynn -- independent of every
   // other size setting (native browser tooltips have no size setting to
@@ -14325,7 +14474,7 @@ const SETTING_BUCKETS = {
   showThemeIndicator: SETTING_BUCKETS_GENERAL, showToolbarCollapseTab: SETTING_BUCKETS_GENERAL, sortBy: SETTING_BUCKETS_GENERAL, sortDesc: SETTING_BUCKETS_GENERAL, sortGroupByDate: SETTING_BUCKETS_GENERAL,
   theme: SETTING_BUCKETS_GENERAL, timeFormat: SETTING_BUCKETS_GENERAL, todaySuffix: SETTING_BUCKETS_GENERAL, toolbarPlacement: SETTING_BUCKETS_GENERAL, toolbarOrder: SETTING_BUCKETS_GENERAL,
   tooltipFontSize: SETTING_BUCKETS_GENERAL, tripleTapToEdit: SETTING_BUCKETS_GENERAL, uiFontSize: SETTING_BUCKETS_GENERAL, uiSize: SETTING_BUCKETS_GENERAL, wrapNoteNames: SETTING_BUCKETS_GENERAL, wrapNotePreview: SETTING_BUCKETS_GENERAL, exportReminderEnabled: SETTING_BUCKETS_GENERAL,
-  uiLineHeight: SETTING_BUCKETS_GENERAL, uiBlankLineHeight: SETTING_BUCKETS_GENERAL,
+  uiLineHeight: SETTING_BUCKETS_GENERAL, uiBlankLineHeight: SETTING_BUCKETS_GENERAL, fontExtraAxes: SETTING_BUCKETS_GENERAL,
   // ---- NOTE_APPEARANCE (50) ----
   accentColorNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, blankLineHeight: SETTING_BUCKETS_NOTE_APPEARANCE, charsPerLine: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxColor: SETTING_BUCKETS_NOTE_APPEARANCE, checkboxLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorEnabled: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorWidth: SETTING_BUCKETS_NOTE_APPEARANCE, boldCursorColor: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleStyle: SETTING_BUCKETS_NOTE_APPEARANCE, matchNoteAccentForBubbles: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleAccentColor: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleInteriorColor: SETTING_BUCKETS_NOTE_APPEARANCE, bubblePadding: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleRadius: SETTING_BUCKETS_NOTE_APPEARANCE, bubbleShadowIntensity: SETTING_BUCKETS_NOTE_APPEARANCE,
   customColor: SETTING_BUCKETS_NOTE_APPEARANCE, customColor2: SETTING_BUCKETS_NOTE_APPEARANCE, customColor3: SETTING_BUCKETS_NOTE_APPEARANCE, darkNotePaperBg: SETTING_BUCKETS_NOTE_APPEARANCE, darkNotePaperFg: SETTING_BUCKETS_NOTE_APPEARANCE,
@@ -14336,7 +14485,7 @@ const SETTING_BUCKETS = {
   noteFont: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginLeft: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginRight: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineStyle: SETTING_BUCKETS_NOTE_APPEARANCE,
   ruledLineTone: SETTING_BUCKETS_NOTE_APPEARANCE, rulerColor: SETTING_BUCKETS_NOTE_APPEARANCE, rulerOpacity: SETTING_BUCKETS_NOTE_APPEARANCE, rulerThickness: SETTING_BUCKETS_NOTE_APPEARANCE, showBlockRules: SETTING_BUCKETS_NOTE_APPEARANCE,
   showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE, showWhitespace: SETTING_BUCKETS_NOTE_APPEARANCE, circularCheckboxes: SETTING_BUCKETS_NOTE_APPEARANCE, hideMarkerForChecklistIsh: SETTING_BUCKETS_NOTE_APPEARANCE, skipFirstLevelIndentWhenHidden: SETTING_BUCKETS_NOTE_APPEARANCE,
-  tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE,
+  tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, noteFontExtraAxes: SETTING_BUCKETS_NOTE_APPEARANCE, noteFontStylisticSets: SETTING_BUCKETS_NOTE_APPEARANCE,
   // ---- NOTE_BEHAVIOR (36) ----
   alwaysSpeakWholeNote: SETTING_BUCKETS_NOTE_BEHAVIOR, autoSpeak: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSound: SETTING_BUCKETS_NOTE_BEHAVIOR, checkSoundEnabled: SETTING_BUCKETS_NOTE_BEHAVIOR, checkStrikethrough: SETTING_BUCKETS_NOTE_BEHAVIOR,
   confettiOnComplete: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultCheckboxIndent: SETTING_BUCKETS_NOTE_BEHAVIOR, defaultViewMode: SETTING_BUCKETS_NOTE_BEHAVIOR, collapseToolbarOnOpen: SETTING_BUCKETS_NOTE_BEHAVIOR, indentSpaces: SETTING_BUCKETS_NOTE_BEHAVIOR, indentUsesTabs: SETTING_BUCKETS_NOTE_BEHAVIOR, listContinuationIndent: SETTING_BUCKETS_NOTE_BEHAVIOR,
@@ -16080,6 +16229,84 @@ function _pickHighContrastBW(bgHex) {
   var contrastWithWhite = 1.05 / (L + 0.05);
   return contrastWithBlack >= contrastWithWhite ? '#000000' : '#ffffff';
 }
+// v0.1815 NEW, per Lynn's request that the default/reset button "light
+// up a lot more" when a slider is non-default: accent color as the
+// button's actual background, with a properly contrast-checked
+// foreground -- reusing the exact same contrast-picking approach
+// already established for the move-line indicator, rather than
+// guessing at a text color that might not read clearly against every
+// theme's accent.
+var _accentContrastColorCache = null;
+function _accentContrastColor() {
+  if (_accentContrastColorCache) return _accentContrastColorCache;
+  _accentContrastColorCache = _pickHighContrastBW(resolveCSSVarToHex('--accent'));
+  return _accentContrastColorCache;
+}
+// v0.1815 NEW: general, reusable default/reset button for a slider,
+// extending the same pattern already used for letter/word-spacing and
+// (as of v0.1814) variable-font axes to the rest of Settings' sliders.
+// Deliberately does NOT touch each slider's existing 'input' listener
+// (already tested, already correct) -- adds a SEPARATE listener purely
+// for button styling, and inserts the button via generic DOM
+// placement right after the slider's existing value-display span, so
+// it works regardless of each row's specific surrounding HTML.
+//   rangeId/valId: existing element ids already in the DOM.
+//   settingsKey: dotted path into `settings` (e.g. 'quickActionBar.size').
+//   defaultValue: the value to restore on reset -- null means "unset /
+//     inherit contextually" (matching the letter/word-spacing pattern)
+//     rather than a concrete number.
+//   formatFn(value): optional, how to render the value text (defaults
+//     to the raw value).
+function _getByPath(key) {
+  var parts = key.split('.');
+  var obj = settings;
+  for (var i = 0; i < parts.length; i++) { if (obj == null) return undefined; obj = obj[parts[i]]; }
+  return obj;
+}
+function _setByPath(key, v) {
+  var parts = key.split('.');
+  var obj = settings;
+  for (var i = 0; i < parts.length - 1; i++) { if (!obj[parts[i]]) obj[parts[i]] = {}; obj = obj[parts[i]]; }
+  obj[parts[parts.length - 1]] = v;
+}
+function _wireSliderDefaultButton(rangeId, valId, settingsKey, defaultValue, formatFn, onApply) {
+  var range = document.getElementById(rangeId);
+  var valEl = document.getElementById(valId);
+  if (!range || !valEl) return;
+  var btn = document.createElement('button');
+  btn.textContent = 'Default';
+  btn.className = 'slider-default-btn';
+  btn.type = 'button';
+  valEl.parentElement.appendChild(btn);
+  if (getComputedStyle(valEl.parentElement).display === 'flex') valEl.parentElement.style.flexWrap = 'wrap';
+  function isAtDefault() {
+    var v = _getByPath(settingsKey);
+    var vEmpty = (v === null || v === undefined);
+    var defEmpty = (defaultValue === null || defaultValue === undefined);
+    if (vEmpty || defEmpty) return vEmpty === defEmpty;
+    return v == defaultValue; // loose equality: some defaults are stored as strings (e.g. fontWeight: '400') while sliders always write numbers
+  }
+  function updateStyle() {
+    if (isAtDefault()) {
+      btn.style.background = 'var(--bg3)';
+      btn.style.color = 'var(--fg3)';
+    } else {
+      btn.style.background = 'var(--accent)';
+      btn.style.color = _accentContrastColor();
+    }
+  }
+  range.addEventListener('input', updateStyle);
+  btn.addEventListener('click', function() {
+    _setByPath(settingsKey, defaultValue);
+    var shown = (defaultValue === null || defaultValue === undefined) ? range.defaultValue : defaultValue;
+    range.value = shown;
+    valEl.textContent = formatFn ? formatFn(shown) : shown;
+    updateStyle();
+    if (onApply) onApply();
+    updateSaveBtnState();
+  });
+  updateStyle();
+}
 // v0.1761: resolves a CSS custom property (which may be any valid CSS
 // color, not necessarily hex) to a concrete hex string, using the same
 // technique already established in the custom-color-picker grid code --
@@ -16142,32 +16369,215 @@ function lightenHex(hex, percent) {
 var FONT_WEIGHT_SUPPORT = {
   "'Atkinson Hyperlegible', sans-serif": [400, 700],
   "'Atkinson Hyperlegible Next', sans-serif": { min: 200, max: 800 },
+  "'Atkinson Hyperlegible Mono', 'Courier New', monospace": { min: 200, max: 800 },
   "'Andika', sans-serif": [400, 700],
   "'Shantell Sans', cursive": { min: 300, max: 800 },
   "'Mulish', sans-serif": { min: 200, max: 1000 },
-  "'Lexend', sans-serif": [400, 500, 600, 700],
-  "'Nunito', sans-serif": [400, 500, 600, 700],
-  "'Rubik', sans-serif": [400, 500, 600, 700],
-  "'IBM Plex Sans', sans-serif": [400, 500, 600, 700],
-  "'Source Sans 3', sans-serif": [400, 500, 600, 700],
-  "'Open Sans', sans-serif": [400, 500, 600, 700],
-  "'Noto Sans', sans-serif": [400, 500, 600, 700],
+  "'Lexend', sans-serif": { min: 100, max: 900 },
+  "'Nunito', sans-serif": { min: 200, max: 1000 },
+  "'Rubik', sans-serif": { min: 300, max: 900 },
+  "'IBM Plex Sans', sans-serif": { min: 100, max: 700 },
+  "'Source Sans 3', sans-serif": { min: 200, max: 900 },
+  "'Open Sans', sans-serif": { min: 300, max: 800 },
+  "'Noto Sans', sans-serif": { min: 100, max: 900 },
+  "'Noto Sans Mono', 'Courier New', monospace": { min: 100, max: 900 },
   "'Inter', sans-serif": { min: 300, max: 700 },
-  "'Google Sans Flex', sans-serif": { min: 300, max: 700 },
-  "'Afacad', sans-serif": [400, 700],
+  "'Google Sans Flex', sans-serif": { min: 1, max: 1000 },
+  "'Roboto Flex', sans-serif": { min: 100, max: 1000 },
+  "'Afacad', sans-serif": { min: 400, max: 700 },
   "'Alegreya Sans', sans-serif": [400, 700],
-  "'Comic Relief', cursive": [400, 700],
-  "'Lora', serif": [400, 500, 600, 700],
-  "'Merriweather', serif": [300, 400, 700],
-  "'Literata', serif": [400, 500, 600],
+  "'Comic Relief', sans-serif": [400, 700],
+  "'Lora', serif": { min: 400, max: 700 },
+  "'Merriweather', serif": { min: 300, max: 900 },
+  "'Literata', serif": { min: 200, max: 900 },
   "'Spectral', serif": [300, 400, 700],
-  "'Caveat', cursive": [400, 700],
-  "'Patrick Hand SC', cursive": [400],
-  "'Edu SA Beginner', cursive": [400, 700],
-  "'Playwrite NZ Basic', cursive": [100, 400],
-  "'Roboto Mono', 'Courier New', monospace": [400, 500, 700],
+  "'Playpen Sans', cursive": { min: 100, max: 800 },
+  "'Playwrite IE', cursive": { min: 100, max: 400 },
+  "'Roboto Mono', 'Courier New', monospace": { min: 100, max: 700 },
+  "'Inconsolata', 'Courier New', monospace": { min: 200, max: 900 },
   "Georgia, serif": [400, 700] // system font, not Google-loaded, but the browser only synthesizes bold (700) vs regular (400) for it
 };
+
+// v0.1803 NEW, per Lynn's request: a registry for variable-font axes
+// OTHER than weight (which FONT_WEIGHT_SUPPORT already covers on its
+// own). Prototype scope: just the two fonts discussed. Keyed identically
+// to FONT_WEIGHT_SUPPORT for consistency. Each axis: tag (the real
+// OpenType 4-letter code, used directly in the CSS font-variation-
+// settings value), name (human-readable, shown as the slider label),
+// min/max (confirmed against the font's own published documentation --
+// Shantell Sans's BNCE/INFM/SPAC, Inter's slnt range confirmed directly
+// against a real, working Google Fonts API example), and default (the
+// font's own neutral/regular value for that axis, used both as the
+// slider's starting position and to know when an axis is untouched).
+var FONT_EXTRA_AXES = {
+  "'Shantell Sans', cursive": [
+    { tag: 'BNCE', name: 'Bounce',       min: -100, max: 100, default: 0 },
+    { tag: 'INFM', name: 'Informality',  min: 0,    max: 100, default: 0 },
+    { tag: 'SPAC', name: 'Spacing',      min: 0,    max: 100, default: 0 }
+  ],
+  "'Inter', sans-serif": [
+    { tag: 'slnt', name: 'Slant', min: -10, max: 0, default: 0 }
+  ],
+  // v0.1811 NEW, per Lynn's request: Open Sans's width axis, confirmed
+  // as its only extra axis beyond weight (75-100).
+  "'Open Sans', sans-serif": [
+    { tag: 'wdth', name: 'Width', min: 75, max: 100, default: 100 }
+  ],
+  // v0.1812 NEW, per Lynn's requested audit of every variable font
+  // already in the app: IBM Plex Sans's width axis, confirmed as its
+  // only extra axis beyond weight (75-100).
+  "'IBM Plex Sans', sans-serif": [
+    { tag: 'wdth', name: 'Width', min: 75, max: 100, default: 100 }
+  ],
+  // Literata's optical size axis (7-72) -- this range was already
+  // silently present in the app's own Google Fonts import string
+  // (opsz,wght@7..72,...) from earlier work, but never exposed as an
+  // actual control until now.
+  "'Literata', serif": [
+    { tag: 'opsz', name: 'Optical Size', min: 7, max: 72, default: 14 }
+  ],
+  // v0.1808 NEW, per Lynn's request. Google Sans Flex: 5 axes beyond
+  // weight (which the existing weight slider already covers).
+  "'Google Sans Flex', sans-serif": [
+    { tag: 'opsz', name: 'Optical Size', min: 6,   max: 144, default: 14 },
+    { tag: 'slnt', name: 'Slant',        min: -10, max: 0,   default: 0 },
+    { tag: 'wdth', name: 'Width',        min: 25,  max: 151, default: 100 },
+    { tag: 'GRAD', name: 'Grade',        min: 0,   max: 100, default: 0 },
+    { tag: 'ROND', name: 'Roundness',    min: 0,   max: 100, default: 0 }
+  ],
+  // Roboto Flex: 12 axes beyond weight -- confirms Lynn's own memory of
+  // "13 variables" for this font exactly (12 here + weight itself).
+  "'Roboto Flex', sans-serif": [
+    { tag: 'opsz', name: 'Optical Size',    min: 8,     max: 144,  default: 14 },
+    { tag: 'slnt', name: 'Slant',           min: -10,   max: 0,    default: 0 },
+    { tag: 'wdth', name: 'Width',           min: 25,    max: 151,  default: 100 },
+    { tag: 'GRAD', name: 'Grade',           min: -200,  max: 150,  default: 0 },
+    { tag: 'XOPQ', name: 'Thick Stroke',    min: 27,    max: 175,  default: 88 },
+    { tag: 'XTRA', name: 'Counter Width',   min: 323,   max: 603,  default: 468 },
+    { tag: 'YOPQ', name: 'Thin Stroke',     min: 25,    max: 135,  default: 79 },
+    { tag: 'YTAS', name: 'Ascender Height', min: 649,   max: 854,  default: 750 },
+    { tag: 'YTDE', name: 'Descender Depth', min: -305,  max: -98,  default: -203 },
+    { tag: 'YTFI', name: 'Figure Height',   min: 560,   max: 788,  default: 738 },
+    { tag: 'YTLC', name: 'Lowercase Height',min: 416,   max: 570,  default: 514 },
+    { tag: 'YTUC', name: 'Uppercase Height',min: 528,   max: 760,  default: 712 }
+  ],
+  "'Merriweather', serif": [
+    { tag: 'wdth', name: 'Width', min: 87,   max: 112, default: 100 }
+  ],
+  "'Inconsolata', 'Courier New', monospace": [
+    { tag: 'wdth', name: 'Width', min: 50,   max: 200, default: 100 }
+  ],
+  "'Noto Sans Mono', 'Courier New', monospace": [
+    { tag: 'wdth', name: 'Width', min: 62.5, max: 100, default: 100, step: 0.5 }
+  ]
+};
+// v0.1807 NEW, per Lynn's request: OpenType stylistic sets, a
+// DIFFERENT mechanism from variable-font axes (font-feature-settings,
+// not font-variation-settings) -- independent on/off toggles rather
+// than a continuous range.
+// v0.1809 FIX: the general nine-set Playwrite documentation (matching
+// what Lynn found and what this registry originally used) does NOT
+// match Playwrite Ireland's actual font file past ss07. Confirmed
+// directly by inspecting the real file's own embedded feature names
+// (extracted from its GSUB table, not assumed): ss08 is not "Cursive
+// Uppercase" as documented -- it's a set simply called "PRINT", with no
+// further description embedded. ss09 doesn't exist in this file at
+// all. "Cursive Uppercase" and "Decorative Uppercase" are real, but
+// live at ss19 and ss20, not ss08/ss09. Also confirmed by actually
+// rendering all of these from the original (non-Google-served) font
+// file in a real browser: every one of these tags does produce a
+// genuinely different, visible letterform change -- the feature itself
+// is real and working; it just doesn't survive Google Fonts' specific
+// packaging (separately confirmed, still unresolved as of this
+// version -- see the concurrent-instance-era investigation notes).
+// Keyed specifically to Playwrite Ireland's own confirmed mapping
+// rather than the general family documentation, since country variants
+// are separate font files and this exact mapping is now confirmed to
+// NOT generalize automatically -- any future Playwrite country variant
+// added here should have its own mapping confirmed the same way, not
+// assumed to match Ireland's.
+var FONT_STYLISTIC_SETS = {
+  "'Playwrite IE', cursive": [
+    { tag: 'ss01', name: 'Modern Cursive' },
+    { tag: 'ss02', name: 'Joined Modern Cursive' },
+    { tag: 'ss03', name: 'Full Cursive' },
+    { tag: 'ss04', name: 'Speed Loops' },
+    { tag: 'ss05', name: 'Curved Entry Stroke' },
+    { tag: 'ss06', name: 'Mirrored Loops' },
+    { tag: 'ss07', name: 'Micro Loops' },
+    { tag: 'ss08', name: 'Print' },
+    { tag: 'ss19', name: 'Cursive Uppercase' },
+    { tag: 'ss20', name: 'Decorative Uppercase' }
+  ]
+};
+// Builds the font-feature-settings CSS value from a font's registered
+// sets + which ones are currently on. Deliberately independent toggles,
+// not a mutually-exclusive choice -- OpenType stylistic sets can be
+// combined by spec, and it isn't clear from documentation alone which
+// of Playwrite's 9 sets are meant as alternative base styles versus
+// layerable refinements, so this lets Lynn discover working
+// combinations herself rather than have that guessed at and enforced.
+function _buildFontFeatureCSS(fontValue, setsValues) {
+  var sets = FONT_STYLISTIC_SETS[fontValue];
+  if (!sets || !sets.length || !setsValues) return 'normal';
+  var on = sets.filter(function(s) { return !!setsValues[s.tag]; })
+               .map(function(s) { return '"' + s.tag + '" on'; });
+  return on.length ? on.join(', ') : 'normal';
+}
+
+// v0.1804 FIX, per Lynn's report that Inter's Slant slider had no
+// visible effect at all, even with italic toggled on: slnt is a
+// REGISTERED (standard) OpenType axis with its own dedicated CSS
+// property (font-style: oblique Xdeg) -- per the CSS Fonts spec and
+// confirmed in this exact investigation's own earlier research,
+// browsers can and do silently ignore a raw font-variation-settings
+// "slnt" value in favor of whatever font-style already resolves to,
+// which is why toggling italic (font-style: italic, a DIFFERENT value
+// than the oblique-angle form slnt actually needs) didn't help either.
+// v0.1806 FIX, per Lynn's follow-up iOS report that -1 and -10 looked
+// identical: researched further rather than guess -- found real,
+// documented WebKit bugs specifically about variable-font slnt/ital
+// axes not rendering correctly through font-style, plus Inter's own
+// GitHub having an open discussion about its slant sign convention
+// being inconsistent with the OpenType spec. Genuinely unsettled
+// browser-support territory, not clearly "our bug" or "the font's
+// bug" -- now sets slnt through BOTH mechanisms simultaneously
+// (previously font-style only), so whichever one a given engine
+// actually implements correctly for this specific, historically
+// inconsistent combination gets a chance to take effect.
+// Returns three pieces separately so the caller applies each through
+// its own correct CSS property: variation (font-variation-settings)
+// for genuine custom axes with no dedicated property of their own
+// (BNCE/INFM/SPAC, GRAD, ROND, XOPQ, XTRA, YOPQ, YTAS, YTDE, YTFI,
+// YTLC, YTUC) -- both slnt and wdth ALSO get included here as
+// belt-and-suspenders; style (font-style) for slnt specifically;
+// v0.1808 NEW: stretch (font-stretch) for wdth specifically, per Lynn's
+// request to support Merriweather/Inconsolata/Noto Sans Mono's width
+// axes -- wdth is a REGISTERED (standard) OpenType axis with its own
+// dedicated CSS property, same situation as slnt, so it gets the same
+// treatment learned from that investigation rather than repeating the
+// same silent-no-op mistake.
+function _buildFontVariationCSS(fontValue, axesValues) {
+  var axes = FONT_EXTRA_AXES[fontValue];
+  if (!axes || !axes.length) return { variation: 'normal', style: 'normal', stretch: 'normal' };
+  var variationParts = [];
+  var styleValue = 'normal';
+  var stretchValue = 'normal';
+  axes.forEach(function(axis) {
+    var v = (axesValues && axesValues[axis.tag] !== undefined) ? axesValues[axis.tag] : axis.default;
+    if (axis.tag === 'slnt') {
+      styleValue = (v === 0) ? 'normal' : ('oblique ' + v + 'deg');
+      variationParts.push('"' + axis.tag + '" ' + v); // v0.1806: also set directly, belt-and-suspenders
+    } else if (axis.tag === 'wdth') {
+      stretchValue = v + '%'; // font-stretch takes a percentage, matching wdth's own percentage scale
+      variationParts.push('"' + axis.tag + '" ' + v); // belt-and-suspenders, same reasoning as slnt
+    } else {
+      variationParts.push('"' + axis.tag + '" ' + v);
+    }
+  });
+  return { variation: variationParts.length ? variationParts.join(', ') : 'normal', style: styleValue, stretch: stretchValue };
+}
+
 
 // Returns the closest weight `fontValue` can actually render to
 // `weight` — unchanged if the font is variable (any value in its
@@ -16231,6 +16641,127 @@ function updateNotesListPreviewFontWeightStep() {
   var r = document.getElementById('notes-list-preview-weight-range');
   if (!r) return;
   r.step = isVariableWeightFont(settings.notesListPreviewFont || settings.noteFont || settings.font) ? '10' : '100';
+}
+
+// v0.1803 NEW, per Lynn's request: reusable generator for extra
+// (non-weight) variable-font axis sliders. Rebuilds the given
+// container's contents from scratch every call -- cheap (at most a
+// handful of rows) and avoids any stale-DOM bookkeeping between font
+// switches. containerId: the empty container element already in the
+// HTML right
+// after that context's weight slider. fontValue: the font CURRENTLY
+// selected for that context. axesSettingsKey: which settings object
+// ('fontExtraAxes' or 'noteFontExtraAxes') holds this context's saved
+// per-axis values. cssVarName + reapply: which CSS custom property to
+// recompute and how to push it live on every slider move.
+function _renderExtraAxisSliders(containerId, fontValue, axesSettingsKey, variationVarName, styleVarName, stretchVarName) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  var axes = FONT_EXTRA_AXES[fontValue];
+  if (!axes || !axes.length) return; // the vast majority of fonts — nothing to show
+  if (!settings[axesSettingsKey]) settings[axesSettingsKey] = {};
+  // v0.1814 NEW, per Lynn's request: a reset pill matching the exact
+  // established letter/word-spacing pattern (see those two rows' own
+  // implementation for precedent) -- always present, changes color
+  // when the axis differs from its default, resets on tap. Lynn
+  // specifically flagged variable-font axes as the case she's most
+  // anxious about not knowing a default for, so this is the first
+  // place this general mechanism lands; other sliders follow next.
+  axes.forEach(function(axis) {
+    var isSet = (settings[axesSettingsKey][axis.tag] !== undefined) && (settings[axesSettingsKey][axis.tag] !== axis.default);
+    var current = isSet ? settings[axesSettingsKey][axis.tag] : axis.default;
+    var row = document.createElement('div');
+    row.className = 'settings-row range-row';
+    row.style.flexWrap = 'wrap'; row.style.gap = '4px';
+    var labelRow = document.createElement('div');
+    labelRow.className = 'settings-row-label';
+    labelRow.style.width = '100%'; labelRow.style.display = 'flex';
+    labelRow.style.alignItems = 'center'; labelRow.style.justifyContent = 'space-between';
+    var labelSpan = document.createElement('span');
+    var val = document.createElement('span');
+    val.className = 'range-val';
+    val.textContent = current;
+    labelSpan.textContent = axis.name + ' ';
+    labelSpan.appendChild(val);
+    var reset = document.createElement('button');
+    reset.textContent = 'Default';
+    reset.style.cssText = 'font-size:0.78em;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;touch-action:manipulation;line-height:1.4;user-select:none;-webkit-user-select:none';
+    reset.style.background = isSet ? 'var(--accent)' : 'var(--bg3)';
+    reset.style.color = isSet ? _accentContrastColor() : 'var(--fg3)';
+    labelRow.appendChild(labelSpan); labelRow.appendChild(reset);
+    var range = document.createElement('input');
+    range.type = 'range';
+    range.className = 'settings-range';
+    range.min = axis.min; range.max = axis.max; range.step = axis.step || '1'; range.value = current;
+    range.style.width = '100%';
+    function applyAxisChange() {
+      var built = _buildFontVariationCSS(fontValue, settings[axesSettingsKey]);
+      document.documentElement.style.setProperty(variationVarName, built.variation);
+      document.documentElement.style.setProperty(styleVarName, built.style);
+      document.documentElement.style.setProperty(stretchVarName, built.stretch);
+      updateSaveBtnState();
+    }
+    range.addEventListener('input', function() {
+      var v = parseFloat(this.value);
+      settings[axesSettingsKey][axis.tag] = v;
+      val.textContent = v;
+      var changed = (v !== axis.default);
+      reset.style.background = changed ? 'var(--accent)' : 'var(--bg3)';
+      reset.style.color = changed ? _accentContrastColor() : 'var(--fg3)';
+      applyAxisChange();
+    });
+    reset.addEventListener('click', function() {
+      delete settings[axesSettingsKey][axis.tag];
+      range.value = axis.default;
+      val.textContent = axis.default;
+      reset.style.background = 'var(--bg3)';
+      reset.style.color = 'var(--fg3)';
+      applyAxisChange();
+    });
+    row.appendChild(labelRow); row.appendChild(range);
+    container.appendChild(row);
+  });
+}
+function updateUiFontExtraAxes() {
+  _renderExtraAxisSliders('ui-font-extra-axes-container', settings.font, 'fontExtraAxes', '--font-variation-ui', '--font-style-ui', '--font-stretch-ui');
+}
+function updateNoteFontExtraAxes() {
+  _renderExtraAxisSliders('note-font-extra-axes-container', settings.noteFont || settings.font, 'noteFontExtraAxes', '--font-variation-editor', '--font-style-editor', '--font-stretch-editor');
+}
+// v0.1807 NEW, per Lynn's request: stylistic-set checkboxes, note
+// context only (Playwrite, like every handwriting font here, only
+// lives in the note-font dropdown). Independent toggles, not a
+// mutually-exclusive group -- see FONT_STYLISTIC_SETS' own comment for
+// why. Mirrors _renderExtraAxisSliders' structure closely, adapted for
+// on/off rather than a range.
+function updateNoteFontStylisticSets() {
+  var fontValue = settings.noteFont || settings.font;
+  var container = document.getElementById('note-font-stylistic-sets-container');
+  if (!container) return;
+  container.innerHTML = '';
+  var sets = FONT_STYLISTIC_SETS[fontValue];
+  if (!sets || !sets.length) return; // every font except the ones currently registered
+  if (!settings.noteFontStylisticSets) settings.noteFontStylisticSets = {};
+  sets.forEach(function(set) {
+    var row = document.createElement('div');
+    row.className = 'settings-row';
+    var label = document.createElement('label');
+    label.style.display = 'flex'; label.style.alignItems = 'center'; label.style.gap = '10px'; label.style.cursor = 'pointer';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!settings.noteFontStylisticSets[set.tag];
+    cb.addEventListener('change', function() {
+      settings.noteFontStylisticSets[set.tag] = this.checked;
+      document.documentElement.style.setProperty('--font-feature-editor', _buildFontFeatureCSS(fontValue, settings.noteFontStylisticSets));
+      updateSaveBtnState();
+    });
+    var text = document.createElement('span');
+    text.textContent = set.name;
+    label.appendChild(cb); label.appendChild(text);
+    row.appendChild(label);
+    container.appendChild(row);
+  });
 }
 
 // ===== CHECK-OFF SOUND =====
@@ -16574,6 +17105,22 @@ function applySettings() {
   document.documentElement.style.setProperty('--font-weight-editor', settings.fontWeight || '400');
   document.documentElement.style.setProperty('--font-weight-ui', settings.uiFontWeight || 400);
   document.documentElement.style.setProperty('--font-weight-heading', Math.max(parseInt(settings.uiFontWeight || 400), 700));
+  // v0.1803 NEW, per Lynn's request: extra (non-weight) variable-font
+  // axis values, same setProperty pattern as weight just above.
+  // v0.1804: now two properties per context -- see
+  // _buildFontVariationCSS's own comment for why slnt specifically
+  // needs font-style rather than font-variation-settings.
+  // v0.1808: now three -- wdth needs font-stretch for the same reason.
+  var _uiAxes = _buildFontVariationCSS(settings.font, settings.fontExtraAxes);
+  document.documentElement.style.setProperty('--font-variation-ui', _uiAxes.variation);
+  document.documentElement.style.setProperty('--font-style-ui', _uiAxes.style);
+  document.documentElement.style.setProperty('--font-stretch-ui', _uiAxes.stretch);
+  var _editorAxes = _buildFontVariationCSS(settings.noteFont || settings.font, settings.noteFontExtraAxes);
+  document.documentElement.style.setProperty('--font-variation-editor', _editorAxes.variation);
+  document.documentElement.style.setProperty('--font-style-editor', _editorAxes.style);
+  document.documentElement.style.setProperty('--font-stretch-editor', _editorAxes.stretch);
+  // v0.1807 NEW, per Lynn's request: OpenType stylistic sets.
+  document.documentElement.style.setProperty('--font-feature-editor', _buildFontFeatureCSS(settings.noteFont || settings.font, settings.noteFontStylisticSets));
   // v0.1677: custom tooltip font size
   document.documentElement.style.setProperty('--tooltip-font-size', (settings.tooltipFontSize || 14) + 'px');
   document.documentElement.style.setProperty('--note-margin-left',  (settings.noteMarginLeft  || 0) + 'px');
@@ -16893,6 +17440,14 @@ function applySettings() {
   // Accent color — set on documentElement so it cascades everywhere
   var accent = settings.accentColor || '#5b7c6e';
   document.documentElement.style.setProperty('--accent', accent);
+  // v0.1820 FIX: the cached accent-contrast color (used by the slider
+  // default/reset buttons and, as of this version, active Quick Action
+  // Bar toggle buttons) was never invalidated when accent itself
+  // changes -- found while extending this same mechanism. Without
+  // this, changing your theme's accent color would leave a stale,
+  // potentially illegible contrast color in place for the rest of the
+  // session.
+  _accentContrastColorCache = null;
 
   // Note accent color (v0.1544, Phase A build 2) — independent of General
   // accent, same resolveThemedColor pattern as Note Toolbar/Note Paper.
@@ -18458,6 +19013,7 @@ function toggleReadingMode() {
   // Update More menu label
   var lbl = document.getElementById('more-reading-mode-label');
   if (lbl) lbl.textContent = _readingMode ? 'Exit quiet mode' : 'Quiet mode';
+  if (typeof _qabRefreshActiveStates === 'function') _qabRefreshActiveStates();
 }
 function clearReadingMode() {
   if (!_readingMode) return;
@@ -18466,8 +19022,9 @@ function clearReadingMode() {
   // quiet-more-fab always shown via CSS in note screen
   pinToolbars();
   if (typeof _speakShowButtons === 'function') _speakShowButtons(isSpeaking);
-  var lbl = document.getElementById('more-reading-mode-label');
-  if (lbl) lbl.textContent = 'Quiet mode';
+  var lbl2 = document.getElementById('more-reading-mode-label');
+  if (lbl2) lbl2.textContent = 'Quiet mode';
+  if (typeof _qabRefreshActiveStates === 'function') _qabRefreshActiveStates();
 }
 
 // ===== SORT SHEET =====
@@ -19755,7 +20312,15 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
   if (!on && isViewOnlyNote(currentNoteId)) {
     if (!on) on = true; // force R&R mode
   }
-  if (!on && typeof _findActive !== 'undefined' && _findActive) closeFind();
+  // v0.1818 FIX, per Lynn's report of a crash (and her explicit request
+  // that this actually work, not just avoid crashing): an active find
+  // used to be unconditionally closed when leaving R&R mode, and left
+  // in place (silently WRONG) when entering it -- _findMatches has a
+  // completely different shape per mode (plain {start,end} objects in
+  // typing mode; real DOM <mark> elements in R&R mode), and nothing
+  // ever converted between them on a mode switch. See the bottom of
+  // this function for the actual preserve-and-rebuild logic, run once
+  // the new mode's content is fully in place.
   isViewMode = on;
   // v0.1767 NEW: tracks current view/edit mode at the body level -- no
   // such hook existed before (confirmed directly: this function only
@@ -19928,6 +20493,28 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
   }
   updateViewOnlyBtns();
   // (overflow detection removed — button placement now uses applySmallScreenOverflow)
+
+  // v0.1818 NEW, per Lynn's report and explicit request: preserve an
+  // active find across a mode switch instead of crashing (the old bug)
+  // or silently closing it (the old, asymmetric behavior). Runs last,
+  // once the new mode's content is fully in place (renderViewer()/
+  // editor.value above have already run) -- reuses runFind()'s own
+  // existing per-mode match-building logic rather than duplicating it,
+  // since it already correctly branches on isViewMode to build the
+  // right shape of _findMatches for whichever mode is now active.
+  // skipJump=true (now respected in both branches, previously only
+  // typing mode) means this rebuild does NOT jump to the first match --
+  // instead, the same match INDEX she was on is explicitly restored
+  // (clamped, in case the match count somehow changed) so she continues
+  // from roughly where she was, not back at the start of the search.
+  if (typeof _findActive !== 'undefined' && _findActive && _findQuery) {
+    var _preservedMatchIdx = _findCurrent;
+    runFind(true);
+    if (_findMatches.length > 0) {
+      var _restoreIdx = Math.max(0, Math.min(_preservedMatchIdx, _findMatches.length - 1));
+      setCurrentMatch(_restoreIdx);
+    }
+  }
 }
 
 // ===== NOTE SCREEN =====
@@ -23652,6 +24239,7 @@ function openSettings() {
   fs.value = settings.font;
   updateFontPreview();
   updateUiFontWeightStep();
+  updateUiFontExtraAxes();
 
   // Note font face dropdown was never synced here — it stayed at
   // whatever the <select> happened to already show (its HTML default,
@@ -23668,6 +24256,8 @@ function openSettings() {
   var _nfp = document.getElementById('note-font-preview-text');
   if (_nfp) _nfp.style.fontFamily = _curNoteFont;
   updateNoteFontWeightStep();
+  updateNoteFontExtraAxes();
+  updateNoteFontStylisticSets();
 
   // v0.1779: Home Screen entry arrow visibility, per Lynn's request.
   var _hiaToggle = document.getElementById('home-item-arrow-toggle');
@@ -29060,6 +29650,54 @@ function makeImportFolderName(label) {
     window._updateToolbarArrows = function() { updateArrows(); updateToolbarScrollbar(); };
   })();
 
+  // ===== QUICK ACTION BAR SCROLL ARROWS (v0.1819) =====
+  // Same proven pattern as the toolbar's own scroll arrows just above --
+  // deliberately mirrored rather than reinvented, per Lynn's own
+  // suggestion to reuse exactly this mechanism.
+  (function() {
+    var scroll = document.getElementById('qab-scroll');
+    var btnL = document.getElementById('qab-scroll-left');
+    var btnR = document.getElementById('qab-scroll-right');
+    if (!scroll || !btnL || !btnR) return;
+    var SCROLL_AMT = 100;
+    var _scrollInterval = null, _scrollTimeout = null;
+    function _doScroll(dir) {
+      var maxScroll = scroll.scrollWidth - scroll.clientWidth;
+      var target = dir < 0
+        ? Math.max(0, scroll.scrollLeft - SCROLL_AMT)
+        : Math.min(maxScroll, scroll.scrollLeft + SCROLL_AMT);
+      scroll.scrollTo({ left: target, behavior: 'smooth' });
+    }
+    function _startScroll(dir) {
+      _doScroll(dir);
+      _scrollTimeout = setTimeout(function() {
+        _scrollInterval = setInterval(function() { _doScroll(dir); }, 120);
+      }, 400);
+    }
+    function _stopScroll() {
+      clearTimeout(_scrollTimeout); clearInterval(_scrollInterval);
+      _scrollTimeout = null; _scrollInterval = null;
+    }
+    btnL.addEventListener('mousedown', function(e) { e.preventDefault(); _startScroll(-1); });
+    btnR.addEventListener('mousedown', function(e) { e.preventDefault(); _startScroll(1); });
+    [btnL, btnR].forEach(function(b) {
+      b.addEventListener('mouseup', _stopScroll);
+      b.addEventListener('mouseleave', _stopScroll);
+    });
+    btnL.addEventListener('touchstart', function(e) { e.preventDefault(); _startScroll(-1); }, { passive: false });
+    btnR.addEventListener('touchstart', function(e) { e.preventDefault(); _startScroll(1); }, { passive: false });
+    [btnL, btnR].forEach(function(b) {
+      b.addEventListener('touchend', _stopScroll, { passive: true });
+      b.addEventListener('touchcancel', _stopScroll, { passive: true });
+    });
+    scroll.addEventListener('scroll', _qabUpdateScrollArrows, { passive: true });
+    var qabArrowObserver = new ResizeObserver(function() {
+      requestAnimationFrame(_qabUpdateScrollArrows);
+    });
+    qabArrowObserver.observe(scroll);
+    _qabUpdateScrollArrows();
+  })();
+
   // ===== NOTE SCROLL SHADOW (v0.1679) =====
   // Bottom box-shadow on #note-content-area, per Lynn -- shown only when
   // there's more note content below to scroll to, gone once truly at the
@@ -30104,6 +30742,7 @@ function makeImportFolderName(label) {
     initBoldCursorFor(function() { return noteEditor; }, 'note-content-area'),
     initBoldCursorFor(function() { return document.getElementById('quick-add-input'); }, 'quick-add-input-wrap'), // v0.1601: wrapper div, NOT the textarea itself -- see architecture note above initBoldCursorFor
     initBoldCursorFor(function() { return document.getElementById('edit-block-input'); }, 'edit-block-input-wrap'), // v0.1601: same
+    initBoldCursorFor(function() { return document.getElementById('bold-cursor-preview-textarea'); }, 'bold-cursor-preview-wrap'), // v0.1816: Settings' own preview, same reasoning
   ];
   updateBoldCursor = function() { _boldCursorInstances.forEach(function(inst) { inst.update(); }); };
   applyBoldCursorSetting = function() { _boldCursorInstances.forEach(function(inst) { inst.apply(); }); };
@@ -31184,6 +31823,7 @@ function makeImportFolderName(label) {
       if (uiwv) uiwv.textContent = snappedUiWeight;
     }
     updateUiFontWeightStep();
+    updateUiFontExtraAxes();
     updateNotesListNameFontWeightStep();
     updateFontPreview();
     applySettings();
@@ -31218,6 +31858,8 @@ function makeImportFolderName(label) {
       applySettings();
     }
     updateNoteFontWeightStep();
+    updateNoteFontExtraAxes();
+  updateNoteFontStylisticSets();
     updateNotesListPreviewFontWeightStep();
     updateSaveBtnState();
   });
@@ -31434,6 +32076,59 @@ function makeImportFolderName(label) {
       updateSaveBtnState();
     });
   });
+
+  // v0.1815 NEW, per Lynn's request: default/reset buttons for every
+  // remaining slider in Settings, extending the same pattern already
+  // used for letter/word-spacing and (v0.1814) variable-font axes.
+  // Each call is a thin wrapper around the existing, already-tested
+  // slider -- see _wireSliderDefaultButton's own comment for why this
+  // adds a button and a SEPARATE styling listener rather than touching
+  // any of the value-setting code above.
+  _wireSliderDefaultButton('ui-font-size-range', 'ui-font-size-val', 'uiFontSize', 20, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('ui-font-weight-range', 'ui-font-weight-val', 'uiFontWeight', 400, null, applySettings);
+  _wireSliderDefaultButton('tooltip-font-size-range', 'tooltip-font-size-val', 'tooltipFontSize', 14, function(v){ return v+'px'; }, function(){
+    var ttPrev = document.getElementById('tooltip-size-preview');
+    if (ttPrev) ttPrev.style.fontSize = document.getElementById('tooltip-font-size-range').value + 'px';
+    applySettings();
+  });
+  _wireSliderDefaultButton('notes-list-name-size-range', 'notes-list-name-size-val', 'notesListNoteNameFontSize', null, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('notes-list-name-weight-range', 'notes-list-name-weight-val', 'notesListNoteNameFontWeight', null, null, applySettings);
+  _wireSliderDefaultButton('notes-list-preview-size-range', 'notes-list-preview-size-val', 'notesListPreviewFontSize', null, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('notes-list-preview-weight-range', 'notes-list-preview-weight-val', 'notesListPreviewFontWeight', null, null, applySettings);
+  _wireSliderDefaultButton('ui-line-height-range', 'ui-line-height-val', 'uiLineHeight', 1.5, null, applySettings);
+  _wireSliderDefaultButton('ui-blank-line-height-range', 'ui-blank-line-height-val', 'uiBlankLineHeight', 0.8, function(v){ return v+' em'; }, applySettings);
+  _wireSliderDefaultButton('list-margin-left-range', 'list-margin-left-val', 'listMarginLeft', 0, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('list-margin-right-range', 'list-margin-right-val', 'listMarginRight', 0, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('home-item-meta-size-range', 'home-item-meta-size-val', 'homeItemMetaSize', null, function(v){ return v+'px'; }, applyHomeItemMetaAppearance);
+  _wireSliderDefaultButton('home-item-meta-weight-range', 'home-item-meta-weight-val', 'homeItemMetaWeight', null, null, applyHomeItemMetaAppearance);
+  _wireSliderDefaultButton('editor-font-size-range', 'editor-font-size-val', 'editorFontSize', 20, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('note-font-weight-range', 'note-font-weight-val', 'fontWeight', 400, null, applySettings);
+  _wireSliderDefaultButton('line-height-range', 'line-height-val', 'lineHeight', 1.5, function(v){ return parseFloat(v).toFixed(1); }, applySettings);
+  _wireSliderDefaultButton('paragraph-spacing-range', 'paragraph-spacing-val', 'blankLineHeight', 1, function(v){ return String(parseFloat(v).toFixed(1)).replace(/\.?0+$/, '') + ' em'; }, applySettings);
+  _wireSliderDefaultButton('view-indent-width-range', 'view-indent-width-val', 'viewIndentWidth', 1.7, function(v){ return v+' em'; }, function(){ applySettings(); renderViewIndentWidthPreview(); });
+  _wireSliderDefaultButton('chars-per-line-range', 'chars-per-line-val', 'charsPerLine', 0, function(v){ return v > 0 ? (v+' ch') : 'Off'; }, applySettings);
+  _wireSliderDefaultButton('note-margin-left-range', 'note-margin-left-val', 'noteMarginLeft', 0, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('note-margin-right-range', 'note-margin-right-val', 'noteMarginRight', 0, function(v){ return v+'px'; }, applySettings);
+  _wireSliderDefaultButton('speech-rate-range', 'speech-rate-val', 'speechRate', 0.9, function(v){ return parseFloat(v).toFixed(1)+'\u00d7'; }, null);
+  _wireSliderDefaultButton('speech-pause-range', 'speech-pause-val', 'speechPause', 400, function(v){ return (v/1000).toFixed(1)+'s'; }, null);
+  _wireSliderDefaultButton('qab-size-range', 'qab-size-val', 'quickActionBar.size', 64, function(v){ return v+'px'; }, null);
+
+  // v0.1816 NEW, per Lynn's report: 11 sliders the original survey
+  // missed entirely -- all use a plain range input with no
+  // settings-range class (the original survey filtered on that exact
+  // class), confirmed directly by re-searching for every range input
+  // in the file regardless of class.
+  _wireSliderDefaultButton('bold-cursor-width-slider', 'bold-cursor-width-val', 'boldCursorWidth', 4, function(v){ return v+'px'; }, function(){ if (settings.boldCursorEnabled) updateBoldCursor(); });
+  _wireSliderDefaultButton('ruler-thickness-slider', 'ruler-thickness-val', 'rulerThickness', 6, null, applyRuler);
+  _wireSliderDefaultButton('ruler-opacity-slider', 'ruler-opacity-val', 'rulerOpacity', 60, null, applyRuler);
+  _wireSliderDefaultButton('ruled-line-nudge-slider', 'ruled-line-nudge-val', 'ruledLineNudge', -5, null, applyRuledLines);
+  _wireSliderDefaultButton('grid-line-nudge-slider', 'grid-line-nudge-val', 'gridLineNudge', -14.5, null, applyRuledLines);
+  _wireSliderDefaultButton('checkbox-line-nudge-slider', 'checkbox-line-nudge-val', 'checkboxLineNudge', -1, null, applyRuledLines);
+  _wireSliderDefaultButton('margin-line-nudge-slider', 'margin-line-nudge-val', 'marginLineNudge', 0, null, applyRuledLines);
+  _wireSliderDefaultButton('bubble-padding-slider', 'bubble-padding-val', 'bubblePadding', 12, null, applyBubbleAppearance);
+  _wireSliderDefaultButton('bubble-spacing-slider', 'bubble-spacing-val', 'bubbleSpacing', 18, null, applyBubbleAppearance);
+  _wireSliderDefaultButton('bubble-radius-slider', 'bubble-radius-val', 'bubbleRadius', 14, null, applyBubbleAppearance);
+  _wireSliderDefaultButton('bubble-shadow-slider', 'bubble-shadow-val', 'bubbleShadowIntensity', 0, null, applyBubbleAppearance);
 
   // Color swatch rows — wire up click handlers
   function wireSwatchRow(rowId, settingKey) {
@@ -32250,36 +32945,16 @@ function makeImportFolderName(label) {
     settings.quickActionBar.colorScheme = this.value;
     updateSaveBtnState();
   });
-  for (var _qabI = 0; _qabI < 4; _qabI++) {
-    (function(slot) {
-      var actionSel = document.getElementById('qab-slot-' + slot + '-action');
-      var letterInp = document.getElementById('qab-slot-' + slot + '-letter');
-      if (actionSel) {
-        actionSel.addEventListener('change', function() {
-          settings.quickActionBar.buttons[slot] = settings.quickActionBar.buttons[slot] || { action: '', letter: '' };
-          settings.quickActionBar.buttons[slot].action = this.value;
-          // Picking a new action with no letter set yet (or the slot was
-          // previously empty) offers that action's own default letter,
-          // rather than leaving the box blank -- one less thing to fill in.
-          var act = _qabActionById(this.value);
-          if (act && !settings.quickActionBar.buttons[slot].letter) {
-            settings.quickActionBar.buttons[slot].letter = act.defaultLetter;
-            if (letterInp) letterInp.value = act.defaultLetter;
-          }
-          updateSaveBtnState();
-        });
-      }
-      if (letterInp) {
-        letterInp.addEventListener('input', function() {
-          var v = this.value.replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase();
-          this.value = v;
-          settings.quickActionBar.buttons[slot] = settings.quickActionBar.buttons[slot] || { action: '', letter: '' };
-          settings.quickActionBar.buttons[slot].letter = v;
-          updateSaveBtnState();
-        });
-      }
-    })(_qabI);
-  }
+  // v0.1819 NEW, per Lynn's request: adds an empty slot and re-renders
+  // -- the actual per-row wiring happens inside _qabRenderSlotRows()
+  // itself now, since rows are created/destroyed dynamically rather
+  // than being a fixed set of 4 elements wired once here.
+  document.getElementById('qab-add-slot-btn').addEventListener('click', function() {
+    if (!Array.isArray(settings.quickActionBar.buttons)) settings.quickActionBar.buttons = [];
+    settings.quickActionBar.buttons.push({ action: '', letter: '' });
+    _qabRenderSlotRows();
+    updateSaveBtnState();
+  });
   document.getElementById('default-view-mode-toggle').addEventListener('change', function() {
     settings.defaultViewMode = this.checked;
     updateSaveBtnState();
@@ -34195,6 +34870,7 @@ function makeImportFolderName(label) {
     document.body.classList.add('edit-block-mode');
     var btn = document.getElementById('tap-to-edit-btn');
     if (btn) btn.classList.add('active');
+    if (typeof _qabRefreshActiveStates === 'function') _qabRefreshActiveStates();
   }
 
   exitEditBlockMode = function() {
@@ -34202,6 +34878,7 @@ function makeImportFolderName(label) {
     document.body.classList.remove('edit-block-mode');
     var btn = document.getElementById('tap-to-edit-btn');
     if (btn) btn.classList.remove('active');
+    if (typeof _qabRefreshActiveStates === 'function') _qabRefreshActiveStates();
   }
 
   function openEditBlockDialog(lineIdx) {
@@ -34747,7 +35424,7 @@ function makeImportFolderName(label) {
     var isSet = (v !== null && v !== undefined);
     if (lbl) lbl.textContent = isSet ? parseFloat(v).toFixed(2) + 'em' : 'Default';
     if (rng) { rng.value = isSet ? v : '0.00'; rng.style.opacity = isSet ? '1' : '0.4'; }
-    if (rst) rst.style.color = isSet ? 'var(--accent)' : 'var(--fg3)';
+    if (rst) { rst.style.background = isSet ? 'var(--accent)' : 'var(--bg3)'; rst.style.color = isSet ? _accentContrastColor() : 'var(--fg3)'; }
   }
   document.getElementById('letter-spacing-range').addEventListener('input', function() {
     settings.letterSpacing = parseFloat(this.value);
@@ -34766,7 +35443,7 @@ function makeImportFolderName(label) {
     var isSet = (v !== null && v !== undefined);
     if (lbl) lbl.textContent = isSet ? parseFloat(v).toFixed(2) + 'em' : 'Default';
     if (rng) { rng.value = isSet ? v : '0.00'; rng.style.opacity = isSet ? '1' : '0.4'; }
-    if (rst) rst.style.color = isSet ? 'var(--accent)' : 'var(--fg3)';
+    if (rst) { rst.style.background = isSet ? 'var(--accent)' : 'var(--bg3)'; rst.style.color = isSet ? _accentContrastColor() : 'var(--fg3)'; }
   }
   document.getElementById('word-spacing-range').addEventListener('input', function() {
     settings.wordSpacing = parseFloat(this.value);
@@ -38482,10 +39159,20 @@ var QUICK_ACTION_BAR_ACTIONS = [
   { id: 'message',  label: 'Message (direct compose)',defaultLetter: 'T', run: function() { quickActionMessage(); } },
   { id: 'share',    label: 'Share (system menu)',     defaultLetter: 'H', run: function() { shareNote(); } },
   { id: 'speak',    label: 'Speak note',              defaultLetter: 'S', run: function() { speakNote(); } },
+  // v0.1817 NEW, per Lynn's request: identical actions to the existing
+  // Copy for speech / Share for speech toolbar+More-menu buttons --
+  // reuses those exact same functions rather than reimplementing the
+  // behavior, so there's no risk of the two versions drifting apart.
+  { id: 'copySpeech',  label: 'Copy for speech',  defaultLetter: 'V', run: function() { copyNoteForSpeech(); } },
+  { id: 'shareSpeech', label: 'Share for speech', defaultLetter: 'A', run: function() { shareNoteForSpeech(); } },
+  // v0.1819 NEW, per Lynn's request.
+  { id: 'tapToEdit', label: 'Tap to edit', defaultLetter: 'E', run: function() { if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode(); }, isActive: function() { return _editBlockMode; } },
+  { id: 'undo',       label: 'Undo',        defaultLetter: 'U', run: function() { applyUndo(); } },
+  { id: 'redo',       label: 'Redo',        defaultLetter: 'R', run: function() { applyRedo(); } },
   { id: 'find',     label: 'Find in note',            defaultLetter: 'F', run: function() { openFind(); } },
-  { id: 'quiet',    label: 'Toggle quiet mode',       defaultLetter: 'Q', run: function() { toggleReadingMode(); } },
+  { id: 'quiet',    label: 'Toggle quiet mode',       defaultLetter: 'Q', run: function() { toggleReadingMode(); }, isActive: function() { return _readingMode; } },
   { id: 'backHome', label: 'Back to notes list',      defaultLetter: 'B', run: function() { goHome(); } },
-  { id: 'toolbar',  label: 'Show/hide toolbar',        defaultLetter: 'O', run: function() { toggleToolbarCollapse(); } },
+  { id: 'toolbar',  label: 'Show/hide toolbar',        defaultLetter: 'O', run: function() { toggleToolbarCollapse(); }, isActive: function() { return document.body.classList.contains('toolbar-collapsed'); } },
 ];
 function _qabActionById(id) {
   for (var i = 0; i < QUICK_ACTION_BAR_ACTIONS.length; i++) {
@@ -38494,6 +39181,46 @@ function _qabActionById(id) {
   return null;
 }
 
+// v0.1819 NEW, per Lynn's request: keeps the Quick Action Bar's own
+// scroll arrows in sync with actual overflow/scroll position -- same
+// logic as the lower toolbar's updateArrows(), scoped to the QAB's own
+// elements. Called after every render (button count can change) and
+// on every scroll/resize.
+// v0.1820 NEW, per Lynn's request: refreshes just the "lit up" active
+// state of any currently-rendered toggle-type QAB buttons, without a
+// full renderQuickActionBar() rebuild -- deliberately cheap, since a
+// toggle's underlying state (e.g. Tap to Edit mode) can change several
+// times in a session and shouldn't require destroying and recreating
+// every button just to update one's coloring. Safe to call whenever a
+// toggle-able state changes, even if the Quick Action Bar is currently
+// disabled or has no buttons configured (no-op in that case).
+function _qabRefreshActiveStates() {
+  var scrollEl = document.getElementById('qab-scroll');
+  if (!scrollEl) return;
+  scrollEl.querySelectorAll('.qab-btn').forEach(function(btn) {
+    var action = _qabActionById(btn.getAttribute('data-action'));
+    var active = !!(action && action.isActive && action.isActive());
+    btn.classList.toggle('qab-active', active);
+  });
+}
+function _qabUpdateScrollArrows() {
+  var scroll = document.getElementById('qab-scroll');
+  var btnL = document.getElementById('qab-scroll-left');
+  var btnR = document.getElementById('qab-scroll-right');
+  if (!scroll || !btnL || !btnR) return;
+  var canScroll = scroll.scrollWidth > scroll.clientWidth + 2;
+  if (!canScroll) {
+    btnL.style.display = 'none'; btnR.style.display = 'none';
+    return;
+  }
+  var atStart = scroll.scrollLeft <= 2;
+  var atEnd = scroll.scrollLeft >= scroll.scrollWidth - scroll.clientWidth - 2;
+  btnL.style.display = ''; btnR.style.display = '';
+  btnL.style.opacity = atStart ? '0.2' : '';
+  btnL.style.pointerEvents = atStart ? 'none' : '';
+  btnR.style.opacity = atEnd ? '0.2' : '';
+  btnR.style.pointerEvents = atEnd ? 'none' : '';
+}
 // Renders the whole Quick Action Bar from settings.quickActionBar. Safe
 // to call unconditionally and often (applySettings() already does, on
 // every settings save) -- idempotent, and cheap when the feature is off.
@@ -38515,31 +39242,32 @@ function renderQuickActionBar() {
 
   var size = (typeof cfg.size === 'number' && cfg.size >= 40 && cfg.size <= 160) ? cfg.size : 64;
   bar.style.setProperty('--qab-size', size + 'px');
+  // v0.1820 NEW, per Lynn's request: contrast color for toggle-type
+  // actions' "lit up" state, same helper already used for the slider
+  // default/reset buttons.
+  document.documentElement.style.setProperty('--qab-active-fg', _accentContrastColor());
 
   var buttons = Array.isArray(cfg.buttons) ? cfg.buttons : [];
-  for (var i = 0; i < 4; i++) {
-    var btn = document.getElementById('qab-btn-' + i);
-    if (!btn) continue;
-    var slotCfg = buttons[i];
-    var action = slotCfg ? _qabActionById(slotCfg.action) : null;
-    if (!action) {
-      btn.setAttribute('data-empty', 'true');
-      btn.textContent = '';
-      btn.onclick = null;
-      btn.removeAttribute('aria-label');
-      continue;
-    }
-    btn.removeAttribute('data-empty');
-    var letter = (slotCfg.letter || action.defaultLetter || '?').charAt(0).toUpperCase();
-    btn.textContent = letter;
-    btn.setAttribute('aria-label', action.label);
-    btn.title = action.label;
-    // Plain assignment (not addEventListener) is deliberate: this
-    // function can run many times over a session as settings change,
-    // and .onclick replaces cleanly each time rather than stacking a
-    // new listener on top of every previous one.
-    btn.onclick = action.run;
+  var scrollEl = document.getElementById('qab-scroll');
+  if (scrollEl) {
+    scrollEl.innerHTML = '';
+    buttons.forEach(function(slotCfg, i) {
+      var action = slotCfg ? _qabActionById(slotCfg.action) : null;
+      if (!action) return; // no button at all for an empty/unconfigured slot
+      var btn = document.createElement('button');
+      btn.className = 'qab-btn';
+      btn.setAttribute('data-slot', i);
+      btn.setAttribute('data-action', action.id);
+      var letter = (slotCfg.letter || action.defaultLetter || '?').charAt(0).toUpperCase();
+      btn.textContent = letter;
+      btn.setAttribute('aria-label', action.label);
+      btn.title = action.label;
+      btn.onclick = action.run;
+      if (action.isActive && action.isActive()) btn.classList.add('qab-active');
+      scrollEl.appendChild(btn);
+    });
   }
+  _qabUpdateScrollArrows();
 
   // Reserve real space so note content never scrolls underneath the
   // bar -- measures the bar's own actual rendered height rather than
@@ -38607,9 +39335,83 @@ function _qabPopulateActionSelect(sel) {
     sel.appendChild(opt);
   });
 }
+// v0.1819 NEW, per Lynn's request to support more than 4 configured
+// buttons: builds one row per entry in settings.quickActionBar.buttons
+// (whatever length that currently is, not a fixed 4), wiring each
+// row's own listeners inline at creation time -- unlike the old fixed
+// elements (which only needed wiring once, since exactly 4 of them
+// always existed), rows now come and go as slots are added/removed, so
+// render and wire have to happen together, every time.
+function _qabRenderSlotRows() {
+  var cfg = settings.quickActionBar || {};
+  if (!Array.isArray(cfg.buttons)) cfg.buttons = [];
+  var container = document.getElementById('qab-slots-container');
+  if (!container) return;
+  container.innerHTML = '';
+  cfg.buttons.forEach(function(slotCfg, i) {
+    var row = document.createElement('div');
+    row.className = 'settings-row';
+    row.style.gap = '10px';
+
+    var label = document.createElement('div');
+    label.className = 'settings-row-label';
+    label.style.cssText = 'flex:0 0 auto;min-width:64px';
+    label.textContent = 'Button ' + (i + 1);
+
+    var actionSel = document.createElement('select');
+    actionSel.className = 'settings-select';
+    actionSel.style.flex = '1';
+    _qabPopulateActionSelect(actionSel);
+    actionSel.value = (slotCfg && slotCfg.action) || '';
+
+    var letterInp = document.createElement('input');
+    letterInp.type = 'text';
+    letterInp.className = 'qab-slot-letter';
+    letterInp.maxLength = 1;
+    letterInp.setAttribute('aria-label', 'Button ' + (i + 1) + ' letter');
+    letterInp.style.cssText = 'width:44px;text-align:center;text-transform:uppercase;';
+    var existingAction = slotCfg ? _qabActionById(slotCfg.action) : null;
+    letterInp.value = (slotCfg && slotCfg.letter) || (existingAction ? existingAction.defaultLetter : '');
+
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.textContent = '\u2715';
+    removeBtn.setAttribute('aria-label', 'Remove Button ' + (i + 1));
+    removeBtn.style.cssText = 'flex:0 0 auto;width:36px;height:36px;border-radius:999px;border:1px solid var(--border);background:var(--bg3);color:var(--fg3);cursor:pointer;touch-action:manipulation;';
+
+    actionSel.addEventListener('change', function() {
+      cfg.buttons[i] = cfg.buttons[i] || { action: '', letter: '' };
+      cfg.buttons[i].action = this.value;
+      // Picking a new action with no letter set yet (or the slot was
+      // previously empty) offers that action's own default letter,
+      // rather than leaving the box blank -- one less thing to fill in.
+      var act = _qabActionById(this.value);
+      if (act && !cfg.buttons[i].letter) {
+        cfg.buttons[i].letter = act.defaultLetter;
+        letterInp.value = act.defaultLetter;
+      }
+      updateSaveBtnState();
+    });
+    letterInp.addEventListener('input', function() {
+      var v = this.value.replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase();
+      this.value = v;
+      cfg.buttons[i] = cfg.buttons[i] || { action: '', letter: '' };
+      cfg.buttons[i].letter = v;
+      updateSaveBtnState();
+    });
+    removeBtn.addEventListener('click', function() {
+      cfg.buttons.splice(i, 1);
+      _qabRenderSlotRows();
+      updateSaveBtnState();
+    });
+
+    row.appendChild(label); row.appendChild(actionSel); row.appendChild(letterInp); row.appendChild(removeBtn);
+    container.appendChild(row);
+  });
+}
 function syncQuickActionBarSettingsUI() {
   var cfg = settings.quickActionBar || {};
-  var buttons = Array.isArray(cfg.buttons) ? cfg.buttons : [];
+  if (!Array.isArray(cfg.buttons)) cfg.buttons = [];
 
   var enToggle = document.getElementById('qab-enabled-toggle');
   if (enToggle) enToggle.checked = !!cfg.enabled;
@@ -38625,18 +39427,7 @@ function syncQuickActionBarSettingsUI() {
   var colorSel = document.getElementById('qab-color-select');
   if (colorSel) colorSel.value = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite';
 
-  for (var i = 0; i < 4; i++) {
-    var actionSel = document.getElementById('qab-slot-' + i + '-action');
-    var letterInp = document.getElementById('qab-slot-' + i + '-letter');
-    if (actionSel) {
-      _qabPopulateActionSelect(actionSel);
-      actionSel.value = (buttons[i] && buttons[i].action) || '';
-    }
-    if (letterInp) {
-      var action = buttons[i] ? _qabActionById(buttons[i].action) : null;
-      letterInp.value = (buttons[i] && buttons[i].letter) || (action ? action.defaultLetter : '');
-    }
-  }
+  _qabRenderSlotRows();
 }
 
 // ===== TOOLBAR SCROLLBAR INDICATOR =====
@@ -40727,7 +41518,7 @@ function runFind(skipJump) {
   });
 
   // Set current to first match
-  if (_findMatches.length > 0) {
+  if (_findMatches.length > 0 && !skipJump) {
     _findCurrent = 0;
     setCurrentMatch(0);
   }
