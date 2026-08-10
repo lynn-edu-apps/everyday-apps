@@ -1,7 +1,7 @@
-// Remember App - Version 0.1034
-// Service Worker for remember (dev deployment)
+// Remember App - Version 0.1832
+// Service Worker for remember (main/latest deployment)
 
-const CACHE_VERSION = 'remember-v0.1835';
+const CACHE_VERSION = 'remember-v0.1832';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
@@ -46,7 +46,9 @@ self.addEventListener('fetch', function(event) {
 
   if (isHTML || isIndex) {
     event.respondWith(
-      fetch(event.request)
+      // FIX, per Lynn's report -- see the stable/dev service workers'
+      // matching comment for the full explanation.
+      fetch(event.request.url, { cache: 'no-store' })
         .then(function(networkResponse) {
           var clone = networkResponse.clone();
           caches.open(STATIC_CACHE).then(function(cache) { cache.put(event.request, clone); });
