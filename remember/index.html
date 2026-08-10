@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1829 -->
+<!-- Remember App - Version 0.1831 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1829
+  Version 0.1831
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,8 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1831 - NEW: Headings & Note Name Font Face, per Lynn's request -- a cursive/handwriting body font can look great for note text but distracting for markdown headings and the note title, so this lets those two use a different, calmer font face while leaving the note body untouched. Font FACE only, deliberately no size/weight controls -- headings already correctly vary size by level and the title has its own fixed size/weight, matching Lynn's explicit request to keep this simple. Defaults to "Default (match note text font)" as an actual dropdown option (matching the exact pattern already used for Note & Folder Name / Note Preview font settings), not a separate toggle, and is themeable (SETTING_BUCKETS_NOTE_APPEARANCE) per her request. Answers her direct question about typing mode: confirmed technically possible for the note title specifically (a genuine, separate DOM element, not embedded in the note's own textarea) -- and built it to work in both modes. Markdown headings remain R&R-mode-only, correctly matching her own guess about a real technical limitation: a plain textarea cannot selectively font-style just the heading LINES within otherwise-uniform text. Deliberately reuses the exact same full font list (Sans/Serif/Handwriting/Mono) as Note Content Text Font Face, including Handwriting, since the whole point is choosing something calmer than an otherwise-cursive body font. CAUGHT A SERIOUS BUG BEFORE SHIPPING, via the regression suite's own structural check, not missed: an earlier edit's old_str/new_str pair silently deleted the opening wrapper of the adjacent "Preview — tap to edit" row while leaving its content behind -- exactly the "expanding one section also expands a sibling section" bug class this project has hit before, confirmed by the harness's own targeted structural check (which flagged Note Behavior and Debugging nesting one level too deep) before a single functional test was even run. Found and fixed at the exact source (the missing wrapper + label), confirmed with a scoped div-balance count before and after (279/279 balanced after, vs 277/278 before), and reconfirmed the harness's full structural check passes clean with no warning. Verified directly and thoroughly, re-run against the corrected file rather than just the pre-fix version: headings and note title both default to matching the note's current font; explicitly overriding switches both correctly while the note BODY stays completely unaffected; heading size (confirmed H1 still computes to exactly double the base size) and weight (700) both confirmed completely untouched by this setting; the note title confirmed picking up the override in BOTH typing and R&R mode. Suite: 332/332 (harness v8), including its structural nesting check specifically.
+  v0.1830 - Documentation only, per Lynn's explicit request -- no behavior change, confirmed by the regression suite passing identically. Added a clear, deliberate-decision comment at both places someone would naturally look when touching the notes-list preview (the CSS rule in .note-item-preview, and the JS source of truth in applySettings()'s "Notes list fonts" block), recording the architecture settled in discussion this session: every note's preview intentionally uses ONE SHARED font/size/weight/variation/style/stretch/feature/color, not each note's own individually pinned style, even once per-note themes exist and could technically override these properties. Lynn considered per-note matching directly and decided against it -- a list where every entry renders in a visibly different font would likely be harder to scan at a glance, not easier, the same reasoning already behind the existing global (not per-note) preview color setting. Explicitly recorded so this isn't mistaken for an oversight and "fixed" into per-note matching by a future session (or by Lynn's own future self, per her own stated worry about forgetting and re-raising it) -- and clarifies what must still hold true: the shared value must never go stale against the current/live note-font setting, which was the actual real bug already fixed in v0.1829. Suite: 332/332 (harness v8), confirming zero functional change.
   v0.1829 - THREE things, per Lynn. (1) FIX: the notes-list home-screen preview (and each individual note entry's preview) never reflecting stylistic-set changes, or any variable-axis change beyond weight -- confirmed the exact same category of gap already found once for R&R mode: font-feature-settings, font-variation-settings, font-stretch, and font-style were completely missing from this rule. Falls back to the note editor's own current values, so it now correctly matches live via CSS variable inheritance rather than needing a separate change-listener. IMPORTANT ARCHITECTURAL FINDING, flagged rather than silently worked around: confirmed the current system uses ONE SHARED set of CSS variables for every note's preview simultaneously -- meaning even the properties that already worked (font/size/weight) cannot currently reflect a per-note theme override on the home screen, since nothing there resolves each note's own theme individually. This fix is correct and complete for the common case (no per-note override, true for virtually every note today), but genuine per-note-aware preview rendering -- computing each entry's own resolved style rather than one shared value -- would need a larger restructuring of renderNotesList() itself, not attempted here pending Lynn's direction on scope. (2) Per Lynn's decision after comparing both new fonts: Playwrite Peru fully removed -- @font-face, dropdown entry, pill, weight registry, and stylistic-set registry all confirmed cleanly gone, GB J covers what she needs. (3) NEW: GB J's italic, per Lynn's request -- a genuinely separate font file (confirmed via direct fvar inspection: no italic/slant axis, upright and italic are two distinct exports), downloaded from TypeTogether's own GitHub and confirmed via direct GSUB inspection to share the exact same 10-set stylistic structure as the upright version. Registered under the same font-family with font-style:italic, the standard CSS mechanism for an upright/italic pair -- the browser selects it automatically wherever font-style:italic is applied. New Italic toggle in Settings, shown only for fonts registered in a new FONT_HAS_ITALIC registry (so it's invisible for every other font, which has no italic file to select). CAUGHT AND FIXED A REAL BUG before it shipped: the new toggle's own conditional show/hide only worked the FIRST time Settings opened -- clearSettingsSearch() (called on every subsequent open, to undo search-hiding) unconditionally resets every .settings-row's display style, which also silently wiped out this row's OWN conditional hide, since it's a static, always-present element rather than something rebuilt fresh each time like the stylistic-set checkboxes (which aren't affected by this). Fixed inside clearSettingsSearch() itself rather than at just one of its 5 call sites, so every path is covered automatically. Also found and fixed a related gap on the way: the toggle's effect was only wired into Settings-dialog-specific sync functions at first, not the general applySettings() path that runs on every note open -- fixed there directly, guarded so italic can never leak onto a font with no italic file even from a stale saved value. Verified directly and thoroughly: the notes-list preview confirmed showing the exact right font-family and feature-settings with real stylistic-set values; Peru confirmed fully absent from every registry; both GB J @font-face rules (upright and italic) confirmed present with correct paths; the toggle confirmed hidden for a non-italic font and visible for GB J -- including a second, explicit re-check after actually calling openSettings() a full time through, which is what caught the clearSettingsSearch() bug in the first place, not just checking the function in isolation; toggling on confirmed updating both the setting and the live computed font-style on the real editor element; switching away from GB J confirmed correctly reverting to normal, with no italic leaking onto the new font. Suite: 332/332 (harness v8).
   v0.1828 - THREE things, per Lynn. (1) FIX: the Quick Action Bar bouncing up and down during Ctrl+wheel zoom, per her report right after confirming last build's ballooning fix worked. Root cause: applyZoomSizeCompensation() hardcoded transform-origin as 'top left', correct for the header/toolbar (both top-anchored) but wrong for the QAB (bottom-anchored, bottom:0) -- scaling from the top pulls a bottom-anchored element's bottom edge upward as zoom changes, which is exactly the bounce described. Added an optional transformOrigin parameter (defaults to 'top left', so the two existing callers are completely unaffected) and passed 'bottom left' for the QAB specifically. Verified directly: under a real simulated devicePixelRatio change, the QAB's actual rendered bottom edge now measures exactly flush with the viewport bottom, not just that a transform value looks plausible. The separate, long-standing toolbar-collapse-handle bounce Lynn also mentioned was NOT touched -- flagged honestly rather than guessed at: this codebase's own history shows a prior attempt at a related fix for this exact element was reverted after a genuine regression, and the likely mechanism (its position is freshly recalculated from a live measurement of the header on every single pinToolbars() call, unlike the QAB's simpler static anchor) isn't something this sandbox can properly reproduce or verify -- a real, continuous mouse-wheel gesture on Lynn's own desktop is what this actually needs. (2) NEW: two more Playwrite country variants, per Lynn's request after Ireland worked well and she wanted an upright (non-slanted) option to compare -- Playwrite GB J (England Joined) and Playwrite PE (Peru). Both downloaded directly from TypeTogether's own GitHub (the same source Ireland came from), converted to woff2, and self-hosted from the very first version this time -- Ireland's original mistake (ever routing through Google's feature-stripping CDN) isn't repeated. Confirmed via direct GSUB/fvar table inspection of the real files, not assumed from Ireland's own mapping: both share the exact same weight-only 100-400 range and the exact same 10-set stylistic structure (embedded feature names read directly from each file independently matched Ireland's confirmed mapping exactly). Both wired into every location Ireland already has: the note-font dropdown, quick-pick pills, the weight-support registry, and the stylistic-sets registry. The two new woff2 files are delivered as separate files alongside this build, versioned per the project's own file-naming rule (PlaywriteGBJ-v1.woff2 / PlaywritePE-v1.woff2) -- unlike Ireland's original, unversioned file. (3) Per Lynn's own direct question about whether these stylistic sets should really be a slider instead of on/off toggles: confirmed, not guessed, that they can't be -- OpenType stylistic sets are discrete glyph substitutions with no continuous "amount," so a slider isn't technically meaningful for them regardless of design preference. Separately confirmed that Playwrite's general design engine does have a genuinely continuous axis for curve shape ("speed"), validating her instinct that such a parameter could exist -- but also reconfirmed, from this project's own earlier direct fvar inspection of the Ireland file, that individual exported country variants only expose weight; the other three engine-level axes are pinned to fixed values per country, not left adjustable. No code changes from this discussion -- informational only, so the checkbox-vs-radio-button question (still open, pending Lynn's own visual testing of set combinations) isn't affected by it either way. Verified directly and thoroughly: the QAB zoom-position fix confirmed via real measurement, not just plausible-looking style values; both new @font-face rules, both dropdown entries, both weight-registry entries, both stylistic-set-registry entries (all 10 tags each), and both quick-pick pills confirmed present and correctly wired -- nothing assumed to have copied correctly without checking. Suite: 332/332 (harness v8).
   v0.1827 - MAJOR FIX: Playwrite Ireland's stylistic sets, per Lynn's report that they still had no visible effect at all even after self-hosting the font file exactly as instructed. Root cause found by fetching and reading the LIVE deployed site's actual source directly (not assumed from memory): there was no @font-face rule anywhere in the file -- the app was still exclusively loading Playwrite IE through the Google Fonts @import, completely ignoring Lynn's correctly-placed self-hosted copy. This was a real gap in this project's own process, not anything wrong on her end: a standalone preview file was built and delivered to prove the font itself works when self-hosted, but the actual integration into the live app -- making it USE that file instead of Google's -- was never built at all. Also confirmed directly: the file exists and is genuinely reachable on GitHub, and GitHub Pages requires no special permission or configuration to serve a .woff2 file -- nothing needed on Lynn's end beyond what she'd already done. Fixed: (1) removed Playwrite+IE from the Google Fonts @import entirely; (2) added a real @font-face pointing to PlaywriteIE.woff2 via a relative URL (resolves correctly since the file sits next to index.html), with a 100-400 weight range matching what the removed Google import segment previously requested. FOUND AND FIXED A SECOND, BROADER BUG while investigating: R&R/view mode (.note-viewer) was missing font-feature-settings, font-variation-settings, font-stretch, AND font-style entirely -- not just the one property Lynn's report was specifically about. Confirmed by direct comparison against #note-editor and the other three locations that already had all four -- meaning variable font axes and stylistic sets never had any visible effect in R&R mode at all, for any font, not just Playwrite Ireland's stylistic sets specifically. All four added. Verified directly and thoroughly: the @font-face rule confirmed present with the correct family name, relative URL, and weight range; confirmed zero remaining references to Playwrite+IE anywhere in the file after the import edit; the full pipeline confirmed end to end in both modes with real checkbox values (ss01 and ss19 both on) -- typing mode already worked, and R&R mode now correctly shows the exact same font-family and feature-settings it was silently missing before. Genuinely can't verify the final visual rendering myself (this sandbox has no path to actually download and render Lynn's real font file), so this needs a real check on her own device once deployed -- flagged honestly rather than assumed. The checkbox-vs-radio-button design question deliberately left open until she can see real stylistic-set combinations rendering, rather than guessed at further from documentation alone. Suite: 332/332 (harness v8).
@@ -1406,6 +1408,39 @@ body.ui-xlarge .notes-list { padding-bottom: 134px; }
   font-style: var(--notes-list-preview-style, var(--font-style-editor, normal));
   font-stretch: var(--notes-list-preview-stretch, var(--font-stretch-editor, normal));
   font-feature-settings: var(--notes-list-preview-feature, var(--font-feature-editor, normal));
+  /* ============================================================
+     DELIBERATE DESIGN DECISION (v0.1830, per Lynn -- if this ever
+     comes up again, we already decided): every note's preview on the
+     Home Screen intentionally uses the SAME shared font/size/weight/
+     variation/feature/color, even once per-note styles/themes exist
+     and could theoretically override the note's own content-pane font.
+     This is NOT a bug or a gap to "fix" by making each preview match
+     its own note's pinned style -- Lynn considered it directly and
+     decided against it, same reasoning as the existing global (not
+     per-note) preview COLOR setting just below: a list where every
+     entry renders in a visibly different font/style would likely be
+     HARDER to scan at a glance, not easier, undermining the actual
+     job a preview does (help you recognize the right note fast) --
+     especially for handwriting-style fonts like Playwrite, which vary
+     far more in shape/readability than a color would. The correct,
+     agreed fallback chain if a note's own style differs from the
+     global setting: use a dedicated "Notes List Preview" override if
+     one is ever added for that property (already true today for font-
+     family/size/weight -- see notesListPreviewFont/Size/Weight), else
+     fall back to the note-content font's own CURRENT setting (the
+     live, current default -- NOT the out-of-the-box factory default,
+     and NOT that specific note's own pinned/themed value). This is
+     exactly the var(--notes-list-preview-X, var(--font-X-editor, ...))
+     pattern already used throughout this whole rule -- if you're
+     tempted to make this per-note-aware, please raise it with Lynn
+     explicitly first rather than changing it as an assumed fix; she
+     may not remember this decision was already made deliberately.
+     What DOES need to stay true, and was the actual real bug fixed in
+     v0.1829: this must never go stale -- if the CURRENT/live note font
+     setting changes (including stylistic sets, weight, etc), the
+     preview must reflect that change, just uniformly across every
+     note's preview rather than per-note.
+     ============================================================ */
   color: var(--note-preview-color, var(--fg2));
   margin-top: 1px;
   line-height: 1.3;
@@ -2538,7 +2573,11 @@ body.qab-scheme-theme .qab-btn { background: var(--bg); color: var(--accent); bo
 
 /* ===== VIEWER HEADINGS ===== */
 .viewer-h1, .viewer-h2, .viewer-h3, .viewer-h4, .viewer-h5, .viewer-h6 {
-  font-family: var(--font-note);
+  /* v0.1831 NEW, per Lynn's request: optional override, falls back to
+     the note's own font so nothing changes unless explicitly set. Font
+     FACE only -- weight/size are deliberately untouched here, both
+     already correctly vary by heading level via the rules below. */
+  font-family: var(--font-heading, var(--font-note));
   font-weight: 700;
   color: var(--fg);
   line-height: 1.25;
@@ -4701,7 +4740,12 @@ body.has-mouse .toolbar-drag-handle.dragging {
 }
 
 .note-inline-title {
-  font-family: var(--font-note);
+  /* v0.1831 NEW, per Lynn's request: same optional override as
+     markdown headings, same fallback pattern. This element is a real,
+     separate DOM element (not embedded in the note's own textarea),
+     so unlike markdown headings, this genuinely works in BOTH Typing
+     and R&R mode. */
+  font-family: var(--font-heading, var(--font-note));
   font-size: max(calc(var(--font-size-editor) * 1.2), 18px);
   font-weight: 700;
   color: var(--fg);
@@ -10249,6 +10293,67 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </select>
       </div>
 
+      <!-- v0.1831 NEW, per Lynn's request: font FACE only (deliberately
+           no size/weight -- headings already vary size by level, and
+           the note title has its own fixed size/weight; changing
+           either here would be a different, unwanted feature). Applies
+           to both the note title (a real, separate element -- works in
+           both Typing and R&R mode) and markdown headings (R&R mode
+           only -- there's no way to selectively font-style just the
+           heading LINES within a plain <textarea> in Typing mode, so
+           this one is R&R-only by the nature of the underlying HTML,
+           not a missing feature). Same full font list as Note Content
+           Text Font Face, including Handwriting -- the whole point is
+           being able to pick something calmer than an otherwise-
+           cursive body font for headings specifically. -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Headings &amp; Note Name Font Face</div>
+          <div class="settings-row-desc">Font for markdown headings (Read &amp; Revise mode) and the note's own title, shown above the note. Leave as Default to match the note text font -- most useful when your note text uses an otherwise-cursive or highly informal font, since a heading (or the note name) in heavy cursive can be distracting in a way body text usually isn't.</div>
+        </div>
+        <select class="settings-select" id="heading-font-select">
+          <option value="">Default (match note text font)</option>
+          <optgroup label="— Sans-serif —">
+          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
+          <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
+          <option value="'Andika', sans-serif">Andika</option>
+          <option value="'Mulish', sans-serif">Mulish</option>
+          <option value="'Lexend', sans-serif">Lexend</option>
+          <option value="'Nunito', sans-serif">Nunito</option>
+          <option value="'Rubik', sans-serif">Rubik</option>
+          <option value="'IBM Plex Sans', sans-serif">IBM Plex Sans</option>
+          <option value="'Source Sans 3', sans-serif">Source Sans 3</option>
+          <option value="'Open Sans', sans-serif">Open Sans</option>
+          <option value="'Noto Sans', sans-serif">Noto Sans</option>
+          <option value="'Inter', sans-serif">Inter</option>
+          <option value="'Google Sans Flex', sans-serif">Google Sans Flex</option>
+          <option value="'Roboto Flex', sans-serif">Roboto Flex</option>
+          <option value="'Afacad', sans-serif">Afacad</option>
+          <option value="'Alegreya Sans', sans-serif">Alegreya Sans</option>
+          <option value="'Comic Relief', sans-serif">Comic Relief</option>
+          </optgroup>
+          <optgroup label="— Serif —">
+          <option value="'Lora', serif">Lora</option>
+          <option value="'Merriweather', serif">Merriweather</option>
+          <option value="'Literata', serif">Literata</option>
+          <option value="'Spectral', serif">Spectral</option>
+          <option value="Georgia, serif">Georgia</option>
+          </optgroup>
+          <optgroup label="— Handwriting —">
+          <option value="'Playpen Sans', cursive">Playpen Sans</option>
+          <option value="'Playwrite IE', cursive">Playwrite Ireland</option>
+          <option value="'Playwrite GB J', cursive">Playwrite England Joined</option>
+          <option value="'Shantell Sans', cursive">Shantell Sans</option>
+          </optgroup>
+          <optgroup label="— Monospace —">
+          <option value="'Roboto Mono', 'Courier New', monospace">Roboto Mono</option>
+          <option value="'Inconsolata', 'Courier New', monospace">Inconsolata</option>
+          <option value="'Noto Sans Mono', 'Courier New', monospace">Noto Sans Mono</option>
+          <option value="'Atkinson Hyperlegible Mono', 'Courier New', monospace">Atkinson Hyperlegible Mono</option>
+          </optgroup>
+        </select>
+      </div>
+
       <div class="settings-row">
         <div style="font-size:0.78em;color:var(--fg3);margin-bottom:4px;user-select:none;-webkit-user-select:none">
           Preview — tap to edit
@@ -12497,7 +12602,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1829';
+const APP_VERSION = '0.1831';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14461,6 +14566,7 @@ const DEFAULT_SETTINGS = {
   tripleTapToEdit: true,                             // double-tap in view mode enters edit mode (setting key name predates the double-tap change; left as-is to avoid an unnecessary migration)
   customColors: {},                                  // custom color picker values per row
   noteFont: "'Atkinson Hyperlegible Next', sans-serif",  // Note content font -- v0.1768, same reasoning as font above
+  headingFont: '',  // v0.1831, per Lynn's request -- '' means "match note text font" (the dropdown's own Default option)
   fontWeight: '400',
   // v0.1803 NEW, per Lynn's request: per-context extra (non-weight)
   // variable-font axis values, matching the fontWeight/uiFontWeight
@@ -14788,7 +14894,7 @@ const SETTING_BUCKETS = {
   fontWeight: SETTING_BUCKETS_NOTE_APPEARANCE, gridLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, headingIndent: SETTING_BUCKETS_NOTE_APPEARANCE, highlightColor: SETTING_BUCKETS_NOTE_APPEARANCE, letterSpacing: SETTING_BUCKETS_NOTE_APPEARANCE,
   lightNotePaperBg: SETTING_BUCKETS_NOTE_APPEARANCE, lightNotePaperFg: SETTING_BUCKETS_NOTE_APPEARANCE, lightNoteTexture: SETTING_BUCKETS_NOTE_APPEARANCE, lightNoteToolbarBgColor: SETTING_BUCKETS_NOTE_APPEARANCE, lineHeight: SETTING_BUCKETS_NOTE_APPEARANCE,
   marginLineColor: SETTING_BUCKETS_NOTE_APPEARANCE, marginLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNoteAccentColor: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNotePaperColors: SETTING_BUCKETS_NOTE_APPEARANCE, matchAppThemeNoteToolbarColors: SETTING_BUCKETS_NOTE_APPEARANCE,
-  noteFont: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginLeft: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginRight: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineStyle: SETTING_BUCKETS_NOTE_APPEARANCE,
+  noteFont: SETTING_BUCKETS_NOTE_APPEARANCE, headingFont: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginLeft: SETTING_BUCKETS_NOTE_APPEARANCE, noteMarginRight: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineNudge: SETTING_BUCKETS_NOTE_APPEARANCE, ruledLineStyle: SETTING_BUCKETS_NOTE_APPEARANCE,
   ruledLineTone: SETTING_BUCKETS_NOTE_APPEARANCE, rulerColor: SETTING_BUCKETS_NOTE_APPEARANCE, rulerOpacity: SETTING_BUCKETS_NOTE_APPEARANCE, rulerThickness: SETTING_BUCKETS_NOTE_APPEARANCE, showBlockRules: SETTING_BUCKETS_NOTE_APPEARANCE,
   showBlockRulesTop: SETTING_BUCKETS_NOTE_APPEARANCE, showBulletsForHyphens: SETTING_BUCKETS_NOTE_APPEARANCE, showMultiLevelBullets: SETTING_BUCKETS_NOTE_APPEARANCE, showParagraphRules: SETTING_BUCKETS_NOTE_APPEARANCE, showTagsInViewer: SETTING_BUCKETS_NOTE_APPEARANCE, showWhitespace: SETTING_BUCKETS_NOTE_APPEARANCE, circularCheckboxes: SETTING_BUCKETS_NOTE_APPEARANCE, hideMarkerForChecklistIsh: SETTING_BUCKETS_NOTE_APPEARANCE, skipFirstLevelIndentWhenHidden: SETTING_BUCKETS_NOTE_APPEARANCE,
   tagColorBorders: SETTING_BUCKETS_NOTE_APPEARANCE, tagColorPills: SETTING_BUCKETS_NOTE_APPEARANCE, viewIndentWidth: SETTING_BUCKETS_NOTE_APPEARANCE, wordSpacing: SETTING_BUCKETS_NOTE_APPEARANCE, wrapNoteNameInNoteEditor: SETTING_BUCKETS_NOTE_APPEARANCE, noteFontExtraAxes: SETTING_BUCKETS_NOTE_APPEARANCE, noteFontStylisticSets: SETTING_BUCKETS_NOTE_APPEARANCE, noteFontItalic: SETTING_BUCKETS_NOTE_APPEARANCE,
@@ -17893,6 +17999,12 @@ function applySettings() {
   // Font
   document.documentElement.style.setProperty('--font-body', settings.font);
   document.documentElement.style.setProperty('--font-note', settings.noteFont || settings.font);
+  // v0.1831 NEW, per Lynn's request: optional heading/note-title font
+  // override. Cleared entirely (not set to noteFont explicitly) when
+  // unset, so the CSS fallback var(--font-heading, var(--font-note))
+  // in .viewer-h1-h6/.note-inline-title does the matching automatically.
+  if (settings.headingFont) document.documentElement.style.setProperty('--font-heading', settings.headingFont);
+  else document.documentElement.style.removeProperty('--font-heading');
   document.documentElement.style.setProperty('--font-weight-editor', settings.fontWeight || '400');
   document.documentElement.style.setProperty('--font-weight-ui', settings.uiFontWeight || 400);
   document.documentElement.style.setProperty('--font-weight-heading', Math.max(parseInt(settings.uiFontWeight || 400), 700));
@@ -18062,6 +18174,25 @@ function applySettings() {
   // Notes list fonts (v0.1546, Phase A build 4) -- independent from the
   // note editor's own font settings. Empty/null falls back to the
   // matching general setting, same pattern noteFont itself already uses.
+  // DELIBERATE DESIGN DECISION (v0.1830, per Lynn): this whole block
+  // uses ONE SHARED value for every note's preview -- not each note's
+  // own individual pinned style, even once per-note themes exist and
+  // could override these properties. The same applies to font-
+  // variation/style/stretch/feature (variable-font axes, italic,
+  // stylistic sets) -- those three don't have a dedicated JS-set
+  // override at all, by design, matching what Lynn agreed to keep
+  // simple; they fall through purely via the CSS chain in
+  // .note-item-preview itself. Considered directly and decided against
+  // per-note matching: a list where every entry renders in a visibly
+  // different font/style would likely be HARDER to scan at a glance,
+  // not easier -- especially for handwriting-style fonts like
+  // Playwrite, which vary far more in shape/readability than a color
+  // would (same reasoning as the existing global, not per-note, preview
+  // COLOR setting -- see applySettings()'s own note-preview-color block).
+  // If this ever seems like a gap worth revisiting, raise it with Lynn
+  // explicitly first -- don't assume it's an oversight. What DOES need
+  // to stay true (the actual real bug fixed in v0.1829): this must
+  // never go stale against the CURRENT/live note-font setting.
   document.documentElement.style.setProperty('--notes-list-name-font', settings.notesListNoteNameFont || settings.font);
   document.documentElement.style.setProperty('--notes-list-name-size', (settings.notesListNoteNameFontSize || settings.uiFontSize) + 'px');
   document.documentElement.style.setProperty('--notes-list-preview-font', settings.notesListPreviewFont || settings.noteFont || settings.font);
@@ -25060,6 +25191,9 @@ function openSettings() {
   updateNoteFontExtraAxes();
   updateNoteFontStylisticSets();
   updateNoteFontItalicToggle();
+  // v0.1831 NEW, per Lynn's request: Headings & Note Name Font Face sync.
+  var hfs = document.getElementById('heading-font-select');
+  if (hfs) { hfs.value = settings.headingFont || ''; if (hfs._refreshPickerTriggerLabel) hfs._refreshPickerTriggerLabel(); }
 
   // v0.1779: Home Screen entry arrow visibility, per Lynn's request.
   var _hiaToggle = document.getElementById('home-item-arrow-toggle');
@@ -32681,6 +32815,7 @@ function makeImportFolderName(label) {
     ['notes-list-preview-font-select', 'Note Preview Font Face'],
     ['home-item-meta-font-select', 'Font Face'],
     ['note-font-select', 'Note Content Text Font Face'],
+    ['heading-font-select', 'Headings & Note Name Font Face'],
   ].forEach(function(pair) {
     var el = document.getElementById(pair[0]);
     if (el) enhanceSelectWithCustomPicker(el, { previewFontFromValue: true, title: pair[1] });
@@ -32759,6 +32894,13 @@ function makeImportFolderName(label) {
   updateNoteFontStylisticSets();
   updateNoteFontItalicToggle();
     updateNotesListPreviewFontWeightStep();
+    updateSaveBtnState();
+  });
+  // v0.1831 NEW, per Lynn's request: Headings & Note Name Font Face.
+  document.getElementById('heading-font-select').addEventListener('change', function() {
+    settings.headingFont = this.value;
+    if (this.value) document.documentElement.style.setProperty('--font-heading', this.value);
+    else document.documentElement.style.removeProperty('--font-heading');
     updateSaveBtnState();
   });
 
