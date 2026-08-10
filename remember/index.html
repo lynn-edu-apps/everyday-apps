@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1824 -->
+<!-- Remember App - Version 0.1826 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1824
+  Version 0.1826
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,8 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1826 - THREE things, per Lynn. (1) FIX: the "+" FAB, covered by the Quick Action Bar when both are visible. First attempt (a CSS calc() rule) turned out to be dead code -- confirmed directly that the FAB's position is actually controlled by applyZoomPositionCompensation() (called from pinToolbars(), which runs far more often than any QAB-specific trigger), which always sets bottom as a direct inline style, unconditionally overriding any CSS rule regardless of specificity. Rebuilt to fold the QAB's actual rendered height into that real, authoritative mechanism instead. A further subtlety: the offset is a hybrid of a fixed intended distance (28px, which needs zoom scaling) and a live measurement (the QAB's real height, already correctly expressed in the current coordinate frame, which must NOT be divided by zoom factor again) -- passing a hybrid like that through the generic anchor/zf division would double-compensate the live portion, so this follows the same "set explicitly, layer scale only" pattern already established for the Settings dialog's own dynamically-positioned FAB rather than the simpler path used for note-fab's own plain (pre-QAB) case. A single ResizeObserver on the QAB bar itself (catching every way its visibility can change -- enabled/disabled, real-keyboard-open, quiet-mode-conditional -- without a separate hook for each) triggers pinToolbars() to keep this current. (2) NEW: lazy-loaded font previews in the custom picker, per Lynn's question about whether showing every option in its own real font forces loading every font upfront -- confirmed yes: showing live text in a font genuinely forces the browser to download it, so a 30+ font list would trigger 30+ simultaneous downloads the instant the picker opened. Deferred via a per-picker IntersectionObserver, scoped to the picker's own scrollable list as the observer root (not the page), so "visible" correctly means within this dialog, not the whole browser viewport. Kept fully generic -- the observer itself has no notion of "font" at all, just a deferred style string -- consistent with the component's portability goal. (3) FIX, caught by Lynn before it ever reached her: the QAB bar is a new position:fixed, left:0/right:0 full-width bar -- architecturally identical to the note header/toolbar in this specific respect -- and had never been given the zoom-size-compensation treatment those two already have (would have ballooned wider than the viewport on Ctrl+wheel zoom-out, the exact failure mode already fixed for header/toolbar back in v0.1716). Simply didn't exist yet when that original work was done. Added the same applyZoomSizeCompensation() call already used for header/toolbar. Verified directly and thoroughly, not just structurally: the FAB's computed bottom confirmed at exactly 28px normally and 125px (28 + real QAB height + 12px gap) with the QAB visible, correctly back to 28px after disabling; the lazy preview confirmed with a real 30-item list -- only 9 near-visible options had their style applied initially, the far-offscreen last option had none until actually scrolled into view, at which point it correctly picked it up, with the real in-app font picker confirmed visually unchanged by screenshot; the QAB's zoom compensation confirmed engaging correctly under a real simulated devicePixelRatio change (scale and width computed exactly per the established formula), AND confirmed correctly leaving the bar completely untouched on a genuine touch/no-mouse context, using Playwright's real touch-device emulation rather than only checking the mouse-present path. Suite: 332/332 (harness v8).
+  v0.1825 - FOUR more fixes, per Lynn's follow-up testing. (1) FIX: the font weight nudge buttons' toast was misleading at the boundary -- it fired the same "Font weight: X" message on every tap regardless of whether the weight actually changed, so repeatedly tapping past a font's real max/min (e.g. Comic Relief's 700) looked like something was still happening when nothing was. Now detects whether the value genuinely changed and says so honestly ("Already at heaviest/lightest weight this font supports") when it didn't. (2) FIX, more robustly: Find in Note's keyboard overlap, per Lynn's report that the v0.1823 fix was insufficient -- still overlapped with a larger font size or an expanded (non-collapsed) toolbar. Root cause of the INSUFFICIENCY: that fix added scroll room but the scroll TARGET itself still used a fixed "2 lines below the find bar" offset that doesn't scale down when the actually-available visible band (keyboard-shrunk viewport) is itself smaller -- exactly matching her report that a taller font (taller lines) or more UI chrome eating into the same space made it worse, and a collapsed toolbar (more room) made it better. Replaced with the same "check if the match is already inside the real, keyboard-aware visible band; only scroll if it isn't; land it just inside the band's edge" pattern this codebase already trusts elsewhere for this exact class of problem, rather than an arbitrary fixed offset. (3) FIX: Quick Action Bar's "lit up" toggle-button color, per Lynn's report -- it was using the general accent color instead of the note-specific one, the established convention roughly 18 other selectors in this app already follow. New, separate _noteAccentContrastColor() added rather than changing the existing _accentContrastColor(), since that one is also correctly used by the Settings-dialog slider buttons, which should stay tied to the GENERAL accent regardless of note. Directly investigated Lynn's related report that the upper toolbar's Typing/R&R mode button (the old "view/edit" button) had the same problem -- confirmed, with real distinct test colors, that it was ALREADY correct; the misleading result in an early check traced to reading the computed color before its own 150ms CSS transition had settled, not a real bug. (4) FIX: Quick Action Bar's Tap to Edit action, per Lynn's explicit architectural correction -- there's no such thing as tap-to-edit in typing mode (it's purely an R&R-mode concept). Tapping this QAB button from typing mode now switches to R&R mode first and then turns tap-to-edit on, rather than calling enterEditBlockMode() in a context where it doesn't make sense. New, generic availableWhen capability added to the QUICK_ACTION_BAR_ACTIONS registry (matching how isActive was added) -- Tap to Edit is now excluded from the QAB action dropdown entirely when R&R mode is fully disabled (noteEditingMode === 'typing'), and a previously-configured slot referencing it now quietly disappears from a rendered bar rather than showing a button that would behave incorrectly if tapped, if R&R gets disabled after the fact. Verified directly and thoroughly throughout: weight toast confirmed showing the honest boundary message at both 700 and 400 for a real static font, and the normal message for a real in-range change; Find's scroll fix confirmed with a real simulated keyboard AND a large font size together, matching Lynn's exact reported combination; the view-mode-btn's color confirmed correct with real distinct accent colors after eliminating the transition-timing artifact; QAB's active-state background confirmed showing the distinct note-accent red, not the general blue; Tap to Edit confirmed switching to R&R mode and turning on correctly from typing mode, confirmed excluded from the dropdown and correctly disappearing from a rendered bar when R&R is disabled, and confirmed still available/included normally when R&R is enabled. Suite: 332/332 (harness v8).
   v0.1824 - Quick Add ("Add text to note") dialog reordered, per Lynn's explicit request: the collapsible "More options" section (blank lines, dividing line, hyphen, checkbox marker, tag-sort) now sits BELOW the Cancel/Add button row instead of above it. She uses this dialog dozens of times a day and the buttons kept ending up underneath the virtual keyboard, meaning she had to dismiss the keyboard before she could even tap Add -- moving More options out of the way means the buttons themselves now sit higher on screen, reachable without that extra step. Explicitly a deliberate departure from the usual "primary actions go last" convention, made for a concrete, named friction reason rather than by default. Since More options no longer lives inside the dialog's own already-scrollable middle region (which is itself capped and scrollable specifically so nothing can get clipped by .confirm-box's 80vh limit), it was given its own bounded scroll (max-height:35vh, overflow-y:auto) as a safety net -- if its content ever got tall enough to matter when expanded, it scrolls within its own space instead of being silently clipped or pushing the dialog past its cap. Verified directly: the button row's own vertical position now measures above More options' position (not just assumed from the HTML order); the section still opens/closes correctly in its new spot; all 6 checkboxes present and independently confirmed toggleable, not just rendered; screenshot confirmation of the full expanded state showing Cancel/Add sitting right below the text box with the checkboxes correctly laid out beneath. Suite: 332/332 (harness v8).
   v0.1823 - FOUR fixes, per Lynn. (1) NEW setting: Quick Action Bar "Show in Quiet Mode", off by default (preserves the existing hide-in-quiet-mode behavior exactly). Directly motivated by v0.1820's toggle-type QAB buttons -- a toggle-type button like Quiet mode itself does no good if the whole bar disappears the instant quiet mode turns on. (2) FIX: font weight increase/decrease buttons now jump directly to the next weight the current font actually supports, rather than a flat +/-10 that could silently do nothing for several taps in a row on a font with sparse discrete weights (e.g. a font supporting only 400 and 700 needed 30 taps of the old flat step to visibly change at all, since every intermediate value the browser can't render just displays identically to whichever real weight is closest). New getNextSupportedWeight() reuses the existing FONT_WEIGHT_SUPPORT registry -- exact same underlying data the sliders already use for their own variable-step-size fix, just never applied to these buttons until now. Variable fonts keep their existing fine flat step (every value is genuinely valid), now correctly clamped to that specific font's real range instead of the generic 100-900 bounds. (3) FIX: the "Show 'Back' label on large screens" text now uses the accent color instead of inheriting the toolbar's plain foreground -- confirmed exact color match against --accent directly. (4) FIX: Find in Note's keyboard overlap in typing mode, per Lynn's report -- the match's scroll-to position never called this app's own keyboard-aware scroll-room function, unlike every other similar scroll-to-position call site in this codebase (the exact bug class already documented and fixed everywhere else back in v0.1666: "a perfectly correct target could never actually be reached... with little or no room below"), just never applied to this one path. CAUGHT A SERIOUS BUG IN THE FIRST ATTEMPT AT THIS, via testing rather than assuming it worked: the keyboard-scroll-room function is closure-scoped inside init(), but the Find code calling it lives at the top level with no access to it -- the naive fix would have thrown a real ReferenceError and broken Find in Note's next-match navigation entirely, a materially worse regression than the cosmetic keyboard-overlap issue being fixed. Caught immediately by testing before shipping, fixed by exporting the function on window, matching this codebase's own established convention for exactly this cross-scope need. Also flagged, not chased down: a small, pre-existing HTML/text count discrepancy was noticed while double-checking balance, confirmed to already exist in the prior delivered build (not introduced by this one) and confirmed not to be affecting the regression suite, which has passed cleanly throughout -- most likely changelog prose text containing the literal characters "div" rather than a real unclosed tag, the same category of false positive already found and fixed once this session for a different tag. Verified directly, not assumed: weight-jump confirmed with a real static font (400->700 in one tap each direction) and a real variable font (clamped correctly at its own range boundary, not the generic one); the quiet-mode setting confirmed hiding/showing correctly in both states, end to end, not just checking the class toggle in isolation; the BACK label's computed color confirmed to exactly match the accent CSS variable; the Find keyboard fix confirmed twice -- first that the ReferenceError is genuinely gone, then separately, with a real simulated 300px keyboard shrink, that the resulting scroll padding computes to exactly the expected value using the app's own established formula. Suite: 332/332 (harness v8).
   v0.1822 - Accessibility hardening on two fronts, per Lynn's request. (1) The new custom picker component (v0.1821) audited against common checker-tool and human-reviewer expectations, not just left as originally built: options switched from <button> to <div role="option" tabindex="-1"> with fully JS-managed roving focus, matching the W3C APG reference implementation exactly rather than the button-with-overridden-role pattern some automated checkers flag as a semantic mismatch; groups now properly wrapped in role="group" with a real aria-label, not just a sibling label with role="presentation", so a screen reader actually announces group membership while navigating; a visually-hidden aria-live region added so a screen reader user filtering the list hears the result count or "No matches", not just silence; type-ahead added (a single keypress jumps to the next option starting with that letter), matching native <select> behavior and especially valuable on a picker with no search box, where arrow-key-only navigation through a long list is slow; prefers-reduced-motion respected for the open/close transition; the close button enlarged to meet the standard 44x44px minimum touch target guideline. (2) The pre-existing toolbar-placement dropdown (from v0.1584, unrelated to the new component) given the keyboard navigation it never had -- confirmed by reading its code directly that it had no keydown handling at all beyond default Tab order, meaning using it required a pointer. Added arrow-key/Home/End navigation, Enter/Space to select, and Escape to close with focus correctly returned to the trigger button -- matching the same roving-focus convention just established for the new component. TESTING NOTE, disclosed rather than glossed over: several rounds of this session's own testing initially produced confusing, seemingly-contradictory results (focus silently landing on <body> instead of an option) that traced entirely to a testing artifact already learned once before in this project -- elements inside a collapsed Settings section are genuinely unfocusable (0x0, not rendered) regardless of correct code, not a real bug -- confirmed by directly checking getBoundingClientRect() before concluding anything, rather than trusting the first (misleading) result. Verified directly, with sections properly expanded this time: the custom picker's core mechanism, keyboard nav, groups, and live region all still work correctly after the hardening changes; the toolbar-placement dropdown's full lifecycle (open with correct initial focus on the current selection, arrow-navigate, Escape-close-and-return-focus, reopen, arrow-navigate, Enter-select) confirmed end to end with real values, not assumed. Suite: 332/332 (harness v8).
@@ -2277,7 +2279,7 @@ body.select-notes-mode .folder-item-select-check { display: flex; }
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 4px 18px rgba(0,0,0,0.22);
-  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s, bottom 0.15s;
   z-index: 5;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -2434,9 +2436,9 @@ body.qab-shape-square .qab-btn { border-radius: 14%; }
    color schemes (black-on-white/white-on-black/theme) is currently
    active on the bar as a whole. */
 .qab-btn.qab-active {
-  background: var(--accent) !important;
+  background: var(--note-accent, var(--accent)) !important;
   color: var(--qab-active-fg, #ffffff) !important;
-  border-color: var(--accent) !important;
+  border-color: var(--note-accent, var(--accent)) !important;
 }
 
 /* Locked, theme-INDEPENDENT high-contrast pairs -- deliberately not
@@ -12401,7 +12403,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1824';
+const APP_VERSION = '0.1826';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13950,9 +13952,46 @@ function pinToolbars() {
   // _mouseZoomCompensationActive() above) -- untouched on touch devices.
   applyZoomSizeCompensation(header);
   applyZoomSizeCompensation(toolbar);
+  // v0.1826 NEW, per Lynn's catch: the Quick Action Bar is a new
+  // left:0/right:0 fixed full-width bar, architecturally identical to
+  // header/toolbar in this respect -- without this, it would balloon
+  // wider than the viewport on zoom-out the exact same way header/
+  // toolbar did before v0.1716 fixed it there. Didn't exist yet when
+  // that original zoom-compensation work was done, so never got the
+  // same treatment until now. Applied before the FAB's own position
+  // compensation below, so that calculation (which reads the QAB's
+  // rendered height) sees the already-compensated, stable size.
+  applyZoomSizeCompensation(document.getElementById('quick-action-bar'));
   var noteFab = document.getElementById('note-fab');
   if (noteFab && noteFab.style.display !== 'none') {
-    applyZoomPositionCompensation(noteFab, { right: 24, bottom: 28 }, '', 'bottom right');
+    // v0.1826 NEW, per Lynn's request: the QAB bar can cover this FAB.
+    // Follows the same pattern already established for the Settings
+    // FAB's own dynamic positioning (search "desiredRight" above) rather
+    // than the plain applyZoomPositionCompensation() call this used
+    // before -- this value is a hybrid of a fixed intended distance
+    // (28px, which DOES need zoom scaling) and a live measurement (the
+    // QAB's actual rendered height, already correctly expressed in the
+    // current coordinate frame, which must NOT be divided by zoom
+    // factor again) -- passing a hybrid like that through the generic
+    // anchor/zf division would double-compensate the live portion.
+    var qabBar = document.getElementById('quick-action-bar');
+    var qabVisible = qabBar && getComputedStyle(qabBar).display !== 'none';
+    var qabOffset = qabVisible ? (qabBar.getBoundingClientRect().height + 12) : 0;
+    var fabPrevTransition = noteFab.style.transition;
+    noteFab.style.transition = 'none';
+    if (!_mouseZoomCompensationActive()) {
+      noteFab.style.right = '';
+      noteFab.style.bottom = qabOffset ? (28 + qabOffset) + 'px' : '';
+      noteFab.style.transform = '';
+    } else {
+      var _fabZf = _zoomFactor();
+      noteFab.style.right = (24 / _fabZf) + 'px';
+      noteFab.style.bottom = ((28 / _fabZf) + qabOffset) + 'px';
+      noteFab.style.transform = 'scale(' + (1 / _fabZf) + ')';
+      noteFab.style.transformOrigin = 'bottom right';
+    }
+    void noteFab.offsetHeight;
+    noteFab.style.transition = fabPrevTransition;
   }
   // v0.1717: mouse-only scratch-pad edge tab, per Lynn's report --
   // vertically CENTERED (top:50% + translateY(-50%)), right-anchored,
@@ -16414,6 +16453,28 @@ function _accentContrastColor() {
   _accentContrastColorCache = _pickHighContrastBW(resolveCSSVarToHex('--accent'));
   return _accentContrastColorCache;
 }
+// v0.1825 NEW, per Lynn's report: a note-accent-aware sibling to
+// _accentContrastColor(), specifically for the Quick Action Bar's own
+// "lit up" toggle state -- kept separate rather than changing the
+// function above, since that one is also correctly used by the
+// Settings-dialog slider default/reset buttons, which should stay tied
+// to the GENERAL accent regardless of which note happens to be open.
+// Real CSS var() fallback chain (--note-accent, falling back to
+// --accent) rather than a JS-level fallback, so it's correct even in
+// the rare case --note-accent isn't actively set on body at all.
+var _noteAccentContrastColorCache = null;
+function _noteAccentContrastColor() {
+  if (_noteAccentContrastColorCache) return _noteAccentContrastColorCache;
+  var el = document.createElement('div');
+  el.style.cssText = 'position:fixed;width:1px;height:1px;visibility:hidden;background:var(--note-accent, var(--accent))';
+  document.body.appendChild(el);
+  var rgb = getComputedStyle(el).backgroundColor;
+  document.body.removeChild(el);
+  var m = rgb.match(/(\d+),\s*(\d+),\s*(\d+)/);
+  var hex = m ? '#' + [+m[1],+m[2],+m[3]].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('') : '#5b7c6e';
+  _noteAccentContrastColorCache = _pickHighContrastBW(hex);
+  return _noteAccentContrastColorCache;
+}
 // v0.1815 NEW: general, reusable default/reset button for a slider,
 // extending the same pattern already used for letter/word-spacing and
 // (as of v0.1814) variable-font axes to the rest of Settings' sliders.
@@ -16605,6 +16666,29 @@ function openCustomPicker(config) {
   var optionEls = []; // flat, filtered, currently-rendered options -- what keyboard nav actually moves through
   var optionItems = []; // parallel array of the {value,label,...} each optionEls[i] represents
   var focusedIdx = -1;
+  // v0.1826 NEW, per Lynn's request: lazy-applies previewStyle only once
+  // an option actually scrolls near-into-view, rather than the moment
+  // it's created. Showing live text in a given font genuinely forces
+  // the browser to download that font (CSS's normal lazy font-loading
+  // only skips FONTS THAT ARE NEVER RENDERED, and every option's text
+  // here is real, visible text) -- for a long list (e.g. 30+ fonts),
+  // applying every option's preview immediately would trigger dozens of
+  // real font downloads all at once, the instant the picker opens.
+  // rootMargin gives a little lead time so scrolling to a not-yet-
+  // visible option doesn't show a jarring style pop after it's already
+  // in view. Stays entirely generic -- this observer has no notion of
+  // "font" at all, just a deferred style string -- so previewStyle
+  // remains a general-purpose capability, not something font-specific
+  // baked into the component itself.
+  var previewObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (!entry.isIntersecting) return;
+      var el = entry.target;
+      var style = el.getAttribute('data-preview-style');
+      if (style) el.style.cssText += style;
+      previewObserver.unobserve(el);
+    });
+  }, { root: list, rootMargin: '150px 0px' });
 
   function renderList(filterText) {
     list.innerHTML = '';
@@ -16660,7 +16744,10 @@ function openCustomPicker(config) {
       var labelSpan = document.createElement('span');
       labelSpan.className = 'custom-picker-option-label';
       labelSpan.textContent = it.label;
-      if (it.previewStyle) labelSpan.style.cssText += it.previewStyle;
+      if (it.previewStyle) {
+        labelSpan.setAttribute('data-preview-style', it.previewStyle);
+        previewObserver.observe(labelSpan);
+      }
       opt.appendChild(check); opt.appendChild(labelSpan);
       opt.addEventListener('click', function() { if (!it.disabled) selectItem(it); });
       groupContainer.appendChild(opt);
@@ -18024,6 +18111,7 @@ function applySettings() {
   );
   if (_noteAccent) body.style.setProperty('--note-accent', _noteAccent);
   else body.style.removeProperty('--note-accent');
+  _noteAccentContrastColorCache = null;
   document.documentElement.style.setProperty('--accent2', accent);
 
   // Notes list entry background (v0.1548, Phase A build 5) — the note/
@@ -30292,6 +30380,21 @@ function makeImportFolderName(label) {
     _qabUpdateScrollArrows();
   })();
 
+  // ===== FAB REPOSITIONING ABOVE QAB (v0.1826) =====
+  // Per Lynn's request: the QAB bar can cover the "+" FAB. A single
+  // ResizeObserver on the QAB bar itself catches every way its
+  // visibility can change (enabled/disabled, real-keyboard-open,
+  // quiet-mode-conditional) without needing a separate hook for each --
+  // triggers pinToolbars(), the actual mechanism that positions the FAB.
+  (function() {
+    var bar = document.getElementById('quick-action-bar');
+    if (!bar) return;
+    var fabObserver = new ResizeObserver(function() {
+      requestAnimationFrame(pinToolbars);
+    });
+    fabObserver.observe(bar);
+  })();
+
   // ===== NOTE SCROLL SHADOW (v0.1679) =====
   // Bottom box-shadow on #note-content-area, per Lynn -- shown only when
   // there's more note content below to scroll to, gone once truly at the
@@ -38311,9 +38414,15 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     var delayTimer = null, repeatTimer = null;
     function step() {
       var curFont = settings.noteFont || settings.font || "'Atkinson Hyperlegible Next', sans-serif";
-      settings.fontWeight = getNextSupportedWeight(curFont, settings.fontWeight || 400, delta);
+      var before = settings.fontWeight || 400;
+      var next = getNextSupportedWeight(curFont, before, delta);
+      settings.fontWeight = next;
       applySettings();
-      showToast('Font weight: ' + settings.fontWeight);
+      if (next === before) {
+        showToast(delta > 0 ? 'Already at heaviest weight this font supports' : 'Already at lightest weight this font supports');
+      } else {
+        showToast('Font weight: ' + settings.fontWeight);
+      }
       var wlbl = document.getElementById('font-size-bar-weight-label');
       var wslider = document.getElementById('font-size-bar-weight');
       if (wlbl) wlbl.textContent = 'Weight: ' + settings.fontWeight;
@@ -39806,7 +39915,19 @@ var QUICK_ACTION_BAR_ACTIONS = [
   { id: 'copySpeech',  label: 'Copy for speech',  defaultLetter: 'V', run: function() { copyNoteForSpeech(); } },
   { id: 'shareSpeech', label: 'Share for speech', defaultLetter: 'A', run: function() { shareNoteForSpeech(); } },
   // v0.1819 NEW, per Lynn's request.
-  { id: 'tapToEdit', label: 'Tap to edit', defaultLetter: 'E', run: function() { if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode(); }, isActive: function() { return _editBlockMode; } },
+  { id: 'tapToEdit', label: 'Tap to edit', defaultLetter: 'E', availableWhen: function() { return settings.noteEditingMode !== 'typing'; }, run: function() {
+      if (!isViewMode) {
+        // No such thing as tap-to-edit in typing mode -- switching to
+        // R&R mode is a prerequisite, per Lynn's explicit report, and
+        // once there we're definitely starting from "off" (typing mode
+        // never has an edit-block state to toggle away from), so this
+        // turns it ON rather than toggling.
+        setViewMode(true);
+        enterEditBlockMode();
+        return;
+      }
+      if (_editBlockMode) exitEditBlockMode(); else enterEditBlockMode();
+    }, isActive: function() { return isViewMode && _editBlockMode; } },
   { id: 'undo',       label: 'Undo',        defaultLetter: 'U', run: function() { applyUndo(); } },
   { id: 'redo',       label: 'Redo',        defaultLetter: 'R', run: function() { applyRedo(); } },
   { id: 'find',     label: 'Find in note',            defaultLetter: 'F', run: function() { openFind(); } },
@@ -39886,7 +40007,7 @@ function renderQuickActionBar() {
   // v0.1820 NEW, per Lynn's request: contrast color for toggle-type
   // actions' "lit up" state, same helper already used for the slider
   // default/reset buttons.
-  document.documentElement.style.setProperty('--qab-active-fg', _accentContrastColor());
+  document.documentElement.style.setProperty('--qab-active-fg', _noteAccentContrastColor());
 
   var buttons = Array.isArray(cfg.buttons) ? cfg.buttons : [];
   var scrollEl = document.getElementById('qab-scroll');
@@ -39895,6 +40016,7 @@ function renderQuickActionBar() {
     buttons.forEach(function(slotCfg, i) {
       var action = slotCfg ? _qabActionById(slotCfg.action) : null;
       if (!action) return; // no button at all for an empty/unconfigured slot
+      if (action.availableWhen && !action.availableWhen()) return;
       var btn = document.createElement('button');
       btn.className = 'qab-btn';
       btn.setAttribute('data-slot', i);
@@ -39970,6 +40092,7 @@ function _qabPopulateActionSelect(sel) {
   if (!sel) return;
   sel.innerHTML = '<option value="">(none)</option>';
   QUICK_ACTION_BAR_ACTIONS.forEach(function(a) {
+    if (a.availableWhen && !a.availableWhen()) return;
     var opt = document.createElement('option');
     opt.value = a.id;
     opt.textContent = a.label;
@@ -42193,10 +42316,19 @@ function setCurrentMatch(idx) {
       if (window._applyKeyboardScrollRoom) window._applyKeyboardScrollRoom(area2);
       var matchY      = getCursorY(ed); // distance from area's content origin, at match.start
       var findBarH    = findBar2.getBoundingClientRect().height;
-      var paddingTop2 = parseFloat(getComputedStyle(area2).paddingTop) || 0;
       var lineH2      = parseFloat(getComputedStyle(ed).lineHeight) || 24;
-      var target2     = matchY - paddingTop2 - findBarH - lineH2 * 2;
-      area2.scrollTop = Math.max(0, target2);
+      var vv          = window.visualViewport;
+      var vvOff       = vv ? vv.offsetTop : 0;
+      var visH        = vv ? vv.height : area2.clientHeight;
+      var topClear    = findBarH + 8; // this find bar's own clearance, not the general toolbar's
+      var bottomClear = 20;
+      var viewTop     = area2.scrollTop + vvOff + topClear;
+      var viewBottom  = area2.scrollTop + vvOff + visH - bottomClear;
+      var matchBottom = matchY + lineH2; // bottom edge of the matched line
+      if (matchY < viewTop || matchBottom > viewBottom) {
+        var target2 = matchY - vvOff - topClear;
+        area2.scrollTop = Math.max(0, target2);
+      }
     }
     updateFindUI();
     return;
