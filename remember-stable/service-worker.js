@@ -1,7 +1,7 @@
-// Remember App - Version 0.1034
+// Remember App - Version 0.1035
 // Service Worker for remember-stable (stable deployment)
 
-const CACHE_VERSION = 'remember-stable-v0.1516';
+const CACHE_VERSION = 'remember-stable-v0.1035';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
@@ -46,7 +46,18 @@ self.addEventListener('fetch', function(event) {
 
   if (isHTML || isIndex) {
     event.respondWith(
-      fetch(event.request)
+      // v0.1035 FIX, per Lynn's report of the app appearing "half
+      // updated" (version banner/number showed new, but actual
+      // behavior was still old, until a full force-quit+reopen) --
+      // event.request carried no explicit cache directive, so this
+      // fetch, despite the surrounding code's clear network-first
+      // INTENT, could still be silently satisfied by the browser's own
+      // HTTP cache layer (entirely separate from the Cache API used
+      // everywhere else in this file) if GitHub Pages' response headers
+      // permitted it. cache:'no-store' guarantees a genuinely fresh
+      // network fetch every time, matching what this code already
+      // believed it was doing.
+      fetch(event.request.url, { cache: 'no-store' })
         .then(function(networkResponse) {
           var clone = networkResponse.clone();
           caches.open(STATIC_CACHE).then(function(cache) { cache.put(event.request, clone); });
