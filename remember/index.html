@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1832 -->
+<!-- Remember App - Version 0.1835 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1832
+  Version 0.1835
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,8 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1835 - TWO Find-in-Note issues, per Lynn. (1) MAJOR FIX: the typing-mode scroll landing under the lower toolbar, per her report and her own suggested approach (verify actual visibility and correct for it, rather than continuing to hand-tune a fixed offset). Root cause found by reading pinToolbars()'s own comment directly ("Position find bar just below the lower toolbar"): the find bar sits BELOW the header and regular toolbar, both of which stay visible and stacked above it -- but the scroll-clearance calculation only ever accounted for the find bar's own height, never the header/toolbar height sitting above it, confirmed directly to be missing over 90px of real clearance in a typical case. Corrected to the exact same total-clearance formula pinToolbars() itself already uses for the content area's own padding-top, so the two can never drift out of sync with each other again. Also implements Lynn's own suggested robustness layer on top of the corrected formula: after scrolling, re-measures on the next frame and verifies the match is ACTUALLY visible, correcting further if it still isn't -- catches any remaining edge case without needing to enumerate every possible cause of covering in advance. (2) Investigated the Debug Log wrong-match report thoroughly, but could not reproduce it with realistic test content (tried both a typical multi-line log format and one containing a real URL, searching for a common term in each -- neither reproduced a mismatch). Did find a genuine, real architectural risk while investigating: R&R-mode Find highlighting works by embedding raw-text placeholder markers directly into the note's content BEFORE running it through the full markdown rendering pipeline (urlsToLinks()) -- which itself performs several TEXT-SHRINKING passes (images, code spans, links, each replacing a matched span with a much shorter placeholder) on that same raw string. If a search query ever sits near or overlaps one of those other markdown constructs, an embedded marker could in principle survive but end up wrapping different text than intended, since it has no way to "know" what it's supposed to wrap, only where it was inserted -- this is a plausible mechanism for exactly what Lynn described, even though it didn't reproduce with the specific content tried. Rather than guess at a fix blind, added the diagnostic logging she herself suggested: every rendered match now gets sanity-checked against the actual search query, and any real mismatch will now log a clear, specific message (which note, which match index, expected vs actual text) automatically the next time this happens, rather than needing her to notice and describe it after the fact. Verified directly: the Find scroll fix confirmed with real header/toolbar/find-bar heights showing the match correctly clearing all three, and separately confirmed what the OLD formula would have produced for direct comparison (90px short); the new diagnostic-logging code's own detection logic confirmed correct via an artificially-forced mismatch, since a naturally-occurring one couldn't be reproduced. Suite: 332/332 (harness v8).
+  v0.1833-0.1834 - FIVE things from Lynn's to-do list, tackled while she was multitasking on something else. (1) FIX, and an apology owed: the Typing/R&R mode button's wrong accent color, which Lynn had already reported once this session -- my earlier investigation only checked the R&R-mode .active CSS class (genuinely correct) and never examined the actual culprit: a completely separate inline-style code path, applied specifically when switching TO typing mode, that used the general accent directly (bypassing the note-accent fallback) plus a hardcoded white foreground with no contrast checking. Fixed to match the established pattern, confirmed directly with distinct accent colors this time. (2) FIX: the QAB letter-reset bug Lynn described (an E left over from a previous action, mistaken for a currently-different button) -- changing an already-configured slot's action now always resets its letter to match the new action, not just when the slot was previously empty. (3) FIX: the quiet-mode back+speak pill's two segments visibly mismatching in size at larger icon settings -- root cause turned out deeper than expected: neither button's own container size was ever tied to the icon-size setting in quiet mode at all, both were separately hardcoded to a fixed 40px, and since that's a floor rather than a ceiling, each button grew past it to fit its own icon at large sizes -- unevenly, since the back button's chevron is deliberately 30% larger than standard (an existing, intentional design choice, not something removed). Fixed by extending the existing JS-driven icon-sizing mechanism so both segments share one computed minimum based on the larger (chevron-inclusive) footprint, scoped to quiet mode only. (4) FIX: the rename-note pencil icon overlapping cursive note names, per Lynn's report -- small, deliberate increase to the gap between title and icon (2px to 7px), enough clearance for a slanted font's trailing flourishes without losing the intended snug feel. (5) NEW: a prototype QAB collapse handle, per Lynn's explicit request -- a large, thick, obvious tab at the bottom-left of the note editor (56x72px, deliberately not styled like the small, mouse-only scratch-pad edge tab, since low-vision touch accessibility was the explicit goal here) that shows or hides the QAB bar with one tap, letting it stay permanently enabled without always being visible. Opt-in via its own new Settings toggle (off by default, explicitly experimental), with a chevron that flips direction to match state. CAUGHT A REAL BUG BEFORE SHIPPING: the handle's own initial HTML had a redundant inline style="display:none", which -- being an inline style -- unconditionally overrode the CSS class-based visibility rule regardless of specificity, meaning the handle would never have actually appeared even with its setting correctly enabled. Found by testing the actual visibility, not just the click behavior (which worked regardless, since .click() fires on hidden elements too) -- fixed by removing the redundant inline style, since the CSS already had its own correct default-hidden state. Verified directly and thoroughly throughout: the view-mode button's fix confirmed with real distinct note/general accent colors; the QAB letter reset confirmed changing from a real previous value to a real new one; the quiet-mode pill fix confirmed with both segments measuring identically at the largest icon size, where the mismatch was most visible; the collapse handle confirmed with the actual computed visibility (not just that clicking did something) for both enabled and disabled states, and confirmed the full expand-collapse-expand cycle with real screenshots of both states, not just DOM state alone. Suite: 332/332 (harness v8), including the structural nesting check, and a scoped div-balance count specifically for the new Settings row confirming it's genuinely self-contained (4 opens, 4 closes) rather than trusting the whole-file delta alone.
   v0.1832 - FOUR things, per Lynn. (1) MOVED: Headings & Note Name Font Face, now below Advanced Typography instead of right after Note Font Face -- a rarely-used setting she didn't want appearing before the typography settings. (2) NEW: an explicit Select All button in the Edit Paragraph dialog, grouped with Paste on the right with a deliberate gap between them -- there won't always be a physical keyboard for Ctrl+A, and dragging to select text can be difficult for senior citizens. (3) NEW: a third, optional "Keep Editing" button on the Settings unsaved-changes prompt, per Lynn's report of accidentally clicking outside the dialog and only being offered Save or Discard when she actually just wanted to keep working. Confirmed technically feasible before building it, not assumed: the Settings dialog itself is still fully intact underneath the confirm popup at that point -- nothing has torn it down yet, the popup is purely a layered overlay -- so dismissing it without triggering either Save or Discard genuinely does mean "nothing changed, keep going," no callback even needed. Extended the SHARED confirm-dialog component (used throughout this app for many other prompts) with a new optional third button, defaulting to hidden unless a caller explicitly provides a label -- every other existing call site is completely unaffected. (4) FIX, likely root cause found for a real bug: Lynn's report of the PWA appearing "half updated" twice in one day -- the version number and update banner correctly showing the new version, while actual behavior still ran old, stale code, until a full force-quit and reopen. Found by reading the actual service worker fetch handler directly: fetch(event.request) passed the original Request object with no explicit cache directive, meaning this "network-first" HTML fetch -- despite the surrounding code's clear intent -- could still be silently satisfied by the BROWSER's own HTTP cache layer (entirely separate from the Cache API used everywhere else in this file) if GitHub Pages' response headers permitted it within their cache window. Fixed with an explicit cache:'no-store' on that one fetch call, in both the stable and dev service worker files (delivered separately, versioned _v2, replacing the existing _v1 files) -- guarantees a genuinely fresh network fetch every time, matching what this code already believed it was doing. Verified directly and thoroughly: the third button confirmed staying completely hidden for an ordinary, unrelated confirm call (e.g. a delete confirmation), confirmed correctly appearing with the right label only for the Settings unsaved-changes case, and confirmed that clicking it closes the popup while Settings stays open with the unsaved change still fully intact, not reverted; Select All confirmed actually selecting the real full text range in the textarea, not just clicked without effect; the Settings row reorder confirmed via real measured position relative to its new neighbors (caught and fixed a timing issue in the test itself along the way -- Settings wasn't actually open yet the first time it was checked). Suite: 332/332 (harness v8), including the structural nesting check.
   v0.1831 - NEW: Headings & Note Name Font Face, per Lynn's request -- a cursive/handwriting body font can look great for note text but distracting for markdown headings and the note title, so this lets those two use a different, calmer font face while leaving the note body untouched. Font FACE only, deliberately no size/weight controls -- headings already correctly vary size by level and the title has its own fixed size/weight, matching Lynn's explicit request to keep this simple. Defaults to "Default (match note text font)" as an actual dropdown option (matching the exact pattern already used for Note & Folder Name / Note Preview font settings), not a separate toggle, and is themeable (SETTING_BUCKETS_NOTE_APPEARANCE) per her request. Answers her direct question about typing mode: confirmed technically possible for the note title specifically (a genuine, separate DOM element, not embedded in the note's own textarea) -- and built it to work in both modes. Markdown headings remain R&R-mode-only, correctly matching her own guess about a real technical limitation: a plain textarea cannot selectively font-style just the heading LINES within otherwise-uniform text. Deliberately reuses the exact same full font list (Sans/Serif/Handwriting/Mono) as Note Content Text Font Face, including Handwriting, since the whole point is choosing something calmer than an otherwise-cursive body font. CAUGHT A SERIOUS BUG BEFORE SHIPPING, via the regression suite's own structural check, not missed: an earlier edit's old_str/new_str pair silently deleted the opening wrapper of the adjacent "Preview — tap to edit" row while leaving its content behind -- exactly the "expanding one section also expands a sibling section" bug class this project has hit before, confirmed by the harness's own targeted structural check (which flagged Note Behavior and Debugging nesting one level too deep) before a single functional test was even run. Found and fixed at the exact source (the missing wrapper + label), confirmed with a scoped div-balance count before and after (279/279 balanced after, vs 277/278 before), and reconfirmed the harness's full structural check passes clean with no warning. Verified directly and thoroughly, re-run against the corrected file rather than just the pre-fix version: headings and note title both default to matching the note's current font; explicitly overriding switches both correctly while the note BODY stays completely unaffected; heading size (confirmed H1 still computes to exactly double the base size) and weight (700) both confirmed completely untouched by this setting; the note title confirmed picking up the override in BOTH typing and R&R mode. Suite: 332/332 (harness v8), including its structural nesting check specifically.
   v0.1830 - Documentation only, per Lynn's explicit request -- no behavior change, confirmed by the regression suite passing identically. Added a clear, deliberate-decision comment at both places someone would naturally look when touching the notes-list preview (the CSS rule in .note-item-preview, and the JS source of truth in applySettings()'s "Notes list fonts" block), recording the architecture settled in discussion this session: every note's preview intentionally uses ONE SHARED font/size/weight/variation/style/stretch/feature/color, not each note's own individually pinned style, even once per-note themes exist and could technically override these properties. Lynn considered per-note matching directly and decided against it -- a list where every entry renders in a visibly different font would likely be harder to scan at a glance, not easier, the same reasoning already behind the existing global (not per-note) preview color setting. Explicitly recorded so this isn't mistaken for an oversight and "fixed" into per-note matching by a future session (or by Lynn's own future self, per her own stated worry about forgetting and re-raising it) -- and clarifies what must still hold true: the shared value must never go stale against the current/live note-font setting, which was the actual real bug already fixed in v0.1829. Suite: 332/332 (harness v8), confirming zero functional change.
@@ -2471,6 +2473,55 @@ body.reading-mode #note-fab,
 body.qab-enabled #quick-action-bar { display: flex; }
 body.qab-real-keyboard-open #quick-action-bar { display: none !important; }
 body.reading-mode:not(.qab-show-in-quiet) #quick-action-bar { display: none !important; }
+/* v0.1834 NEW, per Lynn's request: hides the BAR's own content when
+   collapsed via the handle, while the handle itself (a separate
+   element) stays visible under the exact same conditions the bar
+   itself would normally show under -- see #qab-collapse-handle's own
+   rules just below, which deliberately do NOT include this
+   handle-collapsed exclusion. */
+body.qab-handle-collapsed #quick-action-bar { display: none !important; }
+/* v0.1834 NEW, per Lynn's request: room for the handle so the QAB's
+   own scrollable button content never overlaps it. */
+body.qab-enabled.qab-handle-enabled #quick-action-bar { padding-left: calc(56px + env(safe-area-inset-left, 0px)); }
+
+#qab-collapse-handle {
+  display: none; /* shown via body.qab-enabled.qab-handle-enabled below */
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 21; /* just above the QAB bar (20), so it's always reachable */
+  /* v0.1834 NEW, per Lynn's explicit request: "really thick and
+     obvious for low vision people" -- deliberately large, not a
+     dainty edge tab. Height roughly matches the QAB bar's own default
+     footprint so it reads as clearly belonging to it. */
+  width: 56px;
+  height: 72px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--note-toolbar-bg, var(--bg2));
+  border: 2px solid var(--border);
+  border-left: none; /* flush with the true screen edge */
+  border-radius: 0 16px 16px 0;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+  color: var(--fg);
+}
+#qab-collapse-handle svg {
+  width: 30px;
+  height: 30px;
+  transition: transform 0.2s ease;
+}
+/* Chevron flips to point up (away from the hidden bar, toward where it
+   will reappear from) once collapsed -- down by default, since the
+   bar is expanded by default and the chevron points toward where
+   tapping it will send the content. */
+body.qab-handle-collapsed #qab-collapse-handle svg { transform: rotate(180deg); }
+body.qab-enabled.qab-handle-enabled #qab-collapse-handle { display: flex; }
+body.qab-real-keyboard-open #qab-collapse-handle { display: none !important; }
+body.reading-mode:not(.qab-show-in-quiet) #qab-collapse-handle { display: none !important; }
 
 /* v0.1819 NEW, per Lynn's request: a genuinely scrollable container
    (not a fixed 4-slot row) so more than 4 actions can be configured --
@@ -4410,8 +4461,14 @@ body.reading-mode.speak-in-quiet #quiet-stop-btn {
   background: rgba(var(--bg2-rgb, 237,232,222), 0.90);
   color: var(--fg2); /* neutral gray, never the accent/danger color — quiet mode stays calm regardless of the normal speak-button styling */
   border-radius: 0 999px 999px 0;
-  min-width: 40px;
-  min-height: 40px;
+  /* v0.1833 FIX, per Lynn's report: was hardcoded to a fixed 40px,
+     while #back-btn (the pill's other segment, via .icon-btn) sizes
+     itself with the dynamic var(--icon-btn-min) -- the two only
+     happened to roughly line up at the default icon size, and visibly
+     diverged at any other size. Using the same variable guarantees
+     they can never mismatch again. */
+  min-width: var(--icon-btn-min);
+  min-height: var(--icon-btn-min);
 }
 /* v0.1698: per Lynn -- most people want quiet mode to stay neutral (the
    rule above), but some genuinely need the button to stand out with
@@ -4708,7 +4765,13 @@ body.has-mouse .toolbar-drag-handle.dragging {
      there's no text. The full-width border is now drawn via ::after instead. */
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  /* v0.1833 FIX, per Lynn's report: was 2px, snug enough that a
+     slanted/cursive note-name font's trailing flourish on the last
+     character could visually overlap the pencil icon right next to
+     it. Small, deliberate increase rather than a large one -- still
+     meant to read as "right next to the title," just with enough
+     clearance for cursive letterforms specifically. */
+  gap: 7px;
   margin-bottom: 8px;
   padding-bottom: 4px;
   flex-shrink: 0;
@@ -8424,6 +8487,22 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="9 18 15 12 9 6"/></svg>
     </button>
   </div>
+  <!-- v0.1834 NEW, per Lynn's request: a prototype collapse handle for
+       the QAB -- a big, thick, obvious tab at the bottom-left that
+       toggles the bar open/closed, so QAB can stay permanently enabled
+       without always being visible. Deliberately a SEPARATE element
+       from #quick-action-bar itself (not a child), so it can stay
+       visible on its own even while the bar's own content is hidden --
+       matching how the scratch pad's edge tab stays visible while its
+       own panel is closed, though sized and styled completely
+       differently here (that one is small and mouse-only by design;
+       this one specifically needs to be large and touch-first for low
+       vision, the opposite design goal). Opt-in via its own setting
+       (off by default) since this is explicitly a prototype, not a
+       default behavior change for existing QAB users. -->
+  <button id="qab-collapse-handle" aria-label="Hide Quick Action Bar" title="Show/hide Quick Action Bar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="6 9 12 15 18 9"/></svg>
+  </button>
 
   </div>
 </div>
@@ -11625,6 +11704,18 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </label>
       </div>
 
+      <!-- v0.1834 NEW, per Lynn's request: prototype collapse handle. -->
+      <div class="settings-row" id="qab-handle-row">
+        <div>
+          <div class="settings-row-label">Collapse Handle (Prototype)</div>
+          <div class="settings-row-desc">Adds a large, obvious tab at the bottom-left of the note editor that shows or hides the Quick Action Bar with a single tap — a way to keep it always enabled without it always being visible. Experimental — off by default.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show Quick Action Bar Collapse Handle">
+          <input type="checkbox" id="qab-handle-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
       <div class="settings-row range-row" id="qab-size-row">
         <div class="settings-row-label">Button Size</div>
         <input type="range" class="settings-range" id="qab-size-range" min="40" max="140" step="2" value="64">
@@ -12616,7 +12707,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1832';
+const APP_VERSION = '0.1835';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14497,6 +14588,8 @@ const DEFAULT_SETTINGS = {
     shape: 'square',           // 'square' | 'circle'
     colorScheme: 'blackOnWhite', // 'blackOnWhite' | 'whiteOnBlack' | 'theme'
     showInQuietMode: false,    // v0.1823, per Lynn's request -- a toggle-type QAB button (e.g. Quiet mode itself) does no good if the whole bar disappears the moment quiet mode turns on. Off by default: preserves the existing hide-in-quiet-mode behavior exactly for anyone who hasn't explicitly opted in.
+    showCollapseHandle: false, // v0.1834 NEW, per Lynn's request -- a prototype collapse handle letting QAB stay enabled without always being visible. Off by default since this is explicitly experimental.
+    handleCollapsed: false,    // v0.1834 NEW -- whether the bar is CURRENTLY hidden via the handle. Starts expanded even once the handle itself is enabled, rather than surprising an existing QAB user with it already collapsed.
     buttons: [
       { action: 'print', letter: 'P' },
       { action: 'copy', letter: 'C' },
@@ -21381,8 +21474,16 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
     btn.classList.remove('active');
     btn.setAttribute('aria-label', 'Switch to Read & Revise mode');
     btn.setAttribute('title', 'Typing mode — tap to switch to Read & Revise mode');
-    btn.style.background = 'var(--accent)';
-    btn.style.color = 'white';
+    // v0.1833 FIX, per Lynn's repeated report: this specific branch was
+    // the actual root cause all along -- it used the general accent
+    // directly (bypassing the note-accent fallback the .active CSS
+    // class already correctly uses) plus a hardcoded white foreground
+    // with no contrast checking. My earlier investigation only tested
+    // the .active class (R&R mode, already correct) and never examined
+    // this separate inline-style path, which only applies when
+    // switching TO typing mode specifically.
+    btn.style.background = 'var(--note-accent, var(--accent))';
+    btn.style.color = _noteAccentContrastColor();
     if (!suppressFocus) {
       ignoreFocus = false;
       editor.focus({ preventScroll: true });
@@ -26307,6 +26408,22 @@ function applyToolbarIconSizes() {
     '#note-bottom-bar .icon-btn, #toolbar-scroll .icon-btn {' +
     '  min-width: ' + _iconBtnMin + 'px !important;' +
     '  min-height: ' + _iconBtnMin + 'px !important;' +
+    '}' +
+    // v0.1833 NEW, per Lynn's report: the quiet-mode merged back+speak
+    // pill's two segments could visibly mismatch in size -- neither
+    // button's own container size was ever tied to the icon-size
+    // setting in quiet mode at all (both were separately hardcoded to
+    // a fixed 40px in static CSS), and since back-btn's chevron is
+    // deliberately 1.3x larger than a standard icon (see _backIconPx
+    // above -- an existing, intentional choice, not something to
+    // remove), its button naturally grew past that shared 40px floor
+    // more than quiet-speak-btn's did at larger icon sizes. One shared
+    // minimum, based on the larger (chevron-inclusive) footprint,
+    // applied identically to all three so they can never mismatch --
+    // scoped to quiet mode only, normal mode is untouched.
+    'body.reading-mode #back-btn, body.reading-mode #quiet-speak-btn, body.reading-mode #quiet-stop-btn {' +
+    '  min-width: ' + Math.max(28, _backIconPx + 10) + 'px !important;' +
+    '  min-height: ' + Math.max(28, _backIconPx + 10) + 'px !important;' +
     '}';
 }
 
@@ -30701,6 +30818,19 @@ function makeImportFolderName(label) {
     _qabUpdateScrollArrows();
   })();
 
+  // ===== QAB COLLAPSE HANDLE (v0.1834) =====
+  // Per Lynn's request: a prototype, opt-in collapse handle for the QAB.
+  (function() {
+    var handle = document.getElementById('qab-collapse-handle');
+    if (!handle) return;
+    handle.addEventListener('click', function() {
+      settings.quickActionBar.handleCollapsed = !settings.quickActionBar.handleCollapsed;
+      handle.setAttribute('aria-label', settings.quickActionBar.handleCollapsed ? 'Show Quick Action Bar' : 'Hide Quick Action Bar');
+      saveSettings();
+      renderQuickActionBar();
+    });
+  })();
+
   // ===== FAB REPOSITIONING ABOVE QAB (v0.1826) =====
   // Per Lynn's request: the QAB bar can cover the "+" FAB. A single
   // ResizeObserver on the QAB bar itself catches every way its
@@ -34009,6 +34139,15 @@ function makeImportFolderName(label) {
   });
   document.getElementById('qab-quiet-toggle').addEventListener('change', function() {
     settings.quickActionBar.showInQuietMode = this.checked;
+    updateSaveBtnState();
+  });
+  // v0.1834 NEW, per Lynn's request: collapse handle prototype. Also
+  // re-renders immediately (not just marking dirty) so the handle's
+  // presence is visible right away while still in Settings, for her
+  // to actually try it, not just after saving and reopening a note.
+  document.getElementById('qab-handle-toggle').addEventListener('change', function() {
+    settings.quickActionBar.showCollapseHandle = this.checked;
+    renderQuickActionBar();
     updateSaveBtnState();
   });
   document.getElementById('qab-size-range').addEventListener('input', function() {
@@ -40354,6 +40493,9 @@ function renderQuickActionBar() {
 
   body.classList.toggle('qab-enabled', !!cfg.enabled);
   body.classList.toggle('qab-show-in-quiet', !!cfg.showInQuietMode);
+  // v0.1834 NEW, per Lynn's request: collapse handle prototype.
+  body.classList.toggle('qab-handle-enabled', !!cfg.showCollapseHandle);
+  body.classList.toggle('qab-handle-collapsed', !!cfg.handleCollapsed);
   body.classList.remove('qab-shape-square', 'qab-shape-circle');
   body.classList.add('qab-shape-' + (cfg.shape === 'circle' ? 'circle' : 'square'));
   body.classList.remove('qab-scheme-blackOnWhite', 'qab-scheme-whiteOnBlack', 'qab-scheme-theme');
@@ -40507,11 +40649,14 @@ function _qabRenderSlotRows() {
     actionSel.addEventListener('change', function() {
       cfg.buttons[i] = cfg.buttons[i] || { action: '', letter: '' };
       cfg.buttons[i].action = this.value;
-      // Picking a new action with no letter set yet (or the slot was
-      // previously empty) offers that action's own default letter,
-      // rather than leaving the box blank -- one less thing to fill in.
+      // v0.1833 FIX, per Lynn's report: always reset to the new action's
+      // own default letter when the action changes, even if a letter was
+      // already set (from whatever action was previously configured
+      // here) -- previously this only offered a default for an empty
+      // slot, silently leaving a stale, mismatched letter behind on an
+      // actual action change. She can still edit it manually afterward.
       var act = _qabActionById(this.value);
-      if (act && !cfg.buttons[i].letter) {
+      if (act) {
         cfg.buttons[i].letter = act.defaultLetter;
         letterInp.value = act.defaultLetter;
       }
@@ -40543,6 +40688,10 @@ function syncQuickActionBarSettingsUI() {
 
   var quietToggle = document.getElementById('qab-quiet-toggle');
   if (quietToggle) quietToggle.checked = !!cfg.showInQuietMode;
+
+  // v0.1834 NEW, per Lynn's request: collapse handle prototype.
+  var handleToggle = document.getElementById('qab-handle-toggle');
+  if (handleToggle) handleToggle.checked = !!cfg.showCollapseHandle;
 
   var sizeRange = document.getElementById('qab-size-range');
   var sizeVal = document.getElementById('qab-size-val');
@@ -42637,6 +42786,33 @@ function runFind(skipJump) {
     _findMatches.push(el);
   });
 
+  // v0.1835 NEW, per Lynn's own suggestion, and her report of Find
+  // matching the wrong string in the Debug Log specifically: sanity-
+  // checks that each rendered <mark>'s actual text genuinely contains
+  // the search query. urlsToLinks() runs several text-SHRINKING
+  // passes (images, code spans, links -- each replacing a matched
+  // span with a much shorter placeholder) on the raw string AFTER
+  // these placeholder markers are already embedded in it -- a real
+  // architectural risk: if the search query sits near or overlaps one
+  // of those OTHER markdown constructs, the embedded marker could
+  // survive but end up wrapping different text than intended, since
+  // it doesn't "know" what it's supposed to wrap, only where it was
+  // inserted. This won't fix such a case by itself, but will make it
+  // immediately, clearly visible in the log rather than a silent,
+  // confusing wrong highlight -- exactly what's needed to diagnose
+  // this properly rather than guess at a fix blind.
+  _findMatches.forEach(function(el, idx) {
+    var actual = (el.textContent || '').toLowerCase();
+    var expected = _findQuery.toLowerCase();
+    if (actual.indexOf(expected) === -1) {
+      logSys('[FIND MISMATCH] match #' + idx + ' of query "' + _findQuery +
+        '" rendered as "' + el.textContent + '" -- does not contain the query. ' +
+        'Note: "' + (notes[currentNoteId] && notes[currentNoteId].name || '?') + '". ' +
+        'This means urlsToLinks() likely disrupted the embedded placeholder marker ' +
+        'for this match -- see runFind()\'s own comment for the mechanism.');
+    }
+  });
+
   // Wire tap on any match to make it current
   _findMatches.forEach(function(el, idx) {
     el.addEventListener('click', function(e) {
@@ -42681,15 +42857,35 @@ function setCurrentMatch(idx) {
       var vv          = window.visualViewport;
       var vvOff       = vv ? vv.offsetTop : 0;
       var visH        = vv ? vv.height : area2.clientHeight;
-      var topClear    = findBarH + 8; // this find bar's own clearance, not the general toolbar's
+      // v0.1835 FIX, per Lynn's report: was findBarH + 8, which only
+      // ever cleared the find bar's OWN height. pinToolbars()'s own
+      // comment confirms the find bar sits BELOW the header and
+      // regular toolbar (both stay visible, stacked above it) -- this
+      // now uses the exact same total clearance pinToolbars() itself
+      // already computes for the content area's padding-top, so the
+      // two can never drift out of sync again.
+      var topClear    = (_pinnedHeaderH || 0) + (_pinnedToolbarH || 0) + findBarH + 8;
       var bottomClear = 20;
-      var viewTop     = area2.scrollTop + vvOff + topClear;
-      var viewBottom  = area2.scrollTop + vvOff + visH - bottomClear;
-      var matchBottom = matchY + lineH2; // bottom edge of the matched line
-      if (matchY < viewTop || matchBottom > viewBottom) {
+      function _isMatchVisible() {
+        var vt = area2.scrollTop + vvOff + topClear;
+        var vb = area2.scrollTop + vvOff + visH - bottomClear;
+        return matchY >= vt && (matchY + lineH2) <= vb;
+      }
+      if (!_isMatchVisible()) {
         var target2 = matchY - vvOff - topClear;
         area2.scrollTop = Math.max(0, target2);
       }
+      // v0.1835 NEW, per Lynn's own suggestion: rather than trust the
+      // calculation above is perfectly correct in every case, actually
+      // verify the match ended up visible after the scroll settles,
+      // and correct further if it didn't -- a robustness layer on top
+      // of the fixed formula, not a replacement for it.
+      requestAnimationFrame(function() {
+        if (!_isMatchVisible()) {
+          var target3 = matchY - vvOff - topClear;
+          area2.scrollTop = Math.max(0, target3);
+        }
+      });
     }
     updateFindUI();
     return;
