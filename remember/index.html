@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1831 -->
+<!-- Remember App - Version 0.1832 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1831
+  Version 0.1832
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,7 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1832 - FOUR things, per Lynn. (1) MOVED: Headings & Note Name Font Face, now below Advanced Typography instead of right after Note Font Face -- a rarely-used setting she didn't want appearing before the typography settings. (2) NEW: an explicit Select All button in the Edit Paragraph dialog, grouped with Paste on the right with a deliberate gap between them -- there won't always be a physical keyboard for Ctrl+A, and dragging to select text can be difficult for senior citizens. (3) NEW: a third, optional "Keep Editing" button on the Settings unsaved-changes prompt, per Lynn's report of accidentally clicking outside the dialog and only being offered Save or Discard when she actually just wanted to keep working. Confirmed technically feasible before building it, not assumed: the Settings dialog itself is still fully intact underneath the confirm popup at that point -- nothing has torn it down yet, the popup is purely a layered overlay -- so dismissing it without triggering either Save or Discard genuinely does mean "nothing changed, keep going," no callback even needed. Extended the SHARED confirm-dialog component (used throughout this app for many other prompts) with a new optional third button, defaulting to hidden unless a caller explicitly provides a label -- every other existing call site is completely unaffected. (4) FIX, likely root cause found for a real bug: Lynn's report of the PWA appearing "half updated" twice in one day -- the version number and update banner correctly showing the new version, while actual behavior still ran old, stale code, until a full force-quit and reopen. Found by reading the actual service worker fetch handler directly: fetch(event.request) passed the original Request object with no explicit cache directive, meaning this "network-first" HTML fetch -- despite the surrounding code's clear intent -- could still be silently satisfied by the BROWSER's own HTTP cache layer (entirely separate from the Cache API used everywhere else in this file) if GitHub Pages' response headers permitted it within their cache window. Fixed with an explicit cache:'no-store' on that one fetch call, in both the stable and dev service worker files (delivered separately, versioned _v2, replacing the existing _v1 files) -- guarantees a genuinely fresh network fetch every time, matching what this code already believed it was doing. Verified directly and thoroughly: the third button confirmed staying completely hidden for an ordinary, unrelated confirm call (e.g. a delete confirmation), confirmed correctly appearing with the right label only for the Settings unsaved-changes case, and confirmed that clicking it closes the popup while Settings stays open with the unsaved change still fully intact, not reverted; Select All confirmed actually selecting the real full text range in the textarea, not just clicked without effect; the Settings row reorder confirmed via real measured position relative to its new neighbors (caught and fixed a timing issue in the test itself along the way -- Settings wasn't actually open yet the first time it was checked). Suite: 332/332 (harness v8), including the structural nesting check.
   v0.1831 - NEW: Headings & Note Name Font Face, per Lynn's request -- a cursive/handwriting body font can look great for note text but distracting for markdown headings and the note title, so this lets those two use a different, calmer font face while leaving the note body untouched. Font FACE only, deliberately no size/weight controls -- headings already correctly vary size by level and the title has its own fixed size/weight, matching Lynn's explicit request to keep this simple. Defaults to "Default (match note text font)" as an actual dropdown option (matching the exact pattern already used for Note & Folder Name / Note Preview font settings), not a separate toggle, and is themeable (SETTING_BUCKETS_NOTE_APPEARANCE) per her request. Answers her direct question about typing mode: confirmed technically possible for the note title specifically (a genuine, separate DOM element, not embedded in the note's own textarea) -- and built it to work in both modes. Markdown headings remain R&R-mode-only, correctly matching her own guess about a real technical limitation: a plain textarea cannot selectively font-style just the heading LINES within otherwise-uniform text. Deliberately reuses the exact same full font list (Sans/Serif/Handwriting/Mono) as Note Content Text Font Face, including Handwriting, since the whole point is choosing something calmer than an otherwise-cursive body font. CAUGHT A SERIOUS BUG BEFORE SHIPPING, via the regression suite's own structural check, not missed: an earlier edit's old_str/new_str pair silently deleted the opening wrapper of the adjacent "Preview — tap to edit" row while leaving its content behind -- exactly the "expanding one section also expands a sibling section" bug class this project has hit before, confirmed by the harness's own targeted structural check (which flagged Note Behavior and Debugging nesting one level too deep) before a single functional test was even run. Found and fixed at the exact source (the missing wrapper + label), confirmed with a scoped div-balance count before and after (279/279 balanced after, vs 277/278 before), and reconfirmed the harness's full structural check passes clean with no warning. Verified directly and thoroughly, re-run against the corrected file rather than just the pre-fix version: headings and note title both default to matching the note's current font; explicitly overriding switches both correctly while the note BODY stays completely unaffected; heading size (confirmed H1 still computes to exactly double the base size) and weight (700) both confirmed completely untouched by this setting; the note title confirmed picking up the override in BOTH typing and R&R mode. Suite: 332/332 (harness v8), including its structural nesting check specifically.
   v0.1830 - Documentation only, per Lynn's explicit request -- no behavior change, confirmed by the regression suite passing identically. Added a clear, deliberate-decision comment at both places someone would naturally look when touching the notes-list preview (the CSS rule in .note-item-preview, and the JS source of truth in applySettings()'s "Notes list fonts" block), recording the architecture settled in discussion this session: every note's preview intentionally uses ONE SHARED font/size/weight/variation/style/stretch/feature/color, not each note's own individually pinned style, even once per-note themes exist and could technically override these properties. Lynn considered per-note matching directly and decided against it -- a list where every entry renders in a visibly different font would likely be harder to scan at a glance, not easier, the same reasoning already behind the existing global (not per-note) preview color setting. Explicitly recorded so this isn't mistaken for an oversight and "fixed" into per-note matching by a future session (or by Lynn's own future self, per her own stated worry about forgetting and re-raising it) -- and clarifies what must still hold true: the shared value must never go stale against the current/live note-font setting, which was the actual real bug already fixed in v0.1829. Suite: 332/332 (harness v8), confirming zero functional change.
   v0.1829 - THREE things, per Lynn. (1) FIX: the notes-list home-screen preview (and each individual note entry's preview) never reflecting stylistic-set changes, or any variable-axis change beyond weight -- confirmed the exact same category of gap already found once for R&R mode: font-feature-settings, font-variation-settings, font-stretch, and font-style were completely missing from this rule. Falls back to the note editor's own current values, so it now correctly matches live via CSS variable inheritance rather than needing a separate change-listener. IMPORTANT ARCHITECTURAL FINDING, flagged rather than silently worked around: confirmed the current system uses ONE SHARED set of CSS variables for every note's preview simultaneously -- meaning even the properties that already worked (font/size/weight) cannot currently reflect a per-note theme override on the home screen, since nothing there resolves each note's own theme individually. This fix is correct and complete for the common case (no per-note override, true for virtually every note today), but genuine per-note-aware preview rendering -- computing each entry's own resolved style rather than one shared value -- would need a larger restructuring of renderNotesList() itself, not attempted here pending Lynn's direction on scope. (2) Per Lynn's decision after comparing both new fonts: Playwrite Peru fully removed -- @font-face, dropdown entry, pill, weight registry, and stylistic-set registry all confirmed cleanly gone, GB J covers what she needs. (3) NEW: GB J's italic, per Lynn's request -- a genuinely separate font file (confirmed via direct fvar inspection: no italic/slant axis, upright and italic are two distinct exports), downloaded from TypeTogether's own GitHub and confirmed via direct GSUB inspection to share the exact same 10-set stylistic structure as the upright version. Registered under the same font-family with font-style:italic, the standard CSS mechanism for an upright/italic pair -- the browser selects it automatically wherever font-style:italic is applied. New Italic toggle in Settings, shown only for fonts registered in a new FONT_HAS_ITALIC registry (so it's invisible for every other font, which has no italic file to select). CAUGHT AND FIXED A REAL BUG before it shipped: the new toggle's own conditional show/hide only worked the FIRST time Settings opened -- clearSettingsSearch() (called on every subsequent open, to undo search-hiding) unconditionally resets every .settings-row's display style, which also silently wiped out this row's OWN conditional hide, since it's a static, always-present element rather than something rebuilt fresh each time like the stylistic-set checkboxes (which aren't affected by this). Fixed inside clearSettingsSearch() itself rather than at just one of its 5 call sites, so every path is covered automatically. Also found and fixed a related gap on the way: the toggle's effect was only wired into Settings-dialog-specific sync functions at first, not the general applySettings() path that runs on every note open -- fixed there directly, guarded so italic can never leak onto a font with no italic file even from a stale saved value. Verified directly and thoroughly: the notes-list preview confirmed showing the exact right font-family and feature-settings with real stylistic-set values; Peru confirmed fully absent from every registry; both GB J @font-face rules (upright and italic) confirmed present with correct paths; the toggle confirmed hidden for a non-italic font and visible for GB J -- including a second, explicit re-check after actually calling openSettings() a full time through, which is what caught the clearSettingsSearch() bug in the first place, not just checking the function in isolation; toggling on confirmed updating both the setting and the live computed font-style on the real editor element; switching away from GB J confirmed correctly reverting to normal, with no italic leaking onto the new font. Suite: 332/332 (harness v8).
@@ -10293,67 +10294,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </select>
       </div>
 
-      <!-- v0.1831 NEW, per Lynn's request: font FACE only (deliberately
-           no size/weight -- headings already vary size by level, and
-           the note title has its own fixed size/weight; changing
-           either here would be a different, unwanted feature). Applies
-           to both the note title (a real, separate element -- works in
-           both Typing and R&R mode) and markdown headings (R&R mode
-           only -- there's no way to selectively font-style just the
-           heading LINES within a plain <textarea> in Typing mode, so
-           this one is R&R-only by the nature of the underlying HTML,
-           not a missing feature). Same full font list as Note Content
-           Text Font Face, including Handwriting -- the whole point is
-           being able to pick something calmer than an otherwise-
-           cursive body font for headings specifically. -->
-      <div class="settings-row">
-        <div>
-          <div class="settings-row-label">Headings &amp; Note Name Font Face</div>
-          <div class="settings-row-desc">Font for markdown headings (Read &amp; Revise mode) and the note's own title, shown above the note. Leave as Default to match the note text font -- most useful when your note text uses an otherwise-cursive or highly informal font, since a heading (or the note name) in heavy cursive can be distracting in a way body text usually isn't.</div>
-        </div>
-        <select class="settings-select" id="heading-font-select">
-          <option value="">Default (match note text font)</option>
-          <optgroup label="— Sans-serif —">
-          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
-          <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
-          <option value="'Andika', sans-serif">Andika</option>
-          <option value="'Mulish', sans-serif">Mulish</option>
-          <option value="'Lexend', sans-serif">Lexend</option>
-          <option value="'Nunito', sans-serif">Nunito</option>
-          <option value="'Rubik', sans-serif">Rubik</option>
-          <option value="'IBM Plex Sans', sans-serif">IBM Plex Sans</option>
-          <option value="'Source Sans 3', sans-serif">Source Sans 3</option>
-          <option value="'Open Sans', sans-serif">Open Sans</option>
-          <option value="'Noto Sans', sans-serif">Noto Sans</option>
-          <option value="'Inter', sans-serif">Inter</option>
-          <option value="'Google Sans Flex', sans-serif">Google Sans Flex</option>
-          <option value="'Roboto Flex', sans-serif">Roboto Flex</option>
-          <option value="'Afacad', sans-serif">Afacad</option>
-          <option value="'Alegreya Sans', sans-serif">Alegreya Sans</option>
-          <option value="'Comic Relief', sans-serif">Comic Relief</option>
-          </optgroup>
-          <optgroup label="— Serif —">
-          <option value="'Lora', serif">Lora</option>
-          <option value="'Merriweather', serif">Merriweather</option>
-          <option value="'Literata', serif">Literata</option>
-          <option value="'Spectral', serif">Spectral</option>
-          <option value="Georgia, serif">Georgia</option>
-          </optgroup>
-          <optgroup label="— Handwriting —">
-          <option value="'Playpen Sans', cursive">Playpen Sans</option>
-          <option value="'Playwrite IE', cursive">Playwrite Ireland</option>
-          <option value="'Playwrite GB J', cursive">Playwrite England Joined</option>
-          <option value="'Shantell Sans', cursive">Shantell Sans</option>
-          </optgroup>
-          <optgroup label="— Monospace —">
-          <option value="'Roboto Mono', 'Courier New', monospace">Roboto Mono</option>
-          <option value="'Inconsolata', 'Courier New', monospace">Inconsolata</option>
-          <option value="'Noto Sans Mono', 'Courier New', monospace">Noto Sans Mono</option>
-          <option value="'Atkinson Hyperlegible Mono', 'Courier New', monospace">Atkinson Hyperlegible Mono</option>
-          </optgroup>
-        </select>
-      </div>
-
       <div class="settings-row">
         <div style="font-size:0.78em;color:var(--fg3);margin-bottom:4px;user-select:none;-webkit-user-select:none">
           Preview — tap to edit
@@ -10511,6 +10451,72 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 
         </div>
       </div>
+
+      <!-- v0.1831 NEW, per Lynn's request: font FACE only (deliberately
+           no size/weight -- headings already vary size by level, and
+           the note title has its own fixed size/weight; changing
+           either here would be a different, unwanted feature). Applies
+           to both the note title (a real, separate element -- works in
+           both Typing and R&R mode) and markdown headings (R&R mode
+           only -- there's no way to selectively font-style just the
+           heading LINES within a plain <textarea> in Typing mode, so
+           this one is R&R-only by the nature of the underlying HTML,
+           not a missing feature). Same full font list as Note Content
+           Text Font Face, including Handwriting -- the whole point is
+           being able to pick something calmer than an otherwise-
+           cursive body font for headings specifically.
+           v0.1832 MOVED, per Lynn's explicit request: below Advanced
+           Typography instead of right after Note Font Face -- this is
+           a rarely-used setting she didn't want appearing before the
+           typography settings. -->
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Headings &amp; Note Name Font Face</div>
+          <div class="settings-row-desc">Font for markdown headings (Read &amp; Revise mode) and the note's own title, shown above the note. Leave as Default to match the note text font -- most useful when your note text uses an otherwise-cursive or highly informal font, since a heading (or the note name) in heavy cursive can be distracting in a way body text usually isn't.</div>
+        </div>
+        <select class="settings-select" id="heading-font-select">
+          <option value="">Default (match note text font)</option>
+          <optgroup label="— Sans-serif —">
+          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
+          <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
+          <option value="'Andika', sans-serif">Andika</option>
+          <option value="'Mulish', sans-serif">Mulish</option>
+          <option value="'Lexend', sans-serif">Lexend</option>
+          <option value="'Nunito', sans-serif">Nunito</option>
+          <option value="'Rubik', sans-serif">Rubik</option>
+          <option value="'IBM Plex Sans', sans-serif">IBM Plex Sans</option>
+          <option value="'Source Sans 3', sans-serif">Source Sans 3</option>
+          <option value="'Open Sans', sans-serif">Open Sans</option>
+          <option value="'Noto Sans', sans-serif">Noto Sans</option>
+          <option value="'Inter', sans-serif">Inter</option>
+          <option value="'Google Sans Flex', sans-serif">Google Sans Flex</option>
+          <option value="'Roboto Flex', sans-serif">Roboto Flex</option>
+          <option value="'Afacad', sans-serif">Afacad</option>
+          <option value="'Alegreya Sans', sans-serif">Alegreya Sans</option>
+          <option value="'Comic Relief', sans-serif">Comic Relief</option>
+          </optgroup>
+          <optgroup label="— Serif —">
+          <option value="'Lora', serif">Lora</option>
+          <option value="'Merriweather', serif">Merriweather</option>
+          <option value="'Literata', serif">Literata</option>
+          <option value="'Spectral', serif">Spectral</option>
+          <option value="Georgia, serif">Georgia</option>
+          </optgroup>
+          <optgroup label="— Handwriting —">
+          <option value="'Playpen Sans', cursive">Playpen Sans</option>
+          <option value="'Playwrite IE', cursive">Playwrite Ireland</option>
+          <option value="'Playwrite GB J', cursive">Playwrite England Joined</option>
+          <option value="'Shantell Sans', cursive">Shantell Sans</option>
+          </optgroup>
+          <optgroup label="— Monospace —">
+          <option value="'Roboto Mono', 'Courier New', monospace">Roboto Mono</option>
+          <option value="'Inconsolata', 'Courier New', monospace">Inconsolata</option>
+          <option value="'Noto Sans Mono', 'Courier New', monospace">Noto Sans Mono</option>
+          <option value="'Atkinson Hyperlegible Mono', 'Courier New', monospace">Atkinson Hyperlegible Mono</option>
+          </optgroup>
+        </select>
+      </div>
+
       <div class="settings-subsection-title" style="margin-top:10px">Highlight Color</div>
       <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
         <div class="settings-row-label">Highlight Color</div>
@@ -11793,7 +11799,14 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <textarea id="edit-block-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Block text…" rows="3"></textarea>
     </div>
     <!-- v0.1636: explicit Paste — same rationale as Quick Add's. -->
-    <div style="display:flex;justify-content:flex-end;margin-top:6px">
+    <!-- v0.1832 NEW, per Lynn's request: explicit Select All -- there
+         won't always be a physical keyboard for Ctrl+A, and dragging to
+         select text can be difficult for senior citizens. Grouped with
+         Paste on the right, with a deliberate gap between them (not
+         spread across the full row) so the two aren't too close to
+         tap by mistake. -->
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:18px;margin-top:6px">
+      <button class="qa-pos-btn" id="eb-select-all-btn" type="button" title="Select all text">Select All</button>
       <button class="qa-pos-btn" id="eb-paste-btn" type="button" title="Paste clipboard text at the cursor">Paste</button>
     </div>
     <p id="edit-block-tip">Editing a single line or paragraph — line breaks are not allowed.</p>
@@ -12590,6 +12603,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     <div class="confirm-msg" id="confirm-msg"></div>
     <div class="confirm-btns" id="confirm-btns">
       <button class="btn btn-ghost" id="confirm-cancel-btn">Cancel</button>
+      <button class="btn btn-ghost" id="confirm-third-btn" style="display:none">Keep Editing</button>
       <button class="btn btn-danger" id="confirm-ok-btn">Delete</button>
     
     </div></div>
@@ -12602,7 +12616,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1831';
+const APP_VERSION = '0.1832';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -15321,6 +15335,7 @@ function _shouldLiveRerenderFromStorageEvent() {
 }
 let confirmCallback = null;
 let cancelCallback = null;
+let thirdCallback = null;
 let pendingAutoSpeak = false;
 let openSnapshot = null; // { name, content } captured when note is opened
 let isViewMode = false;
@@ -24810,7 +24825,7 @@ function deleteCurrentNote() {
 }
 
 // ===== CONFIRM DIALOG =====
-function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cancelCb, anchorBelowTitle) {
+function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cancelCb, anchorBelowTitle, thirdLabel, thirdCb) {
   _lastConfirmTitle = title; // for debug-log resolution logging (Confirmed/Cancelled)
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-msg').innerText = msg;
@@ -24825,6 +24840,19 @@ function showConfirm(title, msg, okLabel, cb, reverseButtons, cancelLabel, cance
   }
   confirmCallback = cb;
   cancelCallback = cancelCb || null;
+  // v0.1832 NEW, per Lynn's request: optional third button (e.g. "Keep
+  // Editing" for the Settings unsaved-changes prompt) -- hidden unless
+  // a label is explicitly provided, so every existing caller is
+  // completely unaffected.
+  var thirdBtn = document.getElementById('confirm-third-btn');
+  if (thirdLabel) {
+    thirdBtn.textContent = thirdLabel;
+    thirdBtn.style.display = '';
+    thirdCallback = thirdCb || null;
+  } else {
+    thirdBtn.style.display = 'none';
+    thirdCallback = null;
+  }
   var overlay = document.getElementById('confirm-overlay');
   var btns = document.getElementById('confirm-btns');
   btns.style.flexDirection = reverseButtons ? 'row-reverse' : '';
@@ -24883,8 +24911,10 @@ function closeConfirm() {
   overlay.style.paddingTop = '';
   confirmCallback = null;
   cancelCallback = null;
+  thirdCallback = null;
   document.getElementById('confirm-cancel-btn').textContent = 'Cancel';
   document.getElementById('confirm-cancel-btn').style.display = '';
+  document.getElementById('confirm-third-btn').style.display = 'none';
 }
 
 // ===== SETTINGS =====
@@ -32602,7 +32632,9 @@ function makeImportFolderName(label) {
         function() { closeSettings(); },
         false,
         'Discard',
-        function() { cancelSettings(); }
+        function() { cancelSettings(); },
+        undefined,
+        'Keep Editing'
       );
     } else {
       cancelSettings();
@@ -38397,6 +38429,23 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     btn.addEventListener('click', function() { pasteIntoDialogInput(pair[1]); });
   });
 
+  // v0.1832 NEW, per Lynn's request: explicit Select All for the Edit
+  // Paragraph dialog -- there won't always be a physical keyboard for
+  // Ctrl+A, and dragging to select text can be difficult for senior
+  // citizens. Same mousedown-preventDefault pattern as Paste above, so
+  // the textarea stays focused (and its own native .select() call
+  // works correctly) through the button press.
+  (function() {
+    var selectAllBtn = document.getElementById('eb-select-all-btn');
+    var ebInput = document.getElementById('edit-block-input');
+    if (!selectAllBtn || !ebInput) return;
+    selectAllBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    selectAllBtn.addEventListener('click', function() {
+      ebInput.focus();
+      ebInput.select();
+    });
+  })();
+
   updateViewOnlyBtns = function() {
     var crossoutBtn   = document.getElementById('crossout-mode-btn');
     var clearBtn      = document.getElementById('clear-strikethroughs-btn');
@@ -39936,6 +39985,12 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
   document.getElementById('confirm-ok-btn').addEventListener('click', function() {
     logDebugAction('Dialog "' + _lastConfirmTitle + '": Confirmed');
     if (confirmCallback) confirmCallback();
+    closeConfirm();
+  });
+  // v0.1832 NEW, per Lynn's request: optional third button.
+  document.getElementById('confirm-third-btn').addEventListener('click', function() {
+    logDebugAction('Dialog "' + _lastConfirmTitle + '": Third option');
+    if (thirdCallback) thirdCallback();
     closeConfirm();
   });
 
