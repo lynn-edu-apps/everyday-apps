@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1820 -->
+<!-- Remember App - Version 0.1824 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1820
+  Version 0.1824
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,10 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1824 - Quick Add ("Add text to note") dialog reordered, per Lynn's explicit request: the collapsible "More options" section (blank lines, dividing line, hyphen, checkbox marker, tag-sort) now sits BELOW the Cancel/Add button row instead of above it. She uses this dialog dozens of times a day and the buttons kept ending up underneath the virtual keyboard, meaning she had to dismiss the keyboard before she could even tap Add -- moving More options out of the way means the buttons themselves now sit higher on screen, reachable without that extra step. Explicitly a deliberate departure from the usual "primary actions go last" convention, made for a concrete, named friction reason rather than by default. Since More options no longer lives inside the dialog's own already-scrollable middle region (which is itself capped and scrollable specifically so nothing can get clipped by .confirm-box's 80vh limit), it was given its own bounded scroll (max-height:35vh, overflow-y:auto) as a safety net -- if its content ever got tall enough to matter when expanded, it scrolls within its own space instead of being silently clipped or pushing the dialog past its cap. Verified directly: the button row's own vertical position now measures above More options' position (not just assumed from the HTML order); the section still opens/closes correctly in its new spot; all 6 checkboxes present and independently confirmed toggleable, not just rendered; screenshot confirmation of the full expanded state showing Cancel/Add sitting right below the text box with the checkboxes correctly laid out beneath. Suite: 332/332 (harness v8).
+  v0.1823 - FOUR fixes, per Lynn. (1) NEW setting: Quick Action Bar "Show in Quiet Mode", off by default (preserves the existing hide-in-quiet-mode behavior exactly). Directly motivated by v0.1820's toggle-type QAB buttons -- a toggle-type button like Quiet mode itself does no good if the whole bar disappears the instant quiet mode turns on. (2) FIX: font weight increase/decrease buttons now jump directly to the next weight the current font actually supports, rather than a flat +/-10 that could silently do nothing for several taps in a row on a font with sparse discrete weights (e.g. a font supporting only 400 and 700 needed 30 taps of the old flat step to visibly change at all, since every intermediate value the browser can't render just displays identically to whichever real weight is closest). New getNextSupportedWeight() reuses the existing FONT_WEIGHT_SUPPORT registry -- exact same underlying data the sliders already use for their own variable-step-size fix, just never applied to these buttons until now. Variable fonts keep their existing fine flat step (every value is genuinely valid), now correctly clamped to that specific font's real range instead of the generic 100-900 bounds. (3) FIX: the "Show 'Back' label on large screens" text now uses the accent color instead of inheriting the toolbar's plain foreground -- confirmed exact color match against --accent directly. (4) FIX: Find in Note's keyboard overlap in typing mode, per Lynn's report -- the match's scroll-to position never called this app's own keyboard-aware scroll-room function, unlike every other similar scroll-to-position call site in this codebase (the exact bug class already documented and fixed everywhere else back in v0.1666: "a perfectly correct target could never actually be reached... with little or no room below"), just never applied to this one path. CAUGHT A SERIOUS BUG IN THE FIRST ATTEMPT AT THIS, via testing rather than assuming it worked: the keyboard-scroll-room function is closure-scoped inside init(), but the Find code calling it lives at the top level with no access to it -- the naive fix would have thrown a real ReferenceError and broken Find in Note's next-match navigation entirely, a materially worse regression than the cosmetic keyboard-overlap issue being fixed. Caught immediately by testing before shipping, fixed by exporting the function on window, matching this codebase's own established convention for exactly this cross-scope need. Also flagged, not chased down: a small, pre-existing HTML/text count discrepancy was noticed while double-checking balance, confirmed to already exist in the prior delivered build (not introduced by this one) and confirmed not to be affecting the regression suite, which has passed cleanly throughout -- most likely changelog prose text containing the literal characters "div" rather than a real unclosed tag, the same category of false positive already found and fixed once this session for a different tag. Verified directly, not assumed: weight-jump confirmed with a real static font (400->700 in one tap each direction) and a real variable font (clamped correctly at its own range boundary, not the generic one); the quiet-mode setting confirmed hiding/showing correctly in both states, end to end, not just checking the class toggle in isolation; the BACK label's computed color confirmed to exactly match the accent CSS variable; the Find keyboard fix confirmed twice -- first that the ReferenceError is genuinely gone, then separately, with a real simulated 300px keyboard shrink, that the resulting scroll padding computes to exactly the expected value using the app's own established formula. Suite: 332/332 (harness v8).
+  v0.1822 - Accessibility hardening on two fronts, per Lynn's request. (1) The new custom picker component (v0.1821) audited against common checker-tool and human-reviewer expectations, not just left as originally built: options switched from <button> to <div role="option" tabindex="-1"> with fully JS-managed roving focus, matching the W3C APG reference implementation exactly rather than the button-with-overridden-role pattern some automated checkers flag as a semantic mismatch; groups now properly wrapped in role="group" with a real aria-label, not just a sibling label with role="presentation", so a screen reader actually announces group membership while navigating; a visually-hidden aria-live region added so a screen reader user filtering the list hears the result count or "No matches", not just silence; type-ahead added (a single keypress jumps to the next option starting with that letter), matching native <select> behavior and especially valuable on a picker with no search box, where arrow-key-only navigation through a long list is slow; prefers-reduced-motion respected for the open/close transition; the close button enlarged to meet the standard 44x44px minimum touch target guideline. (2) The pre-existing toolbar-placement dropdown (from v0.1584, unrelated to the new component) given the keyboard navigation it never had -- confirmed by reading its code directly that it had no keydown handling at all beyond default Tab order, meaning using it required a pointer. Added arrow-key/Home/End navigation, Enter/Space to select, and Escape to close with focus correctly returned to the trigger button -- matching the same roving-focus convention just established for the new component. TESTING NOTE, disclosed rather than glossed over: several rounds of this session's own testing initially produced confusing, seemingly-contradictory results (focus silently landing on <body> instead of an option) that traced entirely to a testing artifact already learned once before in this project -- elements inside a collapsed Settings section are genuinely unfocusable (0x0, not rendered) regardless of correct code, not a real bug -- confirmed by directly checking getBoundingClientRect() before concluding anything, rather than trusting the first (misleading) result. Verified directly, with sections properly expanded this time: the custom picker's core mechanism, keyboard nav, groups, and live region all still work correctly after the hardening changes; the toolbar-placement dropdown's full lifecycle (open with correct initial focus on the current selection, arrow-navigate, Escape-close-and-return-focus, reopen, arrow-navigate, Enter-select) confirmed end to end with real values, not assumed. Suite: 332/332 (harness v8).
+  v0.1821 - MAJOR: custom picker component, per Lynn's request -- a reusable, accessible replacement for native <select> dropdowns, built specifically portable to future Claude PWA projects (a standalone reference file, custom-picker-component.html, ships alongside this build with the exact same component code, zero Remember dependencies, and two working live demos). Follows the W3C ARIA "listbox in a dialog" pattern rather than an invented one: focus trap, arrow-key navigation, Escape to cancel, Enter/Space to select, focus returned to the trigger on close. Modeled visually after the More menu per Lynn's own suggestion, but built as a centered/bottom overlay rather than an anchored dropdown, since it needs to work for long lists (30+ fonts) without running off-screen. CAUGHT AND FIXED SEVERAL REAL BUGS DURING DEVELOPMENT, not glossed over: (1) a scary near-miss where an early CSS edit accidentally dropped the .modal-sheet selector line entirely, caught by direct file inspection before any testing built on top of it; (2) Enter-to-select silently didn't work at all -- relied on native button-activation instead of explicit handling, which isn't actually correct for role="option" elements under the accessibility pattern being followed anyway; (3) a related bug caught before shipping -- treating Space as a universal select key would have blocked typing an actual space character into the search box; (4) a genuine architectural issue -- the first draft listened for keydown on document, which turned out fragile against Remember's own existing global keyboard shortcuts (confirmed at least two other document-level listeners already exist); one of them silently ate the Enter key before the picker ever saw it, fixed by scoping the listener to the dialog itself, which is also just more correct for a modal component; (5) the test harness caught a genuine false positive -- literally wrote the tag name for the page's own style element, spelled out with angle brackets, inside a JS comment as prose, which fooled the harness's own comment-balance checker into merging unrelated content into a bogus block, fixed by rewording. INTEGRATED into 8 real dropdowns, not just the 5 font ones originally planned -- Lynn's follow-up specifically named + Button Inserts At, the speech Voice picker, and Quick Action Bar Button Colors, found by auditing every <select> in the file rather than assuming the font ones were the only ones that mattered. While wiring these up, found and fixed SIX separate instances (across all 8 selects) of a real pre-existing pattern: code that silently syncs a select's value via a plain assignment (deliberately not dispatching 'change', to avoid triggering that select's full side effects just for a display sync) -- which would have left the new trigger button's label permanently stale after each one. Exposed an explicit _refreshPickerTriggerLabel() specifically so those exact spots can refresh just the label, with none of a full change event's side effects. Confirmed the Voice picker's async, browser-populated option list (fundamentally different from every other select's static HTML options) is still handled safely, since item-reading happens fresh every time the trigger is clicked rather than being cached once at setup. Also relaxed .settings-select from a select-only CSS rule to a general one, needed so the new trigger buttons could inherit the exact same visual styling -- confirmed this incidentally fixes a small, real, pre-existing gap too: the Quick Action Bar's own "Add another button" control already used this class but never actually got the styling, since the rule was select-tag-scoped. Verified directly and extensively throughout: core mechanism (selection, checkmarks, pre-selected state), keyboard navigation and Enter-select, Escape-cancel with proper cleanup, search/filter narrowing correctly, focus trap wrapping correctly in both directions, all 8 real integrations opening/selecting/updating settings correctly end to end, the async voice-population edge case specifically, font-preview styling rendering each option in its own actual typeface, and the standalone reference file working completely independently in total isolation from the rest of the app. Suite: 332/332 (harness v8).
   v0.1820 - NEW: toggle-type Quick Action Bar buttons now "light up" (solid accent-color background, contrast-checked foreground) while their underlying state is active, per Lynn's request -- same visual language as the slider default/reset buttons, reusing the exact same contrast-picking helper rather than a new one. Systematically reviewed every action in the registry for toggle-ness rather than guessing, per Lynn's own follow-up catches: confirmed THREE genuine toggles -- Tap to Edit, Quiet mode, and (caught on Lynn's second follow-up) Show/hide toolbar, each wired to refresh at its real underlying state-change point (enterEditBlockMode/exitEditBlockMode, toggleReadingMode/clearReadingMode, applyToolbarCollapsed -- the last one deliberately chosen as a single hook since every toolbar-collapse code path, including on load, already routes through it). Also explicitly considered and deliberately excluded two borderline cases rather than silently guessing either way: Speak and Find both have an underlying active state, but neither of their actions actually TOGGLES it on repeat press (Speak restarts rather than stops; Find re-opens rather than closes) -- lighting them up would misrepresent how tapping them actually behaves, and changing that behavior would be a real design change beyond what was asked. Confirmed there's no existing toggle-classification data structure anywhere in the codebase to reuse (checked directly, per Lynn's own question, rather than assumed) -- DUAL_MODE_BUTTON_IDS is a different, unrelated concept (toolbar vs. More-menu placement). Extensible design: any action can now optionally provide an isActive() function; only genuine toggles need one. ALSO FIXED, a real pre-existing bug found while extending this same mechanism: the accent-contrast color (introduced for the slider buttons) was cached but never invalidated when the accent color itself changed, meaning changing your theme's accent would leave a stale, potentially illegible contrast color in place for the rest of the session -- fixed at the one place accent actually gets applied. Verified directly and thoroughly: all three toggles correctly light up on entry and correctly un-light on exit; a non-toggle action (Print) confirmed never receiving the active class under any condition; actual computed background colors confirmed switching between accent-green and the normal scheme's white; the accent-cache fix confirmed producing correct black-on-light-accent and white-on-dark-accent contrast after changing accent color twice; screenshot confirmation of two simultaneously-active toggle buttons alongside two inactive ones, visually correct. Suite: 332/332 (harness v8).
   v0.1819 - MAJOR: Quick Action Bar redesigned from a fixed 4-button row into a scrollable bar supporting any number of buttons, per Lynn's request (motivated by her father specifically needing large Undo/Redo alongside his existing buttons). Also added: Tap to Edit, Undo, and Redo as new available actions, reusing the exact same underlying functions the real toolbar buttons already call. ARCHITECTURE: deliberately mirrors the lower toolbar's own proven scroll-arrow pattern rather than inventing a new one, per Lynn's own suggestion -- a genuinely scrollable inner container (which gets native swipe scrolling for free, not something needing separate implementation) plus explicit arrow buttons for a precise, discoverable, big alternative to swiping; same show-only-on-overflow, dim-and-disable-at-limits, hold-to-repeat behavior as the toolbar's arrows, for both mouse and touch. Buttons are now created/destroyed dynamically based on however many are actually configured, not a fixed loop of 4 -- confirmed fully backward compatible with existing saved 4-button configs (a plain array of 4 already worked correctly under the old fixed-loop code; the new forEach-based render produces an identical result for that same array, no migration needed). Settings UI: the old 4 static rows replaced with a dynamically-rendered list (each row's own listeners wired inline at creation, since rows now come and go rather than being fixed elements wired once) plus an explicit "+ Add another button" control and a per-row Remove button. Verified directly and extensively: 7 configured buttons correctly overflow a 400px viewport with both scroll arrows appearing; arrow dim/enable state confirmed correct at both the start and end of the scrollable range (with real settle-time verification, not just an immediate check); clicking an arrow correctly scrolls and updates the opposite arrow's state; the full Settings add/configure/remove lifecycle confirmed correct end to end (adding a 5th slot, picking an action for it with the letter auto-filling correctly, then removing a different row, correctly shrinks both the rendered rows and the underlying settings array back to the right length); a pre-existing plain 4-button saved config confirmed rendering identically under the new code. Suite: 332/332 (harness v8).
   v0.1818 - CRITICAL FIX: crash when switching to R&R mode with an active Find in Note search, per Lynn's exact report ("undefined is not an object (evaluating 'el.classList.remove')"). Root cause confirmed precisely: _findMatches has a completely different shape depending on mode -- plain {start,end} position objects in typing mode (used with the textarea's own native selection), real DOM <mark> elements in R&R mode (used for click-to-jump and highlight styling) -- and nothing ever converted between the two shapes on a mode switch. Switching to R&R mode left the stale typing-mode position-objects in place; the very next 'next match' press then tried to call .classList on a plain object instead of a real element. Per Lynn's explicit request that this actually work rather than just avoid crashing (typing mode's keyboard popping back up on every 'next' press being the specific annoyance driving the request) -- rather than just guard against the crash, the search now genuinely survives a mode switch in EITHER direction: reuses runFind()'s own existing per-mode match-building logic (rather than duplicating it) to correctly rebuild _findMatches in whichever shape the new mode needs, then restores the same match INDEX she was on (clamped, in case the match count somehow changed) rather than resetting to the first match -- fixed a related bug found while implementing this: runFind()'s R&R-mode branch never actually respected its own skipJump parameter, unlike the typing-mode branch, which would have silently discarded her position even with a naive fix. Previously, leaving R&R mode always silently cancelled an active search entirely (never crashed, but never explained why); now both directions behave the same, consistent way. Verified directly, end to end: the exact reported crash scenario (search 'apple' in a 4-match note, advance to the third match, switch to R&R mode) produces zero errors, correctly rebuilds all 4 matches as real DOM elements, and correctly marks the SAME third match as current in the new mode; switching back to typing mode correctly restores the exact right text selection (confirmed character-precise); separately verified three edge cases produce no errors: a mode switch with no active search at all, an active search with zero matches, and that explicitly closing Find still works normally afterward. Suite: 332/332 (harness v8).
@@ -910,7 +914,7 @@ body.hide-remember-logo .home-title {
     line-height: 1.2;
     margin-left: -3px;
     margin-right: 10px;
-    color: inherit;
+    color: var(--accent);
     font-size: calc(var(--font-ui) * 1.1);
     font-weight: 700;
     text-transform: uppercase;
@@ -2357,7 +2361,7 @@ body.reading-mode #note-fab,
 }
 body.qab-enabled #quick-action-bar { display: flex; }
 body.qab-real-keyboard-open #quick-action-bar { display: none !important; }
-body.reading-mode #quick-action-bar { display: none !important; }
+body.reading-mode:not(.qab-show-in-quiet) #quick-action-bar { display: none !important; }
 
 /* v0.1819 NEW, per Lynn's request: a genuinely scrollable container
    (not a fixed 4-slot row) so more than 4 actions can be configured --
@@ -5338,6 +5342,150 @@ body:not(.dark) .note-item {
 }
 .modal-overlay.open { display: block; }
 
+/* ============================================================
+   CUSTOM PICKER COMPONENT (v0.1821)
+   A reusable, accessible replacement for native <select> dropdowns.
+   Built per Lynn's explicit request to be portable to other Claude PWA
+   projects: no dependency on any Remember-specific function, only
+   generic CSS variables with sensible fallbacks (so it works even in a
+   project that hasn't defined --accent/--bg2/etc, though it'll look
+   best if it has). See the matching JS block (search "CUSTOM PICKER
+   COMPONENT") for the public API and usage notes.
+
+   WHY THIS EXISTS: native <select> dropdowns hand rendering of the
+   OPEN option list to the OS on some platforms (confirmed specifically
+   on iOS Safari, where it becomes a native wheel-picker) -- no amount
+   of CSS can make that native UI honor an app's own font-size setting.
+   For a low-vision user who has set a large UI font size everywhere
+   else, the one place it silently stops working is exactly the list
+   they need to read most carefully. This component is regular page
+   content instead, so it's never exempt from the app's own styling.
+   ============================================================ */
+.custom-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 10050;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.custom-picker-overlay.open { opacity: 1; }
+@media (min-width: 640px) {
+  .custom-picker-overlay { align-items: center; }
+}
+.custom-picker-sheet {
+  background: var(--bg-dialog, var(--bg2, #fff));
+  color: var(--fg, #222);
+  width: 100%;
+  max-width: 480px;
+  max-height: 78vh;
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-lg, 0 -4px 24px rgba(0,0,0,0.3));
+  display: flex;
+  flex-direction: column;
+  transform: translateY(16px);
+  transition: transform 0.15s ease;
+  overflow: hidden;
+}
+.custom-picker-overlay.open .custom-picker-sheet { transform: translateY(0); }
+@media (min-width: 640px) {
+  .custom-picker-sheet { border-radius: 16px; max-height: 70vh; }
+}
+.custom-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border, #ddd);
+  flex: 0 0 auto;
+}
+.custom-picker-title {
+  font-family: var(--font-body, inherit);
+  font-size: var(--font-ui, 17px);
+  font-weight: 700;
+  margin: 0;
+}
+.custom-picker-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 1.3em;
+  color: var(--fg3, #888);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.custom-picker-search-wrap { padding: 10px 14px; border-bottom: 1px solid var(--border, #ddd); flex: 0 0 auto; }
+.custom-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #ccc);
+  background: var(--bg3, #f4f4f4);
+  color: var(--fg, #222);
+  font-family: var(--font-body, inherit);
+  font-size: var(--font-ui, 16px);
+}
+.custom-picker-list {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  padding: 6px 0;
+}
+.custom-picker-group-label {
+  font-family: var(--font-body, inherit);
+  font-size: calc(var(--font-ui, 16px) * 0.8);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fg3, #888);
+  padding: 12px 18px 4px;
+}
+.custom-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px 18px;
+  background: none;
+  border: none;
+  color: var(--fg, #222);
+  font-family: var(--font-body, inherit);
+  font-size: var(--font-ui, 16px);
+  font-weight: var(--font-weight-ui, 400);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.custom-picker-option:hover,
+.custom-picker-option.picker-focused { background: var(--bg3, #f0f0f0); }
+.custom-picker-option[aria-selected="true"] { font-weight: 700; }
+.custom-picker-option-check {
+  flex: 0 0 auto;
+  width: 20px;
+  color: var(--accent, #3a7);
+  opacity: 0;
+}
+.custom-picker-option[aria-selected="true"] .custom-picker-option-check { opacity: 1; }
+.custom-picker-option-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.custom-picker-empty { padding: 24px 18px; text-align: center; color: var(--fg3, #888); font-family: var(--font-body, inherit); }
+@media (prefers-reduced-motion: reduce) {
+  .custom-picker-overlay, .custom-picker-sheet { transition: none; }
+}
+
 .modal-sheet {
   /* v0.1783 FIX, per Lynn's report (rounded corners square on the side
      the scrollbar sits on, worse in Firefox but confirmed present in
@@ -6002,7 +6150,7 @@ body.note-tex-active .note-inline-title-row { background: transparent; }
   }
 }
 
-select.settings-select {
+.settings-select {
   -webkit-appearance: none;
   appearance: none;
   font-family: var(--font-body);
@@ -8959,7 +9107,36 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     <div style="display:flex;justify-content:flex-end;margin-top:6px">
       <button class="qa-pos-btn" id="qa-paste-btn" type="button" title="Paste clipboard text at the cursor">Paste</button>
     </div>
-    <!-- v0.1638: "More options" — collapses the six checkboxes below
+    </div>
+    <div class="confirm-btns" style="margin-top:6px;align-items:center;flex-shrink:0">
+      <button id="quick-add-tag-btn" aria-label="Insert tag" title="Insert tag" style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
+      <button id="quick-add-mic-btn" aria-label="Dictate"
+        style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:none;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none">
+          <rect x="9" y="2" width="6" height="11" rx="3"/>
+          <path d="M5 10a7 7 0 0 0 14 0"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+          <line x1="8" y1="22" x2="16" y2="22"/>
+        </svg>
+      </button>
+      <button class="btn btn-ghost" id="quick-add-cancel-btn"
+        style="padding:0;line-height:1;height:2em;padding-left:14px;padding-right:14px">Cancel</button>
+      <button class="btn btn-primary" id="quick-add-save-btn"
+        style="padding:0;line-height:1;height:2em;padding-left:14px;padding-right:14px">Add</button>
+    </div>
+    <!-- v0.1824 MOVED, per Lynn's explicit request: previously sat above
+         the button row, inside the dialog's scrollable middle region --
+         she uses this dialog dozens of times a day and the Cancel/Add
+         buttons kept ending up underneath the virtual keyboard, meaning
+         she had to dismiss the keyboard before she could tap Add. Moving
+         "More options" below the buttons means the buttons themselves
+         sit higher up, reachable without that extra step. Given its own
+         bounded scroll (max-height + overflow-y:auto) as a safety net,
+         since it's no longer inside the region .confirm-box's own 80vh
+         cap already protected -- if expanded content ever got tall
+         enough to matter, it can scroll within its own space instead of
+         being silently clipped.
+         v0.1638: "More options" — collapses the six checkboxes below
          (blank-line-before/-after, dividing line, hyphen, checkbox
          marker, and the v0.1637 tag-sort toggle) out of view by default,
          per Lynn (always starts collapsed for now; may revisit sticky
@@ -8973,7 +9150,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
          Header is fully tappable (not just the right ~70px zone Settings
          uses) since this is a single small on/off control, not
          browsable content. -->
-    <div class="settings-section" id="quick-add-more-options" style="margin-top:10px">
+    <div class="settings-section" id="quick-add-more-options" style="margin-top:8px;flex-shrink:0;max-height:35vh;overflow-y:auto">
       <div class="settings-section-header" id="quick-add-more-options-header" style="cursor:pointer;padding:10px 2px">
         <div class="settings-label" style="font-size:0.95em">More options</div>
         <svg class="settings-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -9012,23 +9189,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           Insert tagged items in sorted order
         </label>
       </div>
-    </div>
-    </div>
-    <div class="confirm-btns" style="margin-top:6px;align-items:center;flex-shrink:0">
-      <button id="quick-add-tag-btn" aria-label="Insert tag" title="Insert tag" style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></button>
-      <button id="quick-add-mic-btn" aria-label="Dictate"
-        style="background:none;border:1.5px solid var(--border);border-radius:999px;color:var(--fg2);padding:0;line-height:1;height:2em;width:2em;cursor:pointer;touch-action:manipulation;display:none;align-items:center;justify-content:center;flex-shrink:0">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1.1em" height="1.1em" style="pointer-events:none">
-          <rect x="9" y="2" width="6" height="11" rx="3"/>
-          <path d="M5 10a7 7 0 0 0 14 0"/>
-          <line x1="12" y1="19" x2="12" y2="22"/>
-          <line x1="8" y1="22" x2="16" y2="22"/>
-        </svg>
-      </button>
-      <button class="btn btn-ghost" id="quick-add-cancel-btn"
-        style="padding:0;line-height:1;height:2em;padding-left:14px;padding-right:14px">Cancel</button>
-      <button class="btn btn-primary" id="quick-add-save-btn"
-        style="padding:0;line-height:1;height:2em;padding-left:14px;padding-right:14px">Add</button>
     </div>
   </div>
 </div>
@@ -11247,6 +11407,17 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </label>
       </div>
 
+      <div class="settings-row" id="qab-quiet-row">
+        <div>
+          <div class="settings-row-label">Show in Quiet Mode</div>
+          <div class="settings-row-desc">Keep the Quick Action Bar visible while Quiet mode is on. Off by default, since Quiet mode normally hides everything else too — turn this on if you use a toggle-type button (like Quiet mode itself) that needs to stay reachable.</div>
+        </div>
+        <label class="toggle-switch" aria-label="Show Quick Action Bar in Quiet Mode">
+          <input type="checkbox" id="qab-quiet-toggle">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+
       <div class="settings-row range-row" id="qab-size-row">
         <div class="settings-row-label">Button Size</div>
         <input type="range" class="settings-range" id="qab-size-range" min="40" max="140" step="2" value="64">
@@ -12230,7 +12401,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1820';
+const APP_VERSION = '0.1824';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14073,6 +14244,7 @@ const DEFAULT_SETTINGS = {
     size: 64,                 // px -- base button height; width tracks via CSS aspect-ratio
     shape: 'square',           // 'square' | 'circle'
     colorScheme: 'blackOnWhite', // 'blackOnWhite' | 'whiteOnBlack' | 'theme'
+    showInQuietMode: false,    // v0.1823, per Lynn's request -- a toggle-type QAB button (e.g. Quiet mode itself) does no good if the whole bar disappears the moment quiet mode turns on. Off by default: preserves the existing hide-in-quiet-mode behavior exactly for anyone who hasn't explicitly opted in.
     buttons: [
       { action: 'print', letter: 'P' },
       { action: 'copy', letter: 'C' },
@@ -16326,6 +16498,359 @@ function resolveCSSVarToHex(varName) {
   return '#' + [+m[1],+m[2],+m[3]].map(function(v){ return v.toString(16).padStart(2,'0'); }).join('');
 }
 
+// ============================================================
+// CUSTOM PICKER COMPONENT (v0.1821)
+// A reusable, accessible replacement for native <select> dropdowns.
+// Built per Lynn's explicit request to be portable to other Claude PWA
+// projects: no dependency on any other Remember-specific function.
+// Matching CSS lives just above .modal-sheet in the page's main style block
+// (search "CUSTOM PICKER COMPONENT").
+//
+// WHY THIS EXISTS: a native <select>'s OPEN option list is handed off
+// to the OS on some platforms (confirmed specifically on iOS Safari,
+// where it becomes a native wheel-picker) -- no CSS can make that
+// native UI honor an app's own font-size setting. For a low-vision
+// user who's set a large UI font size everywhere else, the one place
+// it silently stops working is exactly the list they need to read
+// most carefully. This component is regular page content instead, so
+// it's never exempt from the app's own styling, and it follows the
+// W3C ARIA Authoring Practices "listbox in a dialog" pattern for
+// keyboard/screen-reader behavior rather than inventing one.
+//
+// PUBLIC API:
+//   openCustomPicker(config) -- opens the picker directly. config:
+//     title            (string, required) heading shown at the top
+//     items            (array, required) [{value, label, group, disabled, previewStyle}]
+//     selectedValue    (any, optional) current value, for the checkmark + initial focus
+//     onSelect(value)  (function, required) called when an item is chosen
+//     onCancel()       (function, optional) called if closed without a selection
+//     searchable       (bool, optional) shows a filter box above the list
+//     triggerElement   (Element, optional) refocused when the picker closes
+//
+//   enhanceSelectWithCustomPicker(selectEl, opts) -- integration helper.
+//     Takes an existing, already-populated <select> and makes it open
+//     this picker instead of its native one. The select itself stays
+//     the real data model -- picking an item sets selectEl.value and
+//     dispatches a genuine 'change' event, so every existing listener
+//     already attached to that select keeps working completely
+//     unchanged; nothing about how the app reads or reacts to that
+//     select needs to know this component exists. Safe to call on any
+//     <select>; calling it again on the same element is a no-op.
+//     opts (all optional):
+//       previewFontFromValue (bool) -- for the common case where each
+//         option's value is itself a usable CSS font-family string:
+//         renders every option's own label in that actual font. Kept
+//         as an explicit opt-in flag rather than baked-in behavior, so
+//         the core component has no built-in notion of "font" at all.
+// ============================================================
+var _customPickerOpen = null;
+function openCustomPicker(config) {
+  if (_customPickerOpen) _customPickerOpen(true);
+  var items = config.items || [];
+  var previouslyFocused = document.activeElement;
+
+  var overlay = document.createElement('div');
+  overlay.className = 'custom-picker-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+
+  var sheet = document.createElement('div');
+  sheet.className = 'custom-picker-sheet';
+  overlay.appendChild(sheet);
+
+  var titleId = 'custom-picker-title-' + Date.now();
+  var header = document.createElement('div');
+  header.className = 'custom-picker-header';
+  var titleEl = document.createElement('h2');
+  titleEl.className = 'custom-picker-title';
+  titleEl.id = titleId;
+  titleEl.textContent = config.title || 'Choose an option';
+  overlay.setAttribute('aria-labelledby', titleId);
+  var closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'custom-picker-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '\u2715';
+  header.appendChild(titleEl); header.appendChild(closeBtn);
+  sheet.appendChild(header);
+
+  var searchInput = null;
+  if (config.searchable) {
+    var searchWrap = document.createElement('div');
+    searchWrap.className = 'custom-picker-search-wrap';
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'custom-picker-search';
+    searchInput.setAttribute('aria-label', 'Filter options');
+    searchInput.placeholder = 'Type to filter\u2026';
+    searchWrap.appendChild(searchInput);
+    sheet.appendChild(searchWrap);
+  }
+
+  var list = document.createElement('div');
+  list.className = 'custom-picker-list';
+  list.setAttribute('role', 'listbox');
+  list.setAttribute('aria-label', config.title || 'Options');
+  sheet.appendChild(list);
+
+  // Visually-hidden live region announcing filter results to screen
+  // reader users -- a sighted user sees the list shrink; without this,
+  // a screen reader user gets no equivalent feedback at all.
+  var liveRegion = document.createElement('div');
+  liveRegion.setAttribute('aria-live', 'polite');
+  liveRegion.setAttribute('role', 'status');
+  liveRegion.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;';
+  sheet.appendChild(liveRegion);
+
+  var optionEls = []; // flat, filtered, currently-rendered options -- what keyboard nav actually moves through
+  var optionItems = []; // parallel array of the {value,label,...} each optionEls[i] represents
+  var focusedIdx = -1;
+
+  function renderList(filterText) {
+    list.innerHTML = '';
+    optionEls = [];
+    optionItems = [];
+    var filtered = !filterText ? items : items.filter(function(it) {
+      return it.label.toLowerCase().indexOf(filterText.toLowerCase()) !== -1;
+    });
+    if (filtered.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'custom-picker-empty';
+      empty.textContent = 'No matches.';
+      list.appendChild(empty);
+      liveRegion.textContent = 'No matches.';
+      return;
+    }
+    if (filterText) liveRegion.textContent = filtered.length + (filtered.length === 1 ? ' result' : ' results');
+    var lastGroup; // undefined !== any real group name, including ''
+    var groupContainer = list; // where options currently get appended -- the list itself, or the open group's own container
+    filtered.forEach(function(it) {
+      if (it.group !== lastGroup) {
+        lastGroup = it.group;
+        if (it.group) {
+          // Real group semantics (role="group" wrapping its own options,
+          // aria-label naming it) rather than just a visual sibling label
+          // with role="presentation" -- a screen reader announces group
+          // membership when moving through a properly-grouped listbox,
+          // which a presentation-only label never provided.
+          var groupLabel = document.createElement('div');
+          groupLabel.className = 'custom-picker-group-label';
+          groupLabel.setAttribute('aria-hidden', 'true'); // the group's own aria-label below covers the accessible name; this stays purely visual
+          groupLabel.textContent = it.group;
+          list.appendChild(groupLabel);
+          groupContainer = document.createElement('div');
+          groupContainer.setAttribute('role', 'group');
+          groupContainer.setAttribute('aria-label', it.group);
+          list.appendChild(groupContainer);
+        } else {
+          groupContainer = list;
+        }
+      }
+      var opt = document.createElement('div');
+      opt.tabIndex = -1; // roving focus, managed entirely via JS .focus() calls below -- never part of the page's normal Tab order
+      opt.className = 'custom-picker-option';
+      opt.setAttribute('role', 'option');
+      var selected = (config.selectedValue !== undefined && it.value === config.selectedValue);
+      opt.setAttribute('aria-selected', selected ? 'true' : 'false');
+      if (it.disabled) opt.setAttribute('aria-disabled', 'true');
+      var check = document.createElement('span');
+      check.className = 'custom-picker-option-check';
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = '\u2713';
+      var labelSpan = document.createElement('span');
+      labelSpan.className = 'custom-picker-option-label';
+      labelSpan.textContent = it.label;
+      if (it.previewStyle) labelSpan.style.cssText += it.previewStyle;
+      opt.appendChild(check); opt.appendChild(labelSpan);
+      opt.addEventListener('click', function() { if (!it.disabled) selectItem(it); });
+      groupContainer.appendChild(opt);
+      optionEls.push(opt);
+      optionItems.push(it);
+    });
+  }
+
+  function selectItem(it) {
+    if (config.onSelect) config.onSelect(it.value);
+    close(false);
+  }
+
+  function setFocusedIdx(idx) {
+    focusedIdx = idx;
+    optionEls.forEach(function(el, i) { el.classList.toggle('picker-focused', i === idx); });
+    if (optionEls[idx]) { optionEls[idx].focus(); optionEls[idx].scrollIntoView({ block: 'nearest' }); }
+  }
+
+  function close(cancelled) {
+    if (_customPickerOpen !== close) return; // already closed / superseded
+    _customPickerOpen = null;
+    overlay.classList.remove('open');
+    overlay.removeEventListener('keydown', onKeyDown);
+    setTimeout(function() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 200);
+    if (cancelled && config.onCancel) config.onCancel();
+    if (config.onClose) config.onClose();
+    var returnTo = config.triggerElement || previouslyFocused;
+    if (returnTo && returnTo.focus) returnTo.focus({ preventScroll: true });
+  }
+
+  var _typeAheadBuffer = '';
+  var _typeAheadTimer = null;
+  function onKeyDown(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(true); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setFocusedIdx(Math.min(optionEls.length - 1, focusedIdx + 1)); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setFocusedIdx(Math.max(0, focusedIdx - 1)); return; }
+    if (e.key === 'Home' && e.target !== searchInput) { e.preventDefault(); setFocusedIdx(0); return; }
+    if (e.key === 'End' && e.target !== searchInput) { e.preventDefault(); setFocusedIdx(optionEls.length - 1); return; }
+    if (e.key === 'Enter' || (e.key === ' ' && e.target !== searchInput)) {
+      if (focusedIdx >= 0 && optionItems[focusedIdx] && !optionItems[focusedIdx].disabled) {
+        e.preventDefault();
+        selectItem(optionItems[focusedIdx]);
+      }
+      return;
+    }
+    if (e.key === 'Tab') {
+      // Simple focus trap -- keeps Tab cycling within the dialog
+      // rather than escaping to the page underneath.
+      var focusables = [closeBtn].concat(searchInput ? [searchInput] : []).concat(optionEls).filter(function(el) { return el && el.getAttribute('aria-disabled') !== 'true'; });
+      if (focusables.length === 0) return;
+      var first = focusables[0], last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      return;
+    }
+    // Type-ahead: a single printable character (when not already typing
+    // into the search box, which handles its own filtering) jumps to the
+    // next option whose label starts with it -- standard native <select>
+    // behavior, and especially useful on a picker with no search box at
+    // all, where arrow-key-only navigation through a long list is slow.
+    if (e.target !== searchInput && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      _typeAheadBuffer += e.key.toLowerCase();
+      clearTimeout(_typeAheadTimer);
+      _typeAheadTimer = setTimeout(function() { _typeAheadBuffer = ''; }, 700);
+      var startFrom = (focusedIdx + 1) % Math.max(1, optionItems.length);
+      for (var i = 0; i < optionItems.length; i++) {
+        var idx = (startFrom + i) % optionItems.length;
+        if (optionItems[idx].label.toLowerCase().indexOf(_typeAheadBuffer) === 0) {
+          e.preventDefault();
+          setFocusedIdx(idx);
+          break;
+        }
+      }
+    }
+  }
+
+  overlay.addEventListener('mousedown', function(e) { if (e.target === overlay) close(true); });
+  closeBtn.addEventListener('click', function() { close(true); });
+  if (searchInput) {
+    searchInput.addEventListener('input', function() { setFocusedIdx(-1); renderList(searchInput.value); });
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setFocusedIdx(Math.min(optionEls.length - 1, 0)); }
+    });
+  }
+
+  renderList('');
+  document.body.appendChild(overlay);
+  overlay.addEventListener('keydown', onKeyDown);
+  _customPickerOpen = close;
+  requestAnimationFrame(function() {
+    overlay.classList.add('open');
+    if (searchInput) {
+      searchInput.focus();
+    } else {
+      var selIdx = items.findIndex(function(it) { return it.value === config.selectedValue; });
+      setFocusedIdx(selIdx >= 0 ? selIdx : 0);
+    }
+  });
+}
+
+// ---- Integration helper: upgrades an existing <select> to use this picker ----
+function enhanceSelectWithCustomPicker(selectEl, opts) {
+  if (!selectEl || selectEl._pickerEnhanced) return;
+  selectEl._pickerEnhanced = true;
+  opts = opts || {};
+
+  function readItems() {
+    var items = [];
+    Array.prototype.forEach.call(selectEl.children, function(child) {
+      if (child.tagName === 'OPTGROUP') {
+        Array.prototype.forEach.call(child.children, function(opt) {
+          var it = { value: opt.value, label: opt.textContent, group: child.label, disabled: opt.disabled };
+          if (opts.previewFontFromValue) it.previewStyle = 'font-family:' + opt.value;
+          items.push(it);
+        });
+      } else if (child.tagName === 'OPTION') {
+        var it2 = { value: child.value, label: child.textContent, disabled: child.disabled };
+        if (opts.previewFontFromValue) it2.previewStyle = 'font-family:' + child.value;
+        items.push(it2);
+      }
+    });
+    return items;
+  }
+
+  // A styled trigger button replaces the select visually (the select
+  // itself becomes an invisible, non-interactive data holder). More
+  // robust across browsers/input types than trying to intercept and
+  // preventDefault the select's own native open gesture, which isn't
+  // consistent enough across platforms to be trustworthy on its own.
+  var trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = selectEl.className; // inherits .settings-select styling automatically
+  trigger.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  var labelSpan = document.createElement('span');
+  labelSpan.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0;';
+  var chevron = document.createElement('span');
+  chevron.setAttribute('aria-hidden', 'true');
+  chevron.style.cssText = 'flex:0 0 auto;opacity:0.6;font-size:0.8em;';
+  chevron.textContent = '\u25be';
+  trigger.appendChild(labelSpan);
+  trigger.appendChild(chevron);
+
+  function syncTriggerLabel() {
+    var opt = selectEl.options[selectEl.selectedIndex];
+    labelSpan.textContent = opt ? opt.textContent : '';
+  }
+  syncTriggerLabel();
+  // Keeps the trigger's displayed text correct no matter who changes
+  // the select's value -- this picker's own onSelect below, or any
+  // OTHER existing code elsewhere in the app -- since dispatching a
+  // real 'change' event is the one thing every correct value-changing
+  // code path already has to do for its own existing listeners to
+  // fire, so this needed no new coordination with anything else.
+  selectEl.addEventListener('change', syncTriggerLabel);
+  // v0.1821 NEW: found while testing that Remember has existing code
+  // that intentionally syncs a select's value via a plain assignment
+  // WITHOUT dispatching 'change' (to avoid triggering that select's
+  // full change-handling side effects just to keep a display in sync
+  // on Settings open) -- meaning the trigger's label would never
+  // update from a sync like that. Exposed here so those exact spots
+  // can call this directly instead, refreshing just the label with
+  // none of a full 'change' event's side effects.
+  selectEl._refreshPickerTriggerLabel = syncTriggerLabel;
+
+  selectEl.style.display = 'none';
+  selectEl.tabIndex = -1;
+  selectEl.parentNode.insertBefore(trigger, selectEl);
+
+  trigger.addEventListener('click', function() {
+    trigger.setAttribute('aria-expanded', 'true');
+    openCustomPicker({
+      title: opts.title || selectEl.getAttribute('aria-label') || selectEl.title || 'Choose an option',
+      items: readItems(),
+      selectedValue: selectEl.value,
+      searchable: selectEl.options.length > 10,
+      triggerElement: trigger,
+      onSelect: function(value) {
+        if (selectEl.value !== value) {
+          selectEl.value = value;
+          selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      },
+      onClose: function() { trigger.setAttribute('aria-expanded', 'false'); }
+    });
+  });
+}
+
 function lightenHex(hex, percent) {
   // Blends toward white by `percent` (0-100), rather than adding a flat
   // amount to each channel. A flat add lightens dark colors much more
@@ -16607,6 +17132,45 @@ function getNearestSupportedWeight(fontValue, weight) {
 function isVariableWeightFont(fontValue) {
   var support = FONT_WEIGHT_SUPPORT[fontValue];
   return !!support && !Array.isArray(support);
+}
+
+// Direction-aware companion to getNearestSupportedWeight(), per Lynn's
+// request: for a static font whose real weights are sparse (e.g. just
+// [400, 700]), a single tap of the nudge buttons should jump straight
+// to the next REAL value, not take a flat step that could land on many
+// in-between values the font silently can't render -- each of those
+// looks completely identical to the last real weight (since the
+// browser just renders its nearest available weight regardless), so
+// several taps in a row could visibly do nothing at all. Mirrors the
+// exact reasoning already applied to the sliders' own step size (see
+// updateUiFontWeightStep() below) -- the nudge buttons just never got
+// the same treatment until now.
+function getNextSupportedWeight(fontValue, weight, delta) {
+  var support = FONT_WEIGHT_SUPPORT[fontValue];
+  if (!support) {
+    // Unknown font -- fall back to the original flat +/-10 behavior.
+    return delta > 0 ? Math.min(900, weight + 10) : Math.max(100, weight - 10);
+  }
+  if (!Array.isArray(support)) {
+    // Variable font: a continuous range, so every value is genuinely
+    // valid -- a flat step is correct here, just clamped to the font's
+    // own real min/max rather than the generic 100-900 bounds.
+    var stepped = delta > 0 ? weight + 10 : weight - 10;
+    return Math.max(support.min, Math.min(support.max, stepped));
+  }
+  // Static font: jump to the next real value in the requested direction.
+  var sorted = support.slice().sort(function(a, b) { return a - b; });
+  if (delta > 0) {
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i] > weight) return sorted[i];
+    }
+    return sorted[sorted.length - 1]; // already at/above the max real weight
+  } else {
+    for (var j = sorted.length - 1; j >= 0; j--) {
+      if (sorted[j] < weight) return sorted[j];
+    }
+    return sorted[0]; // already at/below the min real weight
+  }
 }
 
 // Switches each weight slider's step size based on whether the
@@ -24237,6 +24801,7 @@ function openSettings() {
 
   var fs = document.getElementById('font-select');
   fs.value = settings.font;
+  if (fs._refreshPickerTriggerLabel) fs._refreshPickerTriggerLabel();
   updateFontPreview();
   updateUiFontWeightStep();
   updateUiFontExtraAxes();
@@ -24250,7 +24815,7 @@ function openSettings() {
   // saved and applied to notes, but this dropdown never reflected it.
   var nfs = document.getElementById('note-font-select');
   var _curNoteFont = settings.noteFont || settings.font || "'Atkinson Hyperlegible Next', sans-serif";
-  if (nfs) nfs.value = _curNoteFont;
+  if (nfs) { nfs.value = _curNoteFont; if (nfs._refreshPickerTriggerLabel) nfs._refreshPickerTriggerLabel(); }
   // Same gap for the preview text right next to it — its font was only
   // ever set inside the dropdown's own 'change' handler, never here.
   var _nfp = document.getElementById('note-font-preview-text');
@@ -24272,7 +24837,7 @@ function openSettings() {
   if (_himFontOwnRow) _himFontOwnRow.style.display = (settings.matchGeneralHomeItemMetaFont !== false) ? 'none' : '';
   var _himFontSel = document.getElementById('home-item-meta-font-select');
   var _himFontVal = settings.homeItemMetaFont || settings.font || "'Atkinson Hyperlegible Next', sans-serif";
-  if (_himFontSel) _himFontSel.value = _himFontVal;
+  if (_himFontSel) { _himFontSel.value = _himFontVal; if (_himFontSel._refreshPickerTriggerLabel) _himFontSel._refreshPickerTriggerLabel(); }
   var _himFontPreview = document.getElementById('home-item-meta-font-preview-text');
   if (_himFontPreview) _himFontPreview.style.fontFamily = _himFontVal;
   var _himSizeRange = document.getElementById('home-item-meta-size-range');
@@ -24307,7 +24872,7 @@ function openSettings() {
   // genuinely inside openSettings() by brace-counting before adding (see
   // the v0.1542/1543 lesson in the BUILD CHANGELOG).
   var _nlnfSel = document.getElementById('notes-list-name-font-select');
-  if (_nlnfSel) _nlnfSel.value = settings.notesListNoteNameFont || '';
+  if (_nlnfSel) { _nlnfSel.value = settings.notesListNoteNameFont || ''; if (_nlnfSel._refreshPickerTriggerLabel) _nlnfSel._refreshPickerTriggerLabel(); }
   var _nlnsRange = document.getElementById('notes-list-name-size-range');
   var _nlnsVal = document.getElementById('notes-list-name-size-val');
   if (_nlnsRange) _nlnsRange.value = settings.notesListNoteNameFontSize || settings.uiFontSize;
@@ -24321,7 +24886,7 @@ function openSettings() {
   if (_nlnwVal) _nlnwVal.textContent = settings.notesListNoteNameFontWeight || 600;
   updateNotesListNameFontWeightStep();
   var _nlpfSel = document.getElementById('notes-list-preview-font-select');
-  if (_nlpfSel) _nlpfSel.value = settings.notesListPreviewFont || '';
+  if (_nlpfSel) { _nlpfSel.value = settings.notesListPreviewFont || ''; if (_nlpfSel._refreshPickerTriggerLabel) _nlpfSel._refreshPickerTriggerLabel(); }
   var _nlpsRange = document.getElementById('notes-list-preview-size-range');
   var _nlpsVal = document.getElementById('notes-list-preview-size-val');
   if (_nlpsRange) _nlpsRange.value = settings.notesListPreviewFontSize || settings.editorFontSize;
@@ -24578,7 +25143,9 @@ function openSettings() {
   if (smartIndentBlankToggle) smartIndentBlankToggle.checked = !!settings.smartIndentBlankLine;
   var tripleTapToggleEl = document.getElementById('triple-tap-edit-toggle');
   if (tripleTapToggleEl) tripleTapToggleEl.checked = settings.tripleTapToEdit !== false;
-  document.getElementById('plus-position-select').value = settings.plusPosition || 'bottom';
+  var _ppSel = document.getElementById('plus-position-select');
+  _ppSel.value = settings.plusPosition || 'bottom';
+  if (_ppSel._refreshPickerTriggerLabel) _ppSel._refreshPickerTriggerLabel();
   document.getElementById('indent-spaces-input').value = settings.indentSpaces !== undefined ? settings.indentSpaces : 4;
   var _iutTog = document.getElementById('indent-uses-tabs-toggle');
   if (_iutTog) _iutTog.checked = !!settings.indentUsesTabs;
@@ -25039,6 +25606,7 @@ function populateVoices() {
   } catch(e) {
     // Silently ignore — voice list is non-critical, default voice still works
   }
+  if (sel && sel._refreshPickerTriggerLabel) sel._refreshPickerTriggerLabel();
 }
 
 // ===== EVENT WIRING =====
@@ -28618,12 +29186,14 @@ function makeImportFolderName(label) {
   // dropdown correctly closes the first, rather than allowing two open
   // at once.
   var _openPlacementDd = null; // { list, btn, outsideHandler } or null
-  function closeOpenPlacementDd() {
+  function closeOpenPlacementDd(returnFocus) {
     if (!_openPlacementDd) return;
+    var btn = _openPlacementDd.btn;
     _openPlacementDd.list.remove();
-    _openPlacementDd.btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-expanded', 'false');
     document.removeEventListener('pointerdown', _openPlacementDd.outsideHandler, true);
     _openPlacementDd = null;
+    if (returnFocus) btn.focus();
   }
 
   buildToolbarVisibilityRows = function() {
@@ -28775,9 +29345,11 @@ function makeImportFolderName(label) {
         var ddList = document.createElement('div');
         ddList.className = 'toolbar-placement-dd-list';
         ddList.setAttribute('role', 'listbox');
+        var ddItems = [];
         placementOptions.forEach(function(opt) {
           var item = document.createElement('button');
           item.type = 'button';
+          item.tabIndex = -1; // roving focus, managed via JS -- matches the custom picker component's convention
           item.className = 'toolbar-placement-dd-item' + (placement === opt ? ' active' : '');
           item.setAttribute('role', 'option');
           item.setAttribute('aria-selected', placement === opt ? 'true' : 'false');
@@ -28788,6 +29360,27 @@ function makeImportFolderName(label) {
             closeOpenPlacementDd();
           });
           ddList.appendChild(item);
+          ddItems.push(item);
+        });
+        var ddFocusedIdx = Math.max(0, placementOptions.indexOf(placement));
+        function focusDdItem(idx) {
+          ddFocusedIdx = idx;
+          ddItems[idx].focus();
+        }
+        ddList.addEventListener('keydown', function(e2) {
+          if (e2.key === 'Escape') { e2.preventDefault(); e2.stopPropagation(); closeOpenPlacementDd(true); return; }
+          if (e2.key === 'ArrowDown') { e2.preventDefault(); focusDdItem(Math.min(ddItems.length - 1, ddFocusedIdx + 1)); return; }
+          if (e2.key === 'ArrowUp') { e2.preventDefault(); focusDdItem(Math.max(0, ddFocusedIdx - 1)); return; }
+          if (e2.key === 'Home') { e2.preventDefault(); focusDdItem(0); return; }
+          if (e2.key === 'End') { e2.preventDefault(); focusDdItem(ddItems.length - 1); return; }
+          if (e2.key === 'Enter' || e2.key === ' ') { e2.preventDefault(); ddItems[ddFocusedIdx].click(); return; }
+          if (e2.key === 'Tab') {
+            // Non-modal popup: Tab closes it and lets focus move on
+            // normally, rather than trapping focus the way the full
+            // custom-picker dialog does -- standard behavior for an
+            // inline dropdown this small.
+            closeOpenPlacementDd();
+          }
         });
         ddWrap.appendChild(ddList);
         ddBtn.setAttribute('aria-expanded', 'true');
@@ -28796,6 +29389,7 @@ function makeImportFolderName(label) {
         // just opened (the listener is capture-phase and fires on the
         // bubble back up from this same click otherwise).
         setTimeout(function() { document.addEventListener('pointerdown', onOutsideDd, true); }, 0);
+        focusDdItem(ddFocusedIdx);
       });
       ddWrap.appendChild(ddBtn);
       var toggleLabel = ddWrap; // keep the existing append-order variable name below
@@ -30782,6 +31376,11 @@ function makeImportFolderName(label) {
     var kbHeight = Math.max(0, window.innerHeight - vv.height);
     if (kbHeight > 0) area.style.paddingBottom = (kbHeight + 40) + 'px';
   }
+  // v0.1823 NEW: exported so setCurrentMatch() (a top-level function,
+  // outside this closure) can call it for Find in Note's keyboard-aware
+  // scroll-to-match, per Lynn's report -- matches this file's existing
+  // convention for exactly this cross-scope-access need.
+  window._applyKeyboardScrollRoom = _applyKeyboardScrollRoom;
   // Bring the caret into the VISUAL viewport's usable band (keyboard-
   // aware: with the keyboard open, vv.height is ~half the area's box
   // height and the bottom half sits under the keyboard; the pinned
@@ -31803,6 +32402,44 @@ function makeImportFolderName(label) {
     setSegActive('ui-size-seg', settings.uiSize);
     applySettings();
     updateSaveBtnState();
+  });
+
+  // v0.1821 NEW, per Lynn's request: replaces each font dropdown's
+  // native picker with the custom picker component (see its own large
+  // comment block, search "CUSTOM PICKER COMPONENT", for the full
+  // story and public API). All 5 use previewFontFromValue since every
+  // one of these options' value is itself a real, usable CSS
+  // font-family string -- each option in the picker renders its own
+  // name in its own actual font. Deliberately placed as one block
+  // here rather than scattered next to each select's own listener,
+  // since this doesn't touch or depend on any of those listeners at
+  // all -- enhanceSelectWithCustomPicker only changes HOW the select
+  // gets opened, never what happens once its value actually changes.
+  [
+    ['font-select', 'UI Font Face'],
+    ['notes-list-name-font-select', 'Note & Folder Name Font Face'],
+    ['notes-list-preview-font-select', 'Note Preview Font Face'],
+    ['home-item-meta-font-select', 'Font Face'],
+    ['note-font-select', 'Note Content Text Font Face'],
+  ].forEach(function(pair) {
+    var el = document.getElementById(pair[0]);
+    if (el) enhanceSelectWithCustomPicker(el, { previewFontFromValue: true, title: pair[1] });
+  });
+  // v0.1821 NEW, per Lynn's follow-up: three more selects found by
+  // auditing every <select> in Settings, not just the font ones --
+  // "+ button inserts at", the speech Voice picker (whose options are
+  // populated asynchronously by the browser, unlike the static font
+  // lists -- confirmed this is still safe, since readItems() re-reads
+  // the select's current children fresh every time the trigger is
+  // clicked, not just once at enhancement time), and the Quick Action
+  // Bar's own button color scheme.
+  [
+    ['plus-position-select', '+ Button Inserts At'],
+    ['voice-select', 'Voice'],
+    ['qab-color-select', 'Quick Action Bar Button Colors'],
+  ].forEach(function(pair) {
+    var el = document.getElementById(pair[0]);
+    if (el) enhanceSelectWithCustomPicker(el, { title: pair[1] });
   });
 
   // Font select
@@ -32929,6 +33566,10 @@ function makeImportFolderName(label) {
     settings.quickActionBar.enabled = this.checked;
     updateSaveBtnState();
   });
+  document.getElementById('qab-quiet-toggle').addEventListener('change', function() {
+    settings.quickActionBar.showInQuietMode = this.checked;
+    updateSaveBtnState();
+  });
   document.getElementById('qab-size-range').addEventListener('input', function() {
     settings.quickActionBar.size = parseInt(this.value, 10);
     document.getElementById('qab-size-val').textContent = this.value + 'px';
@@ -33844,7 +34485,7 @@ function makeImportFolderName(label) {
     updateFontFaceBar();
     // Also sync the settings dialog dropdown if open
     var sel = document.getElementById('note-font-select');
-    if (sel) sel.value = settings.noteFont;
+    if (sel) { sel.value = settings.noteFont; if (sel._refreshPickerTriggerLabel) sel._refreshPickerTriggerLabel(); }
   });
 
   document.getElementById('more-ruler-btn').addEventListener('click', function() {
@@ -37669,9 +38310,8 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     if (!btn) return;
     var delayTimer = null, repeatTimer = null;
     function step() {
-      settings.fontWeight = delta > 0
-        ? Math.min(900, (settings.fontWeight || 400) + 10)
-        : Math.max(100, (settings.fontWeight || 400) - 10);
+      var curFont = settings.noteFont || settings.font || "'Atkinson Hyperlegible Next', sans-serif";
+      settings.fontWeight = getNextSupportedWeight(curFont, settings.fontWeight || 400, delta);
       applySettings();
       showToast('Font weight: ' + settings.fontWeight);
       var wlbl = document.getElementById('font-size-bar-weight-label');
@@ -39231,6 +39871,7 @@ function renderQuickActionBar() {
   if (!cfg || !bar) return;
 
   body.classList.toggle('qab-enabled', !!cfg.enabled);
+  body.classList.toggle('qab-show-in-quiet', !!cfg.showInQuietMode);
   body.classList.remove('qab-shape-square', 'qab-shape-circle');
   body.classList.add('qab-shape-' + (cfg.shape === 'circle' ? 'circle' : 'square'));
   body.classList.remove('qab-scheme-blackOnWhite', 'qab-scheme-whiteOnBlack', 'qab-scheme-theme');
@@ -39416,6 +40057,9 @@ function syncQuickActionBarSettingsUI() {
   var enToggle = document.getElementById('qab-enabled-toggle');
   if (enToggle) enToggle.checked = !!cfg.enabled;
 
+  var quietToggle = document.getElementById('qab-quiet-toggle');
+  if (quietToggle) quietToggle.checked = !!cfg.showInQuietMode;
+
   var sizeRange = document.getElementById('qab-size-range');
   var sizeVal = document.getElementById('qab-size-val');
   var size = (typeof cfg.size === 'number') ? cfg.size : 64;
@@ -39425,7 +40069,7 @@ function syncQuickActionBarSettingsUI() {
   setSegActive('qab-shape-seg', cfg.shape === 'circle' ? 'circle' : 'square');
 
   var colorSel = document.getElementById('qab-color-select');
-  if (colorSel) colorSel.value = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite';
+  if (colorSel) { colorSel.value = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite'; if (colorSel._refreshPickerTriggerLabel) colorSel._refreshPickerTriggerLabel(); }
 
   _qabRenderSlotRows();
 }
@@ -41546,6 +42190,7 @@ function setCurrentMatch(idx) {
     var area2    = document.getElementById('note-content-area');
     var findBar2 = document.getElementById('find-bar');
     if (area2 && findBar2) {
+      if (window._applyKeyboardScrollRoom) window._applyKeyboardScrollRoom(area2);
       var matchY      = getCursorY(ed); // distance from area's content origin, at match.start
       var findBarH    = findBar2.getBoundingClientRect().height;
       var paddingTop2 = parseFloat(getComputedStyle(area2).paddingTop) || 0;
