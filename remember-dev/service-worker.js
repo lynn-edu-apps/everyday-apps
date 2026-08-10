@@ -1,7 +1,7 @@
-// Remember App - Version 0.1063
+// Remember App - Version 0.1064
 // Service Worker for remember-dev — separate cache from stable and main deployments
 
-const CACHE_VERSION = 'remember-dev-v0.1832';
+const CACHE_VERSION = 'remember-dev-v0.1064';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
@@ -47,7 +47,9 @@ self.addEventListener('fetch', function(event) {
 
   if (isHTML || isIndex) {
     event.respondWith(
-      fetch(event.request)
+      // v0.1064 FIX, per Lynn's report -- see the stable service
+      // worker's matching comment for the full explanation.
+      fetch(event.request.url, { cache: 'no-store' })
         .then(function(networkResponse) {
           var clone = networkResponse.clone();
           caches.open(STATIC_CACHE).then(function(cache) { cache.put(event.request, clone); });
