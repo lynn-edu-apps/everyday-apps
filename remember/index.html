@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1835 -->
+<!-- Remember App - Version 0.1839 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1835
+  Version 0.1839
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,10 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1839 - Three responses to Lynn's real-device testing of v0.1838, each handled honestly rather than assumed fixed. (1) The "Claude would like to paste from Google" permission dialog: almost certainly a testing-context artifact (that wording names the HOST app asking for clipboard access -- on the real deployed site it would say "Remember", and should only need to ask once, not every test) rather than a bug -- flagged clearly, not silently assumed away, since this genuinely needs confirmation on the real deployed site to know for sure. (2) EXPERIMENTAL, explicitly flagged as unverified: an attempt to suppress iOS's own native text-selection/paste popup while a note is still empty, since Lynn reported seeing iOS's own context menu instead of this app's own card -- meaning native UI may be winning a race against, or rendering on top of, this app's own prompt. Applies CSS user-select:none to the editor specifically while empty (not the textarea's readonly attribute, which would also block focus/cursor placement -- a much worse regression), restored the moment the offer is resolved either way or the note gets real content. This sandbox has no way to simulate iOS's actual native popup behavior, so while the CSS state change itself is confirmed correct here, whether it actually suppresses the native popup needs real on-device confirmation, not just a passing test. (3) The lost blank lines between numbered list items: confirmed the original double-spacing heuristic (each list item wrapped in its own <p>, the Google Docs/Word pattern) doesn't match Google AI's real output, since Lynn's actual bold/numbering survived but spacing didn't. Rather than guess again blind, added a second heuristic (an explicit inline margin-bottom/padding-bottom on the list item, a common alternative spacing signal, confirmed working with a direct test) AND diagnostic logging that captures the actual raw HTML structure the next time a real list paste happens, so any further fix is built from Google AI's real markup, not another guess. Verified directly: the new inline-style-based detection confirmed producing correctly blank-line-separated output; the user-select suppression mechanism's own state changes confirmed correct (applied while empty, restored after resolution, restored on typing); every existing paste test re-run and confirmed unaffected. Suite: 332/332 (harness v8).
+  v0.1838 - MAJOR NEW FEATURE: the "want to paste?" offer, per Lynn's explicit request and a real design goal from months earlier that had been dropped along the way -- discourage iOS's native paste (which can silently corrupt rich content, per her report elsewhere this version) by offering this app's own safe, smart paste instead, right at the moment iOS's own native context menu tends to appear. Triggered on the SECOND tap at the very start of a still-empty note; checks the clipboard is non-empty and that this exact content hasn't already been asked about (reusing the existing, already-working _hasAskedForClip()/_markClipAsked() fingerprint tracking, persisted to localStorage so it survives app restarts -- confirmed this infrastructure was already fully intact, just missing a UI that called it). Simple, neutral card (not an accent-colored banner) with a Paste button and an X to dismiss -- deliberately avoided the hardcoded-white-on-accent-color pattern already found and fixed elsewhere in this app, confirmed #update-banner still has this exact same risk (not touched, out of scope for this request). Accepting tries the newer, multi-flavor navigator.clipboard.read() API to get the clipboard's HTML flavor too, routed through the exact same smart conversion (bold/headings/lists/footnote-stripping, built this same version) the toolbar Paste button and native-paste handler use -- not a plainer, HTML-blind fallback -- falling back to plain text if HTML isn't available. Extracted the HTML-to-markdown conversion out of the native-paste event handler into a new, standalone convertHtmlToNoteMarkdown() function first, specifically so this new feature and the existing native-paste intercept share the exact same logic rather than risk drifting apart as two separate copies -- confirmed the refactor was completely behavior-preserving by re-running all four existing HTML-paste tests and getting byte-identical output before and after. Verified directly and thoroughly: confirmed the offer does NOT appear after only one qualifying tap, confirmed it DOES appear on the second; confirmed accepting correctly inserts the clipboard text and dismisses the card; confirmed dismissing (either via Paste or the X) correctly prevents the SAME clipboard content from triggering the offer again, even in a completely different note; confirmed the offer never appears at all on a note that already has real content, regardless of tap count. Suite: 332/332 (harness v8).
+  v0.1837 - Two blank-line/spacing preservation fixes to the smart HTML paste, per Lynn's explicit requirement: no newlines, blank lines, or indentation should be lost when pasting rich text. Confirmed a real, concrete bug by testing directly rather than assuming the v0.1836 rewrite already handled this correctly: two adjacent <p> paragraphs from HTML collapsed together with nothing separating them, even though the source explicitly had a blank line between them -- every block-level tag (P, DIV, BR, TR) was treated identically, a single trailing newline each. Fixed by giving <p> specifically (not the more ambiguous <div>, often just a generic layout wrapper, and not <br>, a soft line break within the same paragraph) its own double-newline treatment, so a real paragraph break now produces a real blank line. Also added: double-spaced list preservation. Rich text sources (Google Docs, Word HTML exports, Google AI's own output) commonly signal "this list has visible spacing between items" by wrapping each item's content in its own <p> tag -- detected directly and now adds a matching blank line after that specific item, while a normal list with no such wrapping stays correctly single-spaced. Verified directly and thoroughly: confirmed the exact bug first (two bold-containing paragraphs collapsing to a single newline), confirmed the fix produces a real blank line in the same test; confirmed a Google-Docs-style <p>-wrapped three-item list preserves blank lines between every item; separately confirmed a normal, non-wrapped list stays single-spaced, so the fix is genuinely conditional and doesn't over-apply; re-ran every test from the v0.1836 build (the combined heading/bold/footnote/list/link test, and the nested-list test) to confirm nothing regressed. Suite: 332/332 (harness v8).
+  v0.1836 - MAJOR REWRITE: smart HTML-aware paste, per Lynn's report of copying Google AI results and getting 50 raw URLs with no bold, bullets, or headings. Found the exact, complete mechanism by reading the existing HTML-paste code directly, not guessing: (1) it only ever intercepted a paste at all if the clipboard HTML contained at least one link -- rich content with bold/headings/lists but zero links got none of this function's help and fell straight through to plain-text-only browser paste, since a plain <textarea> can never receive rich HTML on its own; (2) headings and list items only ever got a trailing newline, never an actual markdown marker (# for headings, - or N. for list items), so they silently flattened into unmarked plain lines even when the function DID run; (3) every single link -- including tiny superscript footnote citations, which is exactly how Google AI (and most citation systems) render references -- expanded into its full raw URL on its own line, with no way to distinguish a real link from a citation reference. All three fixed together: the intercept now triggers on ANY richness signal (links, bold, italic, headings, or lists), not just links specifically; headings now become real '#'-N markdown, list items become real '- ' or 'N. ' markers with correct per-level counters and 4-space nested indentation matching this app's own convention; and a link whose visible text is JUST a number is now recognized as a footnote citation and stripped entirely (neither the number nor the URL kept), while a genuine link converts to a real, clickable [text](url) markdown link (upgraded from the older "text\nurl" the original function used, since this app added real markdown link support in v0.1645, after this function was first written, and never went back to use it here). CAUGHT AND FIXED TWO REAL BUGS DURING TESTING, not assumed correct on the first pass: whitespace-only text nodes between block tags (common in real-world clipboard HTML, not just hand-formatted test markup) were leaking into the output as stray blank lines and unwanted leading spaces on otherwise-clean content lines -- fixed at the actual source (a text node that's pure whitespace AND contains a newline is dropped; a single meaningful space between inline elements is left completely untouched); and a nested list inside a list item ran directly into whatever text came before it with no line break at all (e.g. "Second    - Nested bullet A" all as one broken line) -- fixed by ensuring a newline precedes a nested UL/OL specifically. Also added a small, safe polish: a space left directly before punctuation when a footnote citation right before it gets stripped ("claim ." from "claim [1].") now collapses cleanly. Verified directly and thoroughly with a real simulated paste event, not just calling the function in isolation: a combined test covering a heading, bold, italic, two adjacent footnote citations, a bulleted list, a numbered list, and a genuine link all together produced exactly the correct markdown output with nothing left to clean up by hand; a separate nested-list test (ordered list containing a nested unordered list inside one of its items) confirmed correct indentation and correct separation onto its own line, re-verified after the fix. Suite: 332/332 (harness v8).
   v0.1835 - TWO Find-in-Note issues, per Lynn. (1) MAJOR FIX: the typing-mode scroll landing under the lower toolbar, per her report and her own suggested approach (verify actual visibility and correct for it, rather than continuing to hand-tune a fixed offset). Root cause found by reading pinToolbars()'s own comment directly ("Position find bar just below the lower toolbar"): the find bar sits BELOW the header and regular toolbar, both of which stay visible and stacked above it -- but the scroll-clearance calculation only ever accounted for the find bar's own height, never the header/toolbar height sitting above it, confirmed directly to be missing over 90px of real clearance in a typical case. Corrected to the exact same total-clearance formula pinToolbars() itself already uses for the content area's own padding-top, so the two can never drift out of sync with each other again. Also implements Lynn's own suggested robustness layer on top of the corrected formula: after scrolling, re-measures on the next frame and verifies the match is ACTUALLY visible, correcting further if it still isn't -- catches any remaining edge case without needing to enumerate every possible cause of covering in advance. (2) Investigated the Debug Log wrong-match report thoroughly, but could not reproduce it with realistic test content (tried both a typical multi-line log format and one containing a real URL, searching for a common term in each -- neither reproduced a mismatch). Did find a genuine, real architectural risk while investigating: R&R-mode Find highlighting works by embedding raw-text placeholder markers directly into the note's content BEFORE running it through the full markdown rendering pipeline (urlsToLinks()) -- which itself performs several TEXT-SHRINKING passes (images, code spans, links, each replacing a matched span with a much shorter placeholder) on that same raw string. If a search query ever sits near or overlaps one of those other markdown constructs, an embedded marker could in principle survive but end up wrapping different text than intended, since it has no way to "know" what it's supposed to wrap, only where it was inserted -- this is a plausible mechanism for exactly what Lynn described, even though it didn't reproduce with the specific content tried. Rather than guess at a fix blind, added the diagnostic logging she herself suggested: every rendered match now gets sanity-checked against the actual search query, and any real mismatch will now log a clear, specific message (which note, which match index, expected vs actual text) automatically the next time this happens, rather than needing her to notice and describe it after the fact. Verified directly: the Find scroll fix confirmed with real header/toolbar/find-bar heights showing the match correctly clearing all three, and separately confirmed what the OLD formula would have produced for direct comparison (90px short); the new diagnostic-logging code's own detection logic confirmed correct via an artificially-forced mismatch, since a naturally-occurring one couldn't be reproduced. Suite: 332/332 (harness v8).
   v0.1833-0.1834 - FIVE things from Lynn's to-do list, tackled while she was multitasking on something else. (1) FIX, and an apology owed: the Typing/R&R mode button's wrong accent color, which Lynn had already reported once this session -- my earlier investigation only checked the R&R-mode .active CSS class (genuinely correct) and never examined the actual culprit: a completely separate inline-style code path, applied specifically when switching TO typing mode, that used the general accent directly (bypassing the note-accent fallback) plus a hardcoded white foreground with no contrast checking. Fixed to match the established pattern, confirmed directly with distinct accent colors this time. (2) FIX: the QAB letter-reset bug Lynn described (an E left over from a previous action, mistaken for a currently-different button) -- changing an already-configured slot's action now always resets its letter to match the new action, not just when the slot was previously empty. (3) FIX: the quiet-mode back+speak pill's two segments visibly mismatching in size at larger icon settings -- root cause turned out deeper than expected: neither button's own container size was ever tied to the icon-size setting in quiet mode at all, both were separately hardcoded to a fixed 40px, and since that's a floor rather than a ceiling, each button grew past it to fit its own icon at large sizes -- unevenly, since the back button's chevron is deliberately 30% larger than standard (an existing, intentional design choice, not something removed). Fixed by extending the existing JS-driven icon-sizing mechanism so both segments share one computed minimum based on the larger (chevron-inclusive) footprint, scoped to quiet mode only. (4) FIX: the rename-note pencil icon overlapping cursive note names, per Lynn's report -- small, deliberate increase to the gap between title and icon (2px to 7px), enough clearance for a slanted font's trailing flourishes without losing the intended snug feel. (5) NEW: a prototype QAB collapse handle, per Lynn's explicit request -- a large, thick, obvious tab at the bottom-left of the note editor (56x72px, deliberately not styled like the small, mouse-only scratch-pad edge tab, since low-vision touch accessibility was the explicit goal here) that shows or hides the QAB bar with one tap, letting it stay permanently enabled without always being visible. Opt-in via its own new Settings toggle (off by default, explicitly experimental), with a chevron that flips direction to match state. CAUGHT A REAL BUG BEFORE SHIPPING: the handle's own initial HTML had a redundant inline style="display:none", which -- being an inline style -- unconditionally overrode the CSS class-based visibility rule regardless of specificity, meaning the handle would never have actually appeared even with its setting correctly enabled. Found by testing the actual visibility, not just the click behavior (which worked regardless, since .click() fires on hidden elements too) -- fixed by removing the redundant inline style, since the CSS already had its own correct default-hidden state. Verified directly and thoroughly throughout: the view-mode button's fix confirmed with real distinct note/general accent colors; the QAB letter reset confirmed changing from a real previous value to a real new one; the quiet-mode pill fix confirmed with both segments measuring identically at the largest icon size, where the mismatch was most visible; the collapse handle confirmed with the actual computed visibility (not just that clicking did something) for both enabled and disabled states, and confirmed the full expand-collapse-expand cycle with real screenshots of both states, not just DOM state alone. Suite: 332/332 (harness v8), including the structural nesting check, and a scoped div-balance count specifically for the new Settings row confirming it's genuinely self-contained (4 opens, 4 closes) rather than trusting the whole-file delta alone.
   v0.1832 - FOUR things, per Lynn. (1) MOVED: Headings & Note Name Font Face, now below Advanced Typography instead of right after Note Font Face -- a rarely-used setting she didn't want appearing before the typography settings. (2) NEW: an explicit Select All button in the Edit Paragraph dialog, grouped with Paste on the right with a deliberate gap between them -- there won't always be a physical keyboard for Ctrl+A, and dragging to select text can be difficult for senior citizens. (3) NEW: a third, optional "Keep Editing" button on the Settings unsaved-changes prompt, per Lynn's report of accidentally clicking outside the dialog and only being offered Save or Discard when she actually just wanted to keep working. Confirmed technically feasible before building it, not assumed: the Settings dialog itself is still fully intact underneath the confirm popup at that point -- nothing has torn it down yet, the popup is purely a layered overlay -- so dismissing it without triggering either Save or Discard genuinely does mean "nothing changed, keep going," no callback even needed. Extended the SHARED confirm-dialog component (used throughout this app for many other prompts) with a new optional third button, defaulting to hidden unless a caller explicitly provides a label -- every other existing call site is completely unaffected. (4) FIX, likely root cause found for a real bug: Lynn's report of the PWA appearing "half updated" twice in one day -- the version number and update banner correctly showing the new version, while actual behavior still ran old, stale code, until a full force-quit and reopen. Found by reading the actual service worker fetch handler directly: fetch(event.request) passed the original Request object with no explicit cache directive, meaning this "network-first" HTML fetch -- despite the surrounding code's clear intent -- could still be silently satisfied by the BROWSER's own HTTP cache layer (entirely separate from the Cache API used everywhere else in this file) if GitHub Pages' response headers permitted it within their cache window. Fixed with an explicit cache:'no-store' on that one fetch call, in both the stable and dev service worker files (delivered separately, versioned _v2, replacing the existing _v1 files) -- guarantees a genuinely fresh network fetch every time, matching what this code already believed it was doing. Verified directly and thoroughly: the third button confirmed staying completely hidden for an ordinary, unrelated confirm call (e.g. a delete confirmation), confirmed correctly appearing with the right label only for the Settings unsaved-changes case, and confirmed that clicking it closes the popup while Settings stays open with the unsaved change still fully intact, not reverted; Select All confirmed actually selecting the real full text range in the textarea, not just clicked without effect; the Settings row reorder confirmed via real measured position relative to its new neighbors (caught and fixed a timing issue in the test itself along the way -- Settings wasn't actually open yet the first time it was checked). Suite: 332/332 (harness v8), including the structural nesting check.
@@ -7370,6 +7374,58 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 }
 
 /* ===== UPDATE BANNER ===== */
+/* v0.1838 NEW, per Lynn's request: the "want to paste?" offer card. */
+#paste-offer-card {
+  display: none;
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0; /* overridden by JS -- just below the header/toolbar */
+  z-index: 27; /* below find-bar (28) and the toolbar/header, above note content */
+  background: var(--bg2);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  padding: 10px 8px 10px 14px;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 380px);
+}
+#paste-offer-card.visible { display: flex; }
+#paste-offer-text { flex: 1; font-size: 0.95em; color: var(--fg); }
+#paste-offer-accept-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.92em;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  /* background/color set by JS via var(--note-accent, var(--accent)) +
+     the same contrast-checking function used elsewhere in this app --
+     never a hardcoded color, to avoid the exact contrast risk
+     #update-banner already has. */
+}
+#paste-offer-close-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  padding: 6px;
+  min-width: 30px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+#paste-offer-close-btn:hover { background: var(--bg3); }
+
 #update-banner {
   display: none;
   position: fixed;
@@ -7791,6 +7847,26 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
       <button class="find-replace-btn" id="find-replace-btn" title="Replace current match">Replace</button>
       <button class="find-replace-btn" id="find-replace-all-btn" title="Replace all matches">All</button>
     </div>
+  </div>
+
+  <!-- v0.1838 NEW, per Lynn's request: an in-app "want to paste?" offer
+       for a brand-new, still-empty note, shown on the second tap at the
+       start of the note (matching the point where iOS's own native
+       paste popup tends to appear) -- discourages native paste (which
+       can corrupt rich content, see the encoding fix elsewhere in this
+       version) by routing acceptance through this app's own safe,
+       smart-HTML-aware paste instead. Deliberately a plain, neutral
+       card rather than an accent-colored banner, to avoid any risk of
+       the hardcoded-white-on-accent contrast problem already found and
+       fixed elsewhere in this app (#update-banner has this same
+       pre-existing issue, not touched here since it's out of scope for
+       this request). -->
+  <div id="paste-offer-card" role="status">
+    <span id="paste-offer-text">Paste from clipboard?</span>
+    <button id="paste-offer-accept-btn" type="button">Paste</button>
+    <button id="paste-offer-close-btn" type="button" aria-label="Dismiss">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   </div>
 
   <!-- Second toolbar — always at top, below note header -->
@@ -12707,7 +12783,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1835';
+const APP_VERSION = '0.1839';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13079,6 +13155,121 @@ var BULLET_CHAR_REGEX_TEST = /^[ \t]*[\u2022\u25E6\u25AA\u25AB\u2023\u25CF\u25CB
 function convertBulletsToMarkdown(text) {
   if (!text) return text;
   return text.replace(BULLET_CHAR_REGEX_G, '$1- ');
+}
+
+// v0.1838 NEW: extracted from the note-editor 'paste' event handler into
+// a standalone, reusable function -- the "want to paste?" prompt needs
+// the exact same smart HTML-to-markdown conversion the native-paste
+// intercept already uses, not a separate, plainer implementation.
+function convertHtmlToNoteMarkdown(html, tabReplacement) {
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  var hasRichness = tmp.querySelector('a[href], b, strong, i, em, h1, h2, h3, h4, h5, h6, ul, ol, li');
+  if (!hasRichness) return null; // Nothing this function can improve — caller should fall back
+
+  // v0.1839 NEW, per Lynn's report: the double-spaced-list heuristic
+  // (an LI with its own P child, the Google Docs/Word pattern) didn't
+  // match Google AI's actual output -- her numbered list lost its blank
+  // lines even though bold/numbering survived. Rather than guess again
+  // at what the real markup looks like, log it directly so the next
+  // real paste captures the ACTUAL structure to build a correctly-
+  // targeted fix from, not another guess.
+  var _listEl = tmp.querySelector('ul, li, ol');
+  if (_listEl) {
+    var _liEls = tmp.querySelectorAll('li');
+    var _liWithP = 0, _liWithBr = 0, _liWithStyle = 0;
+    _liEls.forEach(function(li) {
+      if (li.querySelector('p')) _liWithP++;
+      if (li.querySelector('br')) _liWithBr++;
+      if (li.getAttribute('style') || (li.parentElement && li.parentElement.getAttribute('style'))) _liWithStyle++;
+    });
+    logSys('[PASTE LIST DIAG] ' + _liEls.length + ' list item(s) -- withP=' + _liWithP +
+      ' withBr=' + _liWithBr + ' withInlineStyle=' + _liWithStyle +
+      ' rawHtmlSample=' + html.substring(0, 800));
+  }
+
+  function extractText(node, listStack) {
+    listStack = listStack || [];
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (/^\s*$/.test(node.textContent) && node.textContent.indexOf('\n') !== -1) return '';
+      return node.textContent;
+    }
+    if (node.nodeName === 'A') {
+      var href = node.getAttribute('href') || '';
+      var text = node.textContent.trim();
+      if (/^\d+$/.test(text)) return '';
+      if (text === href || text === '') return href;
+      return href ? '[' + text + '](' + href + ')' : text;
+    }
+    if (node.nodeName === 'UL' || node.nodeName === 'OL') {
+      var newStack = listStack.concat([{ type: node.nodeName.toLowerCase(), counter: 1 }]);
+      var listResult = '';
+      for (var li = 0; li < node.childNodes.length; li++) {
+        listResult += extractText(node.childNodes[li], newStack);
+      }
+      return listResult;
+    }
+    if (node.nodeName === 'LI') {
+      var depth = Math.max(0, listStack.length - 1);
+      var indent = '';
+      for (var d = 0; d < depth; d++) indent += '    ';
+      var top = listStack[listStack.length - 1];
+      var marker;
+      if (top && top.type === 'ol') { marker = top.counter + '. '; top.counter++; }
+      else { marker = '- '; }
+      var liContent = '';
+      // v0.1839 EXTENDED, per Lynn's report: the original P-wrapped-LI
+      // check (Google Docs/Word's pattern) alone didn't match Google
+      // AI's actual output. Added a second signal -- an explicit inline
+      // margin-bottom/padding-bottom on the LI itself, a common
+      // alternative way rich text sources indicate intentional spacing
+      // between items. The new diagnostic logging above will capture
+      // real data for a more precisely targeted fix if this still isn't
+      // the actual mechanism.
+      var liStyleAttr = node.getAttribute('style') || '';
+      var liIsDoubleSpaced = /margin-bottom\s*:\s*(?!0)|padding-bottom\s*:\s*(?!0)/.test(liStyleAttr);
+      for (var lc = 0; lc < node.childNodes.length; lc++) {
+        var liChild = node.childNodes[lc];
+        if (liChild.nodeName === 'P') liIsDoubleSpaced = true;
+        var liChildText = extractText(liChild, listStack);
+        if ((liChild.nodeName === 'UL' || liChild.nodeName === 'OL') && liContent && liContent.charAt(liContent.length - 1) !== '\n') {
+          liContent += '\n';
+        }
+        liContent += liChildText;
+      }
+      return indent + marker + liContent.trim() + (liIsDoubleSpaced ? '\n\n' : '\n');
+    }
+    if (/^H[1-6]$/.test(node.nodeName)) {
+      var level = parseInt(node.nodeName.substring(1), 10);
+      var headingContent = '';
+      for (var hc = 0; hc < node.childNodes.length; hc++) {
+        headingContent += extractText(node.childNodes[hc], listStack);
+      }
+      var headingText = headingContent.trim();
+      return headingText ? new Array(level + 1).join('#') + ' ' + headingText + '\n' : '';
+    }
+    var blockTags = { DIV:1, BR:1, TR:1 };
+    var doubleNewlineTags = { P:1 };
+    var inlineWrap = { B: '**', STRONG: '**', I: '*', EM: '*' };
+    var result = '';
+    for (var i = 0; i < node.childNodes.length; i++) {
+      result += extractText(node.childNodes[i], listStack);
+    }
+    var wrap = inlineWrap[node.nodeName];
+    if (wrap && result !== '') result = wrap + result + wrap;
+    if (blockTags[node.nodeName]) result += '\n';
+    if (doubleNewlineTags[node.nodeName]) result += '\n\n';
+    return result;
+  }
+
+  var converted = extractText(tmp, [])
+    .replace(/\t/g, settings.convertTabsOnPaste !== false ? tabReplacement : '\t')
+    .replace(/^[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/ +([.,;:!?])/g, '$1')
+    .trim();
+  if (settings.convertBulletsOnPaste !== false) converted = convertBulletsToMarkdown(converted);
+  return converted;
 }
 
 function looksLikeAccidentalUrlEncoding(text) {
@@ -14391,6 +14582,12 @@ function pinToolbars() {
   } else if (findBar) {
     findBar.style.top = (offsetTop + _pinnedHeaderH + _pinnedToolbarH) + 'px';
   }
+
+  // v0.1838 NEW, per Lynn's request: position the paste-offer card the
+  // same place the find bar sits, plus a small margin since it's a
+  // centered card rather than a full-width bar.
+  var pasteOfferCard = document.getElementById('paste-offer-card');
+  if (pasteOfferCard) pasteOfferCard.style.top = (offsetTop + _pinnedHeaderH + _pinnedToolbarH + 10) + 'px';
 
   area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + findBarH + 12) + 'px';
   // (overflow detection removed — use applySmallScreenOverflow instead)
@@ -30818,6 +31015,160 @@ function makeImportFolderName(label) {
     _qabUpdateScrollArrows();
   })();
 
+  // ===== PASTE OFFER CARD (v0.1838) =====
+  // Per Lynn's request: discourage iOS's native paste popup (which can
+  // corrupt rich content -- see the encoding-corruption fix elsewhere in
+  // this version) by offering this app's own safe paste instead,
+  // triggered on the SECOND tap at the start of a still-empty note --
+  // matching where iOS's own native context menu/paste popup tends to
+  // appear. Reuses the existing _hasAskedForClip()/_markClipAsked()
+  // fingerprint tracking (persisted to localStorage, survives app
+  // restarts) rather than building new tracking -- the toolbar Paste
+  // button already correctly marks a clipboard as "asked" too, so the
+  // two paths share the same "don't ask again" state.
+  (function() {
+    var emptyTapCount = 0;
+    var lastCheckedNoteId = null;
+
+    // v0.1839 NEW, per Lynn's report: an EXPERIMENTAL attempt to
+    // suppress iOS's own native text-selection/paste popup while the
+    // note is still empty -- she reported seeing iOS's own context menu
+    // instead of this app's own card, meaning native UI may be winning
+    // a race against (or rendering on top of) this app's own prompt.
+    // Explicitly flagged as unverified: this sandbox has no way to
+    // simulate iOS's actual native popup behavior, so this genuinely
+    // needs confirmation on a real device, not just a passing test here.
+    // Uses CSS user-select rather than the textarea's own readonly
+    // attribute deliberately -- readonly would also block focus/cursor
+    // placement entirely, a much worse regression than the problem this
+    // is trying to fix.
+    function updateEmptyNoteSelectability() {
+      var ed = document.getElementById('note-editor');
+      if (!ed) return;
+      if (ed.value.trim() === '') {
+        ed.style.webkitUserSelect = 'none';
+        ed.style.userSelect = 'none';
+      } else {
+        ed.style.webkitUserSelect = '';
+        ed.style.userSelect = '';
+      }
+    }
+
+    function resetTapCountIfNeeded() {
+      if (currentNoteId !== lastCheckedNoteId) {
+        emptyTapCount = 0;
+        lastCheckedNoteId = currentNoteId;
+        updateEmptyNoteSelectability();
+      }
+    }
+    function hidePasteOfferCard() {
+      var card = document.getElementById('paste-offer-card');
+      if (card) card.classList.remove('visible');
+      // Restore normal selection once the offer is resolved either way
+      // — she should be able to select/paste normally afterward.
+      var ed = document.getElementById('note-editor');
+      if (ed) { ed.style.webkitUserSelect = ''; ed.style.userSelect = ''; }
+    }
+    function showPasteOfferCard(clipText) {
+      var card = document.getElementById('paste-offer-card');
+      var acceptBtn = document.getElementById('paste-offer-accept-btn');
+      if (!card || !acceptBtn) return;
+      // Note-accent-aware, contrast-checked -- never a hardcoded color,
+      // matching the fix already applied elsewhere in this app for
+      // exactly this class of bug.
+      acceptBtn.style.background = 'var(--note-accent, var(--accent))';
+      acceptBtn.style.color = _noteAccentContrastColor();
+      card.classList.add('visible');
+      card._pendingClipText = clipText;
+    }
+
+    document.getElementById('note-editor').addEventListener('click', function() {
+      resetTapCountIfNeeded();
+      var ed = document.getElementById('note-editor');
+      var isEmpty = ed.value.trim() === '';
+      var atStart = ed.selectionStart === 0 && ed.selectionEnd === 0;
+      if (!isEmpty || !atStart) { emptyTapCount = 0; hidePasteOfferCard(); return; }
+      emptyTapCount++;
+      if (emptyTapCount !== 2) return; // only the SECOND qualifying tap
+      if (!navigator.clipboard || !navigator.clipboard.readText) return;
+      navigator.clipboard.readText().then(function(text) {
+        if (!text || !text.trim()) return; // clipboard empty — nothing to offer
+        if (_hasAskedForClip(text)) return; // already asked about this exact content
+        showPasteOfferCard(text);
+      }).catch(function() {});
+    });
+
+    // v0.1839 NEW: also check on focus, which naturally fires when a
+    // note is first opened in typing mode -- ensures the suppression
+    // state is correctly set up before any taps happen, not just
+    // lazily the first time the click handler runs.
+    document.getElementById('note-editor').addEventListener('focus', updateEmptyNoteSelectability);
+
+    // Typing (or any other insertion, e.g. the toolbar Paste button
+    // itself) means the note is no longer empty, or the offer is moot
+    // either way — hide and reset the count.
+    document.getElementById('note-editor').addEventListener('input', function() {
+      hidePasteOfferCard();
+      emptyTapCount = 0;
+    });
+
+    document.getElementById('paste-offer-accept-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+    document.getElementById('paste-offer-accept-btn').addEventListener('click', function() {
+      var card = document.getElementById('paste-offer-card');
+      var text = card && card._pendingClipText;
+      hidePasteOfferCard();
+      if (!text) return;
+      _markClipAsked(text);
+      var ed = document.getElementById('note-editor');
+      function insertPlain(plain) {
+        var decoded = looksLikeAccidentalUrlEncoding(plain) ? decodeAccidentalUrlEncoding(plain) : plain;
+        var start = ed.selectionStart, end = ed.selectionEnd;
+        ed.value = ed.value.substring(0, start) + decoded + ed.value.substring(end);
+        ed.selectionStart = ed.selectionEnd = start + decoded.length;
+        ed._lastLength = ed.value.length;
+        resizeEditor();
+        scheduleSave();
+        ed.focus();
+      }
+      // v0.1838 NEW: try the richer, multi-flavor navigator.clipboard.
+      // read() to get HTML too, routed through the exact same smart
+      // conversion (bold/headings/lists/footnote-stripping) the toolbar
+      // Paste button and native-paste handler use — not a plainer,
+      // HTML-blind fallback. Falls back to the plain text already read
+      // above if HTML isn't available or this API isn't supported.
+      if (navigator.clipboard && navigator.clipboard.read) {
+        navigator.clipboard.read().then(function(items) {
+          var htmlItem = null;
+          for (var ii = 0; ii < items.length; ii++) {
+            if (items[ii].types.indexOf('text/html') !== -1) { htmlItem = items[ii]; break; }
+          }
+          if (!htmlItem) { insertPlain(text); return; }
+          htmlItem.getType('text/html').then(function(blob) {
+            return blob.text();
+          }).then(function(html) {
+            var indentSpaces = settings.indentSpaces !== undefined ? settings.indentSpaces : 4;
+            var tabReplacement = '';
+            for (var ti = 0; ti < indentSpaces; ti++) tabReplacement += ' ';
+            var converted = convertHtmlToNoteMarkdown(html, tabReplacement);
+            insertPlain(converted === null ? text : converted);
+          }).catch(function() { insertPlain(text); });
+        }).catch(function() { insertPlain(text); });
+      } else {
+        insertPlain(text);
+      }
+    });
+
+    document.getElementById('paste-offer-close-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+    document.getElementById('paste-offer-close-btn').addEventListener('click', function() {
+      var card = document.getElementById('paste-offer-card');
+      var text = card && card._pendingClipText;
+      // Dismissing also counts as "asked" — don't ask again for this
+      // same clipboard content, matching Lynn's explicit requirement.
+      if (text) _markClipAsked(text);
+      hidePasteOfferCard();
+    });
+  })();
+
   // ===== QAB COLLAPSE HANDLE (v0.1834) =====
   // Per Lynn's request: a prototype, opt-in collapse handle for the QAB.
   (function() {
@@ -32666,65 +33017,14 @@ function makeImportFolderName(label) {
       return;
     }
 
-    // Parse the HTML and check if it contains any <a> tags with hrefs
-    var tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    var links = tmp.querySelectorAll('a[href]');
-    if (links.length === 0) return; // No links — let default paste handle it
-
-    // Has links — intercept and convert to plain text with URLs preserved
+    // v0.1838 CHANGED: now calls the extracted, reusable
+    // convertHtmlToNoteMarkdown() (see its own definition for the full
+    // conversion logic and reasoning) instead of duplicating the same
+    // logic inline -- the "want to paste?" prompt needs to call the
+    // exact same conversion, not a separate copy that could drift.
+    var converted = convertHtmlToNoteMarkdown(html, tabReplacement);
+    if (converted === null) return; // Nothing this function can improve — let default paste handle it
     e.preventDefault();
-
-    // Walk all nodes, converting <a> to "text\nurl", <b>/<strong> to
-    // **text**, <i>/<em> to *text* (the app's own inline markup, verified
-    // against urlsToLinks — nested tags compose naturally: <strong><em>
-    // becomes ***text***), keeping other text as plain textContent.
-    // v0.1644 FIX, per Lynn: this function previously discarded ALL HTML
-    // formatting except links — any paste whose clipboard HTML flavor had
-    // real <strong>/<b> (e.g. copying a formatted AI response or webpage
-    // that also contains at least one link, which is what routes the
-    // paste through this function at all — see the links.length check
-    // above) silently lost its bold, regardless of anything else in the
-    // text. A stray leading "#" was NOT the cause — confirmed directly:
-    // isHeadingRaw/getHeadingLevel are evaluated fresh per line with no
-    // shared state, so a heading (or a bare "#" that isn't even
-    // recognized as one) cannot affect unrelated bold elsewhere.
-    function extractText(node) {
-      if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-      if (node.nodeName === 'A') {
-        var href = node.getAttribute('href') || '';
-        var text = node.textContent.trim();
-        // If the visible text IS the URL, just use the URL
-        if (text === href || text === '') return href;
-        // Otherwise: "visible text\nurl" — URL on its own line, unambiguous
-        return href ? text + '\n' + href : text;
-      }
-      // Block elements get a newline after them
-      var blockTags = { P:1, DIV:1, BR:1, LI:1, H1:1, H2:1, H3:1, H4:1, H5:1, H6:1, TR:1 };
-      // Inline styles the app's own markup can actually represent — only
-      // these two; anything else (underline, color, font size, etc.)
-      // still falls through to plain text, same as before, since there's
-      // no equivalent markup to preserve it with.
-      var inlineWrap = { B: '**', STRONG: '**', I: '*', EM: '*' };
-      var result = '';
-      for (var i = 0; i < node.childNodes.length; i++) {
-        result += extractText(node.childNodes[i]);
-      }
-      var wrap = inlineWrap[node.nodeName];
-      if (wrap && result !== '') result = wrap + result + wrap;
-      if (blockTags[node.nodeName]) result += '\n';
-      return result;
-    }
-
-    var converted = extractText(tmp)
-      .replace(/\t/g, settings.convertTabsOnPaste !== false ? tabReplacement : '\t') // convert tabs to spaces if setting on
-      .replace(/\n{3,}/g, '\n\n') // collapse excessive newlines
-      .trim();
-    // v0.1687: bullet-glyph conversion, per Lynn -- same as the plain-
-    // text paste path just above; see convertBulletsToMarkdown()'s own
-    // comment.
-    if (settings.convertBulletsOnPaste !== false) converted = convertBulletsToMarkdown(converted);
-
     // Insert at cursor position
     var ed = document.getElementById('note-editor');
     var start = ed.selectionStart;
