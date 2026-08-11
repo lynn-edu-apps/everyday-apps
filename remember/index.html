@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1848 -->
+<!-- Remember App - Version 0.1853 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1848
+  Version 0.1853
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,11 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1853 - THREE changes, per Lynn's requests. (1) The toast message-counter number ("#1", "#2", ...) is now visually small and subtle, separated from the message text -- was rendering at the same size/weight as the message itself, reading like an error code rather than the debugging aid it's meant to be. Built via DOM elements (a styled span for the number, a text node for the message) rather than string-concatenated innerHTML, so message text can never be misinterpreted as HTML. CAUGHT BY VISUAL TESTING, not assumed correct: the number initially broke internally into two lines ("#" and "1" separately) at narrow widths, since the toast's own word-break:break-word applies to everything inside it -- fixed with white-space:nowrap scoped to the number specifically, confirmed correct via a second screenshot. (2) MAJOR CHANGE, per Lynn's explicit aesthetic preference: heading levels are now normalized during HTML-to-markdown paste conversion so the most prominent heading actually present in the source becomes markdown level 3 (###), never level 1 or 2 -- she finds those disproportionately huge next to body text and has been avoiding them entirely in her own writing for this reason. Scans once for the most prominent (smallest-numbered) heading level actually used in the source, computes a single offset so that level becomes 3, and shifts every other heading the same amount -- preserving relative hierarchy (a genuine subheading still renders smaller than its parent) whether that means demoting real H1/H2 content or promoting a document that only ever used H4/H5. Clamped to markdown's own maximum of 6. (3) Every resulting level-3 heading now gets two blank lines before it instead of one, per Lynn's separate explicit aesthetic request -- implemented as a placeholder resolved into a real extra blank line AFTER the existing newline-collapsing step runs (doing it any earlier would have the extra line flattened right back down to the standard single blank line by that same collapse rule), re-trimmed afterward so a level-3 heading that happens to open the whole paste doesn't end up with a stray leading blank line. Confirmed unaffected, as Lynn correctly assumed: table content never contains heading elements, so none of this touches the table feature at all. Verified directly and thoroughly: confirmed heading remapping across three real scenarios (a full H1/H2/H3 hierarchy demoted to 3/4/5, an H2-starting document promoted to 3/4, and an H4-only document promoted up to 3); separately confirmed the two-blank-line rule specifically -- three real newlines before a resulting H3, but still just the standard two before a resulting H4, confirming the rule is correctly scoped to level 3 only, not all headings; confirmed the full visual result in R&R mode via screenshot; re-ran all table and paste tests and confirmed tables remain completely unaffected while general paste conversion correctly picks up the new heading behavior; re-ran the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
+  v0.1852 - MAJOR NEW FEATURE: real markdown table rendering in R&R mode, per Lynn's explicit request to build this out. Investigated the renderer's actual architecture first rather than guessing at an approach: found that fenced code blocks already solve the exact same underlying problem (a multi-line block spanning several rendered lines), and used that as a direct template. Added computeTableBlocks() (detects a GFM-style table: a row containing at least one pipe, immediately followed by a valid separator row of only pipes/dashes/colons/whitespace with alignment markers, consuming subsequent pipe-containing non-blank rows as data) and renderTableBlock() (builds a real <table> with proper <thead>/<tbody>, per-column alignment from the separator row's colons, and cell content re-extracted from the ALREADY bold/italic/link-processed line text so inline formatting inside cells works correctly). A whole table renders as ONE self-contained block at its first line, deliberately simpler than spanning fragments across multiple line-loop iterations the way fenced code does -- also means move mode treats a table as one movable unit rather than letting someone accidentally split it apart by moving a single row. New .viewer-table CSS matches this app's existing theme system (font-size-editor scaling, fg/bg2/border variables) rather than hardcoded colors, so it correctly follows light/dark mode like everything else in the viewer. Also upgraded convertHtmlToNoteMarkdown() (the paste conversion) to generate real GFM pipe-table syntax for actual <table> elements, replacing the earlier, deliberately-deferred fallback-text-only approach from v0.1846 -- now that the renderer can display it, pasting a real table (from Google AI or anywhere else) produces an actual rendered table, not just readable plain text. Escapes any literal pipe character within cell text so it can't be mistaken for a column separator when re-parsed. Typing mode needed no changes at all, per Lynn's own correct expectation -- it only ever shows the raw textarea content directly, never routed through this renderer, so raw pipe characters display exactly as typed. Verified directly and thoroughly: confirmed full table rendering with real data (three columns, mixed left/center/right alignment, bold and a real link inside cells) via both a structural test and a visual screenshot; confirmed three important edge cases separately -- a table-looking block inside a fenced code block correctly stays literal text and is never rendered as a real table, an ordinary line containing a single stray pipe character is never mistaken for a table (no valid separator row follows it), and a header-only table with no data rows still renders correctly with no empty <tbody>; confirmed the complete round trip end to end -- pasting a real HTML <table> produces clean GFM markdown, which then renders as an actual table with formatting preserved, using the exact same HTML structure that matched Lynn's own real diagnostic data from earlier in this project; separately confirmed a literal pipe character within cell text is correctly escaped in storage and correctly restored on render. Re-ran the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
+  v0.1851 - Rich HTML-to-markdown paste now works in the "Add text to note" dialog too, per Lynn's explicit request -- important for anyone with typing mode turned off, who relies on this dialog as their primary way to add text and had been getting plain, unformatted paste with no blank lines. Investigated first: this dialog's existing paste listener (shared with Edit Paragraph) only ever did diagnostic logging and never called preventDefault(), so every paste here fell through to the browser's bare default plain-text behavior regardless of what was on the clipboard. Added a new, dedicated paste handler scoped ONLY to quick-add-input, deliberately NOT edit-block-input (Edit Paragraph), per Lynn's own explicit reasoning that paragraph editing doesn't need this and the "Add text to note" dialog is always available as the richer alternative. Adapted the exact same logic as the main note editor's own paste handler -- accidental-URL-encoding decode, tab/bullet conversion for plain text, and full HTML conversion via the same shared convertHtmlToNoteMarkdown() -- so this dialog's paste behavior is now fully consistent with the main editor's rather than a partial subset. Verified directly and thoroughly: confirmed bold, a list, and blank-line spacing all correctly convert when pasted into this dialog, matching the main editor's own output exactly; separately confirmed Edit Paragraph is genuinely unaffected (no listener intercepts its paste at all, confirmed via defaultPrevented staying false); re-ran the main-editor and toolbar-button paste tests plus the full remaining suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
+  v0.1850 - Made the toolbar Paste button's error message platform-aware, per Lynn's question: it was hardcoded to say "iOS security sometimes requires it" regardless of the actual device, which would have been inaccurate and confusing if this app were ever used on Android. Now uses the existing _isIOSDevice() helper (already used elsewhere in this app for other iOS-specific behaviors, not a new detection mechanism) to say "iOS security" on an actual iOS device and the generic "your browser's security" everywhere else, since the exact wording of Android/Chrome's own equivalent clipboard security behavior hasn't been confirmed. Verified directly with two different simulated user agents (iOS Safari and Android Chrome) that the ACTUAL toast message shown reads correctly for each -- not just calling showToast() directly, but through the real click-and-fail path a person would actually hit. Re-ran the toolbar button and native-paste tests plus the full remaining suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
+  v0.1849 - REVERTED the toolbar Paste button to plain-text-only clipboard reading (readText()), per Lynn's explicit report: an extra native iOS clipboard popup started appearing on every single use of this button, requiring an additional tap she didn't want -- new behavior that exactly coincides with when this button began calling navigator.clipboard.read() (the multi-type API, needed to also fetch HTML) instead of the simpler readText(). Her own hypothesis, and a reasonable one: reading the richer, multi-type clipboard specifically may be what triggers this extra native confirmation on iOS, distinct from a simple plain-text read. Given rich HTML paste via this specific button was never reliably working on her device to begin with (a genuine, still-unresolved iOS constraint, see v0.1847), trying it was costing a confirmed, real annoyance for no working benefit -- straightforward trade to make. The native paste-event handler (tap in the note content pane, use iOS's own paste popup), which she confirmed works beautifully and preserves rich formatting correctly, is completely untouched by this change -- this only affects the toolbar button's own separate, JS-driven clipboard read. Removed the now-fully-unused pasteFromClipboardAtCursor() function entirely (confirmed zero remaining callers after this revert, since the earlier new-note button that also used it was already deleted) rather than leave dead code behind. Verified directly and thoroughly: confirmed the toolbar button now reads only plain text even when the clipboard also has an HTML flavor available (previously it would have preferred and converted the HTML); confirmed the native paste-event handler is completely unaffected and still produces fully rich, correctly-converted markdown; re-ran the full remaining test suite and confirmed everything still passes. Suite: 332/332 (harness v8).
   v0.1848 - Made the clipboard-read-failure error message itself actionable, per Lynn's request. Was just "Clipboard read not available" with no guidance; now reads "Clipboard read not available — tap in the text area and use the paste pop-up instead (iOS security sometimes requires it)" (and a matching variant for the separate "not available on this browser" case, when the clipboard API isn't present at all). Directs toward the one paste path already confirmed reliable on Lynn's own device -- native paste via the iOS pop-up -- right at the moment the unreliable, button-triggered path fails, rather than leaving her to already know (or guess) that native paste is the better option. Verified directly: confirmed the exact, real message a person actually sees (via a genuinely denied clipboard permission, not just calling showToast() directly) reads correctly with the new guidance included; re-ran all sixteen tests from the previous nine builds and confirmed every one still passes with identical output, nothing regressed. Suite: 332/332 (harness v8).
   v0.1847 - MAJOR FIX: the "Clipboard read not available" error toast was destroying the very clipboard content Lynn was trying to paste, per her report that dismissing it replaced her clipboard. Root cause confirmed directly, not guessed: showToast() already has a noCopyOnTap parameter, built specifically for this exact class of problem -- its own existing comment states plainly that copying a toast's own text on tap "is actively harmful: it silently overwrites whatever the user meant to keep for the paste they were about to do." Every clipboard-related error toast in this app (six across the shared pasteFromClipboardAtCursor() and the older doPaste()) had simply never been passed this existing safeguard. All six now pass it. Investigated her second, related report -- that the error still occurs at all even after granting the permission prompt -- honestly rather than attempting a third unverified fix: two different technical approaches were already tried this project (v0.1842's single-clipboard-call fix, v0.1845's HTML-only-read optimization), and neither resolved it on her actual device. Given native paste (the iOS popup) is confirmed working perfectly, this now looks like a deeper, iOS-level constraint on programmatic button-initiated clipboard reads specifically, not something further code changes can be confidently expected to solve without real hardware to verify against -- flagged clearly as an open, unresolved limitation rather than papered over with another speculative attempt. Verified directly and thoroughly: confirmed tapping the error toast now dismisses it while leaving clipboard content completely untouched (previously the toast's own error text would silently overwrite it); re-ran all fifteen tests from the previous eight builds and confirmed every one still passes with identical output, nothing regressed. Suite: 332/332 (harness v8).
   v0.1846 - Table-adjacent spacing and cell-fusion fix, per Lynn's real pasted example showing table content coming out as "FeaturelocalStorageIndexedDBe" -- cells with zero separator between them -- and no blank line around the table rows at all, including no space before the markdown header following the table. Root cause confirmed directly: TABLE/TD/TH had no handling whatsoever in the conversion function (their text just concatenated directly with nothing between it), and TR only ever got a single trailing newline, not the double-newline treatment already applied to paragraphs/headers/list items. NOT full table rendering -- that's still deliberately deferred as its own future project, per the earlier conversation about GFM table syntax needing real viewer support first. This is scoped purely to readability: TD/TH cells now get a trailing separator so adjacent cells don't fuse into unreadable run-together text, and TR now gets the same double-newline treatment as everything else, which also naturally separates the table as a whole from whatever precedes or follows it (a header, in Lynn's real example) without needing a table-specific spacing rule of its own. Verified directly with HTML matching her real, described table structure (three columns, three rows including a header row, bold text within cells, preceded by a bullet list and followed by a heading): confirmed every cell is now readable and clearly separated, confirmed every row sits on its own line with a blank line before and after, and confirmed the heading immediately following the table now correctly gets its own separation, matching the exact gap Lynn reported. Re-ran all fourteen tests from the previous seven builds and confirmed every one still passes with identical output, nothing regressed. Suite: 332/332 (harness v8).
@@ -2654,6 +2659,37 @@ body.qab-scheme-theme .qab-btn { background: var(--bg); color: var(--accent); bo
 .viewer-h4 { font-size: calc(var(--font-size-editor) * 1.18); }
 .viewer-h5 { font-size: calc(var(--font-size-editor) * 1.05); }
 .viewer-h6 { font-size: var(--font-size-editor); color: var(--fg2); }
+
+/* v0.1852 NEW, per Lynn's explicit request: real markdown table
+   rendering in R&R mode. Matches this app's existing theme system
+   (font-size-editor scaling, fg/bg2/border variables) rather than
+   hardcoded colors, so it correctly follows light/dark mode and any
+   per-note accent color, same as every other viewer element. */
+.viewer-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 4px 0;
+}
+.viewer-table {
+  border-collapse: collapse;
+  font-size: var(--font-size-editor);
+  color: var(--fg);
+  min-width: 100%;
+}
+.viewer-table th, .viewer-table td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.viewer-table th {
+  background: var(--bg2);
+  font-weight: 700;
+  color: var(--fg);
+}
+.viewer-table tbody tr:nth-child(even) td {
+  background: var(--bg2);
+}
 
 /* Heading popover */
 #heading-picker-popover {
@@ -7257,6 +7293,27 @@ mark.help-highlight-current {
 }
 body:not(.dark) #debug-toast { background: #2a2a2a; }
 body.dark #debug-toast { background: #545454; border: 1px solid rgba(255,255,255,0.2); }
+/* v0.1853 NEW, per Lynn's explicit request: the toast's message-
+   counter number ("#1", "#2", ...) is a debugging aid -- helpful for
+   telling whether the same toast keeps firing repeatedly -- not an
+   error code, and shouldn't read as one. Small, subtle, and visually
+   separate from the message itself. Relative (em) size so it scales
+   proportionally with the toast's own dynamic font-size, not a fixed
+   pixel value that could drift out of proportion at other UI Font
+   Size settings. */
+#debug-toast .toast-msg-number {
+  font-size: 0.62em;
+  font-weight: 400;
+  opacity: 0.6;
+  margin-right: 0.4em;
+  vertical-align: 0.15em;
+  /* v0.1853 FIX, caught by visual testing: without this, the number
+     itself could break internally ("#" and "1" on separate lines) at
+     narrow widths, since the toast's own word-break:break-word applies
+     to everything inside it. Keeps "#1" together as one unit while the
+     surrounding message text still wraps normally. */
+  white-space: nowrap;
+}
 /* Regular toast: blocks pointer pass-through, allows drag-to-select for copy */
 #debug-toast.show {
   opacity: 1;
@@ -12721,7 +12778,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1848';
+const APP_VERSION = '0.1853';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13118,6 +13175,28 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
   var hasRichness = tmp.querySelector('a[href], b, strong, i, em, h1, h2, h3, h4, h5, h6, ul, ol, li, [style*="font-weight:bold" i], [style*="font-weight: bold" i], [style*="font-weight:700"], [style*="font-weight: 700"]');
   if (!hasRichness) return null; // Nothing this function can improve — caller should fall back
 
+  // v0.1853 NEW, per Lynn's explicit aesthetic preference: she never
+  // uses markdown level 1 or 2 headings herself, since they render
+  // disproportionately huge next to body text -- so pasted HTML
+  // shouldn't introduce them either. Scans once for the MOST PROMINENT
+  // heading level actually present in the source (the smallest H-number,
+  // since H1 is more prominent than H2), then computes a single offset
+  // so that level becomes markdown level 3 specifically, with every
+  // other heading shifted the same amount -- preserving relative
+  // hierarchy (a genuine subheading still renders smaller than its
+  // parent) while anchoring the top level at 3. Clamped to 6, markdown's
+  // own maximum. If the source has no headings at all, this is unused.
+  var _headingOffset = 0;
+  var _sourceHeadings = tmp.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  if (_sourceHeadings.length > 0) {
+    var _minSourceLevel = 6;
+    _sourceHeadings.forEach(function(h) {
+      var lvl = parseInt(h.nodeName.substring(1), 10);
+      if (lvl < _minSourceLevel) _minSourceLevel = lvl;
+    });
+    _headingOffset = 3 - _minSourceLevel;
+  }
+
   // v0.1839 NEW, per Lynn's report: the double-spaced-list heuristic
   // (an LI with its own P child, the Google Docs/Word pattern) didn't
   // match Google AI's actual output -- her numbered list lost its blank
@@ -13201,6 +13280,11 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
     }
     if (/^H[1-6]$/.test(node.nodeName)) {
       var level = parseInt(node.nodeName.substring(1), 10);
+      // v0.1853 NEW, per Lynn's explicit aesthetic preference: apply the
+      // normalization offset computed above, so the most prominent
+      // heading in the source becomes markdown level 3, not 1 or 2.
+      // Clamped to 6 (markdown's own max) and floored at 1 (defensive).
+      level = Math.max(1, Math.min(6, level + _headingOffset));
       var headingContent = '';
       for (var hc = 0; hc < node.childNodes.length; hc++) {
         headingContent += extractText(node.childNodes[hc], listStack);
@@ -13213,7 +13297,17 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
       // that gap was really about whatever preceded the heading not
       // leaving a blank line behind it -- fixing every element's own
       // trailing spacing consistently closes that gap too.
-      return headingText ? new Array(level + 1).join('#') + ' ' + headingText + '\n\n' : '';
+      if (!headingText) return '';
+      var _headingMarker = new Array(level + 1).join('#');
+      // v0.1853 NEW, per Lynn's explicit aesthetic preference: a
+      // resulting level-3 heading (always the most prominent level
+      // present, after normalization above) gets an extra leading blank
+      // line -- a LEADING_H3_MARK placeholder here, resolved into a real
+      // extra blank line in a final pass after the usual newline-
+      // collapsing runs (that collapse would otherwise flatten this back
+      // down to the standard single blank line, same as any other
+      // heading, if done any earlier).
+      return (level === 3 ? 'REMEMBH3MARK' : '') + _headingMarker + ' ' + headingText + '\n\n';
     }
     // v0.1843 NEW, per Lynn's real, confirmed diagnostic data: Google AI
     // wraps paragraphs in <div>, not <p> -- her actual clipboard sample
@@ -13239,6 +13333,51 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
           break;
         }
       }
+    }
+    // v0.1852 NEW, per Lynn's explicit request: real GFM pipe-table
+    // syntax, now that the viewer actually renders it (see
+    // computeTableBlocks()/renderTableBlock()). Replaces the earlier
+    // fallback-text-only approach from v0.1846. Builds the header,
+    // separator, and data rows directly at the TABLE level rather than
+    // through generic TR/TD recursion, since a table's rows need to be
+    // assembled together as one structure, not rendered independently.
+    // Collects only direct-child TR elements (including one level down
+    // inside THEAD/TBODY/TFOOT, not deeper) so a rare nested table
+    // inside a cell doesn't get incorrectly flattened into this one.
+    if (node.nodeName === 'TABLE') {
+      var tableRows = [];
+      for (var tc = 0; tc < node.children.length; tc++) {
+        var tChild = node.children[tc];
+        if (tChild.nodeName === 'TR') {
+          tableRows.push(tChild);
+        } else if (tChild.nodeName === 'THEAD' || tChild.nodeName === 'TBODY' || tChild.nodeName === 'TFOOT') {
+          for (var tc2 = 0; tc2 < tChild.children.length; tc2++) {
+            if (tChild.children[tc2].nodeName === 'TR') tableRows.push(tChild.children[tc2]);
+          }
+        }
+      }
+      if (tableRows.length === 0) return '';
+      function cellsOf(trEl) {
+        var cells = [];
+        for (var cc = 0; cc < trEl.children.length; cc++) {
+          var cEl = trEl.children[cc];
+          if (cEl.nodeName === 'TD' || cEl.nodeName === 'TH') {
+            var cellText = extractText(cEl, listStack).trim().replace(/\|/g, '\\|').replace(/\n+/g, ' ');
+            cells.push(cellText || ' ');
+          }
+        }
+        return cells;
+      }
+      var headerCells = cellsOf(tableRows[0]);
+      if (headerCells.length === 0) return '';
+      var tableOut = '| ' + headerCells.join(' | ') + ' |\n';
+      tableOut += '|' + headerCells.map(function() { return ' --- '; }).join('|') + '|\n';
+      for (var tr = 1; tr < tableRows.length; tr++) {
+        var rowCells = cellsOf(tableRows[tr]);
+        while (rowCells.length < headerCells.length) rowCells.push(' ');
+        tableOut += '| ' + rowCells.slice(0, headerCells.length).join(' | ') + ' |\n';
+      }
+      return '\n\n' + tableOut + '\n';
     }
     var blockTags = { DIV:1, BR:1 };
     // v0.1846 CHANGED, per Lynn's real example showing table cells
@@ -13292,6 +13431,16 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
     .replace(/^[ \t]+$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/ +([.,;:!?])/g, '$1')
+    .trim()
+    // v0.1853 NEW, per Lynn's explicit request: two blank lines before
+    // every resulting level-3 heading, not the standard one. Resolved
+    // HERE specifically -- after the newline-collapsing step above,
+    // since doing it any earlier would just get flattened right back
+    // down to the standard single blank line by that same collapse
+    // rule. Re-trimmed below so a level-3 heading that happens to be
+    // the very first thing in the whole paste doesn't end up with a
+    // stray leading blank line -- trim() correctly removes it either way.
+    .replace(/REMEMBH3MARK/g, '\n')
     .trim();
   if (settings.convertBulletsOnPaste !== false) converted = convertBulletsToMarkdown(converted);
   return converted;
@@ -20677,6 +20826,8 @@ function urlsToLinks(text, addLineWrappers) {
     // v0.1646: numbered-list renumbering pre-pass — see
     // computeOrderedListNumbers()'s own header comment for the full plan.
     var _orderedListNumbers = computeOrderedListNumbers(_rawLines);
+    // v0.1852 NEW, per Lynn's explicit request: table block detection.
+    var _tableBlocks = computeTableBlocks(_rawLines);
     // _tagColorMap / _getTagColor / _TAG_COLORS built at top of urlsToLinks (before line processing)
     function _isPureTagLineLocal(line) {
       return /^\s*(@[a-zA-Z0-9_-]+\s*)+$/.test(line) || /^\[tag order\]/.test(line.trim());
@@ -20727,6 +20878,21 @@ function urlsToLinks(text, addLineWrappers) {
         var _codeLineRaw = _rawLines[i] || '';
         var _codeLineEsc = _codeLineRaw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         return '<div class="viewer-line viewer-code-line" data-line="' + i + '"><code>' + (_codeLineEsc || '&nbsp;') + '</code></div>';
+      }
+      // v0.1852 NEW, per Lynn's explicit request: table block rendering.
+      // Placed AFTER the fence checks above so fenced code always wins —
+      // a table-looking line inside a code fence stays literal text, per
+      // the fence's own existing rule for headings/bullets/etc. Renders
+      // the WHOLE table as one self-contained block at its first line
+      // (using renderTableBlock(), defined near computeTableBlocks());
+      // every other line the table consumes (_tableBlocks.consumed[i]
+      // true but not the start line) emits nothing, since its content
+      // was already rendered as part of the table HTML above it.
+      if (_tableBlocks.starts[i]) {
+        return renderTableBlock(_tableBlocks.starts[i], renderedLines, i);
+      }
+      if (_tableBlocks.consumed[i]) {
+        return '';
       }
       // Horizontal rule: line of 3+ hyphens only (raw before HTML escaping was ---+)
       var rawForHr = _rawLines[i] || '';
@@ -26346,9 +26512,19 @@ function showToast(msg, persistent, noCopyOnTap) {
   // conflict-toast flood she reported, and generically useful for any
   // future "is this really repeating?" question.
   _toastMsgCounter++;
-  var numberedMsg = '#' + _toastMsgCounter + ' ' + msg;
   var t = document.getElementById('debug-toast');
-  t.textContent = (persistent && !noCopyOnTap) ? numberedMsg + '\n(tap to copy & dismiss)' : numberedMsg;
+  // v0.1853 CHANGED, per Lynn's request: the "#N" counter was rendering
+  // at the same size/weight as the message itself, making it look like
+  // an error code rather than the debugging aid it's meant to be. Built
+  // via DOM elements (a styled span for the number, a text node for the
+  // rest) rather than string-concatenated innerHTML, so message text is
+  // never at risk of being misinterpreted as HTML.
+  t.textContent = '';
+  var numSpan = document.createElement('span');
+  numSpan.className = 'toast-msg-number';
+  numSpan.textContent = '#' + _toastMsgCounter;
+  t.appendChild(numSpan);
+  t.appendChild(document.createTextNode(' ' + msg + ((persistent && !noCopyOnTap) ? '\n(tap to copy & dismiss)' : '')));
   t.classList.add('show');
   t.classList.toggle('error-toast', !!persistent);
   clearTimeout(debugToastTimer);
@@ -31033,87 +31209,6 @@ function makeImportFolderName(label) {
     qabArrowObserver.observe(scroll);
     _qabUpdateScrollArrows();
   })();
-
-
-  // v0.1842 NEW, per Lynn's request that rich text be preserved
-  // regardless of which paste mechanism is used: a single, shared
-  // clipboard-read-and-insert function for both the toolbar Paste
-  // button and the new-note paste button. Makes exactly ONE clipboard
-  // call, decided upfront based on API availability -- confirmed
-  // directly (v0.1841) that chaining .read() then falling back to
-  // .readText() on failure is what caused "Clipboard read not
-  // available", since iOS's live-gesture window doesn't survive two
-  // sequential async clipboard calls. Tries HTML first via .read()
-  // (converting through the same convertHtmlToNoteMarkdown() the
-  // native-paste handler uses, so both paths can never drift apart),
-  // falling back to plain text from that SAME single result -- not a
-  // second clipboard call -- when .read() is used. Falls back to a
-  // single readText() call only when .read() isn't available AT ALL
-  // (not when it failed), which is a genuinely different, safe case.
-  function pasteFromClipboardAtCursor(ed, onInserted) {
-    function insertAtCursor(text) {
-      if (!text || !text.trim()) { showToast('Nothing to paste', false, true); return; }
-      var decoded = looksLikeAccidentalUrlEncoding(text) ? decodeAccidentalUrlEncoding(text) : text;
-      var start = ed.selectionStart, end = ed.selectionEnd;
-      ed.setRangeText ? ed.setRangeText(decoded, start, end, 'end') : (function() {
-        ed.value = ed.value.substring(0, start) + decoded + ed.value.substring(end);
-        ed.selectionStart = ed.selectionEnd = start + decoded.length;
-      })();
-      ed._lastLength = ed.value.length;
-      resizeEditor();
-      scheduleSave();
-      ed.focus();
-      if (onInserted) onInserted();
-    }
-    if (navigator.clipboard && navigator.clipboard.read) {
-      navigator.clipboard.read().then(function(items) {
-        var htmlItem = null, plainItem = null;
-        for (var ii = 0; ii < items.length; ii++) {
-          if (items[ii].types.indexOf('text/html') !== -1 && !htmlItem) htmlItem = items[ii];
-          if (items[ii].types.indexOf('text/plain') !== -1 && !plainItem) plainItem = items[ii];
-        }
-        function readPlainAndInsert() {
-          if (!plainItem) { showToast('Nothing to paste', false, true); return; }
-          plainItem.getType('text/plain').then(function(b) { return b.text(); }).then(function(plain) {
-            if (plain) _markClipAsked(plain);
-            insertAtCursor(plain || '');
-          }).catch(function() { showToast('Clipboard read not available \u2014 tap in the text area and use the paste pop-up instead (iOS security sometimes requires it)', true, true); });
-        }
-        // v0.1845 CHANGED: only reads the HTML blob when one is present,
-        // rather than always reading BOTH html and plain text in
-        // parallel even though only one is ever actually used -- per
-        // investigating Lynn's report that plain text usually succeeds
-        // but rich text often fails even after allowing the permission
-        // prompt. Best working hypothesis: iOS's live-gesture window is
-        // strict, and rich HTML (especially Google AI's, often many KB
-        // with heavy inline styling) takes longer to read and process
-        // than plain text -- reading both blobs unconditionally added
-        // avoidable work during that narrow window. Falling back to
-        // plain text (if HTML conversion finds no richness) reads from
-        // the SAME already-obtained item list, not a second clipboard
-        // permission request.
-        if (htmlItem) {
-          htmlItem.getType('text/html').then(function(b) { return b.text(); }).then(function(html) {
-            var indentSpaces = settings.indentSpaces !== undefined ? settings.indentSpaces : 4;
-            var tabReplacement = '';
-            for (var ti = 0; ti < indentSpaces; ti++) tabReplacement += ' ';
-            var converted = convertHtmlToNoteMarkdown(html, tabReplacement);
-            if (converted !== null) { _markClipAsked(html); insertAtCursor(converted); return; }
-            readPlainAndInsert();
-          }).catch(function() { readPlainAndInsert(); });
-        } else {
-          readPlainAndInsert();
-        }
-      }).catch(function() { showToast('Clipboard read not available \u2014 tap in the text area and use the paste pop-up instead (iOS security sometimes requires it)', true, true); });
-    } else if (navigator.clipboard && navigator.clipboard.readText) {
-      navigator.clipboard.readText().then(function(text) {
-        if (text) _markClipAsked(text);
-        insertAtCursor(text);
-      }).catch(function() { showToast('Clipboard read not available \u2014 tap in the text area and use the paste pop-up instead (iOS security sometimes requires it)', true, true); });
-    } else {
-      showToast('Clipboard read not available on this browser \u2014 tap in the text area and use the paste pop-up instead', true, true);
-    }
-  }
 
   // ===== QAB COLLAPSE HANDLE (v0.1834) =====
   // Per Lynn's request: a prototype, opt-in collapse handle for the QAB.
@@ -38619,6 +38714,63 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     }
   });
 
+  // v0.1851 NEW, per Lynn's explicit request: rich HTML-to-markdown
+  // paste for the "Add text to note" dialog specifically -- important
+  // for anyone using typing mode turned off, who relies on this dialog
+  // as their main way to add text. Deliberately does NOT touch
+  // edit-block-input (Edit Paragraph), per her own explicit reasoning:
+  // that dialog only ever edits a single existing paragraph, and the
+  // "Add text to note" dialog is always available as the alternative
+  // when richer paste handling is wanted. Adapts the exact same logic
+  // as the main note editor's own paste handler -- accidental-URL-
+  // encoding decode, tab/bullet conversion for plain text, and full
+  // HTML conversion via the same shared convertHtmlToNoteMarkdown() --
+  // so this dialog's paste behavior is now fully consistent with the
+  // main editor's, not a partial subset of it.
+  document.getElementById('quick-add-input').addEventListener('paste', function(e) {
+    var ed = this;
+    var indentSpaces = settings.indentSpaces !== undefined ? settings.indentSpaces : 4;
+    var tabReplacement = '';
+    for (var ti = 0; ti < indentSpaces; ti++) tabReplacement += ' ';
+
+    var html = e.clipboardData && e.clipboardData.getData('text/html');
+    if (!html) {
+      var plainText = e.clipboardData && e.clipboardData.getData('text/plain');
+      if (plainText && looksLikeAccidentalUrlEncoding(plainText)) {
+        e.preventDefault();
+        var decodedPT = decodeAccidentalUrlEncoding(plainText);
+        var sD = ed.selectionStart, eD2 = ed.selectionEnd;
+        ed.value = ed.value.substring(0, sD) + decodedPT + ed.value.substring(eD2);
+        ed.selectionStart = ed.selectionEnd = sD + decodedPT.length;
+        ed.dispatchEvent(new Event('input', { bubbles: true }));
+        showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false);
+        return;
+      }
+      var _needsTabFix = plainText && plainText.indexOf('\t') !== -1 && settings.convertTabsOnPaste !== false;
+      var _needsBulletFix = plainText && settings.convertBulletsOnPaste !== false && BULLET_CHAR_REGEX_TEST.test(plainText);
+      if (_needsTabFix || _needsBulletFix) {
+        e.preventDefault();
+        var converted = plainText;
+        if (_needsTabFix) converted = converted.replace(/\t/g, tabReplacement);
+        if (_needsBulletFix) converted = convertBulletsToMarkdown(converted);
+        var start = ed.selectionStart, end = ed.selectionEnd;
+        ed.value = ed.value.substring(0, start) + converted + ed.value.substring(end);
+        ed.selectionStart = ed.selectionEnd = start + converted.length;
+        ed.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return;
+    }
+
+    var htmlConverted = convertHtmlToNoteMarkdown(html, tabReplacement);
+    if (htmlConverted === null) return; // Nothing this function can improve — let default paste handle it
+    e.preventDefault();
+    var hStart = ed.selectionStart;
+    var hEnd = ed.selectionEnd;
+    ed.value = ed.value.substring(0, hStart) + htmlConverted + ed.value.substring(hEnd);
+    ed.selectionStart = ed.selectionEnd = hStart + htmlConverted.length;
+    ed.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
   _tagAC.attach(document.getElementById('quick-add-input'));
   document.getElementById('quick-add-input').addEventListener('input', function() {
     quickAddDirty = this.value.trim().length > 0;
@@ -39831,19 +39983,43 @@ settings.toolbarOrder  = DEFAULT_TOOLBAR_ORDER.slice();
     // In edit mode: paste clipboard text at cursor position
     if (!isViewMode) {
       var ed = document.getElementById('note-editor');
-      if (!ed || (!navigator.clipboard || (!navigator.clipboard.read && !navigator.clipboard.readText))) {
+      if (!ed || !navigator.clipboard || !navigator.clipboard.readText) {
         document.execCommand('paste'); return;
       }
-      // v0.1842 CHANGED, per Lynn's explicit report that this button
-      // sometimes fails with permission errors specifically when
-      // pasting rich text: this never actually attempted to read HTML
-      // before, only ever plain text -- so rich formatting was always
-      // lost through this path regardless of any permission issue.
-      // Now uses the shared pasteFromClipboardAtCursor(), which tries
-      // HTML via a single, safe clipboard call (see its own comment for
-      // why this is safe, unlike the chained pattern that caused
-      // v0.1841's "Clipboard read not available").
-      pasteFromClipboardAtCursor(ed);
+      // v0.1849 REVERTED, per Lynn's explicit report: this button
+      // started showing an extra native iOS clipboard popup on every
+      // single use, new behavior that exactly coincides with when this
+      // button began calling navigator.clipboard.read() (the multi-type
+      // API, needed to also fetch HTML) instead of the simpler
+      // readText(). Rich HTML paste via this specific button was never
+      // reliably working on her device to begin with (a genuine, still-
+      // unresolved iOS constraint, see v0.1847's comment) -- so trying
+      // it was costing an annoying, confirmed extra tap for no working
+      // benefit. Back to plain text only via readText(), matching this
+      // button's original, pre-v0.1842 behavior. The native paste-event
+      // handler (tap in the note content pane, use iOS's own paste
+      // popup) is completely untouched by this and remains fully rich-
+      // HTML-aware -- she confirmed that path works beautifully.
+      navigator.clipboard.readText().then(function(text) {
+        if (!text) return;
+        _markClipAsked(text);
+        var textWasEncoded = looksLikeAccidentalUrlEncoding(text);
+        text = decodeAccidentalUrlEncoding(text); // v0.1532: iOS quirk defense
+        if (textWasEncoded) showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false);
+        var start = ed.selectionStart, end = ed.selectionEnd;
+        ed.setRangeText(text, start, end, 'end');
+        scheduleSave();
+        ed.focus();
+      }).catch(function() {
+        // v0.1850 CHANGED, per Lynn's question: was hardcoded to say
+        // "iOS security sometimes requires it" regardless of actual
+        // device -- would have been inaccurate and confusing on
+        // Android. Uses the existing _isIOSDevice() helper (already
+        // used elsewhere in this app for other iOS-specific behaviors)
+        // rather than a new detection mechanism.
+        var securityNote = _isIOSDevice() ? 'iOS security sometimes requires it' : "your browser's security sometimes requires it";
+        showToast('Clipboard read not available — tap in the text area and use the paste pop-up instead (' + securityNote + ')', true, true);
+      });
       return;
     }
     if (pasteMode) { exitPasteMode(); return; }
@@ -44643,6 +44819,106 @@ function getOrderedListMarker(line) {
 // for the "resume, don't restart" behavior turns out to hold exactly the
 // data a decimal path needs; this is really just "join the whole stack"
 // instead of "use only its last entry".
+// v0.1852 NEW, per Lynn's explicit request: detects GFM-style markdown
+// tables for real rendering in R&R mode. A table is: a row containing at
+// least one '|', immediately followed by a separator row (only pipes,
+// dashes, colons, and whitespace, with at least one dash -- this is what
+// distinguishes a real table from an ordinary line that happens to
+// contain a pipe character). Consumes subsequent pipe-containing,
+// non-blank rows as data rows. Returns { starts, consumed } where
+// starts[i] holds the parsed table (headerCells/aligns/dataRows/endLine)
+// for the table's FIRST line only, and consumed[k] is true for every
+// line index the table occupies (including its first line) -- the whole
+// table renders as ONE block at its start line, matching how fenced code
+// blocks already span multiple lines in this renderer, and deliberately
+// simpler than spanning fragments across several separate line-loop
+// iterations. Operates on raw, unprocessed lines for structural
+// detection only -- callers re-split the ALREADY bold/italic/link-
+// rendered line at the same indices to get cell content with inline
+// formatting intact, since column positions can't shift between the two
+// (formatting passes only wrap text in tags, never add/remove pipes).
+function splitTableRow(line) {
+  var t = line.trim();
+  if (t.charAt(0) === '|') t = t.slice(1);
+  // Trailing pipe, but not an escaped one (\|) at the very end
+  if (t.charAt(t.length - 1) === '|' && t.charAt(t.length - 2) !== '\\') t = t.slice(0, -1);
+  t = t.replace(/\\\|/g, '\u0001'); // protect escaped pipes before splitting
+  return t.split('|').map(function(c) { return c.replace(/\u0001/g, '|').trim(); });
+}
+
+function computeTableBlocks(lines) {
+  var starts = new Array(lines.length).fill(null);
+  var consumed = new Array(lines.length).fill(false);
+  var SEP_RE = /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+
+  for (var i = 0; i < lines.length; i++) {
+    var headerLine = lines[i];
+    var sepLine = lines[i + 1];
+    if (headerLine == null || sepLine == null) continue;
+    if (headerLine.trim() === '' || headerLine.indexOf('|') === -1) continue;
+    if (!SEP_RE.test(sepLine) || sepLine.indexOf('-') === -1) continue;
+
+    var headerCells = splitTableRow(headerLine);
+    var sepCells = splitTableRow(sepLine);
+    if (headerCells.length < 1 || sepCells.length < 1) continue;
+
+    var aligns = sepCells.map(function(c) {
+      var left = c.charAt(0) === ':';
+      var right = c.charAt(c.length - 1) === ':';
+      if (left && right) return 'center';
+      if (right) return 'right';
+      if (left) return 'left';
+      return '';
+    });
+
+    var dataRows = [];
+    var j = i + 2;
+    while (j < lines.length && lines[j] != null && lines[j].trim() !== '' && lines[j].indexOf('|') !== -1) {
+      dataRows.push(splitTableRow(lines[j]));
+      j++;
+    }
+    var endLine = j - 1;
+
+    starts[i] = { headerCells: headerCells, aligns: aligns, dataRows: dataRows, endLine: endLine };
+    for (var k = i; k <= endLine; k++) consumed[k] = true;
+    i = endLine; // skip past everything this table just consumed
+  }
+
+  return { starts: starts, consumed: consumed };
+}
+
+// v0.1852 NEW: renders a detected table block as a real HTML <table>,
+// per Lynn's explicit request. Takes the STRUCTURAL data from
+// computeTableBlocks() (based on raw lines) but re-splits the SAME line
+// indices from renderedLines (the already bold/italic/link-processed
+// version) to get cell content with inline formatting intact -- column
+// positions can't shift between the two, since those formatting passes
+// only wrap text in tags, never add or remove pipe characters.
+function renderTableBlock(table, renderedLines, startLine) {
+  var aligns = table.aligns;
+  function alignStyle(colIdx) {
+    var a = aligns[colIdx];
+    return a ? ' style="text-align:' + a + '"' : '';
+  }
+  var headerCellsFormatted = splitTableRow(renderedLines[startLine] || '');
+  var headHtml = '<tr>' + headerCellsFormatted.map(function(c, ci) {
+    return '<th' + alignStyle(ci) + '>' + (c || '&nbsp;') + '</th>';
+  }).join('') + '</tr>';
+  var bodyHtml = '';
+  for (var r = 0; r < table.dataRows.length; r++) {
+    var rowLineIdx = startLine + 2 + r;
+    var rowCellsFormatted = splitTableRow(renderedLines[rowLineIdx] || '');
+    bodyHtml += '<tr>' + rowCellsFormatted.map(function(c, ci) {
+      return '<td' + alignStyle(ci) + '>' + (c || '&nbsp;') + '</td>';
+    }).join('') + '</tr>';
+  }
+  return '<div class="viewer-line" data-line="' + startLine + '">'
+    + '<div class="viewer-table-wrap"><table class="viewer-table">'
+    + '<thead>' + headHtml + '</thead>'
+    + (bodyHtml ? '<tbody>' + bodyHtml + '</tbody>' : '')
+    + '</table></div></div>';
+}
+
 function computeOrderedListNumbers(lines) {
   var result = new Array(lines.length).fill(null);
   var stack = []; // [{indent, count}], shallowest first
