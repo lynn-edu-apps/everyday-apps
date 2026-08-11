@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1842 -->
+<!-- Remember App - Version 0.1844 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1842
+  Version 0.1844
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,8 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1844 - Bullet marker character changed from hyphen to asterisk for both paste-related conversion paths (plain-text bullet-glyph conversion via convertBulletsToMarkdown(), and HTML <li> conversion in convertHtmlToNoteMarkdown()), per Lynn's explicit request. Root cause confirmed directly in the viewer's own rendering code, not guessed: a hyphen list marker specifically never gets the colored bullet glyph treatment -- a documented, intentional PAST design decision already in this file's own comments ("a hyphen's thin stroke doesn't carry a color well"), while asterisk and plus markers unconditionally do. Switching the generated marker to asterisk means pasted bullets now correctly pick up the same bullet color as manually-typed ones, with no changes needed to the rendering logic itself, which was already correct and working as designed. INVESTIGATED (not fixed yet) the separate multi-level-bullet hollow-circle report: confirmed directly, with both a DOM-level test and a real screenshot, that all four nesting levels (including the hollow circle specifically) render correctly in this sandbox's Chromium environment -- the underlying level-to-glyph logic itself appears correct. This points toward a device/font-specific rendering issue on Lynn's actual iOS device, plausibly the same class of bug already found and fixed for the square-bullet level (a missing glyph in the chosen font causing a fallback font substitution) -- flagged clearly as a finding to discuss and confirm before attempting a fix, rather than guessed at blind without being able to verify on real hardware. Updated 4 existing golden test cases (remember-test-goldens-v30.json, delivered alongside this build) that explicitly asserted the old hyphen-based bullet output -- an intentional behavior change, not a regression, confirmed by re-running the full suite against the corrected expectations. Verified directly and thoroughly: confirmed both conversion functions produce asterisk markers; confirmed the resulting bullet actually receives the colored-glyph styling in R&R mode (not just that the character itself changed); re-ran all fourteen tests from the previous six builds (after fixing several stale file-path references in the test scripts themselves, caught by inconsistent results rather than assumed correct) and confirmed every one still passes on its actual content assertions. Suite: 332/332 (harness v8, against the updated goldens file).
+  v0.1843 - TWO fixes to the smart HTML paste, both traced to Lynn's own real, confirmed clipboard sample rather than guessed at. (1) MAJOR FIX: single-spaced paragraphs, per her report that pasting Google AI content came out single-spaced in Remember (and in Apple Notes) despite being visually double-spaced at the source, while Bear/Obsidian handled it better for headings specifically. Root cause confirmed directly from her own real diagnostic data: Google AI wraps paragraphs in <div>, not <p> -- and this app deliberately excluded <div> from blank-line treatment, reasoning it's usually just a generic layout wrapper. That caution was reasonable in principle but confirmed wrong for this real, recurring case. Rather than blanket-apply blank-line spacing to every <div> (risking doubled blank lines for a <div> that's genuinely just a structural wrapper around OTHER block elements), a <div> is now only treated as paragraph-like when its direct children are purely inline content -- text, spans, links, bold/italic -- with no nested block-level children. Verified this correctly distinguishes the two cases: a paragraph-like <div> gets a real blank line, while a <div> that only wraps a heading and another <div> does not get extra, incorrect spacing added by the outer wrapper itself. Applied as default behavior, not a new setting, per Lynn's explicit preference not to double-space manually every time. (2) FIX: odd, unexpected line breaks Lynn traced herself to non-breaking-space characters, confirmed visually via this app's own view-whitespace mode. Root cause confirmed directly from the exact same real clipboard sample: WebKit/Safari commonly wraps a copied space in <span class="Apple-converted-space">&nbsp;</span> to preserve it precisely during copy -- a real, documented browser behavior, not something Google does deliberately, and very likely why Apple Notes and Bear don't show the same artifact (they almost certainly normalize this during their own paste handling). Non-breaking spaces (U+00A0) are now converted to regular spaces during conversion. Verified directly and thoroughly with HTML matching Lynn's own real diagnostic structure exactly (DIV-wrapped paragraphs, Apple-converted-space non-breaking spaces, style-based bold, and a list, all together): confirmed a genuine blank line now separates the two paragraphs, confirmed zero non-breaking-space characters remain in the output, and confirmed bold/bullets still work correctly alongside both fixes; separately confirmed a purely structural outer DIV (wrapping a heading and another DIV, not itself paragraph content) does NOT get incorrect extra spacing added, confirming the fix is genuinely conditional and not over-applied; re-ran all eleven tests from the previous five builds and confirmed every one still passes, nothing regressed. Suite: 332/332 (harness v8).
   v0.1842 - Rich-text paste now works through the pre-existing toolbar Paste button too, per Lynn's explicit report that it sometimes failed with permission errors specifically when pasting rich text. Investigated first rather than assumed: this button never actually attempted to read HTML at all, only ever plain text -- so rich formatting was always lost through this specific path regardless of any permission issue, a genuinely separate gap from the new-note button's earlier bug. Extracted a single, shared clipboard-read-and-insert function (pasteFromClipboardAtCursor()) used by both the toolbar button and the new-note button now, so they can't drift apart into two different behaviors again. Confirmed the actual, correct fix per direct technical verification this session (Apple's own developer forums, plus this app's own real diagnostic data): making exactly ONE clipboard call, decided upfront by API availability, never chaining .read() then a separate .readText() call as a fallback on failure -- that chaining, not "custom buttons can't read rich text" in general, was the actual root cause of the earlier failures. The single call now extracts BOTH the HTML and plain-text flavors from the same result, routing HTML through the same convertHtmlToNoteMarkdown() the native-paste handler already uses, falling back to plain text only when no usable HTML is present -- not a second, separate clipboard call. Verified directly and thoroughly: confirmed the toolbar button now correctly preserves bold and list formatting from a real HTML clipboard write (inserted at the correct cursor position within existing note content, not just at note start); confirmed it still correctly falls back to plain text when the clipboard has no HTML flavor at all; re-ran all nine tests from the previous four builds and confirmed every one still passes byte-for-byte, nothing regressed by sharing this logic between the two buttons. Suite: 332/332 (harness v8).
   v0.1841 - FOUR fixes, per Lynn's report of "Clipboard read not available" and real diagnostic data from an actual Google AI paste. (1) ROOT CAUSE FOUND AND FIXED for the button error: it tried navigator.clipboard.read() first (for HTML), only falling back to readText() if that failed -- two separate, sequential async clipboard calls. Confirmed via Apple's own developer forums (a DTS engineer directly: the permission prompt only fires when an app accesses the pasteboard directly via JS, never for the native Paste menu, long-press, or keyboard shortcut) that iOS enforces clipboard access must happen within the live user-gesture window -- a failed first attempt very plausibly burns through that window, dooming the fallback too. This is exactly why the OLD, proven tap-based feature worked (only ever one clipboard call) while the new button didn't. Simplified to a single readText() call, matching the old, confirmed-working approach -- gives up on rich HTML via the button specifically (genuinely unreliable on iOS per Apple's own docs), while the toolbar Paste button and native-paste handler remain fully capable of rich conversion via a real paste gesture, which isn't subject to this constraint at all. (2) Applied Lynn's own real diagnostic data directly: her actual [PASTE LIST DIAG] log capture confirmed Google AI uses <span style="font-weight: bold"> for inline bold, not semantic <b>/<strong> tags -- extended both the richness-detection gate and the inline-formatting logic to recognize style-based bold (font-weight: bold or 600-900), not just tag names, with a guard against double-wrapping nested bold-styled elements. (3) Fixed the "extra empty bullets" issue Lynn confirmed after testing Google AI's own suggested HTML-to-markdown demo -- a common artifact of rich-text sources generally, per her own observation of the same thing happening in Bear and Pages. A list item whose content ends up empty after conversion is now skipped entirely rather than emitting a bare marker line; restructured so a numbered list's counter is only incremented for items that actually get emitted, so a skipped empty item can no longer cause numbers to jump (e.g. "1, 3" instead of the correct "1, 2"). (4) Investigated Google AI's own explanation of the error and its suggested code -- correctly identified the real underlying mechanism (paste-event-based access avoids the permission prompt entirely) but overstated the conclusion ("custom paste buttons always hard-fail" contradicts Lynn's own OLD, working tap-based code, which successfully read the clipboard from a click handler) -- verified against Apple's own developer documentation rather than accepted at face value. Verified directly and thoroughly: the style-bold fix confirmed against HTML matching the EXACT structure from Lynn's real diagnostic log; the empty-bullet fix confirmed both for an unordered list (skipped cleanly) and a numbered list (confirmed the counter correctly continues 1, 2 rather than skipping to 3); every test from the previous four builds re-run and confirmed still passing, nothing regressed by these changes. Suite: 332/332 (harness v8).
   v0.1840 - MAJOR CHANGE: replaced the tap-triggered "want to paste?" card entirely with a creation-time paste button, per Lynn's explicit request after two real-device attempts confirmed iOS's own native popup wins the race regardless of event timing -- and confirmed that reading the clipboard just to decide whether to show anything was itself triggering iOS's own permission prompt before this app's own UI ever got a turn. Per her direct instruction: gave up completely on clipboard-checking. The new button just shows whenever a note is empty in typing mode -- no clipboard read, no "have we asked before" state, nothing tied to any tap at all, so there's no native-UI race to lose in the first place. Disappears the instant real content exists (typed or pasted), and the toolbar Paste button remains available afterward exactly as it always has. Tapping it reuses the exact same rich-HTML-aware paste logic already built for the toolbar button and native-paste handler (tries navigator.clipboard.read() for HTML first, falls back to plain text, handles an empty clipboard with a toast at the point of tapping rather than trying to know in advance). Removed the old card's HTML, CSS, and all of its tap-counting/clipboard-fingerprint-checking JS -- the underlying _hasAskedForClip()/_markClipAsked() infrastructure itself was left completely intact, since the toolbar Paste button still legitimately uses it and wasn't part of what Lynn asked to remove. CAUGHT A REAL BUG IN MY OWN FIRST TEST, not the actual code: initial testing showed the button never appearing on a fresh note at all -- traced to the test itself, not this feature, reusing Object.keys(notes)[0] as a stand-in note, which happened to BE the Debug Log, so the very act of calling openNote()/setViewMode() during the test kept re-filling the "empty" note with their own logged execution. Corrected by using a dedicated, guaranteed-fresh test note, which then confirmed the real feature works correctly. Verified directly and thoroughly against the corrected test: confirmed visible on a genuinely empty note, hidden immediately after typing, hidden in R&R mode and correctly reappearing when switching back to typing, hidden again after a successful paste; separately confirmed the button correctly reaches the rich HTML conversion (bold/lists) when the clipboard has an HTML flavor available, not just a plain-text fallback; confirmed visually via screenshot on a fresh note. Suite: 332/332 (harness v8).
@@ -12760,7 +12762,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1842';
+const APP_VERSION = '0.1844';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13131,7 +13133,14 @@ var BULLET_CHAR_REGEX_G = /^([ \t]*)[\u2022\u25E6\u25AA\u25AB\u2023\u25CF\u25CB\
 var BULLET_CHAR_REGEX_TEST = /^[ \t]*[\u2022\u25E6\u25AA\u25AB\u2023\u25CF\u25CB\u25A0]\s+/m;
 function convertBulletsToMarkdown(text) {
   if (!text) return text;
-  return text.replace(BULLET_CHAR_REGEX_G, '$1- ');
+  // v0.1844 CHANGED, per Lynn's explicit request: was '- ' (hyphen).
+  // Confirmed directly in the viewer's own rendering code that a hyphen
+  // marker specifically never gets the colored bullet glyph treatment --
+  // a documented, intentional past design decision (search "a hyphen's
+  // thin stroke doesn't carry a color well" in this file), while
+  // asterisk and plus unconditionally do. Using asterisk, since she
+  // offered either and it's the more universally recognized marker.
+  return text.replace(BULLET_CHAR_REGEX_G, '$1* ');
 }
 
 // v0.1838 NEW: extracted from the note-editor 'paste' event handler into
@@ -13227,7 +13236,10 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
       if (!liTrimmed) return '';
       var marker;
       if (top && top.type === 'ol') { marker = top.counter + '. '; top.counter++; }
-      else { marker = '- '; }
+      // v0.1844 CHANGED, per Lynn's explicit request: was '- ' (hyphen) --
+      // same reasoning and fix as convertBulletsToMarkdown() just above,
+      // so both bullet-generating paths in this app use the same marker.
+      else { marker = '* '; }
       return indent + marker + liTrimmed + (liIsDoubleSpaced ? '\n\n' : '\n');
     }
     if (/^H[1-6]$/.test(node.nodeName)) {
@@ -13238,6 +13250,31 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
       }
       var headingText = headingContent.trim();
       return headingText ? new Array(level + 1).join('#') + ' ' + headingText + '\n' : '';
+    }
+    // v0.1843 NEW, per Lynn's real, confirmed diagnostic data: Google AI
+    // wraps paragraphs in <div>, not <p> -- her actual clipboard sample
+    // showed <div><span>paragraph text...</span></div>. The earlier
+    // caution against treating every DIV as a paragraph (many are just
+    // generic structural wrappers) was reasonable in principle but
+    // wrong for this real, confirmed case. Rather than blanket-apply
+    // blank-line spacing to every DIV (which risks doubled blank lines
+    // for a DIV that's genuinely just a structural wrapper around OTHER
+    // block elements), only treats a DIV as paragraph-like when its
+    // direct children are purely inline content -- text, spans, links,
+    // bold/italic -- with no nested block-level children. That
+    // correctly distinguishes "this DIV IS the paragraph" (Google's
+    // actual pattern) from "this DIV just wraps other block elements"
+    // (which already get their own correct spacing from those children).
+    var blockChildTags = { DIV:1, P:1, UL:1, OL:1, LI:1, TABLE:1, TR:1, H1:1, H2:1, H3:1, H4:1, H5:1, H6:1 };
+    var divIsParagraphLike = false;
+    if (node.nodeName === 'DIV') {
+      divIsParagraphLike = true;
+      for (var dc = 0; dc < node.childNodes.length; dc++) {
+        if (node.childNodes[dc].nodeType === Node.ELEMENT_NODE && blockChildTags[node.childNodes[dc].nodeName]) {
+          divIsParagraphLike = false;
+          break;
+        }
+      }
     }
     var blockTags = { DIV:1, BR:1, TR:1 };
     var doubleNewlineTags = { P:1 };
@@ -13256,12 +13293,24 @@ function convertHtmlToNoteMarkdown(html, tabReplacement) {
     var isStyleBold = !inlineWrap[node.nodeName] && /font-weight\s*:\s*(bold|[6-9]00)\b/i.test(elStyle);
     var wrap = inlineWrap[node.nodeName] || (isStyleBold ? '**' : null);
     if (wrap && result !== '' && result.indexOf(wrap) !== 0) result = wrap + result + wrap;
-    if (blockTags[node.nodeName]) result += '\n';
-    if (doubleNewlineTags[node.nodeName]) result += '\n\n';
+    if (blockTags[node.nodeName] && !divIsParagraphLike) result += '\n';
+    if (doubleNewlineTags[node.nodeName] || (divIsParagraphLike && result.trim() !== '')) result += '\n\n';
     return result;
   }
 
   var converted = extractText(tmp, [])
+    // v0.1843 NEW, per Lynn's report of odd line breaks and the red-dot
+    // non-breaking-space markers she found using this app's own view-
+    // whitespace mode: WebKit/Safari commonly wraps a copied space in
+    // <span class="Apple-converted-space">&nbsp;</span> to preserve it
+    // exactly during copy -- a real, documented browser behavior, not
+    // something Google does deliberately (confirmed directly in her own
+    // real clipboard sample). Left as literal U+00A0 characters, these
+    // behave differently from regular spaces for line-wrapping, which
+    // is exactly the "odd" appearance she described. Apple Notes and
+    // Bear almost certainly do this same normalization during their own
+    // paste handling, which is why they don't show the same artifact.
+    .replace(/\u00a0/g, ' ')
     .replace(/\t/g, settings.convertTabsOnPaste !== false ? tabReplacement : '\t')
     .replace(/^[ \t]+$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
