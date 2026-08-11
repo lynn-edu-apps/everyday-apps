@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1839 -->
+<!-- Remember App - Version 0.1840 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1839
+  Version 0.1840
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,7 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1840 - MAJOR CHANGE: replaced the tap-triggered "want to paste?" card entirely with a creation-time paste button, per Lynn's explicit request after two real-device attempts confirmed iOS's own native popup wins the race regardless of event timing -- and confirmed that reading the clipboard just to decide whether to show anything was itself triggering iOS's own permission prompt before this app's own UI ever got a turn. Per her direct instruction: gave up completely on clipboard-checking. The new button just shows whenever a note is empty in typing mode -- no clipboard read, no "have we asked before" state, nothing tied to any tap at all, so there's no native-UI race to lose in the first place. Disappears the instant real content exists (typed or pasted), and the toolbar Paste button remains available afterward exactly as it always has. Tapping it reuses the exact same rich-HTML-aware paste logic already built for the toolbar button and native-paste handler (tries navigator.clipboard.read() for HTML first, falls back to plain text, handles an empty clipboard with a toast at the point of tapping rather than trying to know in advance). Removed the old card's HTML, CSS, and all of its tap-counting/clipboard-fingerprint-checking JS -- the underlying _hasAskedForClip()/_markClipAsked() infrastructure itself was left completely intact, since the toolbar Paste button still legitimately uses it and wasn't part of what Lynn asked to remove. CAUGHT A REAL BUG IN MY OWN FIRST TEST, not the actual code: initial testing showed the button never appearing on a fresh note at all -- traced to the test itself, not this feature, reusing Object.keys(notes)[0] as a stand-in note, which happened to BE the Debug Log, so the very act of calling openNote()/setViewMode() during the test kept re-filling the "empty" note with their own logged execution. Corrected by using a dedicated, guaranteed-fresh test note, which then confirmed the real feature works correctly. Verified directly and thoroughly against the corrected test: confirmed visible on a genuinely empty note, hidden immediately after typing, hidden in R&R mode and correctly reappearing when switching back to typing, hidden again after a successful paste; separately confirmed the button correctly reaches the rich HTML conversion (bold/lists) when the clipboard has an HTML flavor available, not just a plain-text fallback; confirmed visually via screenshot on a fresh note. Suite: 332/332 (harness v8).
   v0.1839 - Three responses to Lynn's real-device testing of v0.1838, each handled honestly rather than assumed fixed. (1) The "Claude would like to paste from Google" permission dialog: almost certainly a testing-context artifact (that wording names the HOST app asking for clipboard access -- on the real deployed site it would say "Remember", and should only need to ask once, not every test) rather than a bug -- flagged clearly, not silently assumed away, since this genuinely needs confirmation on the real deployed site to know for sure. (2) EXPERIMENTAL, explicitly flagged as unverified: an attempt to suppress iOS's own native text-selection/paste popup while a note is still empty, since Lynn reported seeing iOS's own context menu instead of this app's own card -- meaning native UI may be winning a race against, or rendering on top of, this app's own prompt. Applies CSS user-select:none to the editor specifically while empty (not the textarea's readonly attribute, which would also block focus/cursor placement -- a much worse regression), restored the moment the offer is resolved either way or the note gets real content. This sandbox has no way to simulate iOS's actual native popup behavior, so while the CSS state change itself is confirmed correct here, whether it actually suppresses the native popup needs real on-device confirmation, not just a passing test. (3) The lost blank lines between numbered list items: confirmed the original double-spacing heuristic (each list item wrapped in its own <p>, the Google Docs/Word pattern) doesn't match Google AI's real output, since Lynn's actual bold/numbering survived but spacing didn't. Rather than guess again blind, added a second heuristic (an explicit inline margin-bottom/padding-bottom on the list item, a common alternative spacing signal, confirmed working with a direct test) AND diagnostic logging that captures the actual raw HTML structure the next time a real list paste happens, so any further fix is built from Google AI's real markup, not another guess. Verified directly: the new inline-style-based detection confirmed producing correctly blank-line-separated output; the user-select suppression mechanism's own state changes confirmed correct (applied while empty, restored after resolution, restored on typing); every existing paste test re-run and confirmed unaffected. Suite: 332/332 (harness v8).
   v0.1838 - MAJOR NEW FEATURE: the "want to paste?" offer, per Lynn's explicit request and a real design goal from months earlier that had been dropped along the way -- discourage iOS's native paste (which can silently corrupt rich content, per her report elsewhere this version) by offering this app's own safe, smart paste instead, right at the moment iOS's own native context menu tends to appear. Triggered on the SECOND tap at the very start of a still-empty note; checks the clipboard is non-empty and that this exact content hasn't already been asked about (reusing the existing, already-working _hasAskedForClip()/_markClipAsked() fingerprint tracking, persisted to localStorage so it survives app restarts -- confirmed this infrastructure was already fully intact, just missing a UI that called it). Simple, neutral card (not an accent-colored banner) with a Paste button and an X to dismiss -- deliberately avoided the hardcoded-white-on-accent-color pattern already found and fixed elsewhere in this app, confirmed #update-banner still has this exact same risk (not touched, out of scope for this request). Accepting tries the newer, multi-flavor navigator.clipboard.read() API to get the clipboard's HTML flavor too, routed through the exact same smart conversion (bold/headings/lists/footnote-stripping, built this same version) the toolbar Paste button and native-paste handler use -- not a plainer, HTML-blind fallback -- falling back to plain text if HTML isn't available. Extracted the HTML-to-markdown conversion out of the native-paste event handler into a new, standalone convertHtmlToNoteMarkdown() function first, specifically so this new feature and the existing native-paste intercept share the exact same logic rather than risk drifting apart as two separate copies -- confirmed the refactor was completely behavior-preserving by re-running all four existing HTML-paste tests and getting byte-identical output before and after. Verified directly and thoroughly: confirmed the offer does NOT appear after only one qualifying tap, confirmed it DOES appear on the second; confirmed accepting correctly inserts the clipboard text and dismisses the card; confirmed dismissing (either via Paste or the X) correctly prevents the SAME clipboard content from triggering the offer again, even in a completely different note; confirmed the offer never appears at all on a note that already has real content, regardless of tap count. Suite: 332/332 (harness v8).
   v0.1837 - Two blank-line/spacing preservation fixes to the smart HTML paste, per Lynn's explicit requirement: no newlines, blank lines, or indentation should be lost when pasting rich text. Confirmed a real, concrete bug by testing directly rather than assuming the v0.1836 rewrite already handled this correctly: two adjacent <p> paragraphs from HTML collapsed together with nothing separating them, even though the source explicitly had a blank line between them -- every block-level tag (P, DIV, BR, TR) was treated identically, a single trailing newline each. Fixed by giving <p> specifically (not the more ambiguous <div>, often just a generic layout wrapper, and not <br>, a soft line break within the same paragraph) its own double-newline treatment, so a real paragraph break now produces a real blank line. Also added: double-spaced list preservation. Rich text sources (Google Docs, Word HTML exports, Google AI's own output) commonly signal "this list has visible spacing between items" by wrapping each item's content in its own <p> tag -- detected directly and now adds a matching blank line after that specific item, while a normal list with no such wrapping stays correctly single-spaced. Verified directly and thoroughly: confirmed the exact bug first (two bold-containing paragraphs collapsing to a single newline), confirmed the fix produces a real blank line in the same test; confirmed a Google-Docs-style <p>-wrapped three-item list preserves blank lines between every item; separately confirmed a normal, non-wrapped list stays single-spaced, so the fix is genuinely conditional and doesn't over-apply; re-ran every test from the v0.1836 build (the combined heading/bold/footnote/list/link test, and the nested-list test) to confirm nothing regressed. Suite: 332/332 (harness v8).
@@ -7374,57 +7375,40 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 }
 
 /* ===== UPDATE BANNER ===== */
-/* v0.1838 NEW, per Lynn's request: the "want to paste?" offer card. */
-#paste-offer-card {
+/* v0.1840 NEW, per Lynn's explicit request: replaces the old tap-
+   triggered "want to paste?" card entirely (removed -- two real-device
+   attempts confirmed iOS's own native popup wins the race regardless of
+   event timing, and reading the clipboard just to decide whether to
+   show anything was itself triggering iOS's OWN permission prompt
+   before this app's own UI ever got a chance to appear). This is
+   simpler by design: no clipboard-checking, no "have we asked before"
+   state, just a single obvious button, visible immediately whenever
+   the note is empty (typed or pasted), gone the instant either happens.
+   Not tied to any tap at all, so there's no native-UI race to lose. */
+#new-note-paste-btn {
   display: none;
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   top: 0; /* overridden by JS -- just below the header/toolbar */
   z-index: 27; /* below find-bar (28) and the toolbar/header, above note content */
-  background: var(--bg2);
-  border: 1.5px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-  padding: 10px 8px 10px 14px;
-  align-items: center;
-  gap: 10px;
-  max-width: min(92vw, 380px);
-}
-#paste-offer-card.visible { display: flex; }
-#paste-offer-text { flex: 1; font-size: 0.95em; color: var(--fg); }
-#paste-offer-accept-btn {
+  background: var(--note-accent, var(--accent));
   border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-size: 0.92em;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  padding: 10px 22px;
+  font-size: 1em;
   font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  flex-shrink: 0;
-  /* background/color set by JS via var(--note-accent, var(--accent)) +
-     the same contrast-checking function used elsewhere in this app --
-     never a hardcoded color, to avoid the exact contrast risk
-     #update-banner already has. */
-}
-#paste-offer-close-btn {
-  background: none;
-  border: none;
-  color: var(--fg3);
-  padding: 6px;
-  min-width: 30px;
-  min-height: 30px;
-  display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  flex-shrink: 0;
-  border-radius: 50%;
+  gap: 8px;
+  /* color set by JS via the same contrast-checking function used
+     elsewhere in this app -- never a hardcoded color. */
 }
-#paste-offer-close-btn:hover { background: var(--bg3); }
+#new-note-paste-btn.visible { display: flex; }
+#new-note-paste-btn svg { width: 20px; height: 20px; pointer-events: none; }
 
 #update-banner {
   display: none;
@@ -7849,25 +7833,16 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     </div>
   </div>
 
-  <!-- v0.1838 NEW, per Lynn's request: an in-app "want to paste?" offer
-       for a brand-new, still-empty note, shown on the second tap at the
-       start of the note (matching the point where iOS's own native
-       paste popup tends to appear) -- discourages native paste (which
-       can corrupt rich content, see the encoding fix elsewhere in this
-       version) by routing acceptance through this app's own safe,
-       smart-HTML-aware paste instead. Deliberately a plain, neutral
-       card rather than an accent-colored banner, to avoid any risk of
-       the hardcoded-white-on-accent contrast problem already found and
-       fixed elsewhere in this app (#update-banner has this same
-       pre-existing issue, not touched here since it's out of scope for
-       this request). -->
-  <div id="paste-offer-card" role="status">
-    <span id="paste-offer-text">Paste from clipboard?</span>
-    <button id="paste-offer-accept-btn" type="button">Paste</button>
-    <button id="paste-offer-close-btn" type="button" aria-label="Dismiss">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="pointer-events:none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
+  <!-- v0.1840 NEW, per Lynn's explicit request: replaces the tap-
+       triggered "want to paste?" card entirely -- a single obvious
+       button, visible whenever the note is empty, not tied to any tap
+       so there's no race with iOS's own native popup to lose. Tapping
+       it routes through the same safe, smart-HTML-aware paste the
+       toolbar Paste button and native-paste handler already use. -->
+  <button id="new-note-paste-btn" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+    Paste
+  </button>
 
   <!-- Second toolbar — always at top, below note header -->
   <!-- Floating bottom toolbar — stays above keyboard on mobile -->
@@ -12783,7 +12758,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1839';
+const APP_VERSION = '0.1840';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14586,8 +14561,8 @@ function pinToolbars() {
   // v0.1838 NEW, per Lynn's request: position the paste-offer card the
   // same place the find bar sits, plus a small margin since it's a
   // centered card rather than a full-width bar.
-  var pasteOfferCard = document.getElementById('paste-offer-card');
-  if (pasteOfferCard) pasteOfferCard.style.top = (offsetTop + _pinnedHeaderH + _pinnedToolbarH + 10) + 'px';
+  var newNotePasteBtn = document.getElementById('new-note-paste-btn');
+  if (newNotePasteBtn) newNotePasteBtn.style.top = (offsetTop + _pinnedHeaderH + _pinnedToolbarH + 10) + 'px';
 
   area.style.paddingTop = (_pinnedHeaderH + _pinnedToolbarH + findBarH + 12) + 'px';
   // (overflow detection removed — use applySmallScreenOverflow instead)
@@ -21759,6 +21734,9 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
       setCurrentMatch(_restoreIdx);
     }
   }
+  // v0.1840 NEW: re-check the new-note paste button's visibility --
+  // it's only ever shown in typing mode.
+  if (window._updateNewNotePasteBtnVisibility) window._updateNewNotePasteBtnVisibility();
 }
 
 // ===== NOTE SCREEN =====
@@ -21893,6 +21871,10 @@ function openNote(id, speakDelay) {
       setTimeout(speakNote, speakDelay || 400);
     }
   }
+  // v0.1840 NEW: re-check the new-note paste button's visibility on
+  // every note open, in case it opens directly without a separate
+  // setViewMode() transition.
+  if (window._updateNewNotePasteBtnVisibility) window._updateNewNotePasteBtnVisibility();
 }
 
 function createNewNote() {
@@ -31015,134 +30997,70 @@ function makeImportFolderName(label) {
     _qabUpdateScrollArrows();
   })();
 
-  // ===== PASTE OFFER CARD (v0.1838) =====
-  // Per Lynn's request: discourage iOS's native paste popup (which can
-  // corrupt rich content -- see the encoding-corruption fix elsewhere in
-  // this version) by offering this app's own safe paste instead,
-  // triggered on the SECOND tap at the start of a still-empty note --
-  // matching where iOS's own native context menu/paste popup tends to
-  // appear. Reuses the existing _hasAskedForClip()/_markClipAsked()
-  // fingerprint tracking (persisted to localStorage, survives app
-  // restarts) rather than building new tracking -- the toolbar Paste
-  // button already correctly marks a clipboard as "asked" too, so the
-  // two paths share the same "don't ask again" state.
-  (function() {
-    var emptyTapCount = 0;
-    var lastCheckedNoteId = null;
 
-    // v0.1839 NEW, per Lynn's report: an EXPERIMENTAL attempt to
-    // suppress iOS's own native text-selection/paste popup while the
-    // note is still empty -- she reported seeing iOS's own context menu
-    // instead of this app's own card, meaning native UI may be winning
-    // a race against (or rendering on top of) this app's own prompt.
-    // Explicitly flagged as unverified: this sandbox has no way to
-    // simulate iOS's actual native popup behavior, so this genuinely
-    // needs confirmation on a real device, not just a passing test here.
-    // Uses CSS user-select rather than the textarea's own readonly
-    // attribute deliberately -- readonly would also block focus/cursor
-    // placement entirely, a much worse regression than the problem this
-    // is trying to fix.
-    function updateEmptyNoteSelectability() {
+  // ===== NEW NOTE PASTE BUTTON (v0.1840) =====
+  // Per Lynn's explicit request: replaces the old tap-triggered "want
+  // to paste?" card entirely. No clipboard-checking before showing at
+  // all -- deliberately not trying to know in advance whether there's
+  // anything to paste, since that check was itself what triggered iOS's
+  // own permission prompt before this app's UI ever got a turn. The
+  // button just shows whenever the note is empty in typing mode (the
+  // only place there's an editable field to paste into), and if the
+  // clipboard does turn out to be empty when actually tapped, that's
+  // handled with a toast at that point instead.
+  (function() {
+    function updateNewNotePasteBtnVisibility() {
+      var btn = document.getElementById('new-note-paste-btn');
+      if (!btn) return;
+      var ed = document.getElementById('note-editor');
+      var shouldShow = !isViewMode && ed && ed.value.trim() === '';
+      btn.classList.toggle('visible', !!shouldShow);
+      if (shouldShow) btn.style.color = _noteAccentContrastColor();
+    }
+    // Exported so setViewMode()/openNote() (outside this closure) can
+    // trigger a re-check without needing their own separate copy of
+    // this logic.
+    window._updateNewNotePasteBtnVisibility = updateNewNotePasteBtnVisibility;
+
+    document.getElementById('note-editor').addEventListener('input', updateNewNotePasteBtnVisibility);
+
+    document.getElementById('new-note-paste-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
+    document.getElementById('new-note-paste-btn').addEventListener('click', function() {
       var ed = document.getElementById('note-editor');
       if (!ed) return;
-      if (ed.value.trim() === '') {
-        ed.style.webkitUserSelect = 'none';
-        ed.style.userSelect = 'none';
-      } else {
-        ed.style.webkitUserSelect = '';
-        ed.style.userSelect = '';
-      }
-    }
-
-    function resetTapCountIfNeeded() {
-      if (currentNoteId !== lastCheckedNoteId) {
-        emptyTapCount = 0;
-        lastCheckedNoteId = currentNoteId;
-        updateEmptyNoteSelectability();
-      }
-    }
-    function hidePasteOfferCard() {
-      var card = document.getElementById('paste-offer-card');
-      if (card) card.classList.remove('visible');
-      // Restore normal selection once the offer is resolved either way
-      // — she should be able to select/paste normally afterward.
-      var ed = document.getElementById('note-editor');
-      if (ed) { ed.style.webkitUserSelect = ''; ed.style.userSelect = ''; }
-    }
-    function showPasteOfferCard(clipText) {
-      var card = document.getElementById('paste-offer-card');
-      var acceptBtn = document.getElementById('paste-offer-accept-btn');
-      if (!card || !acceptBtn) return;
-      // Note-accent-aware, contrast-checked -- never a hardcoded color,
-      // matching the fix already applied elsewhere in this app for
-      // exactly this class of bug.
-      acceptBtn.style.background = 'var(--note-accent, var(--accent))';
-      acceptBtn.style.color = _noteAccentContrastColor();
-      card.classList.add('visible');
-      card._pendingClipText = clipText;
-    }
-
-    document.getElementById('note-editor').addEventListener('click', function() {
-      resetTapCountIfNeeded();
-      var ed = document.getElementById('note-editor');
-      var isEmpty = ed.value.trim() === '';
-      var atStart = ed.selectionStart === 0 && ed.selectionEnd === 0;
-      if (!isEmpty || !atStart) { emptyTapCount = 0; hidePasteOfferCard(); return; }
-      emptyTapCount++;
-      if (emptyTapCount !== 2) return; // only the SECOND qualifying tap
-      if (!navigator.clipboard || !navigator.clipboard.readText) return;
-      navigator.clipboard.readText().then(function(text) {
-        if (!text || !text.trim()) return; // clipboard empty — nothing to offer
-        if (_hasAskedForClip(text)) return; // already asked about this exact content
-        showPasteOfferCard(text);
-      }).catch(function() {});
-    });
-
-    // v0.1839 NEW: also check on focus, which naturally fires when a
-    // note is first opened in typing mode -- ensures the suppression
-    // state is correctly set up before any taps happen, not just
-    // lazily the first time the click handler runs.
-    document.getElementById('note-editor').addEventListener('focus', updateEmptyNoteSelectability);
-
-    // Typing (or any other insertion, e.g. the toolbar Paste button
-    // itself) means the note is no longer empty, or the offer is moot
-    // either way — hide and reset the count.
-    document.getElementById('note-editor').addEventListener('input', function() {
-      hidePasteOfferCard();
-      emptyTapCount = 0;
-    });
-
-    document.getElementById('paste-offer-accept-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-    document.getElementById('paste-offer-accept-btn').addEventListener('click', function() {
-      var card = document.getElementById('paste-offer-card');
-      var text = card && card._pendingClipText;
-      hidePasteOfferCard();
-      if (!text) return;
-      _markClipAsked(text);
-      var ed = document.getElementById('note-editor');
       function insertPlain(plain) {
+        if (!plain || !plain.trim()) { showToast('Nothing to paste', false); return; }
         var decoded = looksLikeAccidentalUrlEncoding(plain) ? decodeAccidentalUrlEncoding(plain) : plain;
-        var start = ed.selectionStart, end = ed.selectionEnd;
-        ed.value = ed.value.substring(0, start) + decoded + ed.value.substring(end);
-        ed.selectionStart = ed.selectionEnd = start + decoded.length;
+        ed.value = decoded;
+        ed.selectionStart = ed.selectionEnd = decoded.length;
         ed._lastLength = ed.value.length;
         resizeEditor();
         scheduleSave();
         ed.focus();
+        updateNewNotePasteBtnVisibility();
       }
-      // v0.1838 NEW: try the richer, multi-flavor navigator.clipboard.
-      // read() to get HTML too, routed through the exact same smart
+      // Try the richer, multi-flavor navigator.clipboard.read() first,
+      // to get HTML and route it through the exact same smart
       // conversion (bold/headings/lists/footnote-stripping) the toolbar
-      // Paste button and native-paste handler use — not a plainer,
-      // HTML-blind fallback. Falls back to the plain text already read
-      // above if HTML isn't available or this API isn't supported.
+      // Paste button and native-paste handler use — falling back to
+      // plain readText() if HTML isn't available or read() isn't
+      // supported.
       if (navigator.clipboard && navigator.clipboard.read) {
         navigator.clipboard.read().then(function(items) {
-          var htmlItem = null;
+          var htmlItem = null, plainType = null;
           for (var ii = 0; ii < items.length; ii++) {
             if (items[ii].types.indexOf('text/html') !== -1) { htmlItem = items[ii]; break; }
           }
-          if (!htmlItem) { insertPlain(text); return; }
+          if (!htmlItem) {
+            for (var jj = 0; jj < items.length; jj++) {
+              if (items[jj].types.indexOf('text/plain') !== -1) { plainType = items[jj]; break; }
+            }
+            if (!plainType) { showToast('Nothing to paste', false); return; }
+            plainType.getType('text/plain').then(function(blob) { return blob.text(); }).then(insertPlain).catch(function() {
+              if (navigator.clipboard.readText) navigator.clipboard.readText().then(insertPlain).catch(function() { showToast('Clipboard read not available', true); });
+            });
+            return;
+          }
           htmlItem.getType('text/html').then(function(blob) {
             return blob.text();
           }).then(function(html) {
@@ -31150,22 +31068,31 @@ function makeImportFolderName(label) {
             var tabReplacement = '';
             for (var ti = 0; ti < indentSpaces; ti++) tabReplacement += ' ';
             var converted = convertHtmlToNoteMarkdown(html, tabReplacement);
-            insertPlain(converted === null ? text : converted);
-          }).catch(function() { insertPlain(text); });
-        }).catch(function() { insertPlain(text); });
+            if (converted !== null) { insertPlain(converted); return; }
+            // No richness detected in the HTML — fall back to whatever
+            // plain text flavor is also on the clipboard, if any.
+            for (var kk = 0; kk < items.length; kk++) {
+              if (items[kk].types.indexOf('text/plain') !== -1) {
+                items[kk].getType('text/plain').then(function(blob) { return blob.text(); }).then(insertPlain).catch(function() { showToast('Nothing to paste', false); });
+                return;
+              }
+            }
+            showToast('Nothing to paste', false);
+          }).catch(function() {
+            if (navigator.clipboard.readText) navigator.clipboard.readText().then(insertPlain).catch(function() { showToast('Clipboard read not available', true); });
+          });
+        }).catch(function() {
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            navigator.clipboard.readText().then(insertPlain).catch(function() { showToast('Clipboard read not available', true); });
+          } else {
+            showToast('Clipboard read not available on this browser', true);
+          }
+        });
+      } else if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(insertPlain).catch(function() { showToast('Clipboard read not available', true); });
       } else {
-        insertPlain(text);
+        showToast('Clipboard read not available on this browser', true);
       }
-    });
-
-    document.getElementById('paste-offer-close-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-    document.getElementById('paste-offer-close-btn').addEventListener('click', function() {
-      var card = document.getElementById('paste-offer-card');
-      var text = card && card._pendingClipText;
-      // Dismissing also counts as "asked" — don't ask again for this
-      // same clipboard content, matching Lynn's explicit requirement.
-      if (text) _markClipAsked(text);
-      hidePasteOfferCard();
     });
   })();
 
