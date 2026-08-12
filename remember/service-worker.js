@@ -1,7 +1,7 @@
 // Remember App - Version 0.1832
 // Service Worker for remember (main/latest deployment)
 
-const CACHE_VERSION = 'remember-v0.1859';
+const CACHE_VERSION = 'remember-v0.1860';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
