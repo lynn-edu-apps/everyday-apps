@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1853 -->
+<!-- Remember App - Version 0.1859 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1853
+  Version 0.1859
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,12 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1859 - FIX: a real ordering bug caught while precisely verifying Lynn's direct follow-up question about whether the new QAB auto-color-scheme (v0.1858) correctly handles the app's full light/dark/auto theme setting, not just a simple dark check. Confirmed the underlying detection itself was already correct (it reads the app's own single resolved dark-mode class, which already correctly accounts for 'auto' checking the OS's real prefers-color-scheme) -- but tracing the exact order of operations inside applySettings() surfaced a genuine bug: renderQuickActionBar() was being called BEFORE the dark-mode class got (re)computed in that same function, meaning the QAB would render using the PREVIOUS, stale theme state specifically in the moment settings.theme is 'auto' and the OS preference has just changed -- it would only catch up whenever something else happened to trigger another render, not immediately. Fixed by moving the QAB render to after the dark class is freshly applied. Verified directly and thoroughly, not just by reading the code: simulated the OS itself switching from light to dark while the page was already open and settings.theme set to 'auto' (via a real prefers-color-scheme media query change, not a manual setting toggle) and confirmed the QAB correctly and immediately flips from blackOnWhite to whiteOnBlack with no manual re-render call needed -- the exact live scenario Lynn's question was really asking about; re-ran the full set of QAB tests from the previous two builds together with this fix and confirmed nothing regressed; re-ran the full existing test suite and confirmed nothing regressed there either. Suite: 332/332 (harness v8).
+  v0.1858 - QAB color scheme now defaults intelligently to dark mode, per Lynn's request and the design discussed with her directly (she explicitly asked for my opinion first, given a real tension: the locked blackOnWhite/whiteOnBlack pairs exist specifically because they guarantee maximum contrast for low-vision use, which a theme's own accent color has no guarantee of meeting -- but a fixed white background is genuinely uncomfortable in a dark room for someone without low vision). Agreed with her instinct: kept the guaranteed-maximum-contrast property fully intact (nothing about the low-vision benefit is diluted) while letting WHICH of the two locked pairs applies by default follow the app's own light/dark mode, rather than assuming a bright room. Not a new setting, per her explicit request -- the existing three-option dropdown (blackOnWhite/whiteOnBlack/theme) is unchanged; only the DEFAULT changed. Implementation: removed the previously-fixed 'blackOnWhite' default value entirely so "never touched" can genuinely be distinguished from "explicitly chose blackOnWhite" (both looked identical in storage before this change) -- added a shared resolution helper used by both the QAB's own rendering and the settings dialog's display sync, so they can never drift into showing two different answers. Any explicit choice (including explicitly choosing blackOnWhite while in dark mode) stays completely locked, matching the exact same rationale that already justified these being theme-independent in the first place. Verified directly and thoroughly: confirmed the unset default correctly resolves to blackOnWhite in light mode and whiteOnBlack in dark mode; separately confirmed an explicit blackOnWhite choice stays locked even after switching the app to dark mode (not silently overridden by the new auto-logic); confirmed no timing issue between dark-mode application and QAB rendering; confirmed the visual result via screenshot -- dark buttons with light text in dark mode, no jarring white background; re-ran the QAB arrow, action, and 2-character-label tests from earlier this session together with this change and confirmed nothing regressed; re-ran the full existing test suite and confirmed nothing regressed there either. Suite: 332/332 (harness v8).
+  v0.1857 - TWO fixes, per Lynn's report. (1) FIX: the Typing Mode QAB button not lighting up in the note accent color while in typing mode, unlike Tap to Edit and Quiet Mode. Root cause confirmed directly: every OTHER toggle-type QAB action already calls _qabRefreshActiveStates() from its own toggle function (quiet mode, tap-to-edit, toolbar collapse), but none of those live inside setViewMode() itself -- so until the Typing Mode action existed last build, nothing had ever needed setViewMode() to trigger this refresh too. Added the missing call at the end of setViewMode(). (2) MAJOR FIX: the QAB action-picker dropdown (added last build) was using a native <select> instead of this app's own custom picker component, per Lynn's explicit reminder -- native <select> options on iOS are rendered by the OS itself, completely exempt from the page's own font-size CSS, which is exactly why this component exists in the first place. Per her request to check for any other un-enhanced dropdowns: audited every single <select> in the entire app (both static HTML and any created dynamically via JS) -- confirmed all 9 existing static selects were already correctly using the component, and the QAB action picker (dynamically created, one per button row) was the only gap. CAUGHT A REAL BUG during implementation, not assumed correct on the first pass: the enhancement call initially threw a genuine error ("Cannot read properties of null, reading insertBefore") when placed immediately after creating the element, since the component needs the select already attached to a real DOM parent to insert its own trigger button next to it -- fixed by moving the call to after the row is actually appended to the settings dialog. Verified directly and thoroughly, not just checking an internal flag: confirmed the original select is correctly hidden and replaced by a real trigger button showing the current selection's label; confirmed clicking that trigger actually opens the real picker overlay with the correct title and populated options; confirmed the full round trip works end to end -- selecting Typing Mode through the picker correctly updates the underlying select's value, the saved settings.quickActionBar config, auto-fills the new action's default letter, updates the trigger's displayed label, and the overlay itself correctly closes afterward (an initial 100ms check that looked like a bug turned out to just be the close animation not yet finished, confirmed by waiting longer and seeing it close correctly, not a real problem); re-confirmed the Typing Mode light-up fix together with this in the same build; re-ran the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
+  v0.1856 - FOUR changes, per Lynn's requests. (1) FIX: the QAB staying invisible if the collapse handle is disabled while the bar happens to be collapsed, with no way back -- per her report. Fixed at two levels: the settings toggle now resets handleCollapsed to false when the handle is turned off, AND found and fixed the actual root cause at the CSS level (the hiding rule only ever checked "is collapsed", never "is the handle even enabled", so a stale collapsed value could hide the bar regardless of the handle's own state) -- requiring both classes together directly encodes the correct invariant rather than relying solely on the JS reset to always run correctly. (2) NEW: two QAB actions, per Lynn's explicit request -- Typing Mode (letter T, mirrors the exact logic of the existing upper-toolbar view-mode-btn including persisting settings.lastViewMode, lights up while in typing mode, so this and the toolbar button behave identically rather than two subtly different implementations) and Settings (letter S, a simple one-shot action, not a toggle). (3) CHANGED: Floating Pill Header now defaults to off, per Lynn's explicit request. Confirmed a real duplicate-key bug caught DURING this exact change, not assumed correct on the first pass: found and fixed a pre-existing homeFloatingHeader default entry further down in the same DEFAULT_SETTINGS object that was silently overriding a first attempt at this fix (JavaScript resolves duplicate object-literal keys by taking the last one) -- traced with direct Node.js isolation testing after a real browser test came back unexpectedly true, confirmed exactly one definition remains after the fix. Also found and removed a stale, hard-coded checked attribute on the actual Settings-dialog checkbox markup itself (functionally harmless, since the dialog's own JS sync overwrites it every time it opens, but genuinely inconsistent, misleading source that contradicted the new default) -- caught after Lynn's own direct follow-up question about whether this was really fully verified. (4) MAJOR CHANGE: removed the older, non-'Next' Atkinson Hyperlegible font entirely, per Lynn's explicit request, and redirected every theme that referenced it to the newer variable-font 'Next' version instead. Found and updated six separate locations: the shared Google Fonts @import URL (carefully removing only the old font's own segment, confirmed the Next and Mono segments and surrounding syntax remain untouched and correctly joined), the font-picker quick-pick pill, six separate settings-dialog dropdown menus (general font, heading font, and others), the font weight-support registry, and four built-in sample themes (Task Master, Dyslexia Friendly -- the one Lynn specifically named -- Poetry Page, and Fun & Bright) that all specified the old font by name. Left two generic, still-accurate help-text prose mentions of "Atkinson Hyperlegible" untouched, since they describe the font conceptually rather than reference the specific removed CSS font-family string. Verified directly and thoroughly: confirmed zero old-font dropdown options or pills remain anywhere in the live DOM; confirmed the weight registry no longer has the old entry while the Next entry is intact; confirmed all four sample themes (including Dyslexia Friendly specifically) now resolve to the Next font; re-ran every test from earlier in this same build (QAB handle fix, both new actions, 2-character labels, the pill-header default) together to confirm nothing from the font work affected any of it; re-ran the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
+  v0.1855 - QAB buttons can now be labeled with up to 2 characters instead of just 1, per Lynn's request. Genuinely small change: found exactly three places truncating to a single character (the render function, the settings-dialog input field's maxLength, and its input event handler) and raised all three consistently -- render and the input handler both now keep up to 2 characters (.slice(0, 2) instead of .charAt(0)), and the input field's maxLength raised from 1 to 2, widened slightly (44px to 56px) so two characters don't look cramped while typing. Added a smaller font size specifically for 2-character labels (scaled relative to the same --qab-size variable the default font-size already uses, so it stays proportional at any button size setting) since the 1-character size was already sized to nearly fill the button's own width and would have overflowed with two letters at the same size. Verified directly and thoroughly: confirmed the render function correctly keeps a 2-character label, correctly still allows a normal 1-character label unchanged, and correctly truncates a 3-character value down to 2 rather than accepting it in full; confirmed visually via screenshot at the default QAB size that mixed 1- and 2-character buttons sit together cleanly; separately confirmed visually at the actual minimum QAB size setting (40px, via the real settings.quickActionBar.size path, not a manual CSS override) that 2-character labels stay clearly legible even at the smallest button size. Re-ran the QAB scroll-arrow tests from the previous build and the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
+  v0.1854 - Hid the QAB scroll left/right arrow buttons specifically on touch/coarse-pointer devices, per Lynn's request -- she finds them unnecessary and a little odd-looking next to the docking handle on mobile, since a finger can just swipe directly, but wanted them kept available for a bigger, non-touch screen where they might genuinely help. Implemented as a CSS media query ((hover: none) and (pointer: coarse), the standard signal for "primarily touch-driven") rather than JS touch-event detection, since many laptops now have touchscreens but remain mouse-driven day to day -- pointer/hover capability is the more accurate signal here than device type alone. Deliberately CSS-only rather than removing the feature outright, so it costs nothing to bring back if she changes her mind, and confirmed this correctly overrides the JS's own overflow-detection logic (which would otherwise show the arrows whenever the bar genuinely overflows) since that logic only ever sets an explicit inline 'none' or clears it back to an empty string, never forces a visible value the CSS would have to fight against. On her question about adding a new setting instead: agreed a toggle would be overkill for something this narrow and cosmetic -- the touch/non-touch split already gives the right behavior automatically on both kinds of device without her needing to configure anything, and a dedicated Settings row for it would add clutter for a one-person stylistic preference. Verified directly and thoroughly, not just visually: confirmed under a real touch-capable browser context that the arrows stay hidden even when the QAB is GENUINELY overflowing (scrollWidth actually exceeds clientWidth, confirmed numerically, not just by having many buttons); separately confirmed under a non-touch context that the same genuinely-overflowing QAB still shows both arrows normally and functionally; confirmed the visual result via a real touch-context screenshot showing the docking handle and scrollable QAB buttons with no arrows present, matching what Lynn asked to see before deciding; re-ran the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
   v0.1853 - THREE changes, per Lynn's requests. (1) The toast message-counter number ("#1", "#2", ...) is now visually small and subtle, separated from the message text -- was rendering at the same size/weight as the message itself, reading like an error code rather than the debugging aid it's meant to be. Built via DOM elements (a styled span for the number, a text node for the message) rather than string-concatenated innerHTML, so message text can never be misinterpreted as HTML. CAUGHT BY VISUAL TESTING, not assumed correct: the number initially broke internally into two lines ("#" and "1" separately) at narrow widths, since the toast's own word-break:break-word applies to everything inside it -- fixed with white-space:nowrap scoped to the number specifically, confirmed correct via a second screenshot. (2) MAJOR CHANGE, per Lynn's explicit aesthetic preference: heading levels are now normalized during HTML-to-markdown paste conversion so the most prominent heading actually present in the source becomes markdown level 3 (###), never level 1 or 2 -- she finds those disproportionately huge next to body text and has been avoiding them entirely in her own writing for this reason. Scans once for the most prominent (smallest-numbered) heading level actually used in the source, computes a single offset so that level becomes 3, and shifts every other heading the same amount -- preserving relative hierarchy (a genuine subheading still renders smaller than its parent) whether that means demoting real H1/H2 content or promoting a document that only ever used H4/H5. Clamped to markdown's own maximum of 6. (3) Every resulting level-3 heading now gets two blank lines before it instead of one, per Lynn's separate explicit aesthetic request -- implemented as a placeholder resolved into a real extra blank line AFTER the existing newline-collapsing step runs (doing it any earlier would have the extra line flattened right back down to the standard single blank line by that same collapse rule), re-trimmed afterward so a level-3 heading that happens to open the whole paste doesn't end up with a stray leading blank line. Confirmed unaffected, as Lynn correctly assumed: table content never contains heading elements, so none of this touches the table feature at all. Verified directly and thoroughly: confirmed heading remapping across three real scenarios (a full H1/H2/H3 hierarchy demoted to 3/4/5, an H2-starting document promoted to 3/4, and an H4-only document promoted up to 3); separately confirmed the two-blank-line rule specifically -- three real newlines before a resulting H3, but still just the standard two before a resulting H4, confirming the rule is correctly scoped to level 3 only, not all headings; confirmed the full visual result in R&R mode via screenshot; re-ran all table and paste tests and confirmed tables remain completely unaffected while general paste conversion correctly picks up the new heading behavior; re-ran the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
   v0.1852 - MAJOR NEW FEATURE: real markdown table rendering in R&R mode, per Lynn's explicit request to build this out. Investigated the renderer's actual architecture first rather than guessing at an approach: found that fenced code blocks already solve the exact same underlying problem (a multi-line block spanning several rendered lines), and used that as a direct template. Added computeTableBlocks() (detects a GFM-style table: a row containing at least one pipe, immediately followed by a valid separator row of only pipes/dashes/colons/whitespace with alignment markers, consuming subsequent pipe-containing non-blank rows as data) and renderTableBlock() (builds a real <table> with proper <thead>/<tbody>, per-column alignment from the separator row's colons, and cell content re-extracted from the ALREADY bold/italic/link-processed line text so inline formatting inside cells works correctly). A whole table renders as ONE self-contained block at its first line, deliberately simpler than spanning fragments across multiple line-loop iterations the way fenced code does -- also means move mode treats a table as one movable unit rather than letting someone accidentally split it apart by moving a single row. New .viewer-table CSS matches this app's existing theme system (font-size-editor scaling, fg/bg2/border variables) rather than hardcoded colors, so it correctly follows light/dark mode like everything else in the viewer. Also upgraded convertHtmlToNoteMarkdown() (the paste conversion) to generate real GFM pipe-table syntax for actual <table> elements, replacing the earlier, deliberately-deferred fallback-text-only approach from v0.1846 -- now that the renderer can display it, pasting a real table (from Google AI or anywhere else) produces an actual rendered table, not just readable plain text. Escapes any literal pipe character within cell text so it can't be mistaken for a column separator when re-parsed. Typing mode needed no changes at all, per Lynn's own correct expectation -- it only ever shows the raw textarea content directly, never routed through this renderer, so raw pipe characters display exactly as typed. Verified directly and thoroughly: confirmed full table rendering with real data (three columns, mixed left/center/right alignment, bold and a real link inside cells) via both a structural test and a visual screenshot; confirmed three important edge cases separately -- a table-looking block inside a fenced code block correctly stays literal text and is never rendered as a real table, an ordinary line containing a single stray pipe character is never mistaken for a table (no valid separator row follows it), and a header-only table with no data rows still renders correctly with no empty <tbody>; confirmed the complete round trip end to end -- pasting a real HTML <table> produces clean GFM markdown, which then renders as an actual table with formatting preserved, using the exact same HTML structure that matched Lynn's own real diagnostic data from earlier in this project; separately confirmed a literal pipe character within cell text is correctly escaped in storage and correctly restored on render. Re-ran the full existing test suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
   v0.1851 - Rich HTML-to-markdown paste now works in the "Add text to note" dialog too, per Lynn's explicit request -- important for anyone with typing mode turned off, who relies on this dialog as their primary way to add text and had been getting plain, unformatted paste with no blank lines. Investigated first: this dialog's existing paste listener (shared with Edit Paragraph) only ever did diagnostic logging and never called preventDefault(), so every paste here fell through to the browser's bare default plain-text behavior regardless of what was on the clipboard. Added a new, dedicated paste handler scoped ONLY to quick-add-input, deliberately NOT edit-block-input (Edit Paragraph), per Lynn's own explicit reasoning that paragraph editing doesn't need this and the "Add text to note" dialog is always available as the richer alternative. Adapted the exact same logic as the main note editor's own paste handler -- accidental-URL-encoding decode, tab/bullet conversion for plain text, and full HTML conversion via the same shared convertHtmlToNoteMarkdown() -- so this dialog's paste behavior is now fully consistent with the main editor's rather than a partial subset. Verified directly and thoroughly: confirmed bold, a list, and blank-line spacing all correctly convert when pasted into this dialog, matching the main editor's own output exactly; separately confirmed Edit Paragraph is genuinely unaffected (no listener intercepts its paste at all, confirmed via defaultPrevented staying false); re-ran the main-editor and toolbar-button paste tests plus the full remaining suite and confirmed nothing regressed. Suite: 332/332 (harness v8).
@@ -436,7 +442,7 @@
 
 <style>
 /* ===== GOOGLE FONTS ===== */
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400..700&family=Atkinson+Hyperlegible:wght@400;700&family=Atkinson+Hyperlegible+Next:wght@200..800&family=Atkinson+Hyperlegible+Mono:wght@200..800&family=Mulish:wght@200..1000&family=Merriweather:wdth,wght@87..112,300..900&family=Source+Sans+3:wght@200..900&family=Literata:opsz,wght@7..72,200..900&family=Nunito:wght@200..1000&family=Lexend:wght@100..900&family=IBM+Plex+Sans:wdth,wght@75..100,100..700&family=Open+Sans:wdth,wght@75..100,300..800&family=Noto+Sans:wght@100..900&family=Noto+Sans+Mono:wdth,wght@62.5..100,100..900&family=Rubik:wght@300..900&family=Roboto+Mono:wght@100..700&family=Roboto+Flex:opsz,slnt,wdth,wght,GRAD,XOPQ,XTRA,YOPQ,YTAS,YTDE,YTFI,YTLC,YTUC@8..144,-10..0,25..151,100..1000,-200..150,27..175,323..603,25..135,649..854,-305..-98,560..788,416..570,528..760&family=Inconsolata:wdth,wght@50..200,200..900&family=Playpen+Sans:wght@100..800&family=Google+Sans+Flex:opsz,slnt,wdth,wght,GRAD,ROND@6..144,-10..0,25..151,1..1000,0..100,0..100&family=Afacad:ital,wght@0,400..700;1,400..700&family=Alegreya+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Inter:slnt,wght@-10..0,300..700&family=Comic+Relief:wght@400;700&family=Spectral:ital,wght@0,300;0,400;0,700;1,400&family=Andika:wght@400;700&family=Shantell+Sans:wght,BNCE,INFM,SPAC@300..800,-100..100,0..100,0..100&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400..700&family=Atkinson+Hyperlegible+Next:wght@200..800&family=Atkinson+Hyperlegible+Mono:wght@200..800&family=Mulish:wght@200..1000&family=Merriweather:wdth,wght@87..112,300..900&family=Source+Sans+3:wght@200..900&family=Literata:opsz,wght@7..72,200..900&family=Nunito:wght@200..1000&family=Lexend:wght@100..900&family=IBM+Plex+Sans:wdth,wght@75..100,100..700&family=Open+Sans:wdth,wght@75..100,300..800&family=Noto+Sans:wght@100..900&family=Noto+Sans+Mono:wdth,wght@62.5..100,100..900&family=Rubik:wght@300..900&family=Roboto+Mono:wght@100..700&family=Roboto+Flex:opsz,slnt,wdth,wght,GRAD,XOPQ,XTRA,YOPQ,YTAS,YTDE,YTFI,YTLC,YTUC@8..144,-10..0,25..151,100..1000,-200..150,27..175,323..603,25..135,649..854,-305..-98,560..788,416..570,528..760&family=Inconsolata:wdth,wght@50..200,200..900&family=Playpen+Sans:wght@100..800&family=Google+Sans+Flex:opsz,slnt,wdth,wght,GRAD,ROND@6..144,-10..0,25..151,1..1000,0..100,0..100&family=Afacad:ital,wght@0,400..700;1,400..700&family=Alegreya+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Inter:slnt,wght@-10..0,300..700&family=Comic+Relief:wght@400;700&family=Spectral:ital,wght@0,300;0,400;0,700;1,400&family=Andika:wght@400;700&family=Shantell+Sans:wght,BNCE,INFM,SPAC@300..800,-100..100,0..100,0..100&display=swap');
 
 /* v0.1827 NEW, per Lynn's fix: Playwrite Ireland, self-hosted rather
    than via Google Fonts. Root cause of the stylistic-set checkboxes
@@ -2497,7 +2503,15 @@ body.reading-mode:not(.qab-show-in-quiet) #quick-action-bar { display: none !imp
    itself would normally show under -- see #qab-collapse-handle's own
    rules just below, which deliberately do NOT include this
    handle-collapsed exclusion. */
-body.qab-handle-collapsed #quick-action-bar { display: none !important; }
+/* v0.1856 FIX, per Lynn's report: was only checking qab-handle-
+   collapsed, meaning a stale handleCollapsed:true value could hide the
+   bar even when the handle itself is disabled (qab-handle-enabled
+   absent) and there's no way to un-collapse it. Requiring both classes
+   together directly encodes the correct invariant -- only hide when
+   the handle is both enabled AND currently collapsed -- rather than
+   relying solely on every JS code path that sets handleCollapsed to
+   also remember to check showCollapseHandle. */
+body.qab-handle-enabled.qab-handle-collapsed #quick-action-bar { display: none !important; }
 /* v0.1834 NEW, per Lynn's request: room for the handle so the QAB's
    own scrollable button content never overlaps it. */
 body.qab-enabled.qab-handle-enabled #quick-action-bar { padding-left: calc(56px + env(safe-area-inset-left, 0px)); }
@@ -2582,6 +2596,21 @@ body.reading-mode:not(.qab-show-in-quiet) #qab-collapse-handle { display: none !
 }
 .qab-scroll-arrow:active { opacity: 0.25; }
 .qab-scroll-arrow svg { width: 28px; height: 28px; }
+/* v0.1854 NEW, per Lynn's request: hidden specifically on touch/coarse-
+   pointer devices -- she finds them unnecessary next to the docking
+   handle when a finger can just swipe directly, but wants them kept
+   available for a non-touch, mouse-driven bigger screen where they
+   might genuinely be useful. (hover: none) and (pointer: coarse) is the
+   standard signal for "primarily touch-driven" -- more accurate than
+   JS touch-event detection, since many laptops now have touchscreens
+   but remain mouse-driven day to day. !important ensures this wins
+   even when the JS's own overflow-detection logic would otherwise show
+   the arrows (see _qabUpdateScrollArrows()). Deliberately CSS-only, not
+   a full removal, so it costs nothing to bring back later.
+*/
+@media (hover: none) and (pointer: coarse) {
+  .qab-scroll-arrow { display: none !important; }
+}
 
 .qab-btn {
   width: var(--qab-size, 64px);
@@ -2603,6 +2632,14 @@ body.reading-mode:not(.qab-show-in-quiet) #qab-collapse-handle { display: none !
 }
 body.qab-shape-circle .qab-btn { border-radius: 50%; }
 body.qab-shape-square .qab-btn { border-radius: 14%; }
+/* v0.1855 NEW, per Lynn's request: 2-character QAB labels get a
+   smaller font size than the single-character default, so both letters
+   fit comfortably within the button rather than overflowing it -- the
+   1-character size was already sized to nearly fill the button's own
+   width. Scaled relative to the same --qab-size variable the default
+   font-size uses, so this stays proportional at any button size
+   setting, not a fixed value that would drift out of proportion. */
+.qab-btn.qab-btn-2char { font-size: calc(var(--qab-size, 64px) * 0.28); }
 /* v0.1820 NEW, per Lynn's request: toggle-type QAB actions (currently
    just Tap to Edit) "light up" while their underlying state is active
    -- same visual language as the slider default/reset buttons (accent
@@ -8443,7 +8480,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     <div style="display:flex;align-items:center">
     <button class="font-face-arrow" id="font-face-arrow-left" aria-label="Scroll left">&#8249;</button>
     <div id="font-face-pills">
-      <button class="font-face-pill" data-font="'Atkinson Hyperlegible', sans-serif" style="font-family:'Atkinson Hyperlegible', sans-serif">Atkinson</button>
       <button class="font-face-pill" data-font="'Atkinson Hyperlegible Next', sans-serif" style="font-family:'Atkinson Hyperlegible Next', sans-serif">Atkinson Next</button>
       <button class="font-face-pill" data-font="'Andika', sans-serif" style="font-family:'Andika', sans-serif">Andika</button>
       <button class="font-face-pill" data-font="'Mulish', sans-serif" style="font-family:'Mulish', sans-serif">Mulish</button>
@@ -9642,7 +9678,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
           <div class="settings-row-label">Floating Pill Header</div>
           <div class="settings-row-desc">On: the Home Screen's buttons float in a rounded pill and the logo floats separately (the logo is always hidden in this mode). Off: the classic single header bar.</div>
         </div>
-        <label class="toggle-switch" aria-label="Floating pill header"><input type="checkbox" id="home-floating-header-toggle" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+        <label class="toggle-switch" aria-label="Floating pill header"><input type="checkbox" id="home-floating-header-toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
 
         <div class="settings-subsection-title">UI Text</div>
@@ -9654,7 +9690,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </div>
         <select class="settings-select" id="font-select">
           <optgroup label="— Sans-serif —">
-          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
           <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
           <option value="'Andika', sans-serif">Andika</option>
           <option value="'Mulish', sans-serif">Mulish</option>
@@ -9731,7 +9766,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </div>
         <select class="settings-select" id="notes-list-name-font-select">
           <option value="">Default (match general UI font)</option>
-          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
           <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
           <option value="'Andika', sans-serif">Andika</option>
           <option value="'Mulish', sans-serif">Mulish</option>
@@ -9771,7 +9805,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </div>
         <select class="settings-select" id="notes-list-preview-font-select">
           <option value="">Default (match note font)</option>
-          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
           <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
           <option value="'Andika', sans-serif">Andika</option>
           <option value="'Mulish', sans-serif">Mulish</option>
@@ -10079,7 +10112,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
             </div>
             <select class="settings-select" id="home-item-meta-font-select">
               <optgroup label="— Sans-serif —">
-              <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
               <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
               <option value="'Andika', sans-serif">Andika</option>
               <option value="'Mulish', sans-serif">Mulish</option>
@@ -10404,7 +10436,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </div>
         <select class="settings-select" id="note-font-select">
           <optgroup label="— Sans-serif —">
-          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
           <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
           <option value="'Andika', sans-serif">Andika</option>
           <option value="'Mulish', sans-serif">Mulish</option>
@@ -10627,7 +10658,6 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         <select class="settings-select" id="heading-font-select">
           <option value="">Default (match note text font)</option>
           <optgroup label="— Sans-serif —">
-          <option value="'Atkinson Hyperlegible', sans-serif">Atkinson Hyperlegible</option>
           <option value="'Atkinson Hyperlegible Next', sans-serif">Atkinson Hyperlegible Next</option>
           <option value="'Andika', sans-serif">Andika</option>
           <option value="'Mulish', sans-serif">Mulish</option>
@@ -12778,7 +12808,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1853';
+const APP_VERSION = '0.1859';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -14951,7 +14981,14 @@ const DEFAULT_SETTINGS = {
     enabled: false,
     size: 64,                 // px -- base button height; width tracks via CSS aspect-ratio
     shape: 'square',           // 'square' | 'circle'
-    colorScheme: 'blackOnWhite', // 'blackOnWhite' | 'whiteOnBlack' | 'theme'
+    // v0.1858 CHANGED, per Lynn's request and the design discussed with
+    // her: no longer a fixed default -- left genuinely unset so
+    // "never touched" can be distinguished from "explicitly chose
+    // blackOnWhite." See the resolution logic in renderQuickActionBar()
+    // and syncQuickActionBarSettingsUI() for how an unset value now
+    // computes a default dynamically from the app's own light/dark
+    // mode, while any explicit choice (including explicitly choosing
+    // blackOnWhite) stays completely locked regardless of theme.
     showInQuietMode: false,    // v0.1823, per Lynn's request -- a toggle-type QAB button (e.g. Quiet mode itself) does no good if the whole bar disappears the moment quiet mode turns on. Off by default: preserves the existing hide-in-quiet-mode behavior exactly for anyone who hasn't explicitly opted in.
     showCollapseHandle: false, // v0.1834 NEW, per Lynn's request -- a prototype collapse handle letting QAB stay enabled without always being visible. Off by default since this is explicitly experimental.
     handleCollapsed: false,    // v0.1834 NEW -- whether the bar is CURRENTLY hidden via the handle. Starts expanded even once the handle itself is enabled, rather than surprising an existing QAB user with it already collapsed.
@@ -14989,7 +15026,11 @@ const DEFAULT_SETTINGS = {
   disableScratchPad: false,
   disablePinchZoom: false, // v0.1724
   hideLogo: false,         // v0.1724
-  homeFloatingHeader: true, // v0.1735 -- defaults to true, keeping the just-shipped pill design as the default rather than silently reverting existing users to classic on upgrade
+  // v0.1856 CHANGED, per Lynn's explicit request: default changed from
+  // true to false (was v0.1735's "defaults to true, keeping the just-
+  // shipped pill design as the default" -- superseded by her own
+  // explicit new preference).
+  homeFloatingHeader: false, // v0.1856
   tagColorBorders: false,
   tagColorPills: false,   // color tag pills by tag identity in R&R mode
   tagScope: 'block',
@@ -17653,7 +17694,6 @@ function lightenHex(hex, percent) {
 // weight in their range; coarse for static fonts, which can only ever
 // show their few discrete weights regardless of step size).
 var FONT_WEIGHT_SUPPORT = {
-  "'Atkinson Hyperlegible', sans-serif": [400, 700],
   "'Atkinson Hyperlegible Next', sans-serif": { min: 200, max: 800 },
   "'Atkinson Hyperlegible Mono', 'Courier New', monospace": { min: 200, max: 800 },
   "'Andika', sans-serif": [400, 700],
@@ -18429,13 +18469,21 @@ function applySettings() {
   document.body.classList.toggle('speak-in-quiet', !!settings.speakInQuiet);
   document.body.classList.toggle('speak-accent-in-quiet', !!settings.speakBtnAccentColorInQuiet);
   document.body.classList.toggle('show-back-label', !!settings.showBackLabelOnLargeScreens);
-  renderQuickActionBar();
   const body = document.body;
 
   // Theme
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const useDark = settings.theme === 'dark' || (settings.theme === 'auto' && prefersDark);
   body.classList.toggle('dark', useDark);
+  // v0.1859 FIX, caught while precisely verifying Lynn's question about
+  // auto-theme support: renderQuickActionBar() used to run BEFORE this
+  // dark-mode class was (re)computed above, meaning the QAB's own auto
+  // color-scheme logic (v0.1858) would render using the PREVIOUS, stale
+  // theme state whenever settings.theme is 'auto' and the OS preference
+  // just changed -- it would only catch up the next time something else
+  // happened to trigger a re-render, not immediately. Moved here, after
+  // the class is freshly applied, so it always sees the current state.
+  renderQuickActionBar();
   // v0.1769 FIX, per Lynn's report of a regressed Android PWA bug: the
   // system status bar (and other OS chrome outside the app's own
   // content) stayed the wrong color in dark mode. Previously handled by
@@ -21944,6 +21992,14 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
       setCurrentMatch(_restoreIdx);
     }
   }
+  // v0.1857 NEW, per Lynn's report: the Typing Mode QAB button wasn't
+  // lighting up like Tap to Edit and Quiet Mode do. Root cause: every
+  // OTHER toggle-type QAB action already calls this refresh from its
+  // own toggle function (quiet mode, tap-to-edit, toolbar collapse),
+  // but none of those live inside setViewMode() itself -- so until the
+  // Typing Mode action existed, nothing ever needed setViewMode() to
+  // trigger this refresh too.
+  if (typeof _qabRefreshActiveStates === 'function') _qabRefreshActiveStates();
 }
 
 // ===== NOTE SCREEN =====
@@ -34488,6 +34544,11 @@ function makeImportFolderName(label) {
   // to actually try it, not just after saving and reopening a note.
   document.getElementById('qab-handle-toggle').addEventListener('change', function() {
     settings.quickActionBar.showCollapseHandle = this.checked;
+    // v0.1856 NEW, per Lynn's report: if the handle is turned off while
+    // the bar is currently collapsed, there's no longer any way to un-
+    // collapse it -- the bar would stay invisible with no path back.
+    // Since the handle is now gone, the bar must always be visible.
+    if (!this.checked) settings.quickActionBar.handleCollapsed = false;
     renderQuickActionBar();
     updateSaveBtnState();
   });
@@ -40855,6 +40916,21 @@ var QUICK_ACTION_BAR_ACTIONS = [
   { id: 'quiet',    label: 'Toggle quiet mode',       defaultLetter: 'Q', run: function() { toggleReadingMode(); }, isActive: function() { return _readingMode; } },
   { id: 'backHome', label: 'Back to notes list',      defaultLetter: 'B', run: function() { goHome(); } },
   { id: 'toolbar',  label: 'Show/hide toolbar',        defaultLetter: 'O', run: function() { toggleToolbarCollapse(); }, isActive: function() { return document.body.classList.contains('toolbar-collapsed'); } },
+  // v0.1856 NEW, per Lynn's explicit request: mirrors the exact logic
+  // of the existing upper-toolbar view-mode-btn (including persisting
+  // settings.lastViewMode), so this QAB button and the toolbar button
+  // behave identically rather than two subtly different
+  // implementations of the same toggle.
+  { id: 'typingMode', label: 'Typing mode', defaultLetter: 'T', run: function() {
+      var newMode = !isViewMode;
+      settings.lastViewMode = newMode;
+      saveSettings();
+      setViewMode(newMode, true); // suppress focus to avoid triggering keyboard
+    }, isActive: function() { return !isViewMode; } },
+  // v0.1856 NEW, per Lynn's explicit request: not a toggle -- no
+  // isActive, matching how e.g. 'find'/'backHome' above are also
+  // simple one-shot actions rather than toggles.
+  { id: 'openSettings', label: 'Settings', defaultLetter: 'S', run: function() { openSettings(); } },
 ];
 function _qabActionById(id) {
   for (var i = 0; i < QUICK_ACTION_BAR_ACTIONS.length; i++) {
@@ -40906,6 +40982,26 @@ function _qabUpdateScrollArrows() {
 // Renders the whole Quick Action Bar from settings.quickActionBar. Safe
 // to call unconditionally and often (applySettings() already does, on
 // every settings save) -- idempotent, and cheap when the feature is off.
+// v0.1858 NEW, per Lynn's request and the design discussed with her:
+// resolves the QAB's effective color scheme. Any EXPLICIT choice
+// (blackOnWhite, whiteOnBlack, or theme) stays completely locked,
+// matching the existing rationale for why these are theme-independent,
+// guaranteed-high-contrast pairs in the first place -- an accent color
+// chosen for general aesthetics has no guarantee of meeting the
+// contrast this feature needs, which is exactly why blackOnWhite/
+// whiteOnBlack are hardcoded rather than tied to the app's own colors.
+// Only when genuinely UNSET (never touched) does this compute a
+// default from the app's own light/dark mode -- still the same
+// guaranteed-maximum-contrast pair a low-vision user needs, just
+// automatically flipped to match ambient lighting rather than always
+// assuming a bright room.
+function _qabResolveColorScheme(cfg) {
+  if (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme' || cfg.colorScheme === 'blackOnWhite') {
+    return cfg.colorScheme;
+  }
+  return document.body.classList.contains('dark') ? 'whiteOnBlack' : 'blackOnWhite';
+}
+
 function renderQuickActionBar() {
   var cfg = settings.quickActionBar;
   var bar = document.getElementById('quick-action-bar');
@@ -40920,7 +41016,7 @@ function renderQuickActionBar() {
   body.classList.remove('qab-shape-square', 'qab-shape-circle');
   body.classList.add('qab-shape-' + (cfg.shape === 'circle' ? 'circle' : 'square'));
   body.classList.remove('qab-scheme-blackOnWhite', 'qab-scheme-whiteOnBlack', 'qab-scheme-theme');
-  var scheme = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite';
+  var scheme = _qabResolveColorScheme(cfg);
   body.classList.add('qab-scheme-' + scheme);
   // v0.1788: covers the edge case of the setting being toggled on while
   // already mid-typing.
@@ -40945,8 +41041,14 @@ function renderQuickActionBar() {
       btn.className = 'qab-btn';
       btn.setAttribute('data-slot', i);
       btn.setAttribute('data-action', action.id);
-      var letter = (slotCfg.letter || action.defaultLetter || '?').charAt(0).toUpperCase();
+      var letter = (slotCfg.letter || action.defaultLetter || '?').slice(0, 2).toUpperCase();
       btn.textContent = letter;
+      // v0.1855 NEW, per Lynn's request: up to 2 characters now allowed
+      // (was 1) -- a smaller font size for 2-character labels lets them
+      // fit comfortably within the button rather than overflowing it,
+      // since the font size at 1 character was already sized to nearly
+      // fill the button's own width.
+      if (letter.length === 2) btn.classList.add('qab-btn-2char');
       btn.setAttribute('aria-label', action.label);
       btn.title = action.label;
       btn.onclick = action.run;
@@ -41055,9 +41157,12 @@ function _qabRenderSlotRows() {
     var letterInp = document.createElement('input');
     letterInp.type = 'text';
     letterInp.className = 'qab-slot-letter';
-    letterInp.maxLength = 1;
+    // v0.1855 CHANGED, per Lynn's request: was 1 -- up to 2 characters
+    // now allowed. Widened slightly (44px -> 56px) so two characters
+    // don't look cramped while typing.
+    letterInp.maxLength = 2;
     letterInp.setAttribute('aria-label', 'Button ' + (i + 1) + ' letter');
-    letterInp.style.cssText = 'width:44px;text-align:center;text-transform:uppercase;';
+    letterInp.style.cssText = 'width:56px;text-align:center;text-transform:uppercase;';
     var existingAction = slotCfg ? _qabActionById(slotCfg.action) : null;
     letterInp.value = (slotCfg && slotCfg.letter) || (existingAction ? existingAction.defaultLetter : '');
 
@@ -41084,7 +41189,9 @@ function _qabRenderSlotRows() {
       updateSaveBtnState();
     });
     letterInp.addEventListener('input', function() {
-      var v = this.value.replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase();
+      // v0.1855 CHANGED, per Lynn's request: was .charAt(0) -- up to 2
+      // characters now allowed, matching the raised maxLength above.
+      var v = this.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
       this.value = v;
       cfg.buttons[i] = cfg.buttons[i] || { action: '', letter: '' };
       cfg.buttons[i].letter = v;
@@ -41098,6 +41205,17 @@ function _qabRenderSlotRows() {
 
     row.appendChild(label); row.appendChild(actionSel); row.appendChild(letterInp); row.appendChild(removeBtn);
     container.appendChild(row);
+    // v0.1857 NEW, per Lynn's explicit request: always use the custom
+    // picker component instead of native <select>, so the app's own UI
+    // font-size setting is respected (native <select> options are
+    // rendered by iOS itself, exempt from the page's own CSS entirely --
+    // see the component's own header comment for the full story). Must
+    // come AFTER the select is actually attached to the DOM above --
+    // caught by real testing that the component needs a real parentNode
+    // to insert its trigger UI next to, since this select is created
+    // dynamically (one per QAB button row) rather than a static element
+    // already in the page's own markup like the other 9 selects.
+    enhanceSelectWithCustomPicker(actionSel, { title: 'Button ' + (i + 1) + ' Action' });
   });
 }
 function syncQuickActionBarSettingsUI() {
@@ -41123,7 +41241,7 @@ function syncQuickActionBarSettingsUI() {
   setSegActive('qab-shape-seg', cfg.shape === 'circle' ? 'circle' : 'square');
 
   var colorSel = document.getElementById('qab-color-select');
-  if (colorSel) { colorSel.value = (cfg.colorScheme === 'whiteOnBlack' || cfg.colorScheme === 'theme') ? cfg.colorScheme : 'blackOnWhite'; if (colorSel._refreshPickerTriggerLabel) colorSel._refreshPickerTriggerLabel(); }
+  if (colorSel) { colorSel.value = _qabResolveColorScheme(cfg); if (colorSel._refreshPickerTriggerLabel) colorSel._refreshPickerTriggerLabel(); }
 
   _qabRenderSlotRows();
 }
@@ -42536,7 +42654,7 @@ function createInitialNotes() {
   themes[themeTaskMasterId] = {
       id: themeTaskMasterId, name: 'Task Master', createdAt: now,
       values: {
-        noteFont: "'Atkinson Hyperlegible', sans-serif", editorFontSize: 18,
+        noteFont: "'Atkinson Hyperlegible Next', sans-serif", editorFontSize: 18,
         lineHeight: 1.5, showBlockRules: true, showBlockRulesTop: true, checkboxColor: 'green',
         checkStrikethrough: true, viewIndentWidth: 1.8, defaultViewMode: true
       }
@@ -42546,7 +42664,7 @@ function createInitialNotes() {
   themes[themeDyslexiaId] = {
       id: themeDyslexiaId, name: 'Dyslexia Friendly', createdAt: now,
       values: {
-        noteFont: "'Atkinson Hyperlegible', sans-serif",
+        noteFont: "'Atkinson Hyperlegible Next', sans-serif",
         editorFontSize: 22, lineHeight: 2.0, blankLineHeight: 2.0,
         letterSpacing: 0.05, wordSpacing: 0.1,
         disableLigatures: true, defaultViewMode: true,
@@ -42558,7 +42676,7 @@ function createInitialNotes() {
   themes[themePoemId] = {
     id: themePoemId, name: 'Poetry Page', createdAt: now,
     values: {
-      noteFont: "'Atkinson Hyperlegible', sans-serif",
+      noteFont: "'Atkinson Hyperlegible Next', sans-serif",
       editorFontSize: 19, lineHeight: 2.2, blankLineHeight: 1.5,
       charsPerLine: 38, noteMarginLeft: 40, noteMarginRight: 40,
       fontWeight: '400', defaultViewMode: true, quietMode: true,
@@ -42570,7 +42688,7 @@ function createInitialNotes() {
   themes[themeFunId] = {
     id: themeFunId, name: 'Fun & Bright', createdAt: now,
     values: {
-      noteFont: "'Atkinson Hyperlegible', sans-serif",
+      noteFont: "'Atkinson Hyperlegible Next', sans-serif",
       editorFontSize: 19, lineHeight: 1.6, blankLineHeight: 1.2,
       accentColor: '#e91e8c', defaultViewMode: true,
       theme: 'light', lightBgColor: '#fff8fb', lightFgColor: '#1a1a2e'
