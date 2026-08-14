@@ -1,6 +1,31 @@
-# Remember App - Version 0.1063
+# Remember App - Version 0.1865 (deploy_v2.yml)
 # GitHub Actions workflow — deploys latest versioned HTML to index.html
 # for all app subdirectories in everyday-apps.
+#
+# v2 FAIL LOUDLY fix, per Lynn's report: a real build (remember-dev,
+# 2026-08-14) silently "succeeded" (green checkmark, whole job exit 0)
+# despite the deploy step failing to find the target HTML file (a
+# filename mismatch, underscore vs dot before the version number) --
+# the ❌ line only ever went to the step log, which is gated behind
+# GitHub sign-in and easy to miss entirely. Fixed with `exit 1` plus a
+# `::error::` annotation (surfaces directly in the Actions run summary,
+# no sign-in required to see the annotation itself) in every "not
+# found" branch. The remember-stable and remember-dev steps specifically
+# use `continue-on-error: true` PLUS a final check step that inspects
+# both outcomes afterward -- a naive bare `exit 1` on a normal
+# (non-continue-on-error) step would have stopped the whole job right
+# there, meaning a remember-stable failure would silently prevent
+# remember-dev from even being attempted, which is exactly backwards
+# given they're fully independent deployments that must never block
+# each other. This way both always get their own independent attempt,
+# and the job still correctly ends in an overall failure if either had
+# a real problem. Also added: a hard failure (no continue-on-error --
+# this one legitimately should stop everything downstream) if remember/
+# itself has zero versioned HTML files at all, since that folder is the
+# source of truth both stable and dev deploy from and nothing
+# downstream can meaningfully succeed without it. Other, unrelated
+# top-level folders in the repo that don't use this versioned-HTML
+# pattern still get a soft skip, not a failure.
 #
 # Remember Stable & Dev:
 #   To bless a version: edit the stable-version.txt in the relevant folder
@@ -51,10 +76,16 @@ jobs:
               fi
             else
               echo "⏭️  $app → no versioned HTML found, skipping"
+              if [ "$app" = "remember" ]; then
+                echo "::error::remember/ has no remember-v*.html file at all — this is the source-of-truth folder that both remember-stable and remember-dev deploy FROM, so this is treated as a hard failure rather than a skip."
+                exit 1
+              fi
             fi
           done
 
       - name: Deploy remember-stable from stable-version.txt
+        id: deploy_stable
+        continue-on-error: true
         run: |
           if [ -f "remember-stable/stable-version.txt" ]; then
             VERSION=$(cat remember-stable/stable-version.txt | tr -d '[:space:]')
@@ -69,12 +100,16 @@ jobs:
             else
               echo "❌ remember-stable → $SRC not found"
               echo "   Make sure remember/remember-${VERSION}.html is committed"
+              echo "::error::remember-stable deployment failed — $SRC not found. stable-version.txt says '$VERSION' but that HTML file is not committed to the remember/ folder (check for a filename mismatch, e.g. underscore vs dot before the version number)."
+              exit 1
             fi
           else
             echo "⏭️  remember-stable → no stable-version.txt, skipping"
           fi
 
       - name: Deploy remember-dev from stable-version.txt
+        id: deploy_dev
+        continue-on-error: true
         run: |
           if [ -f "remember-dev/stable-version.txt" ]; then
             VERSION=$(cat remember-dev/stable-version.txt | tr -d '[:space:]')
@@ -89,6 +124,8 @@ jobs:
             else
               echo "❌ remember-dev → $SRC not found"
               echo "   Make sure remember/remember-${VERSION}.html is committed"
+              echo "::error::remember-dev deployment failed — $SRC not found. stable-version.txt says '$VERSION' but that HTML file is not committed to the remember/ folder (check for a filename mismatch, e.g. underscore vs dot before the version number)."
+              exit 1
             fi
           else
             echo "⏭️  remember-dev → no stable-version.txt, skipping"
@@ -101,3 +138,17 @@ jobs:
           git add -A
           git diff --staged --quiet || git commit -m "Auto-update index.html from latest versioned HTML"
           git push
+
+      - name: Fail the job if either deploy step failed
+        # deploy_stable and deploy_dev each use continue-on-error above
+        # SPECIFICALLY so a failure in one never prevents the other from
+        # attempting its own, fully independent deploy (they don't depend
+        # on each other in any way, and shouldn't block each other). This
+        # final step is what makes a real failure still show up as an
+        # overall job failure (red ❌ on the Actions tab, not masked by
+        # continue-on-error's own "succeeded with a warning" treatment)
+        # once both independent attempts have had their chance to run.
+        if: steps.deploy_stable.outcome == 'failure' || steps.deploy_dev.outcome == 'failure'
+        run: |
+          echo "::error::Deployment failed — remember-stable outcome: ${{ steps.deploy_stable.outcome }}, remember-dev outcome: ${{ steps.deploy_dev.outcome }}. See each step's own log/annotation above for details."
+          exit 1
