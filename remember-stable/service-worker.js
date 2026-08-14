@@ -1,7 +1,11 @@
-// Remember App - Version 0.1035
+// Remember App - Version 0.1865
 // Service Worker for remember-stable (stable deployment)
+//
+// v0.1865 FAIL LOUDLY fix, per Lynn's request — see remember-service-
+// worker's matching header comment for the full explanation. Same fix,
+// applied identically here.
 
-const CACHE_VERSION = 'remember-stable-v0.1516';
+const CACHE_VERSION = 'remember-stable-v0.1035';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
@@ -17,6 +21,9 @@ self.addEventListener('install', function(event) {
       return cache.addAll(PRECACHE_ASSETS);
     }).then(function() {
       return self.skipWaiting();
+    }).catch(function(err) {
+      console.error('[Remember SW: stable] INSTALL FAILED — one or more precache assets could not be fetched:', PRECACHE_ASSETS, err);
+      throw err;
     })
   );
 });
@@ -33,6 +40,9 @@ self.addEventListener('activate', function(event) {
       );
     }).then(function() {
       return self.clients.claim();
+    }).catch(function(err) {
+      console.error('[Remember SW: stable] ACTIVATE cache cleanup failed:', err);
+      throw err;
     })
   );
 });
@@ -59,8 +69,16 @@ self.addEventListener('fetch', function(event) {
       // believed it was doing.
       fetch(event.request.url, { cache: 'no-store' })
         .then(function(networkResponse) {
-          var clone = networkResponse.clone();
-          caches.open(STATIC_CACHE).then(function(cache) { cache.put(event.request, clone); });
+          // FAIL LOUDLY fix (v0.1865-equivalent, see main SW's comment
+          // for full explanation): only cache genuinely successful
+          // responses; a bad response used to get cached and served
+          // forever as if it were good.
+          if (networkResponse && networkResponse.ok) {
+            var clone = networkResponse.clone();
+            caches.open(STATIC_CACHE).then(function(cache) { cache.put(event.request, clone); });
+          } else {
+            console.error('[Remember SW: stable] Non-OK response NOT cached:', event.request.url, networkResponse && networkResponse.status);
+          }
           return networkResponse;
         })
         .catch(function() {
@@ -76,9 +94,16 @@ self.addEventListener('fetch', function(event) {
     caches.match(event.request).then(function(cached) {
       if (cached) return cached;
       return fetch(event.request).then(function(networkResponse) {
-        var clone = networkResponse.clone();
-        caches.open(STATIC_CACHE).then(function(cache) { cache.put(event.request, clone); });
+        if (networkResponse && networkResponse.ok) {
+          var clone = networkResponse.clone();
+          caches.open(STATIC_CACHE).then(function(cache) { cache.put(event.request, clone); });
+        } else {
+          console.error('[Remember SW: stable] Non-OK response NOT cached:', event.request.url, networkResponse && networkResponse.status);
+        }
         return networkResponse;
+      }).catch(function(err) {
+        console.error('[Remember SW: stable] Fetch failed for:', event.request.url, err);
+        throw err;
       });
     })
   );
