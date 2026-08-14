@@ -5,7 +5,7 @@
 // worker's matching header comment for the full explanation. Same fix,
 // applied identically here.
 
-const CACHE_VERSION = 'remember-stable-v0.1035';
+const CACHE_VERSION = 'remember-stable-v0.1516';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
