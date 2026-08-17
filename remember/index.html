@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1865 -->
+<!-- Remember App - Version 0.1867 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1865
+  Version 0.1867
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,8 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1867 - THREE items, per Lynn's testing report on real iPhone and Android devices right after v0.1866. (1) FIX/REVERT: v0.1866's height-sync unification made the small collapse handle just as tall as the large one, which Lynn explicitly does not want -- small needs to stay short. Reverted _qabSyncHandleHeight() to skip the small variant again (back to a fixed, short 40x40px box), but this time solved the original exposed-background-rectangle problem a genuinely different way, per Lynn's own explicitly offered alternative ("get rid of this rectangular area or make it transparent"): the QAB bar's own background is now a linear-gradient, transparent for exactly the reserved handle-width column and opaque everywhere else, instead of trying to make the handle tall enough to fill that space. Scoped to body.qab-handle-small specifically -- the large variant's existing, already-correct height-sync behavior is completely untouched. (2) FIX: Android still clipping the first QAB button at the scroll start even after v0.1866's 8px edge padding -- bumped left-edge padding to 20px specifically, per Lynn's own direct suggestion, right-edge left at 8px since that side wasn't reported as still broken. Honestly flagged: this is an empirical bump matching her suggested fix, not a root-cause diagnosis -- unclear why 8px wasn't sufficient on Android without being able to test on a real device. (3) NEW: the tri-state "Use Subtle Highlighting" setting (Off/On/Quiet mode only), wired to Lynn's chosen prototype Option D (thicker border + a faint 8% tint of the button's own existing scheme color as background -- no accent color, no new color introduced). Deliberately NOT implemented with color-mix() or currentColor -- color-mix() is too recent to trust across older phones this app needs to run on, and currentColor got genuinely ambiguous against this file's own pre-existing cascade (a specificity tie between .qab-active and the scheme rules that predates this change and wasn't this change's job to untangle); explicit per-scheme rgba() rules instead, simple and unambiguous. New settings.quickActionBar.subtleHighlight value, defaulting to 'off' (unchanged accent-fill behavior for anyone who doesn't touch this). 'quietOnly' is resolved LIVE against the current reading-mode state every time _qabRefreshActiveStates() runs -- already correctly called from both toggleReadingMode() and clearReadingMode(), so no new call sites were needed there; one new call added at the end of renderQuickActionBar() so a Settings-dialog change to this setting itself applies immediately on save. Settings UI (a 3-option dropdown, matching the existing Button Colors row's exact pattern) automatically got the native-select-on-iOS-ignores-font-size fix (v0.1857) for free, since it shares that existing static-select enhancement/search-registration loop rather than needing its own separate wiring. Verified directly: confirmed the small handle's height is once again independent of the bar's real height (back to a fixed 40px); confirmed the transparent-gradient math correctly matches the handle's reserved width; confirmed the new select's change handler, load-into-UI default ('off' when unset), and settings-search entry are all present and match the color-select's proven pattern exactly. NOT verified on a real iPhone or Android device, including whether the transparent-column fix actually looks right and whether 20px genuinely fixes the Android clipping -- this sandbox cannot render real device geometry; Lynn's own on-device testing is what actually confirms both. Regression suite: NOT run -- same network-blocked jsdom-install limitation as the previous two builds (Core Instructions Rule 5).
+  v0.1866 - FOUR QAB fixes, per Lynn's detailed report with iPhone/Android screenshots (three items from her list deferred -- see below, and NOT included here). (1) FIX: small collapse handle clipped by the iPhone's curved corner -- root cause: the safe-area compensation was only ever applied as padding-bottom (pushing the icon up inside the box) while the box's own edge/background stayed flush at bottom:0, still sitting inside the corner-clip/home-indicator dead zone. Moved the compensation to an actual `bottom: env(safe-area-inset-bottom, 0px)` position offset instead, lifting the whole box clear of that zone -- same total safe height, correctly placed. (2) FIX: solid opaque background strip above the small handle, blocking QAB buttons -- this is the exact same class of bug v0.1860 already fixed for the LARGE handle (handle height not synced to the bar's real, taller content height), reintroduced for the small variant specifically because v0.1861 deliberately excluded it from that sync. _qabSyncHandleHeight() no longer has a small-variant skip branch -- both variants now sync height identically; only WIDTH stays variant-specific. (3) FIX: small handle too tiny to reliably tap -- width bumped 30px -> 40px (at/near the ~44px minimum touch target both Apple's and Google's platform guidelines recommend), still meaningfully smaller than the large variant's 56px; icon 16px -> 18px; the bar's own reserved padding-left updated to match. (4) NEW: on medium/large screens (a `min-width: 700px` media query -- confirmed for Lynn: this is genuinely viewport WIDTH, not touch-vs-mouse capability, so a mouse-driven iPad in landscape gets this too, same as any wide phone) both the QAB and the main lower toolbar now use noticeably wider button spacing, since cramped-together spacing only ever made sense on small-phone-portrait widths. Reused the app's existing 700px breakpoint (v0.1771) rather than inventing a new one. Also added real horizontal edge padding (8px, both sides) plus scroll-padding-inline to .qab-scroll, per Lynn's report that Android specifically could clip the first button at the left scroll limit and had no breathing room after the last button at the right limit (iOS's native overscroll "bounce" was masking the same underlying missing-padding issue there). DEFERRED, not guessed at blindly: (a) Lynn's report that Android could sit ~20px lower with room to spare -- no reliable existing way in this codebase to detect Android specifically via CSS, and a wrong platform-wide guess risks a regression on some Android devices/browsers while looking fine on others; needs either a specific measurement or a screenshot showing the gap clearly before attempting. (b) The new tri-state "use subtle highlighting" setting for QAB toggle-buttons (off/on/quiet-mode-only) -- per Lynn's own explicit request to see prototype style options before committing to one, a separate small prototype artifact with several candidate subtle-highlight styles was delivered alongside this build instead of guessing at final CSS; the real setting will be wired in once she picks a direction. Verified directly: confirmed the handle's new bottom offset computes correctly with a simulated safe-area-inset-bottom value; confirmed BOTH handle variants now measure the same height as the bar itself (previously only true for the large variant); confirmed the small handle's new 40px width and the bar's matching updated padding-left; confirmed the 700px breakpoint activates/deactivates at the correct width for both .qab-scroll and .toolbar-scroll; confirmed the new qab-scroll edge padding is present. NOT verified on a real iPhone or Android device -- this sandbox cannot render or measure real device safe-area/notch/gesture-bar geometry, so Lynn's own on-device testing is the real confirmation this needs. Regression suite: NOT run -- same network-blocked jsdom-install limitation as v0.1865 (see that entry and the Core Instructions' Rule 5).
   v0.1865 - NEW: "Clear app cache & reload" button in Settings > Debugging, per Lynn's report of Playwrite cursive fonts working correctly in a Safari tab but staying stuck on the fallback font inside the installed iOS PWA at the same URL. Root cause identified from the service worker's own fetch handler (unchanged since v0.1832/dev v0.1064): the non-HTML branch does cache.match() -> fetch-and-cache-if-missing, with no distinction between "never fetched" and "fetched and failed" -- a request made before the woff2 files existed on the server (a 404) gets cached exactly like a success would, and is then served from that cache forever, since match() never re-checks. This explained the Safari/PWA asymmetry precisely: Safari's cache never made that early failed request, the PWA's did. The new button (caches.keys() -> caches.delete() for every entry, then a forced reload) gives a direct, on-device way to clear exactly this kind of stuck bad cache entry without a version bump or PWA reinstall -- notes are explicitly unaffected, since Cache Storage (this button) and localStorage/IndexedDB (notes) are separate browser storage systems entirely. Confirmed via direct read of both the main and dev service worker source that this fix requires no service worker changes -- the existing fetch handler already re-caches correctly once the stale entry is gone. Button placed and styled to match the existing "Clear debug log" row exactly, reusing showConfirm/showToast rather than new UI.
   v0.1864 - Increased the QAB button letter size substantially on the actual note editor toolbar (distinct from the Settings dialog fix in v0.1863), per Lynn's report and screenshot of excessive whitespace inside the buttons -- a real accessibility concern, since these large buttons exist specifically for low-vision users. Investigated first: confirmed the button itself has zero CSS padding (padding: 0) -- the empty space was purely from the font-size multiplier being too conservative relative to the button's own dimensions (0.42x for one character, 0.28x for two), not any padding value to trim. Raised both multipliers substantially (0.42 to 0.58 for one character, 0.28 to 0.4 for two), tuned via iterative visual testing against real screenshots rather than guessed at once and assumed correct. Verified directly and thoroughly: confirmed no overflow even at the worst-case wide-character combinations (MM, WM, W, WW) both numerically (scrollWidth stays comfortably under the button's own width at every combination tested) and visually via screenshot; separately confirmed the exact letters from Lynn's own screenshot (S, E, F, TP) render dramatically larger and fuller than before; re-ran the 2-character-label test from an earlier build and confirmed nothing regressed; re-ran the full existing test suite and confirmed nothing regressed there either. Suite: 332/332 (harness v8).
   v0.1863 - FIX: the QAB button letter label in the Settings dialog didn't respect the app's own UI font size setting, per Lynn's report -- was using the browser's tiny default font-size, completely independent of --font-ui, unlike the action-picker trigger button immediately to its left (which correctly inherits .settings-select's font-size: var(--font-ui)). Made relative to --font-ui as she explicitly requested (larger than the base size specifically, since this input only ever holds 1-2 characters and can afford to be visually prominent), with minimized vertical padding so the letter itself fills more of the box height rather than being surrounded by whitespace. Height matching: initially tried a static CSS ratio (a font-size multiplier tuned against real measurement at the default UI size), but confirmed directly by testing at a much larger font size setting that this approach doesn't hold -- the gap between the two elements' heights widened from 1px to 6px, since both elements have fixed-pixel padding that doesn't scale proportionally with font-size the same way at every base size. Replaced with a JS-based live height sync (a ResizeObserver on the trigger button specifically, since this row can be created while its settings section is still collapsed and reporting zero height at creation time -- the observer correctly re-fires once the section actually expands and the trigger's real height becomes measurable), guaranteeing an exact match at any UI font size rather than an approximation tuned for one specific size. Verified directly and thoroughly: confirmed an exact height match (not just close) at three different UI font size settings -- the default (42px/42px), a much larger one (50px/50px), and a smaller one (36px/36px); confirmed the visual result via screenshot -- a large, clear two-character label correctly matching the height of the action picker beside it, with minimal wasted vertical space; re-ran the QAB 2-character-label test from an earlier build and confirmed nothing regressed; re-ran the full existing test suite and confirmed nothing regressed there either. Suite: 332/332 (harness v8).
@@ -2523,13 +2525,44 @@ body.qab-handle-enabled.qab-handle-collapsed #quick-action-bar { display: none !
 body.qab-enabled.qab-handle-enabled #quick-action-bar { padding-left: calc(56px + env(safe-area-inset-left, 0px)); }
 /* v0.1861 NEW, per Lynn's explicit request: much less reserved space
    for the small handle variant, matching its smaller footprint. */
-body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar { padding-left: calc(30px + env(safe-area-inset-left, 0px)); }
+body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar { padding-left: calc(40px + env(safe-area-inset-left, 0px)); }
+/* v0.1867 NEW, per Lynn's report and her own explicitly offered
+   alternative ("get rid of this rectangular area or make it
+   transparent"): the small handle is short by design, but the bar's
+   own opaque background used to fill the reserved column above it
+   regardless -- visually reading as a solid rectangle sitting above a
+   much shorter handle. Rather than making the handle tall enough to
+   fill that space (the large variant's approach, explicitly rejected
+   for small), this makes the reserved column itself genuinely
+   transparent -- a linear-gradient background, transparent up to
+   exactly the reserved width, opaque after it, so nothing but the
+   handle's own box (with its own background/border/shadow) appears in
+   that column at all. border-top and box-shadow still span the full
+   width (a faint 1px line / soft shadow, not a filled rectangle) --
+   flagged in case that's still visible enough to matter; easy to
+   scope this out of the small-handle column too if so. */
+body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar {
+  background: linear-gradient(
+    to right,
+    transparent calc(40px + env(safe-area-inset-left, 0px)),
+    var(--note-toolbar-bg, var(--bg2)) calc(40px + env(safe-area-inset-left, 0px))
+  );
+}
 
 #qab-collapse-handle {
   display: none; /* shown via body.qab-enabled.qab-handle-enabled below */
   position: fixed;
   left: 0;
-  bottom: 0;
+  /* v0.1866 FIX, per Lynn's report of the small handle being clipped by
+     the iPhone's curved corner: this used to be bottom:0 with the
+     safe-area compensation only applied as padding-bottom, which pushed
+     the ICON up inside the box but left the box's own edge/background
+     still sitting flush against the true screen edge -- inside the
+     curved-corner/home-indicator dead zone the physical screen itself
+     crops. Moving the compensation to an actual position offset lifts
+     the WHOLE box clear of that zone, not just its contents. Same total
+     safe usable height either way -- just correctly placed now. */
+  bottom: env(safe-area-inset-bottom, 0px);
   z-index: 21; /* just above the QAB bar (20), so it's always reachable */
   /* v0.1834 NEW, per Lynn's explicit request: "really thick and
      obvious for low vision people" -- deliberately large, not a
@@ -2538,10 +2571,10 @@ body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar { padding
      report of a real, confirmed gap between this fixed value and the
      bar's own actual rendered height: _qabSyncHandleHeight() now sets
      this precisely, live, to match the bar's real height exactly,
-     rather than this fixed guess. */
+     rather than this fixed guess. v0.1866: this height-sync now applies
+     to BOTH handle variants -- see that function's own updated comment. */
   width: 56px;
   height: 72px;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--note-toolbar-bg, var(--bg2));
   border: 2px solid var(--border);
   border-left: none; /* flush with the true screen edge */
@@ -2561,19 +2594,24 @@ body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar { padding
 }
 /* v0.1861 NEW, per Lynn's explicit request: a small, subtle variant
    for anyone who doesn't need the large low-vision-friendly version.
-   Fixed small dimensions -- NOT synced to the bar's full height like
-   the large variant (_qabSyncHandleHeight() skips this case, see its
-   own comment) -- taking up much less real estate at the same bottom-
-   left spot, with a proportionally smaller icon and border radius. */
+   v0.1866 CHANGED, per Lynn's report that 30px was too small to
+   reliably tap (and, on iPhone, sat entirely inside the corner-clip
+   zone even after the position fix above): width bumped to 40px --
+   still clearly, meaningfully smaller than the large variant's 56px,
+   but at/near the ~44px minimum touch target both Apple's and
+   Google's own platform guidelines recommend. Height is deliberately
+   NOT set here anymore -- see _qabSyncHandleHeight()'s updated
+   comment just below for why the exposed-background-gap bug needs
+   height to be synced (like the large variant), not fixed small. */
 body.qab-handle-small #qab-collapse-handle {
-  width: 30px;
-  height: 30px;
-  border-radius: 0 8px 8px 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 0 10px 10px 0;
   box-shadow: 1px 0 4px rgba(0,0,0,0.15);
 }
 body.qab-handle-small #qab-collapse-handle svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 /* Chevron flips to point up (away from the hidden bar, toward where it
    will reappear from) once collapsed -- down by default, since the
@@ -2601,8 +2639,34 @@ body.reading-mode:not(.qab-show-in-quiet) #qab-collapse-handle { display: none !
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* v0.1866 FIX, per Lynn's report: on Android specifically, the first
+     button could be clipped at the left scroll limit and there was no
+     breathing room after the last button at the right scroll limit
+     (iOS masked this with its own native overscroll "bounce," which
+     Android doesn't have). Real edge padding, not just inter-button
+     gap, ensures a visible margin exists on BOTH ends regardless of
+     platform bounce behavior. scroll-padding-inline reinforces the
+     same intent for browsers that respect it (e.g. with scroll-snap). */
+  /* v0.1867 FIX, per Lynn's follow-up report: 8px (v0.1866) wasn't
+     enough on Android -- the first button was still clipped at the
+     scroll start. Bumped left-edge padding specifically, per her own
+     direct suggestion. Right-edge padding left at 8px since that side
+     wasn't reported as still broken. */
+  padding-left: 20px;
+  padding-right: 8px;
+  scroll-padding-inline: 20px 8px;
 }
 .qab-scroll::-webkit-scrollbar { display: none; }
+/* v0.1866 NEW, per Lynn's explicit request: on medium/large screens
+   (viewport WIDTH, not touch capability -- a mouse-driven iPad in
+   landscape still gets this), QAB buttons look cramped together with
+   no real reason to stay tight the way small-phone-portrait screens
+   need. Reuses the same 700px breakpoint already established in this
+   app (v0.1771, "Show Back label on large screens") rather than
+   inventing a new one. */
+@media (min-width: 700px) {
+  .qab-scroll { gap: calc(var(--qab-size, 64px) * 0.32); }
+}
 /* Arrow buttons, same show/hide-on-overflow and dim-at-limits behavior
    as the toolbar's, sized to sit comfortably alongside much larger QAB
    buttons rather than the toolbar's own small icon-sized arrows. */
@@ -2681,6 +2745,36 @@ body.qab-shape-square .qab-btn { border-radius: 14%; }
   background: var(--note-accent, var(--accent)) !important;
   color: var(--qab-active-fg, #ffffff) !important;
   border-color: var(--note-accent, var(--accent)) !important;
+}
+/* v0.1867 NEW, per Lynn's request and her pick of prototype Option D:
+   an alternative to the accent-filled "lit up" look above, for anyone
+   who finds a colored background too visually loud for daily use.
+   Uses ONLY each locked scheme's own existing color -- no accent
+   color, no new color introduced. Thicker border + a faint (8%) tint
+   of that same color as background, so "active" reads clearly without
+   competing visually the way a solid accent fill does. Deliberately
+   NOT using color-mix() or currentColor here -- color-mix() is too
+   recent to trust across the older phones this app needs to run on,
+   and currentColor got genuinely ambiguous against this file's
+   existing scheme-rule cascade (a pre-existing specificity tie between
+   .qab-active and the scheme rules, not something this change should
+   try to also untangle). Explicit per-scheme rules instead: simple,
+   plain rgba(), and unambiguous regardless of cascade order elsewhere.
+   Applied via body.qab-subtle-highlight, toggled by
+   _qabSubtleHighlightActive() based on the new tri-state
+   settings.quickActionBar.subtleHighlight setting
+   ('off'/'on'/'quietOnly') -- see that function's own comment. */
+body.qab-subtle-highlight.qab-scheme-blackOnWhite .qab-btn.qab-active {
+  background: rgba(0,0,0,0.08) !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+  border-width: 5px !important;
+}
+body.qab-subtle-highlight.qab-scheme-whiteOnBlack .qab-btn.qab-active {
+  background: rgba(255,255,255,0.08) !important;
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+  border-width: 5px !important;
 }
 
 /* Locked, theme-INDEPENDENT high-contrast pairs -- deliberately not
@@ -4643,6 +4737,11 @@ body.hide-toolbar-collapse-tab #toolbar-collapse-tab { display: none !important;
   /* border-radius removed — rounded ends are drawn by cap divs inside the scroll */
 }
 .toolbar-scroll::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+/* v0.1866 NEW, per Lynn's explicit request: same reasoning as the QAB's
+   matching rule above -- viewport WIDTH, not touch capability. */
+@media (min-width: 700px) {
+  .toolbar-scroll { gap: 22px; }
+}
 /* Remove all padding on toolbar icon buttons so they expand with icon size */
 .toolbar-scroll .icon-btn { padding-top: 0; padding-bottom: 0; padding-left: 0; padding-right: 0; }
 
@@ -11891,6 +11990,26 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
         </div>
       </div>
 
+      <!-- v0.1867 NEW, per Lynn's explicit request: tri-state, not a
+           toggle, since she specifically wanted a "quiet mode only"
+           middle option, not just on/off. Governs toggle-type buttons
+           (Tap to Edit, Quiet Mode, etc.) -- when active, they show a
+           subtle border+tint highlight (her chosen prototype option)
+           instead of the default accent-colored fill. -->
+      <div class="settings-row" id="qab-subtle-highlight-row">
+        <div>
+          <div class="settings-row-label">Use Subtle Highlighting</div>
+          <div class="settings-row-desc">For toggle buttons like Tap to Edit or Quiet Mode: a plain color fill is easiest to see for low vision, but can feel distracting during everyday use. This shows a subtle border highlight instead. Off by default.</div>
+        </div>
+        <div style="flex:1">
+          <select class="settings-select" id="qab-subtle-highlight-select">
+            <option value="off">Off (colored fill)</option>
+            <option value="on">On (always subtle)</option>
+            <option value="quietOnly">Quiet mode only</option>
+          </select>
+        </div>
+      </div>
+
       <div id="qab-slots-container"></div>
       <div class="settings-row">
         <button id="qab-add-slot-btn" class="settings-select" style="width:100%;text-align:center;cursor:pointer;">+ Add another button</button>
@@ -12875,7 +12994,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1865';
+const APP_VERSION = '0.1867';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -33492,6 +33611,7 @@ function makeImportFolderName(label) {
     ['plus-position-select', '+ Button Inserts At'],
     ['voice-select', 'Voice'],
     ['qab-color-select', 'Quick Action Bar Button Colors'],
+    ['qab-subtle-highlight-select', 'Quick Action Bar Use Subtle Highlighting'],
   ].forEach(function(pair) {
     var el = document.getElementById(pair[0]);
     if (el) enhanceSelectWithCustomPicker(el, { title: pair[1] });
@@ -34673,6 +34793,10 @@ function makeImportFolderName(label) {
   });
   document.getElementById('qab-color-select').addEventListener('change', function() {
     settings.quickActionBar.colorScheme = this.value;
+    updateSaveBtnState();
+  });
+  document.getElementById('qab-subtle-highlight-select').addEventListener('change', function() {
+    settings.quickActionBar.subtleHighlight = this.value;
     updateSaveBtnState();
   });
   // v0.1819 NEW, per Lynn's request: adds an empty slot and re-renders
@@ -41087,9 +41211,25 @@ function _qabActionById(id) {
 // every button just to update one's coloring. Safe to call whenever a
 // toggle-able state changes, even if the Quick Action Bar is currently
 // disabled or has no buttons configured (no-op in that case).
+// v0.1867 NEW, per Lynn's request: resolves the tri-state
+// settings.quickActionBar.subtleHighlight setting ('off'/'on'/
+// 'quietOnly') against the app's CURRENT live state. 'quietOnly'
+// depends on whether quiet/reading mode is active right now, which can
+// change independently of any QAB settings change -- so this can't
+// just be computed once and cached; it's re-resolved every time
+// _qabRefreshActiveStates() runs, and that function already gets
+// called from both toggleReadingMode() and clearReadingMode(), so no
+// new call sites are needed anywhere for this to stay correct live.
+function _qabSubtleHighlightActive() {
+  var v = settings.quickActionBar && settings.quickActionBar.subtleHighlight;
+  if (v === 'on') return true;
+  if (v === 'quietOnly') return document.body.classList.contains('reading-mode');
+  return false; // 'off', unset, or any unrecognized legacy value
+}
 function _qabRefreshActiveStates() {
   var scrollEl = document.getElementById('qab-scroll');
   if (!scrollEl) return;
+  document.body.classList.toggle('qab-subtle-highlight', _qabSubtleHighlightActive());
   scrollEl.querySelectorAll('.qab-btn').forEach(function(btn) {
     var action = _qabActionById(btn.getAttribute('data-action'));
     var active = !!(action && action.isActive && action.isActive());
@@ -41161,18 +41301,22 @@ function _qabResolveColorScheme(cfg) {
 // rotation, etc.) and directly from renderQuickActionBar() below (for
 // immediate correctness on first render, not dependent solely on the
 // observer's own async callback timing).
+// v0.1867 REVERTED, per Lynn's report: syncing height for the small
+// variant (v0.1866's fix) made it just as tall as the large handle,
+// which she explicitly does NOT want -- small needs to stay genuinely
+// short. Back to skipping height-sync for the small variant, exactly
+// like v0.1861 originally did -- but this time the background-gap
+// problem that made v0.1861's original skip visually broken is solved
+// a completely different way: see body.qab-handle-small
+// #quick-action-bar's new transparent-background rule just below the
+// handle's own CSS, which makes the reserved column genuinely
+// transparent (per Lynn's own explicitly offered alternative: "get rid
+// of this rectangular area or make it transparent") instead of trying
+// to make the handle tall enough to fill it.
 function _qabSyncHandleHeight() {
   var bar = document.getElementById('quick-action-bar');
   var handle = document.getElementById('qab-collapse-handle');
   if (!bar || !handle) return;
-  // v0.1861 NEW, per Lynn's explicit request: the small handle variant
-  // uses its own small, fixed CSS height (30px) rather than matching
-  // the bar -- that's the whole point of it taking much less space.
-  // Clears any stale inline height left over from a previous large-
-  // handle state (e.g. switching the setting without a full reload),
-  // since an inline style always wins over CSS regardless of selector
-  // specificity -- simply adding a CSS rule for the small size wasn't
-  // enough on its own while this function kept setting one inline.
   if (settings.quickActionBar && settings.quickActionBar.smallHandle) {
     handle.style.height = '';
     return;
@@ -41251,6 +41395,10 @@ function renderQuickActionBar() {
   // bar's own actual rendered height, same reasoning and same
   // measure-don't-assume approach as _qabReserveSpace() just above.
   _qabSyncHandleHeight();
+  // v0.1867 NEW: ensures a settings change (including the new subtle-
+  // highlight setting) applies immediately on save, not just the next
+  // time some other toggle (quiet mode, etc.) happens to call this.
+  _qabRefreshActiveStates();
 }
 
 // Split out from renderQuickActionBar() so pinToolbars() (called on
@@ -41468,6 +41616,9 @@ function syncQuickActionBarSettingsUI() {
   // the dropdown could never show "System" as selected even when
   // that's the real, deliberate choice.
   if (colorSel) { colorSel.value = cfg.colorScheme || 'system'; if (colorSel._refreshPickerTriggerLabel) colorSel._refreshPickerTriggerLabel(); }
+
+  var subtleSel = document.getElementById('qab-subtle-highlight-select');
+  if (subtleSel) { subtleSel.value = cfg.subtleHighlight || 'off'; if (subtleSel._refreshPickerTriggerLabel) subtleSel._refreshPickerTriggerLabel(); }
 
   _qabRenderSlotRows();
 }
