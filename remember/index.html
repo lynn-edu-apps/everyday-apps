@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1867 -->
+<!-- Remember App - Version 0.1879 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1867
+  Version 0.1879
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,18 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1879 - FIX: the small-handle scroll direction was exactly backwards, per Lynn's precise, patient correction of the terminology confusion. Her stated convention: "scrolled to the right" = seeing the START of content (button 1, protected by the padding-shield) -- an ordinary, untouched resting scroll position. "Scrolled to the left" = seeing the END (the last buttons) -- which is what v0.1877/v0.1878's "scroll to the technical maximum" logic actually produced, the exact opposite of what she'd asked for. Fixed by removing that scroll-manipulation code entirely -- it's not needed at all. A plain, never-touched resting scrollLeft (0) combined with the padding-shield CSS already shows button 1 fully protected; the real fix needed was deciding WHEN that shield CSS should even apply. Also implemented her separate, explicit reminder from the same exchange: "I only want this automatic scrolling to happen if there are enough buttons to cause overflow. Otherwise... just centered" -- v0.1878's padding+flex-start rule was unconditional for ANY small-handle configuration, contradicting this. Scoped it to a new class, qab-handle-small-overflowing, toggled by JS only when the buttons genuinely overflow. Measured carefully to avoid a false-positive: the class is explicitly removed BEFORE measuring (in case stale from a previous render), so the overflow check reflects the buttons' own natural width, not width already inflated by the shield padding itself -- the padding is a few dozen pixels, potentially enough to flip a borderline case into artificial "overflow" if measured with it already applied. When not overflowing, no special class, .qab-scroll falls through to the ordinary base rule -- a short row centers exactly as it always has, resolving v0.1878's previously-accepted "short rows no longer center" trade-off entirely rather than leaving it as a known limitation. Verified directly: confirmed the scroll-to-maximum code is fully removed, not just disabled; confirmed the new class is correctly removed-then-conditionally-restored on every render (not just added and never cleared, which would have left it stuck on after a note's buttons were reconfigured down to a non-overflowing count); confirmed the CSS rule only targets .qab-scroll when this specific class is present on body. NOT verified end-to-end on a real device -- this sandbox cannot render real layout or touch scrolling; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1878 - FIX: a real bug in v0.1877, not a valid simplification, per Lynn's direct correction and pointed question ("can you tell what it looks like... can you detect that the first button is not visible?"). Answered honestly: no, this sandbox cannot render or observe the running app -- but tracing v0.1877's own logic by hand confirmed she was right regardless: with the padding removed, the REAL first button sat flush at screen x=0, directly under the floating handle, exactly the "obstructed" problem this whole feature exists to prevent. Restored v0.1875's padding-left: var(--qab-size) trick (an empty slot the width of one button, so the handle covers something disposable instead of a real button) -- but this time WITH justify-content:flex-start also restored alongside it, not just the padding alone. Explained directly to Lynn why the two are linked: the handle floats at a fixed screen position, but centered content's actual screen position shifts depending on how many buttons are configured -- a short, non-overflowing row centered in the bar might not start anywhere near the handle at all, meaning the padding could end up misaligned with it, and in some configurations a real button could still end up underneath. Left-aligning guarantees the padding always lines up with the handle regardless of button count. Flagged this honestly as a real, acknowledged trade-off (a short button row no longer visually centers in the bar for this specific case) rather than silently picking one of Lynn's two stated preferences over the other without telling her they were in tension. The v0.1877 overflow-to-maximum JS logic is completely unchanged and untouched -- it operates independently of this CSS restoration and doesn't need to know about it. Verified directly: confirmed the restored rule matches v0.1875's original values exactly, with flex-start added; confirmed the JS overflow branch still reads the same scrollWidth/clientWidth values correctly with the padding now back in the layout. NOT verified end-to-end on a real device -- this sandbox cannot render real layout; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1877 - REDESIGNED small-handle scroll behavior again, per Lynn's clarified follow-up correcting v0.1876's "exactly one button width" pin once she saw it in practice -- not layered on top of that build, fully replaced. Her restated design, implemented literally: (1) OVERFLOW case (enough buttons to need scrolling) -- scroll to the TRUE maximum (scrollWidth - clientWidth), so whatever's visible at rest is a complete, unobstructed set of buttons, nothing partially hidden behind the handle; earlier buttons remain reachable by scrolling back toward the start, same as always. (2) NO-OVERFLOW case (few buttons, nothing to scroll) -- do nothing at all, zero scroll manipulation, leaving the row centered exactly as every other QAB configuration already behaves -- "just as it always has been in previous builds," her own words. Also removed v0.1875's phantom-slot padding-left entirely, per the same "just as it always has been" framing -- .qab-scroll now has ZERO special CSS for the small-handle case, inheriting the identical base rule (the general 20px/8px Android-clipping fix) every other configuration already uses. The overflow/no-overflow branch uses the same +2px tolerance _qabUpdateScrollArrows() already uses elsewhere in this file for its own overflow check, for consistency rather than a separately-invented threshold. Verified directly: confirmed the CSS override is fully removed (small-handle .qab-scroll now matches the base rule with no exceptions); confirmed the JS branch correctly distinguishes overflow vs non-overflow using the same measurement pattern (scrollWidth/clientWidth, read synchronously right after buttons are appended, no rAF needed) already proven elsewhere in this function. NOT verified end-to-end on a real device -- this sandbox cannot render real layout or touch scrolling; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1876 - FIX: small-handle QAB scroll position looking "random" on each note open, per Lynn's report. Root cause: #qab-scroll is the same DOM element reused across every note (not recreated per-note), so it was simply retaining whatever scrollLeft was left over from wherever the PREVIOUS note's QAB happened to be scrolled -- naturally looking arbitrary from note to note, since it depended entirely on unrelated prior scrolling, not on anything about the note actually being opened. Now explicitly pinned to exactly one button's width (var(--qab-size) in pixels, the same value the v0.1875 phantom-slot padding uses, so the two always stay in sync) every time renderQuickActionBar() runs -- which already covers note-open via the existing setTimeout(renderQuickActionBar, 0) in openNote(). Deliberately applied on every render trigger, not narrowly scoped to note-open specifically, favoring predictability (the scroll position is always exactly the same, full stop) over trying to distinguish which of several render triggers is "the note-open one" -- flagged in case Lynn wants this scoped narrower after testing. Verified directly: confirmed the pinned value reads the same `size` variable already computed earlier in the same function (no separate CSS round-trip, can't drift out of sync with the padding value), and confirmed it's gated behind both cfg.smallHandle and cfg.showCollapseHandle, matching every other small-handle-specific behavior in this file. NOT verified end-to-end on a real device -- this sandbox cannot render real layout or touch scrolling; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1875 - BACKED OUT v0.1874 entirely and replaced with a much simpler design, per Lynn's direct correction: "sometimes you seem to get left and right confused" -- she's right that v0.1874's directional reasoning about scroll gestures was shaky, and the whole JS snap-to-boundary approach was more complex than the problem needed. Her own restated design: the small-handle case should behave in EVERY scroll respect exactly like the no-handle case -- no special scroll-position logic at all. The only difference: padding-left on .qab-scroll equal to one full button's own width (var(--qab-size), scales correctly with the size setting), an empty "phantom first slot" exactly as wide as a real button. At the row's ordinary, completely unmodified resting scroll position, this empty slot naturally sits where the handle floats, and the first REAL button starts immediately after it -- fully visible, never obstructed, with zero JS scroll manipulation needed. _qabNudgeScrollPastSmallHandle() (both the original v0.1868 version and v0.1874's redesigned snap-to-boundary version) is removed entirely, along with its call site in renderQuickActionBar() -- not left in as unused dead code. justify-content is also no longer overridden for the small-handle case (v0.1874 had set flex-start) -- left at its ordinary inherited default (center), matching every other QAB configuration in the app exactly, per Lynn's "acts exactly like there's no handle" framing. Verified directly: confirmed .qab-scroll's padding-left now reads var(--qab-size, 64px) for the small-handle case; confirmed no justify-content override remains there; confirmed both the function definition and its sole call site are fully removed, with no dangling reference anywhere in live code (only historical changelog entries and old code comments still mention the removed function's name, which is expected and correct -- this project's changelog is a permanent record, not something rewritten after the fact). NOT verified end-to-end on a real device -- this sandbox cannot render real layout or touch scrolling; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1874 - REFINED small-handle scroll behavior, per Lynn's detailed follow-up clarifying exactly what she wants (confirmed her intent before implementing rather than guessing, since this genuinely had a real mathematical tension worth surfacing): a real, small, permanent left gap (part of the scrollable content, so it moves WITH scrolling rather than being a separate fixed wall like the actual bug fixed in v0.1873); on first opening a note, NO button should be even partially covered by the handle -- whichever button is first visible must be completely clean; but scrolling further toward the true start should still be able to slide the first button under the handle, which is fine and expected. (1) Re-added a small 16px padding-left to .qab-scroll for the small-handle case -- explicitly NOT the same mechanism as the bug fixed in v0.1873 (that was a separate, non-scrolling reservation on the OUTER bar; this lives inside the scrollable content itself, so at true scrollLeft:0 everything, gap included, slides off the true screen edge together, avoiding the "artificial wall" look Lynn specifically didn't want back). (2) REDESIGNED _qabNudgeScrollPastSmallHandle(): the original approach (scroll exactly to the handle's raw pixel width) can land mid-button, leaving it HALF covered -- exactly the "partly obstructed" look Lynn said she doesn't want. Now measures every real .qab-btn's actual on-screen position and snaps to the first one whose left edge is fully clear of the handle, so the initial view always shows a complete, clean button -- never a sliver. If no button qualifies (a very small/heavily-configured bar), falls back to scrolling as far as possible rather than an awkward partial view. Deliberately built on getBoundingClientRect() math rather than .offsetLeft -- caught during implementation that .offsetLeft resolves relative to the nearest POSITIONED ancestor (#quick-action-bar itself, position:fixed), not .qab-scroll, a subtly different coordinate space from scrollLeft's own; the two are nearly identical in practice here but "nearly identical" isn't the same as correct, so used an approach that's unambiguous regardless of the positioning chain. Verified directly: confirmed the padding is part of the scrollable content (not the outer bar) by checking it lives on .qab-scroll, not #quick-action-bar; confirmed the snap logic's fallback path for the edge case of zero qualifying buttons. NOT verified end-to-end on a real device -- this sandbox cannot render real layout or touch scrolling; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1873 - TWO real fixes, per Lynn's second on-device debug log, which conclusively disproved v0.1872's fix and pointed straight at the actual root cause. (1) THE REAL BUG: QAB-SCROLL-DIAG showed .qab-scroll's own rect starting at screen x=56 despite its OWN padding correctly measuring 0px (v0.1872's fix, confirmed working exactly as intended) -- something OUTSIDE .qab-scroll was still pushing everything over. Found it: #quick-action-bar itself (the OUTER bar) has always had its own separate `padding-left: calc(56px + safe-area-inset-left)` rule, meant to reserve space for the LARGE handle. The v0.1868 redesign's own comment explicitly claimed "no reserved space at all for the small variant" -- that was the correct, stated INTENT, but the actual CSS override needed to make it true was never written; deleting the old small-specific 40px override in v0.1868 left this base 56px rule falling through and applying instead, the exact opposite of the documented goal. This is why nothing since v0.1868 actually fixed it -- every attempt (v0.1868's transparency, v0.1872's scroll-padding fix) was correctly implemented but touched a DIFFERENT element than the one actually causing the 56px offset. Fixed now by adding the actually-missing override (padding-left: safe-area-inset-left only, no reservation) scoped to body.qab-handle-small. (2) SECOND contributing bug, found while re-checking rather than assuming one fix was the whole story: .qab-scroll has justify-content:center, a well-documented CSS gotcha on an OVERFLOWING flex row -- browsers can distribute the extra invisible space asymmetrically around centered overflow content, meaning scrollLeft:0 doesn't reliably mean "first item flush at the left edge" the way flex-start does. Per Lynn's own explicit request ("the leftmost QAB button should start rendering at very close to an X value of zero"), changed to flex-start, scoped to body.qab-handle-small specifically so the no-handle and large-handle cases keep their existing (intentionally nicer for a short, non-overflowing row) centered look. Also clarified directly for Lynn: this was never a z-index conflict between buttons and the bar's background, as her question suspected -- buttons are children painted on top of their parent's background by ordinary DOM stacking; what she was seeing is that no button was actually POSITIONED at that spot at all, a layout/offset bug, not a stacking-order bug. Both fixes worked through by hand from her real, precise numbers (confirmed exact: 56px offset matches the large handle's reservation width precisely) -- not guessed at. NOT verified end-to-end on a real device, since this sandbox cannot render real layout; called for Lynn's next test to confirm. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1872 - LIKELY REAL FIX, per Lynn's on-device debug log -- the first genuinely conclusive data this investigation has had. Her log's QAB-MYSTERY-DIAG lines settle the "what is this element" question directly: document.elementFromPoint() at the suspect location returned #quick-action-bar itself (its own plain background) at every sampled point, not any hidden or separate element. This reframes the whole bug: it was never a rogue element -- it's a real GAP in the button row where no button is positioned. Root cause: .qab-scroll's general-purpose 20px left padding (v0.1867, added for an unrelated Android button-clipping problem) was never designed with the small handle's later floating-overlay redesign (v0.1868) in mind, and doesn't line up with what _qabNudgeScrollPastSmallHandle() actually scrolls past -- leaving real dead space the floating handle only partially covers, exactly matching Lynn's description of a rectangle "partly underneath" the handle. Fixed by zeroing that padding specifically for the small-handle case (body.qab-handle-small .qab-scroll), where the handle's own floating overlay plus the existing scroll nudge are the only mechanism actually needed -- worked through by hand: with padding removed, the first button now starts flush at position 0, the nudge scrolls exactly past the handle's own width, and what's left visible trailing behind the handle is fully covered by the handle itself rather than leaving a gap beside it. Left completely unchanged for every other case (large handle, no handle at all) -- the original Android-clipping problem that padding exists for is still real there and still needs it. Also added direct QAB-SCROLL-DIAG and QAB-FIRSTBTN-DIAG logging (real scrollLeft/scrollWidth/padding values and the first button's actual rect) alongside the existing diagnostics, so Lynn's next test will directly confirm or refute this fix's own math rather than relying on visual impression alone. Called "likely" rather than "confirmed" deliberately -- this sandbox cannot render real layout, so this is a well-reasoned fix worked through by hand from real device data, not something verified end-to-end here. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1871 - DIAGNOSTIC BUILD UPDATE, per Lynn's much more precise description of the still-unresolved mystery area: taller than the QAB buttons, left side only, partly BEHIND the small handle (lower z-index) but IN FRONT of the buttons (higher z-index), showing plain background where buttons should be visible, confirmed present on both iOS and Android (ruling out any browser-specific cause). The v0.1870 diagnostic data came back showing the handle at a correct 48x48 and the scroll arrow genuinely hidden (0x0, both CSS media queries confirmed matching) -- neither explains what Lynn is describing, and continuing to guess from named elements risks another round of fixing the wrong thing. Added a direct document.elementFromPoint() diagnostic instead -- the definitive way to identify an unknown rendered element regardless of what it's called or whether its existence was already known, sampled at three points spanning the described area (just above the handle, and further up, since the mystery rectangle is reportedly taller than the handle itself). Logs each sampled point's actual element (tag/id/class), computed background color, z-index, position, and bounding rect. No other functional changes. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1870 - DIAGNOSTIC BUILD UPDATE, per Lynn's photo-annotated screenshot (a genuinely sharp catch on her part, not something I re-derived myself): she correctly clarified two things that redirect this investigation. First, the earlier screenshot did NOT show a virtual keyboard -- what looked like keyboard keys were actually the QAB's own configured letter buttons (M/T/E/Q/O); I had misread the image. Second, and more useful: she circled the exact mystery area with a photo-editing tool, and it sits precisely where the QAB's left scroll arrow renders when a mouse is attached -- exactly matching her original suspicion from several builds ago, which v0.1868's own changelog had WRONGLY claimed was ruled out. That claim is corrected here: it was based only on the CSS looking correct on paper (both hiding rules ARE well-formed, properly !important, and redundant via two different conditions -- touch/pointer detection and, since v0.1868, screen width too), never actually confirmed against her real device. "Looks correct in the source" was overstated as settled when it wasn't. Per her explicit request to stop relying on screenshots and switch to debug statements, the v0.1869 diagnostic block now ALSO logs the left scroll arrow's real on-device state: its actual rendered rect and position, computed display value, any lingering inline style, and -- critically -- whether each of the two hiding media queries (touch/pointer and max-width:699px) actually evaluates as matching on her real device via window.matchMedia(), which is the one thing pure code review can never confirm. No other functional changes. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1869 - TEMPORARY DIAGNOSTIC BUILD, per Lynn's report that the small handle still appears full-height on her real iPhone even at v0.1868, and her follow-up question about Safari Web Inspector -- confirmed via web search that genuine on-device inspection requires a Mac (no way around this natively; third-party apps/bookmarklets are the only Mac-free options, and are limited), so rather than ask Lynn to install a third-party tool, this logs the handle's real computed geometry straight into the app's OWN existing debug log (Settings > Debugging > View system log), which she already knows how to use. Exhaustive static review of v0.1868's actual delivered code found no bug: CSS specificity genuinely favors the 48px small-variant override over the base 72px rule; comment-balance was rechecked given this project's own documented history of unclosed-comment bugs, and is fine here; only one #qab-collapse-handle element exists in the HTML (no duplicate); only one place in JS sets inline height on it, and it correctly clears (not sets) for the small variant; the zoom-compensation system never touches the handle at all. Since the code review came up clean, this build adds one temporary, clearly-flagged diagnostic block (gated to only log when the small handle is actually active) reporting the handle's real getBoundingClientRect() dimensions, computed style height/width, any lingering inline style, and the live body class list -- everything needed to tell, from a real device, whether the CSS genuinely isn't applying (a real bug still not found) or whether something else entirely is being misidentified as the handle. Meant to be removed once Lynn reports back what the log shows. No other functional changes in this build. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1868 - Small collapse handle REDESIGNED FROM SCRATCH, per Lynn's explicit direction after v0.1866 and v0.1867 both failed to actually solve the problem (v0.1866: made it as tall as the large handle, unwanted; v0.1867: made the leftover space transparent, which showed raw note content bleeding through instead of buttons -- Lynn correctly identified this as "a mysterious element" that shouldn't exist at all). Root realization: the large handle has never had this problem because its height is synced to match the bar's real height (v0.1860) -- nothing is ever left uncovered. Every fix attempted for the small handle instead tried to paper over the mismatch between its deliberately-short height and the bar's own full height. The actual fix: stop reserving space for the small handle at all. It's now a pure floating overlay (the existing z-index already puts it above the bar) -- exactly "nothing other than the collapse handle and the toolbar buttons," Lynn's own words. Both the padding-left reservation AND the v0.1867 transparent-gradient background are removed entirely for the small-handle case; the bar's background is now always its normal, plain, single color, in every state. To keep the first button from starting out permanently hidden under this now-unreserved floating handle (which would happen most of the time, right after opening a note), added _qabNudgeScrollPastSmallHandle(): a one-time initial scroll-position nudge (NOT a reserved space, NOT a new element) that starts the row just past the handle's current width. A user can still scroll back left under the handle if they choose to -- the handle will visibly overlap that one button in that case, an accepted, expected consequence of a floating control, not a bug. Also, per Lynn's on-device report that the small handle was still too small in BOTH dimensions even at last build's 40px: bumped to a fixed 48x48px (up from 40px width only), a comfortable, easy-to-hit square -- still clearly, meaningfully smaller than the large variant. Separately investigated Lynn's suspicion that the QAB scroll arrows were her "mystery element": confirmed they were NOT (they're already hidden on any touch device via the existing v0.1854 media query, and were never the actual cause) -- but added a second, width-based hard-hide (`max-width: 699px`) as defense-in-depth and for consistency with her stated preference for width-based rather than touch-based logic elsewhere in this same session. CAUGHT AND FIXED A REAL BUG BEFORE SHIPPING, not left in: while writing the new _qabNudgeScrollPastSmallHandle() comment, several lines were accidentally written with `#` instead of `//` (a genuine typo, not JS comment syntax at all) -- this would have been a hard syntax error, breaking the entire script block and likely the whole app. Caught by re-reading the actual diff before delivery, not assumed correct on the first pass -- fixed to proper `//` comments before this build was finalized. Verified directly: confirmed no stray `#`-prefixed lines remain anywhere in the affected region; confirmed the small-handle-specific padding-left and transparent-gradient CSS rules are both fully removed (the large handle's own matching rules are completely untouched); confirmed the new 48x48 dimensions; confirmed the nudge function is correctly gated to only affect the small-handle-plus-enabled-handle case, and is wired into renderQuickActionBar() right after the existing height-sync call. NOT verified on a real iPhone or Android device -- whether the floating-overlay approach actually reads correctly, and whether 48px is now comfortable to tap, both need Lynn's own on-device testing; this sandbox cannot render real device touch/geometry. Regression suite: NOT run -- same network-blocked jsdom-install limitation as the previous three builds (Core Instructions Rule 5).
   v0.1867 - THREE items, per Lynn's testing report on real iPhone and Android devices right after v0.1866. (1) FIX/REVERT: v0.1866's height-sync unification made the small collapse handle just as tall as the large one, which Lynn explicitly does not want -- small needs to stay short. Reverted _qabSyncHandleHeight() to skip the small variant again (back to a fixed, short 40x40px box), but this time solved the original exposed-background-rectangle problem a genuinely different way, per Lynn's own explicitly offered alternative ("get rid of this rectangular area or make it transparent"): the QAB bar's own background is now a linear-gradient, transparent for exactly the reserved handle-width column and opaque everywhere else, instead of trying to make the handle tall enough to fill that space. Scoped to body.qab-handle-small specifically -- the large variant's existing, already-correct height-sync behavior is completely untouched. (2) FIX: Android still clipping the first QAB button at the scroll start even after v0.1866's 8px edge padding -- bumped left-edge padding to 20px specifically, per Lynn's own direct suggestion, right-edge left at 8px since that side wasn't reported as still broken. Honestly flagged: this is an empirical bump matching her suggested fix, not a root-cause diagnosis -- unclear why 8px wasn't sufficient on Android without being able to test on a real device. (3) NEW: the tri-state "Use Subtle Highlighting" setting (Off/On/Quiet mode only), wired to Lynn's chosen prototype Option D (thicker border + a faint 8% tint of the button's own existing scheme color as background -- no accent color, no new color introduced). Deliberately NOT implemented with color-mix() or currentColor -- color-mix() is too recent to trust across older phones this app needs to run on, and currentColor got genuinely ambiguous against this file's own pre-existing cascade (a specificity tie between .qab-active and the scheme rules that predates this change and wasn't this change's job to untangle); explicit per-scheme rgba() rules instead, simple and unambiguous. New settings.quickActionBar.subtleHighlight value, defaulting to 'off' (unchanged accent-fill behavior for anyone who doesn't touch this). 'quietOnly' is resolved LIVE against the current reading-mode state every time _qabRefreshActiveStates() runs -- already correctly called from both toggleReadingMode() and clearReadingMode(), so no new call sites were needed there; one new call added at the end of renderQuickActionBar() so a Settings-dialog change to this setting itself applies immediately on save. Settings UI (a 3-option dropdown, matching the existing Button Colors row's exact pattern) automatically got the native-select-on-iOS-ignores-font-size fix (v0.1857) for free, since it shares that existing static-select enhancement/search-registration loop rather than needing its own separate wiring. Verified directly: confirmed the small handle's height is once again independent of the bar's real height (back to a fixed 40px); confirmed the transparent-gradient math correctly matches the handle's reserved width; confirmed the new select's change handler, load-into-UI default ('off' when unset), and settings-search entry are all present and match the color-select's proven pattern exactly. NOT verified on a real iPhone or Android device, including whether the transparent-column fix actually looks right and whether 20px genuinely fixes the Android clipping -- this sandbox cannot render real device geometry; Lynn's own on-device testing is what actually confirms both. Regression suite: NOT run -- same network-blocked jsdom-install limitation as the previous two builds (Core Instructions Rule 5).
   v0.1866 - FOUR QAB fixes, per Lynn's detailed report with iPhone/Android screenshots (three items from her list deferred -- see below, and NOT included here). (1) FIX: small collapse handle clipped by the iPhone's curved corner -- root cause: the safe-area compensation was only ever applied as padding-bottom (pushing the icon up inside the box) while the box's own edge/background stayed flush at bottom:0, still sitting inside the corner-clip/home-indicator dead zone. Moved the compensation to an actual `bottom: env(safe-area-inset-bottom, 0px)` position offset instead, lifting the whole box clear of that zone -- same total safe height, correctly placed. (2) FIX: solid opaque background strip above the small handle, blocking QAB buttons -- this is the exact same class of bug v0.1860 already fixed for the LARGE handle (handle height not synced to the bar's real, taller content height), reintroduced for the small variant specifically because v0.1861 deliberately excluded it from that sync. _qabSyncHandleHeight() no longer has a small-variant skip branch -- both variants now sync height identically; only WIDTH stays variant-specific. (3) FIX: small handle too tiny to reliably tap -- width bumped 30px -> 40px (at/near the ~44px minimum touch target both Apple's and Google's platform guidelines recommend), still meaningfully smaller than the large variant's 56px; icon 16px -> 18px; the bar's own reserved padding-left updated to match. (4) NEW: on medium/large screens (a `min-width: 700px` media query -- confirmed for Lynn: this is genuinely viewport WIDTH, not touch-vs-mouse capability, so a mouse-driven iPad in landscape gets this too, same as any wide phone) both the QAB and the main lower toolbar now use noticeably wider button spacing, since cramped-together spacing only ever made sense on small-phone-portrait widths. Reused the app's existing 700px breakpoint (v0.1771) rather than inventing a new one. Also added real horizontal edge padding (8px, both sides) plus scroll-padding-inline to .qab-scroll, per Lynn's report that Android specifically could clip the first button at the left scroll limit and had no breathing room after the last button at the right limit (iOS's native overscroll "bounce" was masking the same underlying missing-padding issue there). DEFERRED, not guessed at blindly: (a) Lynn's report that Android could sit ~20px lower with room to spare -- no reliable existing way in this codebase to detect Android specifically via CSS, and a wrong platform-wide guess risks a regression on some Android devices/browsers while looking fine on others; needs either a specific measurement or a screenshot showing the gap clearly before attempting. (b) The new tri-state "use subtle highlighting" setting for QAB toggle-buttons (off/on/quiet-mode-only) -- per Lynn's own explicit request to see prototype style options before committing to one, a separate small prototype artifact with several candidate subtle-highlight styles was delivered alongside this build instead of guessing at final CSS; the real setting will be wired in once she picks a direction. Verified directly: confirmed the handle's new bottom offset computes correctly with a simulated safe-area-inset-bottom value; confirmed BOTH handle variants now measure the same height as the bar itself (previously only true for the large variant); confirmed the small handle's new 40px width and the bar's matching updated padding-left; confirmed the 700px breakpoint activates/deactivates at the correct width for both .qab-scroll and .toolbar-scroll; confirmed the new qab-scroll edge padding is present. NOT verified on a real iPhone or Android device -- this sandbox cannot render or measure real device safe-area/notch/gesture-bar geometry, so Lynn's own on-device testing is the real confirmation this needs. Regression suite: NOT run -- same network-blocked jsdom-install limitation as v0.1865 (see that entry and the Core Instructions' Rule 5).
   v0.1865 - NEW: "Clear app cache & reload" button in Settings > Debugging, per Lynn's report of Playwrite cursive fonts working correctly in a Safari tab but staying stuck on the fallback font inside the installed iOS PWA at the same URL. Root cause identified from the service worker's own fetch handler (unchanged since v0.1832/dev v0.1064): the non-HTML branch does cache.match() -> fetch-and-cache-if-missing, with no distinction between "never fetched" and "fetched and failed" -- a request made before the woff2 files existed on the server (a 404) gets cached exactly like a success would, and is then served from that cache forever, since match() never re-checks. This explained the Safari/PWA asymmetry precisely: Safari's cache never made that early failed request, the PWA's did. The new button (caches.keys() -> caches.delete() for every entry, then a forced reload) gives a direct, on-device way to clear exactly this kind of stuck bad cache entry without a version bump or PWA reinstall -- notes are explicitly unaffected, since Cache Storage (this button) and localStorage/IndexedDB (notes) are separate browser storage systems entirely. Confirmed via direct read of both the main and dev service worker source that this fix requires no service worker changes -- the existing fetch handler already re-caches correctly once the stale entry is gone. Button placed and styled to match the existing "Clear debug log" row exactly, reusing showConfirm/showToast rather than new UI.
@@ -2523,31 +2535,41 @@ body.qab-handle-enabled.qab-handle-collapsed #quick-action-bar { display: none !
 /* v0.1834 NEW, per Lynn's request: room for the handle so the QAB's
    own scrollable button content never overlaps it. */
 body.qab-enabled.qab-handle-enabled #quick-action-bar { padding-left: calc(56px + env(safe-area-inset-left, 0px)); }
-/* v0.1861 NEW, per Lynn's explicit request: much less reserved space
-   for the small handle variant, matching its smaller footprint. */
-body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar { padding-left: calc(40px + env(safe-area-inset-left, 0px)); }
-/* v0.1867 NEW, per Lynn's report and her own explicitly offered
-   alternative ("get rid of this rectangular area or make it
-   transparent"): the small handle is short by design, but the bar's
-   own opaque background used to fill the reserved column above it
-   regardless -- visually reading as a solid rectangle sitting above a
-   much shorter handle. Rather than making the handle tall enough to
-   fill that space (the large variant's approach, explicitly rejected
-   for small), this makes the reserved column itself genuinely
-   transparent -- a linear-gradient background, transparent up to
-   exactly the reserved width, opaque after it, so nothing but the
-   handle's own box (with its own background/border/shadow) appears in
-   that column at all. border-top and box-shadow still span the full
-   width (a faint 1px line / soft shadow, not a filled rectangle) --
-   flagged in case that's still visible enough to matter; easy to
-   scope this out of the small-handle column too if so. */
-body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar {
-  background: linear-gradient(
-    to right,
-    transparent calc(40px + env(safe-area-inset-left, 0px)),
-    var(--note-toolbar-bg, var(--bg2)) calc(40px + env(safe-area-inset-left, 0px))
-  );
-}
+/* v0.1873 FIX, per Lynn's on-device debug log -- a real, confirmed bug,
+   not a new design decision: QAB-SCROLL-DIAG showed .qab-scroll's own
+   rect starting at screen x=56 despite its OWN padding correctly
+   measuring 0px (the v0.1872 fix). The v0.1868 comment immediately
+   below this rule claims "no reserved space at all for the small
+   variant" -- that was the correct INTENT, but the actual override to
+   zero out the rule directly above (56px, meant for the large handle)
+   was never added for the small case. Deleting the old small-specific
+   40px override in v0.1868 left the BASE 56px rule falling through
+   and applying instead, the exact opposite of the stated goal. Fixed
+   now by actually adding the missing override. */
+body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar { padding-left: env(safe-area-inset-left, 0px); }
+/* v0.1868 REDESIGNED, per Lynn's report and explicit direction to
+   "start over from scratch" for the small handle specifically. The
+   large handle above keeps its reservation completely unchanged --
+   it's never had this problem, since its height is synced to match
+   the bar's full height (v0.1860), leaving nothing uncovered. The
+   small handle is deliberately short, and EVERY attempt so far to
+   paper over the resulting gap above it (matching its height to the
+   bar anyway -- v0.1866, rejected: made it as tall as the large
+   variant; making that gap transparent -- v0.1867, rejected: showed
+   raw note content bleeding through instead of buttons) was solving
+   the wrong problem. The actual fix Lynn asked for is simpler than any
+   of those: no reserved space at all for the small variant. It's a
+   pure floating overlay now (z-index already puts it above the bar --
+   see #qab-collapse-handle below), the same way a "back to top" button
+   or similar floating control normally overlaps whatever's beneath it.
+   No separate reserved element of any kind exists anymore for this
+   variant -- exactly "nothing other than the collapse handle and the
+   toolbar buttons," per Lynn's own words. See _qabSyncHandleHeight()
+   for the small-handle-specific initial scroll-position nudge that
+   keeps the very first button from starting out permanently hidden
+   under the handle, without needing any reserved space to do it.
+   v0.1873 NOTE: this comment's own stated intent was correct; the
+   missing implementation is now the rule directly above this one. */
 
 #qab-collapse-handle {
   display: none; /* shown via body.qab-enabled.qab-handle-enabled below */
@@ -2594,24 +2616,22 @@ body.qab-enabled.qab-handle-enabled.qab-handle-small #quick-action-bar {
 }
 /* v0.1861 NEW, per Lynn's explicit request: a small, subtle variant
    for anyone who doesn't need the large low-vision-friendly version.
-   v0.1866 CHANGED, per Lynn's report that 30px was too small to
-   reliably tap (and, on iPhone, sat entirely inside the corner-clip
-   zone even after the position fix above): width bumped to 40px --
-   still clearly, meaningfully smaller than the large variant's 56px,
-   but at/near the ~44px minimum touch target both Apple's and
-   Google's own platform guidelines recommend. Height is deliberately
-   NOT set here anymore -- see _qabSyncHandleHeight()'s updated
-   comment just below for why the exposed-background-gap bug needs
-   height to be synced (like the large variant), not fixed small. */
+   v0.1868 CHANGED, per Lynn's on-device report that even 40px was
+   still too small in BOTH dimensions -- bumped to 48x48. Still clearly
+   smaller than the large variant's 56px-wide/full-bar-height box, but
+   a genuinely comfortable, easy-to-hit square now. No height-sync of
+   any kind applies to this variant (see the redesigned comment above
+   #qab-collapse-handle) -- this fixed 48px IS its real, final height,
+   not a placeholder. */
 body.qab-handle-small #qab-collapse-handle {
-  width: 40px;
-  height: 40px;
-  border-radius: 0 10px 10px 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 0 12px 12px 0;
   box-shadow: 1px 0 4px rgba(0,0,0,0.15);
 }
 body.qab-handle-small #qab-collapse-handle svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
 }
 /* Chevron flips to point up (away from the hidden bar, toward where it
    will reappear from) once collapsed -- down by default, since the
@@ -2656,6 +2676,96 @@ body.reading-mode:not(.qab-show-in-quiet) #qab-collapse-handle { display: none !
   padding-right: 8px;
   scroll-padding-inline: 20px 8px;
 }
+/* v0.1872 FIX, per Lynn's on-device debug log: the mystery area above
+   the small handle was conclusively confirmed to be a real GAP in the
+   button row -- elementFromPoint() at the suspect location returned
+   #quick-action-bar itself (plain background), not any hidden or
+   separate element. Root cause: this 20px left padding above (a
+   general-purpose Android-clipping fix, unrelated to the handle) was
+   never designed with the small handle's floating-overlay redesign
+   (v0.1868) in mind, and doesn't line up with what
+   _qabNudgeScrollPastSmallHandle() actually scrolls past -- leaving
+   real dead space that the floating handle only partially covers.
+   Zeroed specifically for the small-handle case, where the handle's
+   own floating overlay + the scroll nudge are the ONLY mechanism
+   needed to keep the first button clear of the handle -- this extra
+   padding was never necessary there in the first place. Left
+   completely unchanged for every other case (large handle, no handle
+   at all) -- the original Android-clipping problem this padding fixes
+   is still real and still needs it there.
+   v0.1873 ADDED to this same rule (kept together, not a separate
+   block, since both apply to the identical selector): justify-content
+   flex-start, per Lynn's explicit request ("the leftmost QAB button
+   should start rendering at very close to an X value of zero"). Plain
+   justify-content:center (the base .qab-scroll default, just below) is
+   a well-known CSS gotcha on an OVERFLOWING flex row -- browsers can
+   distribute the extra invisible space asymmetrically around centered
+   overflow content, meaning scrollLeft:0 doesn't reliably mean "first
+   item flush at the left edge" the way flex-start does. Scoped here
+   because this is the one case that actually needs scrollLeft:0 to
+   mean "flush left" for the floating-overlay handle design to work --
+   the no-handle and large-handle cases keep centering, intentionally
+   nicer-looking for a short, non-overflowing row. */
+/* v0.1875 REDESIGNED, per Lynn's explicit simplification: "the toolbar
+   should act exactly the same as if the collapse handle wasn't there."
+   All of v0.1874's special-casing (the small 16px gap, the
+   justify-content override, the JS scroll-position snapping) is
+   removed -- none of it is needed. Instead: padding-left equal to ONE
+   FULL BUTTON'S width (var(--qab-size), so it scales correctly with
+   the size setting) -- an empty "phantom first slot" the exact width
+   of a real button. At the row's natural, ordinary resting scroll
+   position (0, same as it always is with no special handling), this
+   empty slot sits where the handle floats, and the first REAL button
+   the user configured starts immediately after it -- fully visible,
+   never obstructed, with no JS nudge or snap logic required at all.
+   Scrolling behaves in every respect exactly like the no-handle case,
+   including justify-content, deliberately left at its ordinary
+   inherited default (center) rather than overridden -- consistent
+   with every other QAB configuration in this app, not a special case. */
+/* v0.1877 REMOVED (then RESTORED in v0.1878 -- v0.1877 was a genuine
+   bug, not a valid simplification; kept this history rather than
+   deleting it, since it's a real lesson): v0.1875's phantom-slot
+   padding was removed entirely here, on the theory that "no special
+   CSS at all" was what Lynn wanted. She caught this directly: without
+   the padding, the REAL FIRST BUTTON itself sits flush at screen x=0,
+   directly under the floating handle -- exactly the "obstructed"
+   problem this whole feature exists to avoid. The padding's entire
+   purpose is to put something DISPOSABLE (empty space) under the
+   handle instead of a real button.
+   v0.1878 RESTORED, with one addition beyond v0.1875's original
+   version: justify-content:flex-start is back too (removed in v0.1877
+   alongside the padding). This isn't optional once the padding trick
+   is in play -- the handle floats at a FIXED screen position (x=0 to
+   its own width), but centered content's actual screen position shifts
+   depending on how much content there is. A short, non-overflowing
+   button row centered in the bar might not start anywhere near screen
+   x=0 at all, meaning the padding could end up nowhere near the
+   handle, and in some configurations a real button could still end up
+   under it despite the padding's presence. Left-aligning guarantees
+   the padding is always exactly where the handle is, regardless of how
+   many buttons are configured. This does mean a short row no longer
+   visually centers in the bar for this one case -- v0.1879 RESOLVES
+   that exact trade-off (see below) rather than leaving it accepted. */
+/* v0.1879 NEW, per Lynn's explicit reminder: "I only want this
+   automatic scrolling to happen if there are enough buttons to cause
+   overflow. Otherwise... the buttons are just centered." Scoped this
+   whole rule to a NEW class (qab-handle-small-overflowing) that JS
+   only adds when the buttons genuinely overflow -- see
+   renderQuickActionBar(), which measures this BEFORE applying the
+   class (removing it first, if stale from a previous render, so the
+   measurement reflects the buttons' own natural width, not width
+   already inflated by this rule's own padding). When NOT overflowing,
+   this class is absent, .qab-scroll falls through to the ordinary base
+   rule (centered, no shield padding) -- resolving v0.1878's accepted
+   trade-off entirely: a short row centers exactly as it always has,
+   and only a genuinely-overflowing row gets the padding-shield
+   treatment, which is also the only case where it's actually needed. */
+body.qab-handle-small-overflowing .qab-scroll {
+  padding-left: var(--qab-size, 64px);
+  scroll-padding-inline: var(--qab-size, 64px) 8px;
+  justify-content: flex-start;
+}
+
 .qab-scroll::-webkit-scrollbar { display: none; }
 /* v0.1866 NEW, per Lynn's explicit request: on medium/large screens
    (viewport WIDTH, not touch capability -- a mouse-driven iPad in
@@ -2702,6 +2812,20 @@ body.reading-mode:not(.qab-show-in-quiet) #qab-collapse-handle { display: none !
    a full removal, so it costs nothing to bring back later.
 */
 @media (hover: none) and (pointer: coarse) {
+  .qab-scroll-arrow { display: none !important; }
+}
+/* v0.1868 NEW, per Lynn's follow-up: she suspected the arrows might be
+   her "mystery element". v0.1869 CORRECTION: this comment originally
+   claimed that was ruled out -- it wasn't, that was an overclaim, only
+   based on the CSS looking correct on paper, never actually confirmed
+   against her real device. Lynn's own follow-up screenshot places the
+   mystery area right where this arrow lives, so this is back to being
+   a live, undecided hypothesis -- see the QAB-ARROW-DIAG logging in
+   renderQuickActionBar() for the real, on-device check. Kept here
+   regardless as defense-in-depth (screen WIDTH deciding this, same as
+   the button-spacing media query elsewhere in this file) whether or
+   not it turns out to be the actual cause. */
+@media (max-width: 699px) {
   .qab-scroll-arrow { display: none !important; }
 }
 
@@ -12994,7 +13118,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1867';
+const APP_VERSION = '0.1879';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -41301,18 +41425,13 @@ function _qabResolveColorScheme(cfg) {
 // rotation, etc.) and directly from renderQuickActionBar() below (for
 // immediate correctness on first render, not dependent solely on the
 // observer's own async callback timing).
-// v0.1867 REVERTED, per Lynn's report: syncing height for the small
-// variant (v0.1866's fix) made it just as tall as the large handle,
-// which she explicitly does NOT want -- small needs to stay genuinely
-// short. Back to skipping height-sync for the small variant, exactly
-// like v0.1861 originally did -- but this time the background-gap
-// problem that made v0.1861's original skip visually broken is solved
-// a completely different way: see body.qab-handle-small
-// #quick-action-bar's new transparent-background rule just below the
-// handle's own CSS, which makes the reserved column genuinely
-// transparent (per Lynn's own explicitly offered alternative: "get rid
-// of this rectangular area or make it transparent") instead of trying
-// to make the handle tall enough to fill it.
+// v0.1868 REDESIGNED, per Lynn's explicit direction to start over on
+// the small handle: it no longer needs a background trick of any kind
+// (see the CSS comment above #qab-collapse-handle for the full
+// reasoning) -- it's simply a fixed 48x48 box, height untouched by
+// this function, floating on top of the bar via z-index. This
+// function now ONLY handles the large variant, which has always
+// worked correctly this way since v0.1860.
 function _qabSyncHandleHeight() {
   var bar = document.getElementById('quick-action-bar');
   var handle = document.getElementById('qab-collapse-handle');
@@ -41324,6 +41443,39 @@ function _qabSyncHandleHeight() {
   var barH = bar.getBoundingClientRect().height;
   if (barH > 0) handle.style.height = barH + 'px';
 }
+// v0.1868 NEW: since the small handle no longer reserves any space of
+// its own (it floats directly over the button row instead), the very
+// first button would otherwise sit permanently under it every time the
+// row is at its natural starting scroll position -- which, in
+// practice, is most of the time (right after opening a note, right
+// after adding a new action, etc). This nudges the row's scroll
+// position so it starts clear of the handle instead, purely a starting
+// position -- nothing is reserved, no new element exists, and a user
+// can still freely scroll back left to reveal the first button sliding
+// under the handle if they want to -- an accepted, expected
+// consequence of a floating overlay control, per Lynn's own explicit
+// request that this remain possible. No-op for the large variant,
+// which has its own real reserved space and doesn't need this.
+// v0.1874 REDESIGNED, per Lynn's explicit follow-up: a raw
+// scrollLeft = handle-width nudge (the original approach) can land
+// mid-button -- leaving whatever button was there HALF covered by the
+// handle rather than either fully visible or fully hidden, which is
+// exactly the "partly obstructed" look she said she doesn't want. This
+// now measures every real .qab-btn's own actual position and picks the
+// first one whose LEFT edge is at or past the handle's right edge --
+// so the initial view always shows a clean, complete button, never a
+// sliver. If that means button 1 itself doesn't qualify, it's left
+// fully off-screen behind the handle (still reachable by scrolling
+// left) rather than half-showing.
+// v0.1875 REMOVED: this function (originally v0.1868, redesigned in
+// v0.1874) is no longer needed at all. Per Lynn's explicit simplified
+// design, the small-handle case now behaves in every scroll respect
+// exactly like the no-handle case -- no JS-driven scroll-position
+// nudging or snapping. A static CSS padding-left (see .qab-scroll's
+// own small-handle rule) equal to one full button's width creates an
+// empty "phantom slot" that naturally sits where the handle floats at
+// the row's ordinary resting scroll position -- achieving the same
+// "first real button is never obstructed" goal with zero JS logic.
 
 function renderQuickActionBar() {
   var cfg = settings.quickActionBar;
@@ -41395,10 +41547,153 @@ function renderQuickActionBar() {
   // bar's own actual rendered height, same reasoning and same
   // measure-don't-assume approach as _qabReserveSpace() just above.
   _qabSyncHandleHeight();
+  // v0.1879 CORRECTED, per Lynn's direct correction: v0.1877's "scroll
+  // to the true technical maximum" was exactly backwards from what she
+  // meant. Her own convention, stated explicitly: "scrolled to the
+  // right" = you see the START of content (button 1, protected by
+  // padding) -- what a plain, unscrolled resting position already is.
+  // "Scrolled to the left" = you see the END (last buttons) -- which is
+  // what scrolling to the technical maximum actually showed, the
+  // opposite of what she asked for. The fix needs NO scroll
+  // manipulation at all: natural rest (scrollLeft never touched, stays
+  // at its default 0) combined with the new overflow-conditional CSS
+  // class above already shows button 1 fully protected. This block's
+  // only job now is deciding WHETHER that shield-padding class should
+  // be active -- toggled based on genuine overflow, measured with the
+  // class removed FIRST (in case it was already on from a previous
+  // render), so the measurement reflects the buttons' own natural
+  // width, not width already inflated by the shield padding itself
+  // (which would otherwise risk a false-positive "overflowing" reading
+  // caused by the fix rather than the actual button content). Per
+  // Lynn's explicit reminder: when NOT overflowing, no special
+  // treatment at all -- centered, exactly as always.
+  if (cfg.smallHandle && cfg.showCollapseHandle) {
+    var _qabScrollEl = document.getElementById('qab-scroll');
+    if (_qabScrollEl) {
+      body.classList.remove('qab-handle-small-overflowing');
+      var _qabIsOverflowing = _qabScrollEl.scrollWidth > _qabScrollEl.clientWidth + 2;
+      body.classList.toggle('qab-handle-small-overflowing', _qabIsOverflowing);
+    }
+  } else {
+    body.classList.remove('qab-handle-small-overflowing');
+  }
   // v0.1867 NEW: ensures a settings change (including the new subtle-
   // highlight setting) applies immediately on save, not just the next
   // time some other toggle (quiet mode, etc.) happens to call this.
   _qabRefreshActiveStates();
+  // v0.1869 TEMPORARY DIAGNOSTIC, per Lynn's report that the small
+  // handle still appears full-height on her real iPhone despite the
+  // v0.1868 code appearing correct in every static check performed
+  // (CSS specificity, comment balance, no duplicate elements, no
+  // stray inline style). Lynn has no Mac and can't use Safari Web
+  // Inspector to get real computed values directly, so this logs them
+  // into the app's OWN existing debug log instead (Settings >
+  // Debugging > View system log) -- no external tool needed. Meant to
+  // be removed once the real cause is found; flagged clearly so it
+  // isn't mistaken for a permanent feature.
+  // v0.1869 UPDATE: Lynn correctly identified, via a photo-annotated
+  // screenshot, that the actual mystery area sits just ABOVE the small
+  // handle, roughly where the (supposed-to-be-touch-hidden) left scroll
+  // arrow lives -- her own sharp catch, not something re-derived here.
+  // Both CSS rules meant to hide .qab-scroll-arrow on touch/narrow
+  // screens look completely correct on static review (well-formed,
+  // properly !important, redundant via two different conditions) --
+  // but "looks correct in the source" isn't proof it's actually
+  // matching on her real device, so this now logs the arrow's own real
+  // computed state directly alongside the handle's, rather than
+  // continuing to guess from either static code review or screenshots.
+  if (settings.quickActionBar && settings.quickActionBar.smallHandle) {
+    var _h = document.getElementById('qab-collapse-handle');
+    var _b = document.getElementById('quick-action-bar');
+    var _al = document.getElementById('qab-scroll-left');
+    if (_h && _b) {
+      var _hr = _h.getBoundingClientRect();
+      var _br = _b.getBoundingClientRect();
+      var _cs = window.getComputedStyle(_h);
+      logSys('QAB-HANDLE-DIAG: handle rect=' + Math.round(_hr.width) + 'x' + Math.round(_hr.height) +
+        ' bar rect height=' + Math.round(_br.height) +
+        ' computed height=' + _cs.height + ' computed width=' + _cs.width +
+        ' inline style.height="' + _h.style.height + '"' +
+        ' body classes=' + document.body.className);
+    }
+    if (_al) {
+      var _ar = _al.getBoundingClientRect();
+      var _acs = window.getComputedStyle(_al);
+      var _mqTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+      var _mqWidth = window.matchMedia('(max-width: 699px)').matches;
+      logSys('QAB-ARROW-DIAG: left-arrow rect=' + Math.round(_ar.width) + 'x' + Math.round(_ar.height) +
+        ' at (' + Math.round(_ar.left) + ',' + Math.round(_ar.top) + ')' +
+        ' computed display=' + _acs.display +
+        ' inline style.display="' + _al.style.display + '"' +
+        ' touch-media-matches=' + _mqTouch +
+        ' width-media-matches=' + _mqWidth +
+        ' window.innerWidth=' + window.innerWidth);
+    } else {
+      logSys('QAB-ARROW-DIAG: #qab-scroll-left not found in DOM at all');
+    }
+    // v0.1871 NEW, per Lynn's much more precise description: a
+    // rectangle taller than the QAB buttons, left side only, partly
+    // BEHIND the handle (lower z-index than handle) but IN FRONT of
+    // the buttons (higher z-index than them), showing plain background
+    // instead of buttons. Neither the handle nor the arrow diagnostics
+    // above explain this -- both measured exactly as intended. Rather
+    // than keep guessing from named elements, this asks the browser
+    // directly what's actually rendered at the suspect location, using
+    // document.elementFromPoint() -- the definitive way to identify an
+    // unknown visual element, regardless of what it's called or
+    // whether Claude already knows it exists. Sampled at several
+    // points spanning the described area (just above the handle, and
+    // higher up, since the mystery rectangle is reportedly taller than
+    // the handle itself).
+    if (_h) {
+      var _hRect = _h.getBoundingClientRect();
+      var _sampleX = Math.round(_hRect.left + _hRect.width / 2);
+      var _sampleYs = [
+        Math.round(_hRect.top - 5),   // just above the handle
+        Math.round(_hRect.top - 20),  // higher up, within "taller than buttons" range
+        Math.round(_hRect.top - 40)
+      ];
+      _sampleYs.forEach(function(_y) {
+        if (_y < 0) return;
+        var _el = document.elementFromPoint(_sampleX, _y);
+        if (_el) {
+          var _elCs = window.getComputedStyle(_el);
+          logSys('QAB-MYSTERY-DIAG: point=(' + _sampleX + ',' + _y + ') element=' +
+            _el.tagName + (_el.id ? '#' + _el.id : '') + (_el.className ? '.' + String(_el.className).replace(/\s+/g, '.') : '') +
+            ' bg=' + _elCs.backgroundColor + ' z-index=' + _elCs.zIndex +
+            ' position=' + _elCs.position +
+            ' rect=' + JSON.stringify(_el.getBoundingClientRect()));
+        } else {
+          logSys('QAB-MYSTERY-DIAG: point=(' + _sampleX + ',' + _y + ') elementFromPoint returned null');
+        }
+      });
+      // v0.1872 NEW: v0.1871's data came back conclusive on one point --
+      // every sampled point resolves to #quick-action-bar itself (its
+      // own plain background), not any separate/hidden element. That
+      // reframes this as a genuine GAP in the button row, not a rogue
+      // element -- most likely the interaction between .qab-scroll's
+      // fixed 20px left padding (added for the unrelated Android-
+      // clipping fix) and _qabNudgeScrollPastSmallHandle()'s scroll
+      // offset not actually landing where intended. Logging the real
+      // numbers directly rather than continuing to hand-calculate from
+      // indirect clues.
+      var _scrollEl = document.getElementById('qab-scroll');
+      var _firstBtn = _scrollEl ? _scrollEl.querySelector('.qab-btn') : null;
+      if (_scrollEl) {
+        logSys('QAB-SCROLL-DIAG: scrollLeft=' + _scrollEl.scrollLeft +
+          ' scrollWidth=' + _scrollEl.scrollWidth +
+          ' clientWidth=' + _scrollEl.clientWidth +
+          ' computed padding-left=' + window.getComputedStyle(_scrollEl).paddingLeft +
+          ' rect=' + JSON.stringify(_scrollEl.getBoundingClientRect()));
+      }
+      if (_firstBtn) {
+        logSys('QAB-FIRSTBTN-DIAG: rect=' + JSON.stringify(_firstBtn.getBoundingClientRect()) +
+          ' letter=' + _firstBtn.textContent);
+      } else {
+        logSys('QAB-FIRSTBTN-DIAG: no .qab-btn found in #qab-scroll');
+      }
+    }
+  }
 }
 
 // Split out from renderQuickActionBar() so pinToolbars() (called on
