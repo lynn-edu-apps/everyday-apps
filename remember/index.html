@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1879 -->
+<!-- Remember App - Version 0.1889 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1879
+  Version 0.1889
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -43,6 +43,16 @@
   v0.1774 - CHANGE: toast vertical padding reduced further (8px -> 5px), per Lynn's follow-up request after confirming v0.1773's fix worked. The clamp() floor formula's padding term was recomputed to match exactly (new floor: (50px - 10px) / 1.5, up from (50px - 16px) / 1.5), keeping the same established relationship rather than a fixed number that would drift out of sync with this padding value the way the original min-height did with the padding change two builds ago. At today's default UI Font Size, the toast font grows to roughly 26.7px (up from ~22.7px in v0.1773), filling the same 50px floor with the smaller padding. This is a visual/subjective tuning value I can't verify by rendering directly -- flagged as a reasonable next step rather than a final answer; further adjustment either direction is a quick follow-up if needed once viewed on-device. Suite unchanged: 332/332.
   v0.1773 - FIX: v0.1772's toast padding fix looked like it had no effect, per Lynn's report -- and she correctly connected it to the min-width bug already documented in this project's own instructions (a static minimum silently becoming the dominant, limiting factor over the property actually meant to change). Confirmed directly: the same class of bug, different property. The padding reduction (12px -> 8px) was genuinely real, but the min-height:50px floor added in the same build was silently dominating it -- at default settings the content only needed ~43px, well under that floor, so the box got stretched to 50px anyway and flex-centering filled the gap with invisible whitespace, making the padding change visually disappear even though the CSS property itself had genuinely changed. Fixed with clamp(): the font size itself now grows to fill that reclaimed space directly, per Lynn's explicit follow-up request, rather than leaving it as passive whitespace. The floor branch is computed from the box's own actual geometry (content area = min-height minus top+bottom padding, divided by line-height) rather than a separate hardcoded number, so it can't drift out of sync if that geometry changes again later -- the same reasoning already applied to the theme-color fix. Verified by hand across the full range: at today's default UI Font Size (20px) the font now fills the entire 50px floor with zero leftover gap (up from 18px, itself up from the original ~17px); even at the smallest UI Font Size setting (14px) the toast still can't shrink below this same readable floor; at higher settings the preferred 0.9x-of-UI-font-size value naturally takes over once it exceeds the floor, growing the bar itself as intended. Suite unchanged: 332/332.
   v0.1772 - CHANGE: toast/alert message readability, per Lynn's request. Font size was a fixed 0.85em against the static 20px root font-size -- never actually tied to the app's own UI Font Size setting at all, roughly 17px regardless of what that setting was. Now scales directly with it via --font-ui (the exact variable that setting already drives), at 0.9x -- a deliberate small step down rather than 1:1, since a toast is transient/secondary content, not full-weight UI text; recommended and explained directly to Lynn rather than picked arbitrarily. Vertical padding reduced (12px -> 8px) to give the larger font room within the same overall space, and a new min-height (50px, with box-sizing: border-box added specifically so this floor represents the true total height including padding, not just the content area) locks in today's actual current height as a hard floor, verified by direct calculation against the full 14-40px range of the UI Font Size setting: at the smallest setting the bar still can't shrink below where it is today (~35px computed vs the 50px floor), at the largest it correctly grows past the floor to fit the larger text (~70px computed), and at the current default setting the height stays essentially unchanged (~43px computed, under the 50px floor) while the font itself is slightly larger than before within that same space. Suite unchanged: 332/332.
+  v0.1889 - IndexedDB Migration Phase 3b-i, third slice (see IndexedDB-Migration-Plan-v6.md). Converted the clipboard-paste fingerprint tracker (_hasAskedForClip/_markClipAsked) to IndexedDB -- confirmed genuinely standalone first: its only read call site elsewhere in this file is inside commented-out dead code (the pre-v0.1840 auto-paste-prompt flow, replaced by the creation-time paste button), and its write callers were already fire-and-forget. A MISTAKE CAUGHT AND FIXED BEFORE SHIPPING, not left in: an earlier draft of this same build moved the tour-seen flag's WRITE side to IndexedDB while its READ side (checked in the same boolean condition as remember_notes, core data deferred to Phase 3b-ii) stayed on localStorage -- which would have meant the tour never actually registered as "seen" and could reappear on every future launch, exactly the write/read-split bug this whole migration exists to avoid. Caught during a deliberate final consistency sweep of this build (grepped every idbGet/idbSet/idbGetSet call site and checked each key's read and write sides land on the same backend) rather than assumed correct -- reverted the tour-seen flag entirely back to localStorage, both sides together, deferred to 3b-ii alongside remember_notes. Also investigated, and explicitly deferred rather than converted: the folder-backup system (backupFolderStructureIfGood/restoreFoldersFromBackupIfPossible) and the tag-sort-sampler migration flag -- both turned out to be embedded directly within loadState()'s core synchronous initialization flow, not independent utilities the way the syslog and snapshot ring were; converting them cleanly would mean starting to async-ify loadState() itself, which is genuinely Phase 3b-ii's work, not a casual addition to this lower-risk batch. This narrows Phase 3b-i's remaining independent scope down close to zero -- most of what's left calling storageGet/storageSet now genuinely belongs to Phase 3b-ii. Verified: node --check passes; the consistency sweep described above is the real verification for this build, not just a syntax check. NOT verified end-to-end in a real browser -- Lynn's own testing (paste-related behavior, and confirming the tour still behaves correctly) is the real confirmation.
+  v0.1888 - IndexedDB Migration Phase 3b-i, second slice (see IndexedDB-Migration-Plan-v6.md). Per Lynn's important reminder about cross-session/cross-tab write safety, re-confirmed the guarantee before continuing: IndexedDB's transaction atomicity is a genuine cross-connection property enforced by the browser itself, not just a within-one-tab guarantee -- two tabs both writing via idbGetSet on the same key genuinely can't interleave and lose an update, which is real, spec-level protection localStorage never had. Converted: (1) the note snapshot ring (undo/backup system) -- now uses idbGetSet since it's a genuine accumulator (reads the ring, adds an entry, evicts if oversized), same reasoning as the syslog; snapshotNoteBeforeOp() itself stays fire-and-forget for all 10 of its existing call sites (none needed to change) because the note content it protects is captured into a plain variable SYNCHRONOUSLY before anything async happens -- only the persistence is deferred, not the correctness of what gets persisted; getLatestSnapshot() became genuinely async (a real read, no way around it) and its one caller (the "Restore note backup" button) was converted to match. (2) The zoom-baseline-DPR cache -- called at high frequency (every resize/scroll/zoom event) and needs its value available synchronously every time, so this uses window.devicePixelRatio as an immediate synchronous starting value, with a persisted baseline (if any) applied as an async correction moments later -- a real but brief (a few ms) window where a reopened already-zoomed tab could very briefly use the wrong baseline before self-correcting, judged acceptable specifically because the failure mode is purely cosmetic and transient, never a data-integrity concern. STOPPED before converting the concurrent-instance heartbeat system, after actually reading through it in full rather than assuming it was another simple cache: it's the PRIMARY mechanism preventing two active instances from both running at once, makes a synchronous blocking decision at a critical point in app startup, and has its own real history as a fix for a previous, hard-won concurrency bug (v0.1798, referenced directly in its own comments). This deserves the same careful, isolated treatment as Phase 3b-ii's core data path, not the same casual pass as a debug log or a zoom cache -- deliberately deferred rather than rushed. Verified: node --check passes; grepped for leftover references to the removed _snapReadAll helper (none found, fully replaced). NOT verified end-to-end in a real browser -- this sandbox cannot render or run real IndexedDB; Lynn's own testing (using "Restore note backup," triggering a few snapshot-worthy edits, and checking zoom behaves normally) is the real confirmation.
+  v0.1887 - IndexedDB Migration Phase 3b-i, first slice (see IndexedDB-Migration-Plan-v6.md): the real one-time migration now actually runs at app startup, not just via the manual test button -- fire-and-forget (loadState() stays synchronous, not converted to async itself), safe because it's fast (~10-20ms for a typical key count, confirmed from Lynn's own test), idempotent (marker-guarded, safe every single startup), and non-destructive (never deletes the localStorage it reads from). The syslog is the first real key actually cut over to living in IndexedDB rather than localStorage -- chosen first specifically because it's the highest-call-volume case in the whole app (logSys is called from hundreds of places), so getting the pattern right here proves it for the rest of the fire-and-forget group. logSys() itself now uses idbGetSet -- the exact atomic transaction Phase 2 proved -- rather than two separate get/set calls, which would have reopened exactly the race Phase 2's "broken pattern" test demonstrated; logSys is called frequently enough, often multiple times per tick, that a naive approach would have silently lost entries under real use. Critically: logSys's own public signature and every one of its hundreds of call sites elsewhere in this file are COMPLETELY UNCHANGED -- still fire-and-forget, still synchronous-looking, confirmed by grep that no other call site needed to change. The "View system log" button was converted to async and now reads from IndexedDB to match where logSys writes -- a self-contained UI handler with nothing else depending on its return value, a clean low-risk site to convert directly rather than needing the fire-and-forget treatment logSys itself needed. Also flagged (not silently left misleading): the startup census's remember_syslog entry now explicitly labels itself "(frozen,movedToIDB)", since that diagnostic is scoped to localStorage specifically and will otherwise report an increasingly stale size for this one key without explanation. Verified: node --check passes; grepped every remaining reference to SYSLOG_KEY/remember_syslog to confirm nothing else was missed. NOT verified end-to-end in a real browser -- this sandbox cannot render or run real IndexedDB; Lynn's next test (checking that System Log entries continue appearing correctly, and checking a fresh page load's STARTUP CENSUS/MIGRATION lines) is the real confirmation. Remaining Phase 3b-i work (the rest of the fire-and-forget group -- zoom baseline DPR, heartbeat, folder backup, notes conflict backup, note census, migration flags, clipboard fingerprint, tour-seen flag) deliberately NOT attempted in this same build, converted one at a time in future builds following this same proven pattern. Phase 3b-ii (the core notes/settings/folders/themes data path) remains untouched and deferred, per the plan's explicit risk-isolation reasoning.
+  v0.1886 - FIX/REDESIGN: the "Test IndexedDB Migration" button, per Lynn's real test run showing 4/12 "mismatches." Traced the actual cause rather than assuming a bug: two of the four had IDENTICAL lengths on both sides (content differed, nothing was truncated), and all four are keys the live app kept writing to during the test itself -- the notes-generation counter, the note census, notes via autosave, and especially the syslog, which the TEST'S OWN logSys() calls were actively growing while it ran. Not a bug in idbSet/idbGet or the copy logic -- a genuine race between "a snapshot copied a moment ago" and "the still-live original," which will stop being possible entirely once Phase 3b makes IndexedDB the single live store. Rather than just explain this away, redesigned the test to make it structurally impossible: it no longer touches the real one-time migration at all (that already ran for Lynn and correctly only runs once, by design -- entangling a repeatable test with that would mean either skipping real verification on every subsequent tap, or incorrectly re-running a "one-time" migration). Instead: captures one frozen snapshot of real data (read-only), copies it into temporary, namespaced test keys ("idbtest:" + original key) nothing else reads or writes, verifies the round-trip byte-for-byte against that same frozen snapshot (no race possible -- nothing else touches these specific keys), then deletes the test keys afterward so repeated taps never accumulate data. This directly answers the real Phase 3a question -- does idbSet/idbGet round-trip data correctly -- decoupled from whether the one real migration already happened. Also logs the real migration's actual status (already completed, with timestamp, or not yet run) as separate informational context, not conflated with the round-trip test's own pass/fail. idbRunOneTimeMigrationIfNeeded() and idbVerifyAgainstLocalStorage() both gained an optional snapshot parameter for this (default behavior for the real migration path is completely unchanged -- still reads live localStorage at call time, correct for an actual one-time migration). Verified: node --check passes; re-confirmed the settings row's nesting programmatically after these edits, not just assumed it survived. NOT verified end-to-end in a real browser -- Lynn's next tap is the real confirmation, same as every build in this migration so far.
+  v0.1885 - IndexedDB Migration Phase 3a (see IndexedDB-Migration-Plan-v4.md): the actual IndexedDB engine, built and tested in isolation -- NOT yet wired into the app's real read/write paths. storageGet/storageSet/storageRemove/storageListKeys (Phase 1) still call plain localStorage directly; nothing about the app's real behavior changes in this build. This mirrors the same "isolate, prove, then integrate" approach that made Phase 2 work. New: idbOpen/idbGet/idbSet/idbRemove/idbListKeys (a real, cached-connection IndexedDB engine) and idbGetSet(key, mutatorFn) -- the direct, reusable version of the exact atomic read-modify-write transaction pattern proven in Phase 2's standalone race test (indexeddb-transaction-race-test-v1.html, confirmed by Lynn on both iOS/WebKit and Android/Chromium: 50/50 concurrent saves survived with this pattern, only 1/50 with a naive separate-transactions version) -- copied over, not reinvented. Also new: idbRunOneTimeMigrationIfNeeded(), the actual one-time migration logic per the plan's confirmed decision (single one-time copy, no ongoing dual-write, no localStorage fallback maintained afterward) -- guarded by a dedicated marker key so it can never accidentally re-run and resurrect stale data over genuinely-empty-but-already-migrated state, and deliberately does NOT delete the original localStorage data, leaving it in place as a zero-cost safety net. Added a TEMPORARY "Test IndexedDB Migration" button (Settings > Debugging, correctly nested inside .settings-section-body this time -- verified programmatically the same way the earlier nesting bug was fixed and confirmed, not just visually) that runs the real migration against Lynn's own real data and verifies every single key matches exactly between localStorage and IndexedDB -- genuinely safe to run, since IndexedDB is a completely separate store from localStorage and the migration function never writes back to localStorage, so this cannot touch or corrupt any existing note. Verified: node --check passes on the full file; the new row's nesting was confirmed programmatically. NOT verified end-to-end against real IndexedDB behavior in this sandbox -- there is no browser here to run it in, only a syntax checker; Lynn's own tap of "Test IndexedDB Migration" is the real confirmation this works, the same way the standalone race test needed her real device to actually prove anything. Next: Phase 3b, converting the Phase 1 wrapper functions to delegate to this engine and converting every one of their 45+ call sites (and enclosing functions) to async/await -- the biggest, most invasive step in this whole migration, deliberately not attempted in the same build as this one.
+  v0.1884 - IndexedDB Migration Phase 1 (see IndexedDB-Migration-Plan-v3.md): the storage abstraction layer. Every direct localStorage.getItem/setItem/removeItem/key call in the app -- inventoried first via a full grep pass (52 occurrences found, none of them false-positive text/comments matching the pattern, confirmed before touching anything) -- now goes through four new wrapper functions: storageGet/storageSet/storageRemove/storageListKeys. Deliberately still backed by plain localStorage internally -- this is a PURE REFACTOR, zero functional change -- so the actual future engine swap to IndexedDB only needs to change these four functions, not 50+ scattered call sites again. Three enumeration loops (backup-key cleanup during startup, backup-key cleanup during a save-conflict, and the v0.1880 storage-usage diagnostic) used raw localStorage.key(i)/localStorage.length index-loops with no clean IndexedDB equivalent -- converted by hand to use the new storageListKeys(prefix) instead, which also incidentally simplified one of them (the save-path cleanup no longer needs the awkward "removeItem shifts indices down, re-check this position" workaround its old index-based loop required, since storageListKeys returns a stable array snapshot). The remaining ~45 simple get/set/remove call sites were converted via a verified scripted find-replace, not hand-edited one at a time -- confirmed safe first (zero non-call-site matches of the pattern anywhere in the file), then the wrapper functions' OWN internals were protected from the substitution (extracted, replaced with a sentinel, substitution run on everything else, then put back unchanged) so they don't call themselves. Verified directly, not assumed: confirmed only 5 raw localStorage.* references remain anywhere in the entire file, and all 5 are inside the four wrapper functions themselves (3 in storageGet/storageSet/storageRemove, 2 in storageListKeys) -- nowhere else; spot-checked several converted call sites by eye for correct syntax after the scripted replacement, not just trusted the regex; ran the full file through node --check, which passed clean. NOT run against the regression suite -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5) -- worth flagging as more important than usual this time, given the scope of what changed, even though the change is mechanically a pure passthrough. Phase 2 (the async-safe transaction design, prototyped and tested against deliberately-induced races before touching real data) is next, per the plan doc.
+  v0.1883 - RELABELED both Storage Usage log line prefixes, per Lynn's follow-up: the two lines genuinely measure different things (that's why the numbers differ -- direct localStorage byte count vs. the Storage API's IndexedDB/Cache-only estimate), but both previously started with the identical "STORAGE USAGE (reason):" prefix, so the distinction was only explained in trailing prose rather than being obvious at a glance -- especially awkward given the app's log viewer shows newest-first, meaning the SECOND line written (estimate(), often 0 B) visually appears ABOVE the first when actually reading it in Settings > Debugging > View system log. Now: "STORAGE USAGE - localStorage direct count (reason): ..." and "STORAGE USAGE - navigator.storage.estimate() (IndexedDB + Cache Storage ONLY, NOT localStorage) (reason): ...", so what each line is actually counting is stated up front, not just explained after the fact. Trailing explanatory text shortened slightly to avoid repeating what the new prefix already says, and now points back to the other line by its new descriptive name ("the localStorage direct count line above") rather than a vague "the byte totals above." No change to what's measured or when -- purely a labeling fix. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1882 - CLARIFIED: navigator.storage.estimate()'s log wording, per Lynn's direct question after seeing usage=0 B despite having real notes present. Confirmed via web search this is not imprecision, not a bug, and not merely "unreliable" the way v0.1880's original wording implied -- it's a real, documented scope limitation: usage in this API ONLY counts IndexedDB and Cache Storage (Chrome's own developer docs: "it reports the total number of bytes used by IndexedDB and the Cache API"), and localStorage is explicitly NOT quota-managed data in this API at all, in Chrome or Firefox, per the Storage API's own spec explainer. 0 B is the correct, expected reading for an app using only localStorage, not an approximation error -- the original log wording ("does NOT reliably reflect") undersold how clear-cut this actually is. Reworded to state this plainly rather than hedge. No change to the underlying measurement logic or the toast wording, both of which already used the direct byte-count total, not estimate()'s numbers -- confirmed by checking both call sites, not assumed. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1881 - FIX: the new Storage Usage row (v0.1880) was placed outside .settings-section-body's closing tag instead of inside it -- still technically inside the outer .settings-section wrapper, but outside the part that actually collapses/expands, per Lynn's report that it wasn't correctly nested within Debugging. Same known, previously-documented bug class as v0.1725's Note Behavior/Debugging nesting issue -- traced directly rather than guessed, using the same div-depth-tracking approach that bug's own changelog entry describes. Moved the row (and its now-corrected surrounding comment) inside .settings-section-body, immediately after the Clear App Cache button, so it now genuinely collapses/expands with the rest of Debugging's content instead of always rendering regardless of the section's open/closed state. Verified programmatically, not just visually: walked the actual div nesting depth from settings-section-debugging's opening tag and confirmed storage-usage-row-container now sits inside settings-section-body specifically, not merely somewhere inside the outer settings-section wrapper. No other functional changes. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
+  v0.1880 - NEW: proactive storage-usage diagnostic, per Lynn's report of hitting a real, hard localStorage quota error at only ~100 plain-text notes with zero attachments -- "I would have preferred to been warned that I was getting close to reaching a quota before I actually was told I had already hit a limit." Confirmed her specific theory directly rather than guessing: read the actual "Sort by tag" code, which creates a permanent, numbered backup note ("Copy of <name> before sort N") every single time it's used, by design, never auto-cleaned or expired -- a real, plausible contributor if used repeatedly on the same note without manual cleanup, as she suspected. New computeStorageUsageBreakdown() measures ACTUAL bytes used directly (summing real Blob-measured sizes of every localStorage key under this deployment's own prefix, not estimated) and specifically separates out sort-by-tag backup notes from everything else, by name pattern. Deliberately does NOT rely solely on navigator.storage.estimate() for the warning threshold, despite that API now being widely supported (confirmed via web search -- Safari included, since ~2023, so this is genuinely NOT blocked for security reasons, contrary to Lynn's reasonable worry that a sandboxed web app might not be allowed to know this): estimate() reports a broader, often disk-percentage-based "Storage API" quota shared with IndexedDB/Cache Storage that does NOT reliably reflect localStorage's own separate, typically much smaller fixed limit -- it could report "plenty of room" while the specific thing that actually failed is nearly full. estimate() is still queried and logged as supplementary context, with this caveat included every time, never presented as the authoritative number. TWO surfaces: (1) a new "Check Storage Usage" button in Settings > Debugging, showing a toast summary (total used, % of a conservative 5MB floor, sort-backup count/size if any) plus a full breakdown written to the System Log; (2) a proactive startup check, logged unconditionally every load (fail-loudly per this project's standing rule) but only surfaced as a user-facing toast past a real 70% threshold, specifically to avoid training Lynn to ignore a warning that fires on every single load regardless of actual usage. Verified directly: confirmed the sort-backup name-pattern regex matches the exact naming scheme that code produces; confirmed non-note keys are correctly scoped to only this deployment's own STORE_PREFIX (empty string for main, 'stable:'/'dev:' for the other two -- verified the empty-string case doesn't accidentally match zero keys, since ''.indexOf('') special-cases correctly to always match); confirmed the button and startup check share the exact same underlying measurement function, so they can't disagree with each other. NOT verified end-to-end on a real device with real accumulated backup notes -- this sandbox has no real localStorage data resembling Lynn's actual account to test against; her own "Check Storage Usage" click is the real confirmation of both the numbers and the theory. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
   v0.1879 - FIX: the small-handle scroll direction was exactly backwards, per Lynn's precise, patient correction of the terminology confusion. Her stated convention: "scrolled to the right" = seeing the START of content (button 1, protected by the padding-shield) -- an ordinary, untouched resting scroll position. "Scrolled to the left" = seeing the END (the last buttons) -- which is what v0.1877/v0.1878's "scroll to the technical maximum" logic actually produced, the exact opposite of what she'd asked for. Fixed by removing that scroll-manipulation code entirely -- it's not needed at all. A plain, never-touched resting scrollLeft (0) combined with the padding-shield CSS already shows button 1 fully protected; the real fix needed was deciding WHEN that shield CSS should even apply. Also implemented her separate, explicit reminder from the same exchange: "I only want this automatic scrolling to happen if there are enough buttons to cause overflow. Otherwise... just centered" -- v0.1878's padding+flex-start rule was unconditional for ANY small-handle configuration, contradicting this. Scoped it to a new class, qab-handle-small-overflowing, toggled by JS only when the buttons genuinely overflow. Measured carefully to avoid a false-positive: the class is explicitly removed BEFORE measuring (in case stale from a previous render), so the overflow check reflects the buttons' own natural width, not width already inflated by the shield padding itself -- the padding is a few dozen pixels, potentially enough to flip a borderline case into artificial "overflow" if measured with it already applied. When not overflowing, no special class, .qab-scroll falls through to the ordinary base rule -- a short row centers exactly as it always has, resolving v0.1878's previously-accepted "short rows no longer center" trade-off entirely rather than leaving it as a known limitation. Verified directly: confirmed the scroll-to-maximum code is fully removed, not just disabled; confirmed the new class is correctly removed-then-conditionally-restored on every render (not just added and never cleared, which would have left it stuck on after a note's buttons were reconfigured down to a non-overflowing count); confirmed the CSS rule only targets .qab-scroll when this specific class is present on body. NOT verified end-to-end on a real device -- this sandbox cannot render real layout or touch scrolling; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
   v0.1878 - FIX: a real bug in v0.1877, not a valid simplification, per Lynn's direct correction and pointed question ("can you tell what it looks like... can you detect that the first button is not visible?"). Answered honestly: no, this sandbox cannot render or observe the running app -- but tracing v0.1877's own logic by hand confirmed she was right regardless: with the padding removed, the REAL first button sat flush at screen x=0, directly under the floating handle, exactly the "obstructed" problem this whole feature exists to prevent. Restored v0.1875's padding-left: var(--qab-size) trick (an empty slot the width of one button, so the handle covers something disposable instead of a real button) -- but this time WITH justify-content:flex-start also restored alongside it, not just the padding alone. Explained directly to Lynn why the two are linked: the handle floats at a fixed screen position, but centered content's actual screen position shifts depending on how many buttons are configured -- a short, non-overflowing row centered in the bar might not start anywhere near the handle at all, meaning the padding could end up misaligned with it, and in some configurations a real button could still end up underneath. Left-aligning guarantees the padding always lines up with the handle regardless of button count. Flagged this honestly as a real, acknowledged trade-off (a short button row no longer visually centers in the bar for this specific case) rather than silently picking one of Lynn's two stated preferences over the other without telling her they were in tension. The v0.1877 overflow-to-maximum JS logic is completely unchanged and untouched -- it operates independently of this CSS restoration and doesn't need to know about it. Verified directly: confirmed the restored rule matches v0.1875's original values exactly, with flex-start added; confirmed the JS overflow branch still reads the same scrollWidth/clientWidth values correctly with the padding now back in the layout. NOT verified end-to-end on a real device -- this sandbox cannot render real layout; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
   v0.1877 - REDESIGNED small-handle scroll behavior again, per Lynn's clarified follow-up correcting v0.1876's "exactly one button width" pin once she saw it in practice -- not layered on top of that build, fully replaced. Her restated design, implemented literally: (1) OVERFLOW case (enough buttons to need scrolling) -- scroll to the TRUE maximum (scrollWidth - clientWidth), so whatever's visible at rest is a complete, unobstructed set of buttons, nothing partially hidden behind the handle; earlier buttons remain reachable by scrolling back toward the start, same as always. (2) NO-OVERFLOW case (few buttons, nothing to scroll) -- do nothing at all, zero scroll manipulation, leaving the row centered exactly as every other QAB configuration already behaves -- "just as it always has been in previous builds," her own words. Also removed v0.1875's phantom-slot padding-left entirely, per the same "just as it always has been" framing -- .qab-scroll now has ZERO special CSS for the small-handle case, inheriting the identical base rule (the general 20px/8px Android-clipping fix) every other configuration already uses. The overflow/no-overflow branch uses the same +2px tolerance _qabUpdateScrollArrows() already uses elsewhere in this file for its own overflow check, for consistency rather than a separately-invented threshold. Verified directly: confirmed the CSS override is fully removed (small-handle .qab-scroll now matches the base rule with no exceptions); confirmed the JS branch correctly distinguishes overflow vs non-overflow using the same measurement pattern (scrollWidth/clientWidth, read synchronously right after buttons are appended, no rAF needed) already proven elsewhere in this function. NOT verified end-to-end on a real device -- this sandbox cannot render real layout or touch scrolling; Lynn's next test is the real confirmation, as always with this feature. Regression suite: NOT run -- same network-blocked jsdom-install limitation as previous builds (Core Instructions Rule 5).
@@ -12221,6 +12231,79 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
             -webkit-user-select:none;
           ">Clear app cache &amp; reload</button>
         </div>
+
+        <!-- v0.1880 NEW, per Lynn's report of hitting a real localStorage
+             quota error at only ~100 plain-text notes with zero
+             attachments, and her specific theory that repeated "Sort by
+             tag" usage (which creates a permanent, numbered backup note
+             EVERY time, by design, never auto-cleaned) may have been a
+             real contributor. Confirmed directly by reading that code:
+             yes, it does exactly that -- "Copy of <name> before sort N",
+             always a new note, never overwritten or expired. This gives
+             a way to see that (and everything else) directly on-device,
+             without needing to hit the limit again first to find out.
+             v0.1881 FIX: this row was placed AFTER .settings-section-body's
+             closing tag instead of before it -- still technically inside
+             the outer .settings-section wrapper, but outside the part
+             that actually collapses/expands, so it rendered as an
+             always-visible row wedged between Debugging and the Reset
+             buttons regardless of whether Debugging was expanded. Same
+             known bug class as v0.1725's Note Behavior/Debugging nesting
+             issue -- moved inside .settings-section-body, where it
+             belongs, so it now correctly shows/hides with the rest of
+             Debugging's content. -->
+        <div class="settings-row" id="storage-usage-row-container">
+          <div class="settings-row-label">Storage Usage</div>
+          <div class="settings-row-desc">Shows how much of your storage is used, broken down by what's using it -- including old backup notes from Sort by tag, a common source of quiet growth if not cleaned up.</div>
+          <div style="padding:4px 0;display:flex;gap:10px;flex-wrap:wrap">
+            <button id="check-storage-usage-row" style="
+              background:none;
+              border:1px solid var(--border);
+              border-radius:var(--radius-sm);
+              color:var(--fg2);
+              font-family:var(--font-body);
+              font-size:0.85em;
+              padding:6px 14px;
+              cursor:pointer;
+              touch-action:manipulation;
+              user-select:none;
+              -webkit-user-select:none;
+            ">Check Storage Usage</button>
+          </div>
+        </div>
+
+        <!-- v0.1885 NEW, Phase 3a of the IndexedDB migration
+             (IndexedDB-Migration-Plan-v4.md). TEMPORARY -- exists only
+             to verify the new IndexedDB engine against Lynn's own real
+             data before anything in the app actually switches over to
+             using it. Copies real data INTO IndexedDB (a completely
+             separate store from localStorage -- this cannot touch or
+             corrupt any existing note, verified by construction: the
+             migration function only ever calls storageGet/idbSet, never
+             anything that writes back to localStorage). Safe to tap
+             repeatedly; the migration itself only actually runs once
+             (checked via its own marker key), but the verification pass
+             always re-checks current IndexedDB contents against current
+             localStorage contents regardless. -->
+        <div class="settings-row" id="test-idb-row-container">
+          <div class="settings-row-label">Test IndexedDB Round-Trip (Phase 3a)</div>
+          <div class="settings-row-desc">Temporary developer tool. Safe to tap repeatedly -- copies a snapshot of your real data into temporary IndexedDB test keys, verifies it comes back exactly, then cleans up. Your actual notes in localStorage are never touched.</div>
+          <div style="padding:4px 0;display:flex;gap:10px;flex-wrap:wrap">
+            <button id="test-idb-migration-row" style="
+              background:none;
+              border:1px solid var(--border);
+              border-radius:var(--radius-sm);
+              color:var(--fg2);
+              font-family:var(--font-body);
+              font-size:0.85em;
+              padding:6px 14px;
+              cursor:pointer;
+              touch-action:manipulation;
+              user-select:none;
+              -webkit-user-select:none;
+            ">Test IndexedDB Round-Trip</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -13118,7 +13201,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1879';
+const APP_VERSION = '0.1889';
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -13403,6 +13486,234 @@ var STORE_PREFIX = (function() {
 })();
 function storeKey(k) { return STORE_PREFIX + k; }
 
+// v0.1884 NEW -- Phase 1 of the IndexedDB migration plan (see
+// IndexedDB-Migration-Plan-v3.md): a thin storage abstraction layer.
+// storageGet/storageSet/storageRemove/storageListKeys wrap every real
+// localStorage read/write so the ENTIRE app goes through one place.
+// Deliberately still backed by plain localStorage here -- pure
+// refactor, zero behavior change -- confirmed by grepping for every
+// direct localStorage.getItem/setItem/removeItem/key call before this
+// change (52 total) and replacing each one with these, rather than
+// leaving some old direct calls mixed in with new wrapped ones. The
+// actual future engine swap to IndexedDB only needs to change these
+// four functions' internals, not every scattered call site again.
+// Keys are passed through exactly as before (already storeKey()-
+// wrapped where the caller needs that, raw where it doesn't) -- this
+// layer doesn't change key-naming behavior at all, only how the read/
+// write itself happens.
+function storageGet(key) {
+  return localStorage.getItem(key);
+}
+function storageSet(key, value) {
+  localStorage.setItem(key, value);
+}
+function storageRemove(key) {
+  localStorage.removeItem(key);
+}
+// Replaces the localStorage.key(i)/localStorage.length index-loop
+// pattern used in a few places to enumerate keys by prefix (backup-key
+// cleanup, the storage-usage diagnostic). That indexed-access pattern
+// has no clean equivalent once the underlying engine is IndexedDB, so
+// converting every enumeration site to call this instead means the
+// eventual swap only needs to change what's INSIDE this one function.
+function storageListKeys(prefix) {
+  var keys = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k !== null && (prefix === undefined || k.indexOf(prefix) === 0)) keys.push(k);
+  }
+  return keys;
+}
+
+// ===== INDEXEDDB ENGINE (v0.1885, Phase 3a) =====================
+// Per IndexedDB-Migration-Plan-v4.md: the real IndexedDB engine, built
+// and tested in isolation here -- NOT yet wired into the app. The
+// storageGet/storageSet/storageRemove/storageListKeys functions above
+// still call plain localStorage directly; nothing about the app's
+// actual behavior changes in this build. This mirrors the same
+// "isolate, prove, then integrate" approach that made Phase 2 work.
+//
+// Transaction pattern proven in Phase 2's standalone race test
+// (indexeddb-transaction-race-test-v1.html, confirmed by Lynn on both
+// iOS/WebKit and Android/Chromium: 50/50 concurrent saves survived with
+// this exact pattern, only 1/50 survived with a naive separate-
+// transactions version): every read-modify-write happens inside ONE
+// IndexedDB transaction. idbGetSet() below is the direct, reusable
+// version of that proven pattern -- not reinvented, copied over.
+var IDB_NAME = 'remember_idb';
+var IDB_STORE = 'kv';
+var _idbConnection = null; // cached open connection, opened once, reused
+
+function idbOpen() {
+  if (_idbConnection) return Promise.resolve(_idbConnection);
+  return new Promise(function(resolve, reject) {
+    var req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = function() {
+      req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = function() {
+      _idbConnection = req.result;
+      // If the connection is closed elsewhere (rare, but the spec
+      // allows a user/browser-initiated close), drop the cache so the
+      // next call reopens cleanly instead of using a dead handle.
+      _idbConnection.onclose = function() { _idbConnection = null; };
+      resolve(_idbConnection);
+    };
+    req.onerror = function() { reject(req.error); };
+  });
+}
+
+// Plain get -- read-only transaction, single key.
+async function idbGet(key) {
+  var db = await idbOpen();
+  return new Promise(function(resolve, reject) {
+    var tx = db.transaction(IDB_STORE, 'readonly');
+    var req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = function() { resolve(req.result === undefined ? null : req.result); };
+    req.onerror = function() { reject(req.error); };
+  });
+}
+
+// Plain set -- own readwrite transaction, single key. Fine for writes
+// that don't depend on the key's current value (most of the migration
+// path, and any key that's always fully replaced rather than merged).
+async function idbSet(key, value) {
+  var db = await idbOpen();
+  return new Promise(function(resolve, reject) {
+    var tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = function() { resolve(); };
+    tx.onerror = function() { reject(tx.error); };
+  });
+}
+
+async function idbRemove(key) {
+  var db = await idbOpen();
+  return new Promise(function(resolve, reject) {
+    var tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = function() { resolve(); };
+    tx.onerror = function() { reject(tx.error); };
+  });
+}
+
+async function idbListKeys(prefix) {
+  var db = await idbOpen();
+  return new Promise(function(resolve, reject) {
+    var tx = db.transaction(IDB_STORE, 'readonly');
+    var req = tx.objectStore(IDB_STORE).getAllKeys();
+    req.onsuccess = function() {
+      var all = req.result || [];
+      resolve(prefix === undefined ? all : all.filter(function(k) { return String(k).indexOf(prefix) === 0; }));
+    };
+    req.onerror = function() { reject(req.error); };
+  });
+}
+
+// THE critical function for Phase 3b: an atomic read-modify-write,
+// exactly the pattern Phase 2 proved. mutatorFn receives the current
+// value (or null if the key doesn't exist yet) and must return the new
+// value to store -- get and put happen inside the SAME transaction, so
+// this is safe against concurrent calls the same way the race test's
+// "correct" pattern was. This is what saveNotes()/saveSettings() will
+// use in Phase 3b to fold their existing 3-way-merge-equivalent logic
+// in as the mutatorFn, rather than reinventing concurrency handling.
+async function idbGetSet(key, mutatorFn) {
+  var db = await idbOpen();
+  return new Promise(function(resolve, reject) {
+    var tx = db.transaction(IDB_STORE, 'readwrite');
+    var store = tx.objectStore(IDB_STORE);
+    var getReq = store.get(key);
+    var newValue;
+    getReq.onsuccess = function() {
+      var current = getReq.result === undefined ? null : getReq.result;
+      newValue = mutatorFn(current);
+      store.put(newValue, key);
+    };
+    getReq.onerror = function() { reject(getReq.error); };
+    tx.oncomplete = function() { resolve(newValue); };
+    tx.onerror = function() { reject(tx.error); };
+  });
+}
+
+// ===== ONE-TIME MIGRATION FROM localStorage (v0.1885, Phase 3a) =====
+// Per the plan's Decisions section: a single one-time migration, no
+// ongoing dual-write, no localStorage fallback kept afterward --
+// appropriate given this project's alpha status (confirmed, no
+// backward-compatibility obligation). Runs once: if IndexedDB has
+// never been populated (checked via a dedicated marker key, not just
+// "is it empty," since a legitimately-empty-but-already-migrated
+// database must never re-migrate and silently resurrect stale
+// localStorage data), copies every existing localStorage key under
+// this deployment's own STORE_PREFIX into IndexedDB, then writes the
+// marker. Does NOT delete the localStorage data -- leaving it in place,
+// untouched, is a free safety net at zero ongoing cost (Phase 3b will
+// stop reading/writing it, but it isn't erased by this step).
+//
+// v0.1886 CHANGED, per Lynn's real test run: 4 of 12 keys showed a
+// "mismatch" that traced back to localStorage genuinely changing in
+// the few milliseconds between this function copying a value and a
+// separate verification step re-reading it -- the app was still live
+// (autosave, the notes-generation counter ticking, and especially the
+// syslog, which the TEST ITSELF was actively writing new entries into
+// while it ran). Not a bug in the copy mechanism -- confirmed by the
+// pattern itself: two of the four "mismatches" had IDENTICAL lengths on
+// both sides, meaning the content changed, not that anything was
+// truncated or corrupted. Added an optional snapshot parameter: when
+// provided (as the test harness below now does), every key is copied
+// from that SAME frozen object instead of re-reading localStorage live
+// per key -- eliminating the race from the test's own design entirely,
+// rather than just explaining it away after the fact. The real,
+// no-argument app-startup call path is completely unchanged.
+var IDB_MIGRATION_MARKER = 'remember_idb_migration_done';
+async function idbRunOneTimeMigrationIfNeeded(snapshot) {
+  var already = await idbGet(IDB_MIGRATION_MARKER);
+  if (already) {
+    logSys('IDB MIGRATION: already done (marker present), skipping.');
+    return { ran: false, keysCopied: 0 };
+  }
+  var keys = snapshot ? Object.keys(snapshot) : storageListKeys(STORE_PREFIX);
+  var copied = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var v = snapshot ? snapshot[k] : storageGet(k);
+    if (v !== null && v !== undefined) {
+      await idbSet(k, v);
+      copied++;
+    }
+  }
+  await idbSet(IDB_MIGRATION_MARKER, { at: Date.now(), keysCopied: copied });
+  logSys('IDB MIGRATION: completed, copied ' + copied + ' key(s) from localStorage into IndexedDB. ' +
+    'Original localStorage data left untouched (not deleted) as a safety net.');
+  return { ran: true, keysCopied: copied };
+}
+
+// v0.1886 CHANGED: optional snapshot parameter, same reasoning as
+// idbRunOneTimeMigrationIfNeeded above. Without one, compares against
+// LIVE current localStorage (a general "are these still in sync right
+// now" check -- expected to show natural drift on any test run after
+// the first, once real app usage has happened since migration, since
+// nothing keeps the two in sync after a one-time migration by design --
+// that's Phase 3b's job, not a bug here). With one, compares against
+// that frozen snapshot specifically -- the race-free, deterministic
+// check the test harness below actually wants for a first-run test.
+async function idbVerifyAgainstLocalStorage(snapshot) {
+  var lsKeys = snapshot ? Object.keys(snapshot) : storageListKeys(STORE_PREFIX);
+  var mismatches = [];
+  var matched = 0;
+  for (var i = 0; i < lsKeys.length; i++) {
+    var k = lsKeys[i];
+    var lsVal = snapshot ? snapshot[k] : storageGet(k);
+    var idbVal = await idbGet(k);
+    if (lsVal !== idbVal) {
+      mismatches.push({ key: k, lsLen: lsVal ? lsVal.length : 0, idbLen: idbVal ? String(idbVal).length : 0 });
+    } else {
+      matched++;
+    }
+  }
+  return { totalKeys: lsKeys.length, matched: matched, mismatches: mismatches };
+}
+
 // ===== ALWAYS-ON SYSTEM LOG (v0.1508) =====
 // Ring buffer of the last 300 critical events in its own localStorage
 // key — survives the debug-logging setting being off, the debug-log
@@ -13413,18 +13724,150 @@ function storeKey(k) { return STORE_PREFIX + k; }
 // entries mirror into the debug-log note when that is enabled.
 var SYSLOG_KEY = storeKey('remember_syslog');
 var _noteLossDetectedThisLoad = false; // set by census check; blocks daily backup of a bad state
+// v0.1887 CHANGED, Phase 3b-i of the IndexedDB migration
+// (IndexedDB-Migration-Plan-v6.md): the syslog now lives in IndexedDB,
+// not localStorage -- the first of the "fire and forget" writes to
+// actually move over (chosen first specifically because it's the
+// highest-call-volume case in the whole app, so getting the pattern
+// right here proves it for everything else in this category). Uses
+// idbGetSet -- the exact atomic get+modify+put transaction Phase 2
+// proved -- rather than two separate storageGet/storageSet calls,
+// which would reopen exactly the race Phase 2's "broken pattern" test
+// demonstrated: logSys is called extremely frequently, often several
+// times within the same tick, and a naive separate-transactions
+// approach would silently lose entries under that load. Deliberately
+// NOT awaited by logSys itself, and logSys's own signature/behavior is
+// completely unchanged from every one of its hundreds of call sites'
+// perspective -- still fire-and-forget, still synchronous-looking, no
+// call site anywhere else in this file needs to change at all.
 function logSys(msg, skipMirror) {
   try {
-    var arr = [];
-    try { arr = JSON.parse(localStorage.getItem(SYSLOG_KEY) || '[]'); } catch(e0) {}
-    arr.push(new Date().toISOString() + ' [v' + APP_VERSION + '] ' + String(msg).slice(0, 500));
-    if (arr.length > 300) arr = arr.slice(arr.length - 300);
-    localStorage.setItem(SYSLOG_KEY, JSON.stringify(arr));
+    var entry = new Date().toISOString() + ' [v' + APP_VERSION + '] ' + String(msg).slice(0, 500);
+    idbGetSet(SYSLOG_KEY, function(current) {
+      var arr = [];
+      try { arr = current ? JSON.parse(current) : []; } catch(e0) {}
+      arr.push(entry);
+      if (arr.length > 300) arr = arr.slice(arr.length - 300);
+      return JSON.stringify(arr);
+    }).catch(function(e) { /* best-effort logging; a lost entry here is not critical */ });
   } catch(e) {}
   // Mirror into the visible debug-log note (when enabled) so everything
   // reads in one place. skipMirror=true avoids recursion when called
   // from inside saveNotes' own failure path (logDebugAction saves notes).
   if (!skipMirror) { try { logDebugAction('[SYS] ' + msg); } catch(e2) {} }
+}
+
+// ── STORAGE USAGE DIAGNOSTIC (v0.1880) ──────────────────────────────────
+// Per Lynn's report of a real localStorage quota error at only ~100
+// plain-text notes with zero attachments, and her specific theory that
+// repeated "Sort by tag" usage may have contributed -- confirmed by
+// reading that code directly: yes, it creates a permanent, numbered
+// backup note ("Copy of <name> before sort N") every single time, by
+// design, never auto-cleaned or expired. This measures ACTUAL usage
+// directly (summing real byte sizes of everything in localStorage under
+// this deployment's own key prefix) rather than relying solely on
+// navigator.storage.estimate() -- that API is real and widely supported
+// now (confirmed via web search, not assumed -- Safari included, since
+// ~2023), but it reports the BROADER "Storage API" quota shared with
+// IndexedDB/Cache Storage, which is often disk-percentage-based and
+// generous. localStorage has historically had its own separate, older,
+// much smaller fixed quota (commonly 5-10MB) that estimate() does NOT
+// reliably reflect -- it could report "plenty of room" while the
+// specific thing that actually failed (localStorage) is nearly full.
+// estimate() is still queried and logged as supplementary context, with
+// this caveat included, never presented as the authoritative number for
+// the specific error Lynn hit.
+function computeStorageUsageBreakdown() {
+  var result = {
+    totalBytes: 0,
+    sortBackupNotes: { count: 0, bytes: 0, names: [] },
+    debugLogNoteBytes: 0,
+    otherNotesBytes: 0,
+    otherNotesCount: 0,
+    nonNoteKeys: [], // [{key, bytes}], every OTHER localStorage key under this deployment's prefix
+    assumedQuotaBytes: 5 * 1024 * 1024 // conservative floor; real limit varies by browser
+  };
+  try {
+    var sortBackupPattern = /^Copy of .+ before sort \d+$/;
+    Object.keys(notes).forEach(function(id) {
+      var n = notes[id];
+      if (!n) return;
+      var sz = new Blob([JSON.stringify(n)]).size;
+      if (n.isDebugLog) {
+        result.debugLogNoteBytes += sz;
+      } else if (sortBackupPattern.test(n.name || '')) {
+        result.sortBackupNotes.count++;
+        result.sortBackupNotes.bytes += sz;
+        if (result.sortBackupNotes.names.length < 10) result.sortBackupNotes.names.push(n.name);
+      } else {
+        result.otherNotesBytes += sz;
+        result.otherNotesCount++;
+      }
+    });
+    storageListKeys(STORE_PREFIX).forEach(function(key) {
+      var bareKey = key.slice(STORE_PREFIX.length);
+      if (bareKey === 'remember_notes') return; // already accounted for above, per-note
+      var val = storageGet(key) || '';
+      var byteSize = new Blob([key + val]).size;
+      result.nonNoteKeys.push({ key: bareKey, bytes: byteSize });
+    });
+    result.nonNoteKeys.sort(function(a, b) { return b.bytes - a.bytes; });
+    result.totalBytes = result.sortBackupNotes.bytes + result.debugLogNoteBytes +
+      result.otherNotesBytes + result.nonNoteKeys.reduce(function(s, k) { return s + k.bytes; }, 0);
+  } catch (e) {
+    logSys('computeStorageUsageBreakdown failed: ' + e);
+  }
+  return result;
+}
+
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+async function logStorageUsageBreakdown(reason) {
+  var b = computeStorageUsageBreakdown();
+  var pct = Math.round((b.totalBytes / b.assumedQuotaBytes) * 100);
+  // v0.1883 RELABELED, per Lynn's follow-up: the two log lines this
+  // function writes measure genuinely different things (that's WHY the
+  // numbers differ), but both previously started with the identical
+  // "STORAGE USAGE (reason):" prefix, so that distinction only showed up
+  // buried in trailing prose rather than being obvious at a glance --
+  // especially awkward given the app's log viewer shows newest-first,
+  // so the SECOND line (estimate(), often 0 B) visually appears ABOVE
+  // the first. Each prefix now names exactly what it's counting.
+  logSys('STORAGE USAGE - localStorage direct count (' + reason + '): total=' + fmtBytes(b.totalBytes) +
+    ' (~' + pct + '% of a conservative ' + fmtBytes(b.assumedQuotaBytes) + ' floor) | ' +
+    'sortByTagBackups=' + b.sortBackupNotes.count + ' notes, ' + fmtBytes(b.sortBackupNotes.bytes) +
+    (b.sortBackupNotes.names.length ? ' [' + b.sortBackupNotes.names.join('; ') + (b.sortBackupNotes.count > 10 ? ', ...' : '') + ']' : '') +
+    ' | otherNotes=' + b.otherNotesCount + ' notes, ' + fmtBytes(b.otherNotesBytes) +
+    ' | debugLogNote=' + fmtBytes(b.debugLogNoteBytes) +
+    ' | otherKeys=[' + b.nonNoteKeys.map(function(k) { return k.key + '=' + fmtBytes(k.bytes); }).join(', ') + ']');
+  try {
+    if ('storage' in navigator && 'estimate' in navigator.storage) {
+      var est = await navigator.storage.estimate();
+      // v0.1882 CLARIFIED, per Lynn's direct question after seeing
+      // usage=0 B in her own log despite having real notes: confirmed
+      // via web search this isn't imprecision or a bug -- usage here
+      // ONLY counts IndexedDB and Cache Storage (Chrome's own docs:
+      // "it reports the total number of bytes used by IndexedDB and
+      // the Cache API"). localStorage is explicitly NOT quota-managed
+      // data in this API at all, in Chrome or Firefox, per the Storage
+      // API's own spec explainer. 0 B is the CORRECT, expected reading
+      // for an app using only localStorage -- not a rounding error or
+      // an approximation, a real scope limitation of what this
+      // specific number measures.
+      logSys('STORAGE USAGE - navigator.storage.estimate() (IndexedDB + Cache Storage ONLY, NOT localStorage) (' + reason + '): usage=' +
+        fmtBytes(est.usage || 0) + ' quota=' + fmtBytes(est.quota || 0) +
+        ' -- 0 B is expected and correct for an app using just ' +
+        'localStorage, not an approximation error. quota is the ceiling for that ' +
+        'separate pool too, NOT localStorage\'s own, typically much smaller, fixed ' +
+        'limit. Logged as supplementary context only -- the "localStorage direct ' +
+        'count" line above is the real measurement for what actually failed.');
+    }
+  } catch (e2) { /* estimate() unsupported or failed -- non-fatal, direct measurement above still stands */ }
+  return b;
 }
 
 // ── DIAGNOSTIC (v0.1531) ───────────────────────────────────────────────
@@ -13853,39 +14296,60 @@ function writeClipboardSafe(text) {
 var SNAP_KEY = storeKey('remember_note_snapshots');
 var SNAP_PER_NOTE = 5;
 var SNAP_TOTAL_CAP = 300000; // chars of stored JSON, quota-safe
-function _snapReadAll() {
-  try { return JSON.parse(localStorage.getItem(SNAP_KEY) || '{}'); } catch(e) { return {}; }
-}
+// v0.1888 CHANGED, Phase 3b-i of the IndexedDB migration
+// (IndexedDB-Migration-Plan-v6.md): the snapshot ring now lives in
+// IndexedDB. Uses idbGetSet -- the same atomic pattern as the syslog --
+// since this is a genuine accumulator (reads the existing ring, adds
+// to it, evicts if oversized), not a plain overwrite; two overlapping
+// snapshot writes without this would risk one silently clobbering the
+// other's addition, exactly the class of bug Phase 2 exists to prevent.
+// snapshotNoteBeforeOp() itself stays completely fire-and-forget from
+// its 10 existing call sites' perspective -- none of them need to
+// change at all -- because the note content it needs to protect is
+// captured into a plain JS variable SYNCHRONOUSLY, before anything
+// async happens; only the actual write to persistent storage is
+// deferred, not the correctness of what gets written.
 function snapshotNoteBeforeOp(noteId, opName) {
   try {
     if (!noteId || !notes[noteId]) return;
-    var content = notes[noteId].content || '';
-    var all = _snapReadAll();
-    var arr = all[noteId] || [];
-    if (arr.length && arr[arr.length - 1].content === content) return; // nothing new to protect
-    arr.push({ at: Date.now(), op: opName, content: content });
-    while (arr.length > SNAP_PER_NOTE) arr.shift();
-    all[noteId] = arr;
-    var payload = JSON.stringify(all);
-    var guard = 0;
-    while (payload.length > SNAP_TOTAL_CAP && guard < 200) {
-      guard++;
-      var oldestId = null, oldestAt = Infinity;
-      Object.keys(all).forEach(function(id) {
-        if (all[id].length && all[id][0].at < oldestAt) { oldestAt = all[id][0].at; oldestId = id; }
-      });
-      if (!oldestId) break;
-      all[oldestId].shift();
-      if (!all[oldestId].length) delete all[oldestId];
-      payload = JSON.stringify(all);
-    }
-    localStorage.setItem(SNAP_KEY, payload);
-    logSys('Snapshot before ' + opName + ': "' + String(notes[noteId].name || '').slice(0, 30) +
-      '" (' + content.length + ' ch)');
+    var content = notes[noteId].content || ''; // captured now, synchronously -- correct regardless of when the write below actually lands
+    var noteName = String(notes[noteId].name || '').slice(0, 30);
+    idbGetSet(SNAP_KEY, function(currentRaw) {
+      var all = {};
+      try { all = currentRaw ? JSON.parse(currentRaw) : {}; } catch(e0) {}
+      var arr = all[noteId] || [];
+      if (arr.length && arr[arr.length - 1].content === content) return currentRaw; // nothing new to protect -- leave the ring unchanged
+      arr.push({ at: Date.now(), op: opName, content: content });
+      while (arr.length > SNAP_PER_NOTE) arr.shift();
+      all[noteId] = arr;
+      var payload = JSON.stringify(all);
+      var guard = 0;
+      while (payload.length > SNAP_TOTAL_CAP && guard < 200) {
+        guard++;
+        var oldestId = null, oldestAt = Infinity;
+        Object.keys(all).forEach(function(id) {
+          if (all[id].length && all[id][0].at < oldestAt) { oldestAt = all[id][0].at; oldestId = id; }
+        });
+        if (!oldestId) break;
+        all[oldestId].shift();
+        if (!all[oldestId].length) delete all[oldestId];
+        payload = JSON.stringify(all);
+      }
+      return payload;
+    }).then(function() {
+      logSys('Snapshot before ' + opName + ': "' + noteName + '" (' + content.length + ' ch)');
+    }).catch(function(e) {
+      try { logSys('Snapshot FAILED (' + opName + '): ' + e, true); } catch(e2) {}
+    });
   } catch(e) { try { logSys('Snapshot FAILED (' + opName + '): ' + e, true); } catch(e2) {} }
 }
-function getLatestSnapshot(noteId) {
-  var arr = _snapReadAll()[noteId] || [];
+// v0.1888 CHANGED: genuinely async now (a real read, no way around
+// that) -- its one caller (the "Restore note backup" button handler)
+// was converted to match, since it uses this return value immediately.
+async function getLatestSnapshot(noteId) {
+  var all = {};
+  try { all = JSON.parse((await idbGet(SNAP_KEY)) || '{}'); } catch(e) { all = {}; }
+  var arr = all[noteId] || [];
   return arr.length ? arr[arr.length - 1] : null;
 }
 
@@ -14807,21 +15271,32 @@ function drawHeadingGapLines(overlay, viewer, area, spacing, totalOffset, ruleCo
 // storeKey() namespacing so dev/stable deployments sharing an origin
 // don't collide on this key either.
 var _zoomBaselineDPR;
+// v0.1888 CHANGED, Phase 3b-i of the IndexedDB migration
+// (IndexedDB-Migration-Plan-v6.md): _zoomFactor() below is called at
+// high frequency (every resize/scroll/zoom event, per the comments
+// throughout this section) and needs _zoomBaselineDPR available
+// SYNCHRONOUSLY every single time -- it cannot wait on a promise the
+// way a one-off button handler can. So this uses window.devicePixelRatio
+// as an immediate, synchronous starting value (correct for a true
+// first-ever load), then asynchronously checks IndexedDB for a
+// previously-persisted baseline and corrects the in-memory value if one
+// exists -- a real, if very brief (typically a few ms, per this app's
+// own measured IndexedDB timing), window where a reopened already-zoomed
+// tab could very briefly use the wrong baseline before self-correcting.
+// Judged an acceptable trade-off: the failure mode is purely cosmetic
+// and transient (a toolbar sized slightly wrong for a few ms), never a
+// data-integrity concern, unlike anything in the core notes/settings
+// path this reasoning would NOT be acceptable for.
+_zoomBaselineDPR = window.devicePixelRatio || 1;
 (function() {
   var _key = storeKey('zoomBaselineDPR');
-  try {
-    var _stored = localStorage.getItem(_key);
-    if (_stored) {
-      _zoomBaselineDPR = parseFloat(_stored);
-    } else {
-      _zoomBaselineDPR = window.devicePixelRatio || 1;
-      localStorage.setItem(_key, String(_zoomBaselineDPR));
-    }
-  } catch (e) {
-    // localStorage unavailable -- fall back to the old, per-load
-    // behavior rather than breaking entirely.
-    _zoomBaselineDPR = window.devicePixelRatio || 1;
-  }
+  idbGet(_key).then(function(_stored) {
+    if (_stored) _zoomBaselineDPR = parseFloat(_stored);
+    else idbSet(_key, String(_zoomBaselineDPR)).catch(function() {});
+  }).catch(function() {
+    // IndexedDB unavailable -- _zoomBaselineDPR already has its
+    // synchronous fallback value from above; nothing more to do.
+  });
 })();
 function _mouseZoomCompensationActive() {
   return !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
@@ -15975,7 +16450,7 @@ var HEARTBEAT_STALE_MS = 60000;
 
 function _readHeartbeat() {
   try {
-    var raw = localStorage.getItem(storeKey(HEARTBEAT_KEY));
+    var raw = storageGet(storeKey(HEARTBEAT_KEY));
     return raw ? JSON.parse(raw) : null;
   } catch (e) { return null; }
 }
@@ -15989,7 +16464,7 @@ function _readHeartbeat() {
 // prevent.
 function _writeHeartbeat() {
   try {
-    localStorage.setItem(storeKey(HEARTBEAT_KEY), JSON.stringify({ id: _instanceId, at: Date.now() }));
+    storageSet(storeKey(HEARTBEAT_KEY), JSON.stringify({ id: _instanceId, at: Date.now() }));
   } catch (e) {}
 }
 function _isOtherActiveHeartbeat(hb) {
@@ -16338,7 +16813,7 @@ function backupFolderStructureIfGood(currentFolders, currentNotes) {
       return currentNotes[id].folderId && !currentFolders[currentNotes[id].folderId];
     });
     if (hasOrphans) return; // never overwrite a known-good backup with data we already suspect
-    localStorage.setItem(FOLDER_BACKUP_KEY, JSON.stringify({
+    storageSet(FOLDER_BACKUP_KEY, JSON.stringify({
       folders: currentFolders,
       savedAt: Date.now()
     }));
@@ -16347,7 +16822,7 @@ function backupFolderStructureIfGood(currentFolders, currentNotes) {
 
 function restoreFoldersFromBackupIfPossible() {
   try {
-    var raw = localStorage.getItem(FOLDER_BACKUP_KEY);
+    var raw = storageGet(FOLDER_BACKUP_KEY);
     if (!raw) return null;
     var parsed = JSON.parse(raw);
     if (!parsed || !parsed.folders || typeof parsed.folders !== 'object') return null;
@@ -16358,6 +16833,23 @@ function restoreFoldersFromBackupIfPossible() {
 }
 
 function loadState() {
+  // v0.1887 NEW, Phase 3b-i of the IndexedDB migration
+  // (IndexedDB-Migration-Plan-v6.md): the REAL one-time migration now
+  // actually runs at real app startup, not just via the manual test
+  // button. Fire-and-forget deliberately -- loadState() itself stays
+  // synchronous (converting it to async would cascade into every one
+  // of its own many callers), and this is safe to not await: the
+  // migration is fast (confirmed ~10-20ms for Lynn's real 12 keys),
+  // idempotent (marker-guarded, safe to call every single startup),
+  // and non-destructive (never deletes the localStorage data it reads
+  // from). The one piece of code that depends on migration having
+  // completed -- logSys's syslog handling, converted below -- degrades
+  // gracefully even in the rare case it runs before migration finishes
+  // (starts from an empty array rather than erroring), so this doesn't
+  // need to block anything else in startup to be correct.
+  idbRunOneTimeMigrationIfNeeded().catch(function(e) {
+    logSys('IDB MIGRATION (real, startup) failed: ' + e);
+  });
   // v0.1798 FIX, per Lynn's live "storage may be full" report: proactively
   // clean up any ALREADY-accumulated conflict-backup keys from before this
   // fix existed -- her actual browser storage right now very likely has
@@ -16368,22 +16860,18 @@ function loadState() {
   // write-path now enforces going forward).
   try {
     var _bkPrefix = storeKey('remember_notes_conflict_backup_');
-    var _bkKeysFound = [];
-    for (var _bi = 0; _bi < localStorage.length; _bi++) {
-      var _bKey = localStorage.key(_bi);
-      if (_bKey && _bKey.indexOf(_bkPrefix) === 0) _bkKeysFound.push(_bKey);
-    }
+    var _bkKeysFound = storageListKeys(_bkPrefix);
     if (_bkKeysFound.length > 1) {
       _bkKeysFound.sort(); // timestamps in the key name sort chronologically as strings
       for (var _bj = 0; _bj < _bkKeysFound.length - 1; _bj++) {
-        localStorage.removeItem(_bkKeysFound[_bj]);
+        storageRemove(_bkKeysFound[_bj]);
       }
       logSys('STARTUP CLEANUP: removed ' + (_bkKeysFound.length - 1) +
         ' accumulated conflict-backup key(s), keeping only the most recent.');
     }
   } catch(eCleanup) {}
   try {
-    const s = localStorage.getItem(storeKey('remember_settings'));
+    const s = storageGet(storeKey('remember_settings'));
     if (s) settings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(s));
     // v0.1795: baseline snapshot for settings' own conflict protection --
     // see saveSettings()'s own comment for the full explanation.
@@ -16393,7 +16881,7 @@ function loadState() {
   var _notesRaw = null;
   var _hadNotesKey = false;  // true iff remember_notes existed when this load STARTED
   try {
-    _notesRaw = localStorage.getItem(storeKey('remember_notes'));
+    _notesRaw = storageGet(storeKey('remember_notes'));
     if (_notesRaw) { _hadNotesKey = true; notes = JSON.parse(_notesRaw); }
     // v0.1794 NEW, per Lynn's report (Chromebook, note completely gone
     // after switching between a Chrome tab and the installed PWA): the
@@ -16406,13 +16894,13 @@ function loadState() {
     // saveNotes() can detect a conflict at the moment it's about to
     // write, not just (uselessly, see that function's own comment)
     // after the fact at a later load.
-    _myNotesGen = parseInt(localStorage.getItem(storeKey('remember_notes_gen')) || '0', 10) || 0;
+    _myNotesGen = parseInt(storageGet(storeKey('remember_notes_gen')) || '0', 10) || 0;
   } catch(e) {
     // CRITICAL: never silently continue past a notes parse failure — the
     // app would boot with zero notes and the next saveNotes() would
     // permanently overwrite damaged-but-recoverable data. Preserve the
     // raw string FIRST, then log loudly and warn the user.
-    try { localStorage.setItem(storeKey('remember_notes_corrupt'), _notesRaw || ''); } catch(e2) {}
+    try { storageSet(storeKey('remember_notes_corrupt'), _notesRaw || ''); } catch(e2) {}
     logSys('CRITICAL: remember_notes failed to parse (' + e + '). Raw data (' +
       (_notesRaw ? _notesRaw.length : 0) + ' chars) preserved to key remember_notes_corrupt.');
     setTimeout(function() {
@@ -16420,11 +16908,11 @@ function loadState() {
     }, 1200);
   }
   try {
-    const f = localStorage.getItem(storeKey('remember_folders'));
+    const f = storageGet(storeKey('remember_folders'));
     if (f) folders = JSON.parse(f);
   } catch(e) {}
   try {
-    const cur = localStorage.getItem(storeKey('remember_current'));
+    const cur = storageGet(storeKey('remember_current'));
     if (cur && notes[cur]) currentNoteId = cur;
   } catch(e) {}
 
@@ -16445,9 +16933,15 @@ function loadState() {
   // exists in localStorage right now, and which deployment is running.
   try {
     var _censusParts = [];
+    // v0.1887 NOTE: remember_syslog moved to IndexedDB (Phase 3b-i) --
+    // this census is explicitly scoped to localStorage (per its own
+    // comment above), so it's not wrong to still report this key's
+    // size, but it's now a FROZEN snapshot from whenever migration ran,
+    // not the live syslog. Labeled explicitly rather than silently
+    // misleading anyone reading this line expecting a current number.
     ['remember_notes','remember_settings','remember_folders','remember_themes','remember_note_census','remember_notes_corrupt','remember_syslog','remember_notes_backup','remember_note_snapshots'].forEach(function(k) {
-      var v = localStorage.getItem(storeKey(k));
-      if (v !== null) _censusParts.push(k + '=' + v.length + 'ch');
+      var v = storageGet(storeKey(k));
+      if (v !== null) _censusParts.push(k + '=' + v.length + 'ch' + (k === 'remember_syslog' ? '(frozen,movedToIDB)' : ''));
     });
     var _cnTotal = Object.keys(notes).length;
     var _cnReal = Object.keys(notes).filter(function(id) { return !notes[id].isDebugLog; }).length;
@@ -16455,6 +16949,28 @@ function loadState() {
       ' notes=' + _cnTotal + '(real ' + _cnReal + ') folders=' + Object.keys(folders).length +
       ' [' + _censusParts.join(', ') + ']');
   } catch(eC) {}
+  // v0.1880 NEW, per Lynn's report of hitting a real localStorage quota
+  // error with no advance warning -- "I would have preferred to been
+  // warned that I was getting close to reaching a quota before I
+  // actually was told I had already hit a limit." Runs the same
+  // measurement as the manual "Check Storage Usage" button, always
+  // logged (loud, per this project's fail-loudly rule), with a
+  // user-facing toast only past a real threshold (70% of the
+  // conservative floor) -- warning on every single load regardless of
+  // usage would just train Lynn to ignore it. This runs once, here, at
+  // startup -- no separate "already warned" flag needed, since this
+  // code path itself only executes once per page load.
+  logStorageUsageBreakdown('startup').then(function(b) {
+    var pct = b.totalBytes / b.assumedQuotaBytes;
+    if (pct >= 0.7) {
+      var pctInt = Math.round(pct * 100);
+      var extra = b.sortBackupNotes.count > 0
+        ? ' ' + b.sortBackupNotes.count + ' of that is old "Sort by tag" backup notes -- search "Copy of" to clean up ones you no longer need.'
+        : '';
+      showToast('Storage is getting full (~' + pctInt + '% of a typical browser limit).' + extra +
+        ' See Settings \u2192 Debugging \u2192 Check Storage Usage for details.', true);
+    }
+  });
   // v0.1550: validate SETTING_BUCKETS against DEFAULT_SETTINGS once per
   // startup — cheap, and catches classification drift immediately rather
   // than silently, per the project's fail-loudly rule.
@@ -16464,7 +16980,7 @@ function loadState() {
   // id+name). If notes present then are gone now, NAME them — converts
   // "some notes seem to be missing" into hard evidence.
   try {
-    var _censusRaw = localStorage.getItem(storeKey('remember_note_census'));
+    var _censusRaw = storageGet(storeKey('remember_note_census'));
     if (_censusRaw) {
       var _census = JSON.parse(_censusRaw);
       var _lost = (_census.entries || []).filter(function(en) { return !notes[en.id]; });
@@ -16653,13 +17169,13 @@ function loadState() {
   try {
     var _bkKey = storeKey('remember_notes_backup');
     var _bkAt = 0;
-    var _bkRaw = localStorage.getItem(_bkKey);
+    var _bkRaw = storageGet(_bkKey);
     if (_bkRaw) { try { _bkAt = (JSON.parse(_bkRaw).at || 0); } catch(eB1) {} }
     if (!_noteLossDetectedThisLoad && Object.keys(notes).length > 0 &&
         Date.now() - _bkAt > 20 * 3600 * 1000) {
       var _bkPayload = JSON.stringify({ at: Date.now(), v: APP_VERSION, notes: notes, folders: folders });
       if (_bkPayload.length < 2000000) {
-        localStorage.setItem(_bkKey, _bkPayload);
+        storageSet(_bkKey, _bkPayload);
         logSys('Daily backup written: ' + Object.keys(notes).length + ' notes, ' +
           Object.keys(folders).length + ' folders, ' + _bkPayload.length + ' chars');
       } else {
@@ -16764,7 +17280,7 @@ function loadState() {
   // (known-quirks registry rule). Name check is only a belt-and-braces
   // duplicate guard for the first run.
   try {
-    if (!localStorage.getItem(storeKey('remember_migr_tag_sort_sampler'))) {
+    if (!storageGet(storeKey('remember_migr_tag_sort_sampler'))) {
       var _tssExists = Object.values(notes).some(function(n) {
         return (n.name || '').indexOf('Tag Sort Sampler') !== -1;
       });
@@ -16779,7 +17295,7 @@ function loadState() {
         saveNotes();
         logSys('MIGRATION: added Tag Sort Sampler note (v0.1628)');
       }
-      localStorage.setItem(storeKey('remember_migr_tag_sort_sampler'), '1');
+      storageSet(storeKey('remember_migr_tag_sort_sampler'), '1');
     }
   } catch (eTssMigr) { logSys('MIGRATION: Tag Sort Sampler failed: ' + eTssMigr); }
 }
@@ -16858,7 +17374,7 @@ function saveSettings() {
   // _mergeSettingsOnConflict()'s own comment for the full reasoning.
   try {
     if (_settingsBaseline) {
-      var _liveRaw = localStorage.getItem(storeKey('remember_settings'));
+      var _liveRaw = storageGet(storeKey('remember_settings'));
       var _liveStored = _liveRaw ? Object.assign({}, DEFAULT_SETTINGS, JSON.parse(_liveRaw)) : Object.assign({}, DEFAULT_SETTINGS);
       if (JSON.stringify(_liveStored) !== JSON.stringify(_settingsBaseline) && _shouldCheckSettingsConflict()) {
         var _result = _mergeSettingsOnConflict(_liveStored, _settingsBaseline, toSave);
@@ -16877,7 +17393,7 @@ function saveSettings() {
     }
   } catch(eSettingsConflict) {}
   try {
-    localStorage.setItem(storeKey('remember_settings'), JSON.stringify(toSave));
+    storageSet(storeKey('remember_settings'), JSON.stringify(toSave));
   } catch(e) {
     logSys('saveSettings FAILED: ' + e, true);
     try { if (typeof showToast === 'function' && _shouldShowSaveFailedToast()) showToast('\u26a0\ufe0f Settings save failed \u2014 storage may be full.', true); } catch(eT) {}
@@ -16888,14 +17404,14 @@ function saveSettings() {
 }
 function saveThemes() {
   try {
-    localStorage.setItem(storeKey('remember_themes'), JSON.stringify(themes));
+    storageSet(storeKey('remember_themes'), JSON.stringify(themes));
   } catch(e) {
     logSys('saveThemes FAILED: ' + e, true);
     try { if (typeof showToast === 'function') showToast('\u26a0\ufe0f Theme save failed \u2014 storage may be full.', true); } catch(eT) {}
   }
 }
 function loadThemes() {
-  try { var t = localStorage.getItem(storeKey('remember_themes')); if (t) themes = JSON.parse(t); } catch(e) { themes = {}; }
+  try { var t = storageGet(storeKey('remember_themes')); if (t) themes = JSON.parse(t); } catch(e) { themes = {}; }
 }
 function genThemeId() { return 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
@@ -16944,10 +17460,10 @@ function saveNotes() {
   // comment), and backs up this instance's pre-merge view regardless,
   // as a last-resort safety net.
   try {
-    var _liveGenRaw = localStorage.getItem(storeKey('remember_notes_gen'));
+    var _liveGenRaw = storageGet(storeKey('remember_notes_gen'));
     var _liveGen = parseInt(_liveGenRaw || '0', 10) || 0;
     if (_myNotesGen !== null && _liveGen !== _myNotesGen && _shouldCheckNotesConflict()) {
-      var _storedRaw = localStorage.getItem(storeKey('remember_notes'));
+      var _storedRaw = storageGet(storeKey('remember_notes'));
       var _storedNotes = {};
       try { _storedNotes = _storedRaw ? JSON.parse(_storedRaw) : {}; } catch(eParse) { _storedNotes = {}; }
       try {
@@ -16965,14 +17481,10 @@ function saveNotes() {
         // "preserve a pre-merge snapshot just in case the merge logic
         // itself has a bug" safety net, without the unbounded growth.
         var _backupKeyPrefix = storeKey('remember_notes_conflict_backup_');
-        for (var _bk = 0; _bk < localStorage.length; _bk++) {
-          var _bkKey = localStorage.key(_bk);
-          if (_bkKey && _bkKey.indexOf(_backupKeyPrefix) === 0) {
-            localStorage.removeItem(_bkKey);
-            _bk--; // removeItem shifts indices down; re-check this position
-          }
-        }
-        localStorage.setItem(storeKey('remember_notes_conflict_backup_' + Date.now()),
+        storageListKeys(_backupKeyPrefix).forEach(function(_bkKey) {
+          storageRemove(_bkKey);
+        });
+        storageSet(storeKey('remember_notes_conflict_backup_' + Date.now()),
           JSON.stringify({ mine: notes, storedGen: _liveGen, myGen: _myNotesGen }));
       } catch(eBackup) {}
       var _beforeCount = Object.keys(notes).length;
@@ -16988,7 +17500,7 @@ function saveNotes() {
   } catch(eConflict) {}
 
   try {
-    localStorage.setItem(storeKey('remember_notes'), JSON.stringify(notes));
+    storageSet(storeKey('remember_notes'), JSON.stringify(notes));
   } catch(e) {
     // A quota (or any) failure here was previously UNCAUGHT — edits
     // silently stopped persisting and everything created after the
@@ -17002,8 +17514,8 @@ function saveNotes() {
   // record it as this instance's own -- our own write obviously isn't a
   // conflict with itself.
   try {
-    var _newGen = (parseInt(localStorage.getItem(storeKey('remember_notes_gen')) || '0', 10) || 0) + 1;
-    localStorage.setItem(storeKey('remember_notes_gen'), String(_newGen));
+    var _newGen = (parseInt(storageGet(storeKey('remember_notes_gen')) || '0', 10) || 0) + 1;
+    storageSet(storeKey('remember_notes_gen'), String(_newGen));
     _myNotesGen = _newGen;
   } catch(eGen) {}
   // Census: record what this save contained (id+name only — tiny) and
@@ -17013,7 +17525,7 @@ function saveNotes() {
     var _entries = Object.keys(notes).map(function(id) {
       return { id: id, name: String(notes[id].name || '').slice(0, 40) };
     });
-    localStorage.setItem(storeKey('remember_note_census'), JSON.stringify({
+    storageSet(storeKey('remember_note_census'), JSON.stringify({
       v: APP_VERSION, path: location.pathname, at: Date.now(),
       count: _entries.length, entries: _entries
     }));
@@ -17029,7 +17541,7 @@ function saveFolders() {
     logSys('saveFolders() blocked -- another instance is active.', true);
     return;
   }
-  try { localStorage.setItem(storeKey('remember_folders'), JSON.stringify(folders)); } catch(e) {}
+  try { storageSet(storeKey('remember_folders'), JSON.stringify(folders)); } catch(e) {}
   // Refresh the backup during normal use too (folder created/renamed/
   // deleted), not just at app load — deliberately delayed rather than
   // synchronous with the line above, so this write happens at a
@@ -17040,8 +17552,8 @@ function saveFolders() {
 }
 
 function saveCurrentRef() {
-  if (currentNoteId) localStorage.setItem(storeKey('remember_current'), currentNoteId);
-  else localStorage.removeItem(storeKey('remember_current'));
+  if (currentNoteId) storageSet(storeKey('remember_current'), currentNoteId);
+  else storageRemove(storeKey('remember_current'));
 }
 
 // ===== DATE HELPERS =====
@@ -26760,7 +27272,7 @@ function cancelSettings() {
   logDebugAction(settingsDirty() ? 'Cancelled Settings (discarded changes)' : 'Cancelled Settings (no changes)');
   settingsSnapshot = null;
   try {
-    const s = localStorage.getItem(storeKey('remember_settings'));
+    const s = storageGet(storeKey('remember_settings'));
     if (s) settings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(s));
     else settings = Object.assign({}, DEFAULT_SETTINGS);
   } catch(e) {
@@ -29022,7 +29534,15 @@ function makeImportFolderName(label) {
     logDebugAction('Closed Tour (slide ' + (_tourIdx + 1) + ' of ' + _tourSlides.length + ')' +
       (finished ? ' [finished]' : ''));
     document.getElementById('tour-overlay').classList.remove('open');
-    localStorage.setItem(storeKey('remember_tour_seen'), '1');
+    // v0.1888 NOTE: deliberately NOT converted -- stays on localStorage,
+    // matching its read side (checked in the same boolean condition as
+    // remember_notes, core data deferred to Phase 3b-ii). Caught during
+    // this same build: an earlier draft moved only this write to
+    // IndexedDB while the read stayed on localStorage, which would have
+    // meant the tour never actually registered as "seen" and could
+    // reappear on every launch -- exactly the write/read-split bug this
+    // migration needs to avoid. Both sides move together in 3b-ii.
+    storageSet(storeKey('remember_tour_seen'), '1');
     // Skip / tap-outside from a Help-launched tour returns to Help —
     // being dumped all the way out of Help felt broken. FINISHING the
     // tour (Get Started on the last slide) still exits fully, since
@@ -29533,7 +30053,7 @@ function makeImportFolderName(label) {
   })();
 
   // Show on first launch
-  if (!localStorage.getItem(storeKey('remember_tour_seen')) && !localStorage.getItem(storeKey('remember_notes'))) {
+  if (!storageGet(storeKey('remember_tour_seen')) && !storageGet(storeKey('remember_notes'))) {
     setTimeout(openTour, 800);
   }
 
@@ -31142,10 +31662,10 @@ function makeImportFolderName(label) {
   });
 
   document.getElementById('more-restore-snap-btn').addEventListener('mousedown', function(e) { e.preventDefault(); });
-  document.getElementById('more-restore-snap-btn').addEventListener('click', function() {
+  document.getElementById('more-restore-snap-btn').addEventListener('click', async function() {
     closeMoreMenu();
     if (!currentNoteId || !notes[currentNoteId]) return;
-    var snap = getLatestSnapshot(currentNoteId);
+    var snap = await getLatestSnapshot(currentNoteId);
     if (!snap) { showToast('No backups recorded for this note yet', false); return; }
     showConfirm('Restore note backup',
       'Restore this note to how it was before \u201c' + snap.op + '\u201d (' +
@@ -31262,7 +31782,7 @@ function makeImportFolderName(label) {
     _retiredBtns.forEach(function(id) { delete settings.toolbarPlacement[id]; });
   }
   // Persist cleaned settings immediately so stale data doesn't survive a reload
-  try { localStorage.setItem(storeKey('remember_settings'), JSON.stringify(settings)); } catch(e) {}
+  try { storageSet(storeKey('remember_settings'), JSON.stringify(settings)); } catch(e) {}
 
   // Apply on init
   applyToolbarOrder();
@@ -34599,13 +35119,9 @@ function makeImportFolderName(label) {
   // immediately, so if a note is currently open the fixed toolbar/FAB
   // sizing reflects the reset right away rather than needing a reload.
   document.getElementById('reset-zoom-size-btn').addEventListener('click', function() {
-    try {
-      var _key = storeKey('zoomBaselineDPR');
-      _zoomBaselineDPR = window.devicePixelRatio || 1;
-      localStorage.setItem(_key, String(_zoomBaselineDPR));
-    } catch (e) {
-      _zoomBaselineDPR = window.devicePixelRatio || 1;
-    }
+    var _key = storeKey('zoomBaselineDPR');
+    _zoomBaselineDPR = window.devicePixelRatio || 1; // correct immediately, in-memory
+    idbSet(_key, String(_zoomBaselineDPR)).catch(function() {}); // persistence, fire-and-forget
     if (typeof pinToolbars === 'function') pinToolbars();
     showToast('Zoom size reset');
   });
@@ -34992,9 +35508,17 @@ function makeImportFolderName(label) {
     // confirm dialog (whose message area scrolls); Copy puts the full
     // chronological log on the clipboard for pasting into a bug report.
     var _viewSysRow = document.getElementById('view-syslog-row');
-    if (_viewSysRow) _viewSysRow.addEventListener('click', function() {
+    // v0.1887 CHANGED, Phase 3b-i: reads from IndexedDB now, matching
+    // where logSys (converted above) actually writes -- a plain
+    // storageGet() here would silently show only the OLD, frozen
+    // localStorage history and never anything logged since this build.
+    // Self-contained UI handler, nothing else depends on its return
+    // value synchronously -- a clean, low-risk site to convert directly
+    // rather than needing the fire-and-forget treatment logSys itself
+    // needed.
+    if (_viewSysRow) _viewSysRow.addEventListener('click', async function() {
       var arr = [];
-      try { arr = JSON.parse(localStorage.getItem(SYSLOG_KEY) || '[]'); } catch(e) {}
+      try { arr = JSON.parse((await idbGet(SYSLOG_KEY)) || '[]'); } catch(e) {}
       if (!arr.length) {
         showConfirm('System Log', 'No system log entries recorded yet.', 'Close', function() {}, false, null, null);
         return;
@@ -35041,6 +35565,76 @@ function makeImportFolderName(label) {
           });
         },
         false, 'Cancel', null);
+    });
+    var _checkStorageRow = document.getElementById('check-storage-usage-row');
+    if (_checkStorageRow) _checkStorageRow.addEventListener('click', async function() {
+      var b = await logStorageUsageBreakdown('manual check');
+      var pct = Math.round((b.totalBytes / b.assumedQuotaBytes) * 100);
+      var msg = 'Using ~' + fmtBytes(b.totalBytes) + ' (~' + pct + '% of a typical browser limit).';
+      if (b.sortBackupNotes.count > 0) {
+        msg += ' ' + b.sortBackupNotes.count + ' old "Sort by tag" backup note' +
+          (b.sortBackupNotes.count === 1 ? '' : 's') + ' (' + fmtBytes(b.sortBackupNotes.bytes) +
+          ') found -- search "Copy of" to find and delete old ones you no longer need.';
+      }
+      msg += ' Full breakdown written to System Log.';
+      showToast(msg, true);
+    });
+    var _testIdbRow = document.getElementById('test-idb-migration-row');
+    if (_testIdbRow) _testIdbRow.addEventListener('click', async function() {
+      showToast('Running IndexedDB round-trip test...', true);
+      try {
+        // v0.1886 REDESIGNED, per Lynn's real test run showing 4/12
+        // "mismatches" that traced back to localStorage still being
+        // live and changing during the test (autosave, the generation
+        // counter, and the syslog -- which the TEST ITSELF was writing
+        // into while running). This button no longer touches the REAL
+        // one-time migration at all (that only ever runs once, by
+        // design, and Lynn's real migration already completed) -- it's
+        // now a fully independent, repeatable round-trip test: capture
+        // a frozen snapshot of real data (read-only), copy it into
+        // TEST-ONLY namespaced keys, verify byte-for-byte against that
+        // SAME frozen snapshot (no race possible -- nothing else is
+        // reading or writing these particular test keys), then clean
+        // up afterward so repeated taps never accumulate test data.
+        // This directly answers the actual Phase 3a question -- "does
+        // idbSet/idbGet round-trip data correctly?" -- without being
+        // entangled with whether the one real migration already ran.
+        var snapshot = {};
+        var origKeys = storageListKeys(STORE_PREFIX);
+        origKeys.forEach(function(k) { snapshot[k] = storageGet(k); });
+        var testKeys = origKeys.map(function(k) { return 'idbtest:' + k; });
+        for (var i = 0; i < origKeys.length; i++) {
+          await idbSet(testKeys[i], snapshot[origKeys[i]]);
+        }
+        var mismatches = [];
+        for (var j = 0; j < origKeys.length; j++) {
+          var roundTripped = await idbGet(testKeys[j]);
+          if (roundTripped !== snapshot[origKeys[j]]) {
+            mismatches.push({ key: origKeys[j], origLen: snapshot[origKeys[j]] ? snapshot[origKeys[j]].length : 0,
+              roundTripLen: roundTripped ? String(roundTripped).length : 0 });
+          }
+        }
+        // Clean up -- this is a repeatable test, not a real migration;
+        // nothing should accumulate in IndexedDB from tapping it.
+        for (var m = 0; m < testKeys.length; m++) { await idbRemove(testKeys[m]); }
+
+        var migrationMarker = await idbGet(IDB_MIGRATION_MARKER);
+        logSys('IDB ROUND-TRIP TEST: ' + (testKeys.length - mismatches.length) + '/' + testKeys.length +
+          ' keys round-tripped exactly via idbSet/idbGet' +
+          (mismatches.length ? ' | MISMATCHES (real bug if any appear here): ' + JSON.stringify(mismatches) : '') +
+          ' | real one-time migration status: ' + (migrationMarker ? 'already completed at ' + new Date(migrationMarker.at).toLocaleString() : 'not yet run'));
+        if (mismatches.length === 0) {
+          showToast('\u2705 IndexedDB round-trip test PASSED \u2014 all ' + testKeys.length +
+            ' keys stored and retrieved exactly via idbSet/idbGet. Full details in System Log.', true);
+        } else {
+          showToast('\u274c Round-trip test found ' + mismatches.length +
+            ' real mismatch(es) out of ' + testKeys.length + ' keys \u2014 this WOULD indicate a genuine bug ' +
+            'in idbSet/idbGet (no other process touches these test-only keys). See System Log for details.', true);
+        }
+      } catch (e) {
+        logSys('IDB ROUND-TRIP TEST FAILED with error: ' + e);
+        showToast('IndexedDB test failed: ' + e, true);
+      }
     });
     var _tsi = document.getElementById('today-suffix-input');
     if (_tsi) _tsi.addEventListener('input', function() { settings.todaySuffix = this.value; updateSaveBtnState(); });
@@ -46455,14 +47049,20 @@ function unCheckAll() {
 
 // ===== PASTE IN VIEW MODE =====
 // Clipboard paste tracking — fingerprint of last clipboard content we asked about.
-// Persisted to localStorage so it survives app restarts.
+// v0.1888 CHANGED, Phase 3b-i: persisted to IndexedDB now, not
+// localStorage. Genuinely standalone -- confirmed _hasAskedForClip()'s
+// only call site elsewhere in this file is inside commented-out dead
+// code (the pre-v0.1840 auto-paste-prompt flow), and _markClipAsked()'s
+// real callers are all fire-and-forget already. _hasAskedForClip()
+// itself is now async (a real read) for correctness/future-proofing,
+// even though nothing live currently awaits it.
 var _CLIP_KEY = 'remember_last_clip_asked';
 function _getClipFingerprint(text) { return (text || '').slice(0, 200); }
-function _hasAskedForClip(text) {
-  try { return localStorage.getItem(_CLIP_KEY) === _getClipFingerprint(text); } catch(e) { return false; }
+async function _hasAskedForClip(text) {
+  try { return (await idbGet(_CLIP_KEY)) === _getClipFingerprint(text); } catch(e) { return false; }
 }
 function _markClipAsked(text) {
-  try { localStorage.setItem(_CLIP_KEY, _getClipFingerprint(text)); } catch(e) {}
+  idbSet(_CLIP_KEY, _getClipFingerprint(text)).catch(function() {});
 }
 
 var pasteMode     = false;
@@ -47151,7 +47751,7 @@ window.addEventListener('pagehide', function() {
     try {
       var _hbOnClose = _readHeartbeat();
       if (_hbOnClose && _hbOnClose.id === _instanceId) {
-        localStorage.removeItem(storeKey(HEARTBEAT_KEY));
+        storageRemove(storeKey(HEARTBEAT_KEY));
       }
     } catch (eHbClose) {}
   }
@@ -47182,7 +47782,7 @@ window.addEventListener('storage', function(e) {
       // a future save's conflict check accurate.
       _myNotesGen = parseInt(e.newValue || '0', 10) || 0;
       var _otherNotes = null;
-      try { _otherNotes = JSON.parse(localStorage.getItem(storeKey('remember_notes')) || '{}'); } catch(ePN) {}
+      try { _otherNotes = JSON.parse(storageGet(storeKey('remember_notes')) || '{}'); } catch(ePN) {}
       if (!_otherNotes) return;
       if (!document.body.classList.contains('note-screen-active')) {
         // Home screen, nothing to disrupt -- safe to just adopt the
