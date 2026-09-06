@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1902 -->
+<!-- Remember App - Version 0.1903 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1902
+  Version 0.1903
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -106,7 +106,7 @@
   v0.1818 - CRITICAL FIX: crash when switching to R&R mode with an active Find in Note search, per Lynn's exact report ("undefined is not an object (evaluating 'el.classList.remove')"). Root cause confirmed precisely: _findMatches has a completely different shape depending on mode -- plain {start,end} position objects in typing mode (used with the textarea's own native selection), real DOM <mark> elements in R&R mode (used for click-to-jump and highlight styling) -- and nothing ever converted between the two shapes on a mode switch. Switching to R&R mode left the stale typing-mode position-objects in place; the very next 'next match' press then tried to call .classList on a plain object instead of a real element. Per Lynn's explicit request that this actually work rather than just avoid crashing (typing mode's keyboard popping back up on every 'next' press being the specific annoyance driving the request) -- rather than just guard against the crash, the search now genuinely survives a mode switch in EITHER direction: reuses runFind()'s own existing per-mode match-building logic (rather than duplicating it) to correctly rebuild _findMatches in whichever shape the new mode needs, then restores the same match INDEX she was on (clamped, in case the match count somehow changed) rather than resetting to the first match -- fixed a related bug found while implementing this: runFind()'s R&R-mode branch never actually respected its own skipJump parameter, unlike the typing-mode branch, which would have silently discarded her position even with a naive fix. Previously, leaving R&R mode always silently cancelled an active search entirely (never crashed, but never explained why); now both directions behave the same, consistent way. Verified directly, end to end: the exact reported crash scenario (search 'apple' in a 4-match note, advance to the third match, switch to R&R mode) produces zero errors, correctly rebuilds all 4 matches as real DOM elements, and correctly marks the SAME third match as current in the new mode; switching back to typing mode correctly restores the exact right text selection (confirmed character-precise); separately verified three edge cases produce no errors: a mode switch with no active search at all, an active search with zero matches, and that explicitly closing Find still works normally afterward. Suite: 332/332 (harness v8).
   v0.1817 - NEW: Copy for Speech and Share for Speech added to the Quick Action Bar's available actions, per Lynn's request (for routing note text into external, more natural-sounding text-to-speech apps like ElevenReader). Reuses the exact same copyNoteForSpeech()/shareNoteForSpeech() functions the existing toolbar buttons and More menu items already call, rather than reimplementing the behavior -- guarantees identical behavior with zero risk of the two versions drifting apart. Since the Settings dropdown for each of the 4 Quick Action Bar slots is already dynamically generated from the same central QUICK_ACTION_BAR_ACTIONS registry the actual click-handling reads from, this was a pure data addition -- no separate UI wiring needed, confirmed directly rather than assumed. Verified directly: both new actions correctly call their real underlying functions (not placeholder or duplicated logic), and both correctly appear as selectable options in the actual rendered Settings dropdown. Suite: 332/332 (harness v8).
   v0.1816 - FIX: 11 sliders the original survey genuinely missed, per Lynn's report -- bold cursor width, ruler thickness/transparency, all four "line position" sliders (ruled/dot-grid/checkbox-line/margin-line), and four bubble-mode sliders (padding/spacing/radius/shadow) found while re-auditing. Confirmed root cause directly rather than guessed: every one of these uses a plain range input with no settings-range class at all, an exact-match gap in the original class-based search, not something ambiguous. Also confirmed and fixed a second, genuinely separate bug Lynn flagged as a possibility: bold cursor width's slider and value sit inline together in one flex row, competing for space -- a new button there really could push off-screen. Fixed generally (not specific to this one row) by having the button-insertion logic set flex-wrap on whatever row it lands in; verified directly with a real bounding-box measurement (button's right edge lands at 480px in a 500px viewport, not clipped) plus a screenshot confirming a clean wrap. Caught a related third issue while wiring these: several rows put their unit (px, %) as separate text AFTER the value span rather than inside it, which would have wedged the new button between the number and its unit -- fixed by attaching to the row generally instead of directly after the number, confirmed backward-compatible with every slider from the last build too. NEW: a genuine Bold Cursor preview, per Lynn's report that one never existed. Deliberately reuses the app's actual, hard-won caret-measurement system (the same one powering the real note editor, Quick Add, and Edit Paragraph) on a real, focusable preview textarea registered into the same instance list, rather than building a simplified mockup that could end up looking different from the real thing. Verified directly via screenshot: the real colored cursor renders correctly mid-word in sample text, and a width change correctly shows once the preview is refocused -- confirmed this refocus requirement matches the real feature's own authentic behavior (a cursor only shows while its text box is actually focused) rather than being a bug. Suite: 332/332 (harness v8).
-  v0.1902 - NEW generic handler-hang detection, per Lynn's explicit request to validate the detection tooling BEFORE testing the actual fix (this build is deliberately based on v0.1900, NOT v0.1901 -- the bug is still present here). Direct answer to Lynn's lesson-learned question: every earlier diagnostic module (EMTIP/KEYDOWN/INPUT-HANG-DIAG) instrumented the specific handlers someone currently suspected -- which only helps if that suspicion is already correct. The real bug lived in a completely separate keydown listener, gated on a setting that was empty everywhere directly inspected, so it was never instrumented at all. Targeted logging cannot catch a bug in code nobody thought to point it at. This closes that gap generically: patches EventTarget.prototype.addEventListener so that EVERY listener registered for keydown/input/beforeinput specifically on the note editor (deliberately scoped narrowly to this one element/these three events, not globally, to avoid reintroducing the exact per-keystroke overhead problem already fixed once this session) gets wrapped with entry/exit logging via the same cheap, fully synchronous checkpoint mechanism (v0.1900's fix). Critically, ALSO patches window.setTimeout, but only conditionally: while synchronously inside one of the wrapped listeners, any setTimeout scheduled during that window gets its own callback wrapped too, tagged back to the parent handler -- because the actual bug lives inside a setTimeout(fn, 0) callback the listener SCHEDULES, not in the listener itself, which returns quickly either way. Wrapping only the listener would have logged a clean, misleading "entering/exiting" pair while completely missing the real hang. Verified with an actual runnable simulation (not just design reasoning): the exact buggy pattern -- listener schedules setTimeout, callback never returns -- produces logged output showing the outer listener's entering/exiting both present (it does return quickly) and the deferred callback's entering present with NO matching exiting, correctly pinpointing the hang. Lynn's plan: reproduce the still-present bug on this build first, confirm the log independently points at the same handler this session's investigation already identified, THEN move to testing v0.1901's actual fix with confidence in the detection tooling itself. Verified: node --check passes; confirmed zero references to the v0.1901 fix anywhere in this file.
+  v0.1903 - NEW architectural pattern, per Lynn's own explicit insight: rather than keep trying to log/survive a hang after the fact (four straight attempts at that specific goal all failed), why was the code that actually hung running on the main thread at all? computeDefaultTagInsertion() -- the real, confirmed root cause of this whole investigation -- is PURE logic: text/position/string in, text/position out, zero DOM access, and its entire dependency chain (appendDefaultTagsToLine, stripFormattingForDetect, stripWrapperFormattingOnly, isMarkerLineRaw, _getNoteTags) is equally self-contained pure string logic. Code shaped like that never needed the main thread. This build (deliberately based on v0.1900, NOT v0.1901 -- the actual infinite loop is still present and unfixed here, confirmed by diffing the embedded computeDefaultTagInsertion against the known-buggy version) moves that entire cluster into a genuine Web Worker -- a separate OS thread -- with a 1000ms timeout on the main-thread side: if the worker doesn't respond in time, it's terminated and replaced with a fresh one for next time. This is containment, not just detection: even with the real bug still live and unfixed, an infinite loop in this code can no longer freeze the UI at all -- typing, tapping, everything continues completely normally; only that one specific deferred tag-insertion silently times out and gets skipped, with a clear log entry explaining what happened. Verified two ways, not just by design reasoning: (1) the worker's own generated source, which lives inside a string template invisible to the main file's own syntax check, was extracted and checked separately, clean; (2) built an actual runnable simulation with a mock Worker that can either respond normally or genuinely hang (never call onmessage, exactly matching the real bug's behavior) -- confirmed the surrounding "main thread" keeps ticking normally throughout the entire 1000ms wait (19 ticks logged during the hang), the timeout correctly fires, terminates, and replaces the worker, and a fresh request afterward is handled completely normally, proving full recovery. Lynn's own plan: reproduce her exact steps on this build and confirm the UI itself never freezes, even though the underlying loop is still there, unfixed, spinning in the background where it can no longer do any harm. This pattern is general -- worth applying to any other similarly pure, DOM-free logic in this codebase as a standing defense against this whole CLASS of future bug, not just this one instance.
   v0.1900 - FIXED a real bug found after v0.1899 ALSO failed to survive a real freeze despite moving to IndexedDB: _writeLastCheckpoint() called .then() on a Promise for the db connection every single time, even once that connection was already long established. In JavaScript, a .then() callback is NEVER invoked synchronously -- even on an already-resolved Promise, it always waits for at least one more microtask tick before running. That means every checkpoint write needed one more turn of the event loop before the actual database write was even ISSUED, not just before it completed. If the real freeze stops the event loop from processing ANYTHING further at all -- not "one function hangs" but "nothing, not even a microtask, ever runs again" -- that pending write would never even get issued, regardless of localStorage vs IndexedDB underneath. This single root cause plausibly explains why BOTH the v0.1897/v0.1898 localStorage version AND the v0.1899 IndexedDB version failed identically, rather than being two unrelated failures. FIX: cache the actual resolved IDBDatabase connection directly (not just the promise) once available -- the connection now opens proactively at the very start of the session, well before any checkpoint write is likely needed in practice. Every checkpoint write after that point happens FULLY SYNCHRONOUSLY now, in the exact same call stack as the code that triggered it -- no .then(), no microtask indirection at all. Calling db.transaction()/store.put() synchronously still hands the write off to the browser's own IndexedDB engine immediately, which can continue processing it somewhat independently of the JS main thread from that point on. Falls back to the async path only if called before the connection has finished opening (very early in a session, before this diagnostic would realistically be needed). Updated the "Check Last Checkpoint" debug button to prefer the same cached synchronous connection. Verified: node --check passes; confirmed no leftover references anywhere to the old async-only function name. NOT verified end-to-end against a real freeze -- this is the fourth attempt at this specific diagnostic; per Lynn's own plan, she'll reproduce again on this build.
   v0.1899 - REBUILT the last-checkpoint diagnostic on IndexedDB, after the localStorage-based version (v0.1897/v0.1898) failed twice in a row in real testing: the write appeared to complete synchronously in JS every time, yet did not survive the subsequent freeze+force-kill on either attempt, and the v0.1898 fix (guarding against a synchronous indexedDB.open() throw elsewhere in the same startup sequence) did not resolve it. Working hypothesis, per Lynn's own suggestion to consider IndexedDB: localStorage writes can be buffered in memory and flushed to actual disk lazily by the browser as a performance optimization -- invisible under normal use, but if whatever causes the freeze also ties up the mechanism that performs that flush, a write made in the final moments before a freeze can be lost even though the synchronous setItem() call appeared to succeed moments earlier. IndexedDB transactions have much stronger durability guarantees, specifically designed for surviving an abrupt crash. Reused the EXACT SAME proven pattern already used by the hang-watchdog module (its own separate, dedicated database, its own object store) rather than inventing a new approach -- deliberately not the IndexedDB-migration branch's idb*/storage* wrapper functions, so this module stays fully independent and portable to any branch, including that one, as before. _writeLastCheckpoint()'s public call signature is completely unchanged (still fire-and-forget, synchronous-looking from every one of its many call sites in the three diagnostic modules) -- only its internal implementation changed, so no other code needed to change. The "Check Last Checkpoint" debug button updated to read asynchronously from the same IndexedDB store. Verified: node --check passes; confirmed no leftover references anywhere to the old localStorage key. NOT verified end-to-end against a real freeze -- this is the third attempt at this specific diagnostic; Lynn's next reproduction is the real test of whether IndexedDB's stronger durability guarantees actually solve the problem the previous two attempts had.
   v0.1898 - FOUR things, per Lynn's real test result showing NO LAST-CHECKPOINT line at all despite the checkpoint write itself having correctly recorded "KEYDOWN-HANG-DIAG: prefix is null" right before the freeze -- a genuine bug in this diagnostic system, not just an ordinary continuation. (1) THE REAL BUG: _checkHangWatchdogHistory() called indexedDB.open() completely unguarded -- this can throw SYNCHRONOUSLY in some restricted/private-browsing contexts (documented, real behavior, not hypothetical), which would halt the REST of the top-level startup script including _reportLastCheckpoint(), very likely explaining why nothing ever appeared despite the underlying write succeeding. Fixed with try/catch at every layer, AND reordered so _reportLastCheckpoint() now runs FIRST, before anything else in this module gets a chance to fail -- the single most important diagnostic no longer depends on anything else succeeding. A SECOND bug caught and fixed during this same change: reordering the calls initially broke LAST_CHECKPOINT_KEY, a `var` whose ASSIGNMENT (not just its hoisted declaration) now ran AFTER the code that needed its value -- fixed by inlining the string literal directly at all three use sites, removing the ordering dependency entirely rather than trying to preserve a shared variable across a reordered sequence. (2) NEW "Check Last Checkpoint" debug button (Settings > Debugging), per Lynn's request -- reads the raw checkpoint value directly and on demand, bypassing the syslog (and therefore its 300-to-1000-entry ring buffer, and any future version of the startup-report bug just fixed) entirely. (3) The syslog ring buffer cap increased 300 -> 1000, per Lynn's explicit request for more margin against eviction during an active debugging session -- an honest, stated tradeoff (a bigger array to parse/rewrite per logSys() call), judged acceptable now that v0.1896 already cut the call FREQUENCY dramatically earlier this session. (4) NEW targeted "extreme tracing", per Lynn's specific request and the real finding that motivated it: her actual test showed the freeze happens somewhere AFTER the keydown handler completes but BEFORE even the first input-handler checkpoint -- meaning it's in the native browser's own event pipeline, not in any app JS previously instrumented. Added detection for the EXACT confirmed repro condition (first line empty, an Enter-shaped beforeinput event) in the one beforeinput listener that runs unconditionally for every keystroke: logs the actual inputType (finally answering whether it's insertLineBreak/insertParagraph/something else -- neither has any explicit handling anywhere in this file today), then schedules a setTimeout(0) check moments later to see whether the native action ever actually completes -- if the freeze is a true, fully synchronous native hang, that scheduled check will never fire at all, which would itself be strong, direct evidence the freeze lives inside the browser's own native handling of this specific input. Verified: node --check passes; the settings-row nesting for the new button was confirmed programmatically, the same check that caught a real nesting bug earlier this session. NOT verified end-to-end against a real freeze -- Lynn's next reproduction, specifically whether "EXTREME-TRACE: beforeinput fired" appears WITHOUT its matching "still alive" follow-up, is the real test of the new hypothesis this build is built to check.
@@ -13220,7 +13220,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1902';
+const APP_VERSION = '0.1903';
 
 // ===== HANG WATCHDOG MODULE START — v0.1895, per Lynn's explicit
 // request while hunting a real, serious hang bug. Fully self-contained:
@@ -13415,6 +13415,149 @@ document.addEventListener('visibilitychange', function() {
 });
 // ===== HANG WATCHDOG MODULE END =====
 
+// ===== DEFAULT-TAGS WORKER CONTAINMENT MODULE START — v0.1903, per
+// Lynn's own architectural question: the real bug lived in
+// computeDefaultTagInsertion(), a PURE function -- text/position/string
+// in, text/position out, zero DOM access, and its full dependency
+// chain (appendDefaultTagsToLine, stripFormattingForDetect,
+// stripWrapperFormattingOnly, isMarkerLineRaw, _getNoteTags) is
+// entirely self-contained pure string logic too. Code shaped like that
+// never needed to run on the main thread at all. This moves it into a
+// genuine Web Worker -- a separate OS thread -- with a timeout on the
+// main-thread side: if the worker doesn't respond within 1000ms, it's
+// terminated and replaced with a fresh one for next time. This isn't
+// just detection, it's containment: even with the ACTUAL bug still
+// present and unfixed (this build is deliberately based on v0.1900,
+// not v0.1901 -- verified below), an infinite loop in this code can no
+// longer freeze the UI at all. The user keeps typing, tapping,
+// everything, completely normally; only this one specific deferred
+// tag-insertion silently times out and gets skipped, with a clear log
+// entry explaining exactly what happened and why.
+//
+// Deliberately NOT a fix for the underlying bug (v0.1901 already is,
+// separately) -- this is a general architectural pattern for containing
+// ANY future hang in similarly pure, DOM-free logic, tested here against
+// a real, confirmed infinite loop rather than a hypothetical one.
+var _defaultTagsWorker = null;
+var _defaultTagsWorkerPending = null; // { timeoutId, onResult } for the in-flight request, if any
+
+function _createDefaultTagsWorker() {
+  var workerSrc = [
+    // ---- isMarkerLineRaw ----
+    'function isMarkerLineRaw(rawLine) {',
+    '  var core = String(rawLine == null ? "" : rawLine).replace(/^\\s*/, "");',
+    '  return /^[-*+] /.test(core);',
+    '}',
+    // ---- stripWrapperFormattingOnly ----
+    'function stripWrapperFormattingOnly(s) {',
+    '  var prev;',
+    '  do {',
+    '    prev = s;',
+    '    s = s.replace(/^\\*\\*/, "").replace(/\\*\\*$/, "")',
+    '      .replace(/^\\*(?!\\s)/, "").replace(/\\*$/, "")',
+    '      .replace(/^_/, "").replace(/_$/, "")',
+    '      .replace(/^~~/, "").replace(/~~$/, "")',
+    '      .replace(/^==#[0-9a-fA-F]{3,6}\\|#[0-9a-fA-F]{3,6}:/, "").replace(/==$/, "")',
+    '      .replace(/^==#[0-9a-fA-F]{3,6}:/, "").replace(/==$/, "")',
+    '      .replace(/^==/, "").replace(/==$/, "")',
+    '      .replace(/^\\{[a-z]+\\}/i, "").replace(/\\{\\/?[a-z]+\\}$/i, "")',
+    '      .trim();',
+    '  } while (s !== prev);',
+    '  return s;',
+    '}',
+    // ---- stripFormattingForDetect ----
+    'function stripFormattingForDetect(s) {',
+    '  return stripWrapperFormattingOnly(s).replace(/^#{1,6}\\s+/, "").trim();',
+    '}',
+    // ---- _getNoteTags ----
+    'function _getNoteTags(content) {',
+    '  var tags = [], seen = {};',
+    '  (content || "").split("\\n").forEach(function(line) {',
+    '    if (/^\\[tag order\\]/.test(line.trim())) return;',
+    '    (line.match(/@([a-zA-Z0-9_-]+)/g) || []).forEach(function(t) {',
+    '      var n = t.slice(1); if (!seen[n]) { seen[n]=true; tags.push(n); }',
+    '    });',
+    '  });',
+    '  return tags.sort();',
+    '}',
+    // ---- appendDefaultTagsToLine ----
+    'function appendDefaultTagsToLine(line, tagList) {',
+    '  if (!tagList) return line;',
+    '  var core = stripFormattingForDetect(line);',
+    '  if (!isMarkerLineRaw(core)) return line;',
+    '  var body = core.replace(/^[-*+] /, "").replace(/^\\[[^\\]]*\\]\\s*/, "");',
+    '  if (body.trim() === "") return line;',
+    '  if (_getNoteTags(line).length > 0) return line;',
+    '  return line.replace(/\\s+$/, "") + " " + tagList;',
+    '}',
+    // ---- computeDefaultTagInsertion (VERBATIM, still-buggy version --
+    // this module is testing containment, not fixing the underlying
+    // loop; v0.1901 is the separate, already-verified fix for that) ----
+    'function computeDefaultTagInsertion(val, pos, tagList) {',
+    '  if (!tagList) return null;',
+    '  var nextNl = val.indexOf("\\n", pos);',
+    '  if (val.slice(pos, nextNl === -1 ? val.length : nextNl) !== "") return null;',
+    '  var end = val.lastIndexOf("\\n", pos - 1);',
+    '  if (end === -1) return null;',
+    '  var prevStart, prevLine;',
+    '  while (true) {',
+    '    prevStart = val.lastIndexOf("\\n", end - 1) + 1;',
+    '    prevLine = val.slice(prevStart, end);',
+    '    if (prevLine.trim() !== "") break;',
+    '    if (prevStart === 0) return null;',
+    '    end = prevStart - 1;',
+    '  }',
+    '  var newLine = appendDefaultTagsToLine(prevLine, tagList);',
+    '  if (newLine === prevLine) return null;',
+    '  var delta = newLine.length - prevLine.length;',
+    '  return { value: val.slice(0, prevStart) + newLine + val.slice(end), pos: pos + delta };',
+    '}',
+    // ---- message handler ----
+    'self.onmessage = function(e) {',
+    '  var result = computeDefaultTagInsertion(e.data.val, e.data.pos, e.data.tagList);',
+    '  self.postMessage(result);',
+    '};'
+  ].join('\n');
+  try {
+    var blob = new Blob([workerSrc], { type: 'application/javascript' });
+    var url = URL.createObjectURL(blob);
+    return new Worker(url);
+  } catch (e) {
+    return null; // Worker/Blob unsupported in this context -- caller falls back gracefully
+  }
+}
+_defaultTagsWorker = _createDefaultTagsWorker();
+
+// Public entry point: identical call shape to the old direct call
+// (val, pos, tagList, callback), but runs off-thread with a hard
+// timeout. onResult(result) is called with either the real result or
+// null (timeout, or Worker unsupported here).
+function _computeDefaultTagInsertionAsync(val, pos, tagList, onResult) {
+  if (!_defaultTagsWorker) { onResult(null); return; }
+  if (_defaultTagsWorkerPending) {
+    // A previous request is still in flight (shouldn't normally happen
+    // given the 1000ms timeout vs. typical Enter-key spacing, but guard
+    // anyway) -- let it time out on its own rather than overlapping.
+    onResult(null);
+    return;
+  }
+  var timeoutId = setTimeout(function() {
+    logSys('DEFAULT-TAGS-WORKER: timed out after 1000ms -- the computation is still running (this is the real, confirmed infinite loop, still unfixed in this build) but the UI was never affected. Terminating and replacing the worker for next time.');
+    if (_defaultTagsWorker) _defaultTagsWorker.terminate();
+    _defaultTagsWorker = _createDefaultTagsWorker();
+    _defaultTagsWorkerPending = null;
+    onResult(null);
+  }, 1000);
+  _defaultTagsWorkerPending = { timeoutId: timeoutId };
+  _defaultTagsWorker.onmessage = function(e) {
+    clearTimeout(timeoutId);
+    _defaultTagsWorkerPending = null;
+    onResult(e.data);
+  };
+  _defaultTagsWorker.postMessage({ val: val, pos: pos, tagList: tagList });
+}
+// ===== DEFAULT-TAGS WORKER CONTAINMENT MODULE END =====
+
 // ===== LAST CHECKPOINT MODULE START — v0.1900, FIXED a real bug found
 // after v0.1899 ALSO failed to survive a real freeze despite moving to
 // IndexedDB: _writeLastCheckpoint() called .then() on a Promise for
@@ -13511,92 +13654,6 @@ function _reportLastCheckpoint() {
   } catch (e) {}
 }
 // ===== LAST CHECKPOINT MODULE END =====
-
-// ===== GENERIC HANDLER-HANG DETECTION MODULE START — v0.1902, per
-// Lynn's explicit lesson-learned request after the real bug turned out
-// to live in a completely separate keydown listener that none of the
-// earlier targeted diagnostic logging (EMTIP/KEYDOWN/INPUT-HANG-DIAG)
-// ever touched. Root problem with that earlier approach: it instruments
-// the handlers someone currently suspects, which only helps if the
-// suspicion is already correct. There were multiple independent
-// listeners registered for the same events on the same element, and
-// only one of them was ever deeply instrumented.
-//
-// This closes that gap generically instead of by guessing again: wraps
-// EVERY listener registered for keydown/input/beforeinput specifically
-// on the note editor (not globally -- deliberately scoped narrowly, to
-// avoid the exact per-keystroke overhead problem already fixed once
-// this session), logging entry/exit for each one individually via the
-// same cheap, fully synchronous checkpoint mechanism already proven
-// reliable (v0.1900's fix). If ANY handler among however many are
-// registered -- regardless of which, or whether anyone currently
-// suspects it -- fails to return, the log will show "entering handler
-// #N" with no matching "exiting #N," naming that exact handler
-// directly, without requiring a correct guess in advance.
-//
-// Fully self-contained and portable (copy this whole block to any other
-// branch). Depends only on _writeLastCheckpoint(), already defined
-// above in this same file.
-(function() {
-  var _origAddEventListener = EventTarget.prototype.addEventListener;
-  var _origSetTimeout = window.setTimeout;
-  var _watchedEvents = { keydown: true, input: true, beforeinput: true };
-  var _handlerCounter = 0;
-  var _activeHandlerStack = []; // handlerIds currently executing synchronously
-
-  // v0.1902 IMPORTANT: the actual bug we just found lives inside a
-  // setTimeout(fn, 0) callback SCHEDULED BY a keydown listener, not in
-  // the listener itself -- the listener returns quickly either way,
-  // since it only schedules the deferred work. Wrapping just the
-  // listener would have logged a clean "entering/exiting" pair while
-  // completely missing the real hang inside the callback it scheduled.
-  // This tracks which wrapped handler (if any) is currently executing
-  // synchronously, and if a setTimeout is called during that window,
-  // wraps ITS callback too, tagged back to the parent handler -- so a
-  // hang inside a deferred callback is caught exactly the same way.
-  window.setTimeout = function(fn, delay) {
-    if (_activeHandlerStack.length > 0 && typeof fn === 'function') {
-      var parentId = _activeHandlerStack[_activeHandlerStack.length - 1];
-      var snippet = fn.toString().replace(/\s+/g, ' ').slice(0, 70);
-      var deferredId = ++_handlerCounter;
-      var wrappedFn = function() {
-        _writeLastCheckpoint('HANDLER-HANG-DIAG: entering deferred #' + deferredId + ' (setTimeout from #' + parentId + ') ' + snippet);
-        try {
-          return fn.apply(this, arguments);
-        } finally {
-          _writeLastCheckpoint('HANDLER-HANG-DIAG: exiting deferred #' + deferredId + ' (setTimeout from #' + parentId + ') ' + snippet);
-        }
-      };
-      var extraArgs = Array.prototype.slice.call(arguments, 2);
-      return _origSetTimeout.apply(window, [wrappedFn, delay].concat(extraArgs));
-    }
-    return _origSetTimeout.apply(window, arguments);
-  };
-
-  EventTarget.prototype.addEventListener = function(type, listener, options) {
-    var isNoteEditor = (this && this.id === 'note-editor');
-    if (isNoteEditor && _watchedEvents[type] && typeof listener === 'function') {
-      var handlerId = ++_handlerCounter;
-      // A short source snippet, since these are almost always anonymous
-      // functions with no name to log -- enough to recognize which one
-      // this is when reading the log later.
-      var snippet = listener.toString().replace(/\s+/g, ' ').slice(0, 70);
-      var wrapped = function(e) {
-        _writeLastCheckpoint('HANDLER-HANG-DIAG: entering #' + handlerId + ' (' + type + ') ' + snippet);
-        _activeHandlerStack.push(handlerId);
-        try {
-          return listener.apply(this, arguments);
-        } finally {
-          _activeHandlerStack.pop();
-          _writeLastCheckpoint('HANDLER-HANG-DIAG: exiting #' + handlerId + ' (' + type + ') ' + snippet);
-        }
-      };
-      return _origAddEventListener.call(this, type, wrapped, options);
-    }
-    return _origAddEventListener.call(this, type, listener, options);
-  };
-})();
-// ===== GENERIC HANDLER-HANG DETECTION MODULE END =====
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -32574,14 +32631,20 @@ function makeImportFolderName(label) {
     var _tagList = normalizeTagListSetting(settings.newItemDefaultTags) || '';
     if (!_tagList) return;
     setTimeout(function() {
-      var result = computeDefaultTagInsertion(noteEditor.value, noteEditor.selectionStart, _tagList);
-      if (!result) return;
-      noteEditor.value = result.value;
-      noteEditor.setSelectionRange(result.pos, result.pos);
-      // Standard pipeline (scheduleSave, dirty-flag, resize) via a
-      // synthetic input event -- same pattern as _insertTag.
-      noteEditor.dispatchEvent(new Event('input', { bubbles: true }));
-      logDebugAction('Default tags appended to new item (Enter)');
+      // v0.1903 CHANGED: this computation now runs in a Worker (see
+      // DEFAULT-TAGS WORKER CONTAINMENT MODULE), with a 1000ms timeout
+      // on this side -- if it hangs (the actual, still-unfixed bug in
+      // this build), onResult receives null and the UI is never
+      // affected, instead of the previous direct, main-thread call.
+      _computeDefaultTagInsertionAsync(noteEditor.value, noteEditor.selectionStart, _tagList, function(result) {
+        if (!result) return;
+        noteEditor.value = result.value;
+        noteEditor.setSelectionRange(result.pos, result.pos);
+        // Standard pipeline (scheduleSave, dirty-flag, resize) via a
+        // synthetic input event -- same pattern as _insertTag.
+        noteEditor.dispatchEvent(new Event('input', { bubbles: true }));
+        logDebugAction('Default tags appended to new item (Enter)');
+      });
     }, 0);
   });
 
