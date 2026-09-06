@@ -7,7 +7,7 @@
 // silent (no console output, no thrown error). See inline comments at each
 // fix site. No behavior change for the success path.
 
-const CACHE_VERSION = 'remember-v0.1897';
+const CACHE_VERSION = 'remember-v0.1898';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 
 const PRECACHE_ASSETS = [
