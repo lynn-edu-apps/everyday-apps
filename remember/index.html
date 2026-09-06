@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1895 -->
+<!-- Remember App - Version 0.1897 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1895
+  Version 0.1897
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -106,6 +106,8 @@
   v0.1818 - CRITICAL FIX: crash when switching to R&R mode with an active Find in Note search, per Lynn's exact report ("undefined is not an object (evaluating 'el.classList.remove')"). Root cause confirmed precisely: _findMatches has a completely different shape depending on mode -- plain {start,end} position objects in typing mode (used with the textarea's own native selection), real DOM <mark> elements in R&R mode (used for click-to-jump and highlight styling) -- and nothing ever converted between the two shapes on a mode switch. Switching to R&R mode left the stale typing-mode position-objects in place; the very next 'next match' press then tried to call .classList on a plain object instead of a real element. Per Lynn's explicit request that this actually work rather than just avoid crashing (typing mode's keyboard popping back up on every 'next' press being the specific annoyance driving the request) -- rather than just guard against the crash, the search now genuinely survives a mode switch in EITHER direction: reuses runFind()'s own existing per-mode match-building logic (rather than duplicating it) to correctly rebuild _findMatches in whichever shape the new mode needs, then restores the same match INDEX she was on (clamped, in case the match count somehow changed) rather than resetting to the first match -- fixed a related bug found while implementing this: runFind()'s R&R-mode branch never actually respected its own skipJump parameter, unlike the typing-mode branch, which would have silently discarded her position even with a naive fix. Previously, leaving R&R mode always silently cancelled an active search entirely (never crashed, but never explained why); now both directions behave the same, consistent way. Verified directly, end to end: the exact reported crash scenario (search 'apple' in a 4-match note, advance to the third match, switch to R&R mode) produces zero errors, correctly rebuilds all 4 matches as real DOM elements, and correctly marks the SAME third match as current in the new mode; switching back to typing mode correctly restores the exact right text selection (confirmed character-precise); separately verified three edge cases produce no errors: a mode switch with no active search at all, an active search with zero matches, and that explicitly closing Find still works normally afterward. Suite: 332/332 (harness v8).
   v0.1817 - NEW: Copy for Speech and Share for Speech added to the Quick Action Bar's available actions, per Lynn's request (for routing note text into external, more natural-sounding text-to-speech apps like ElevenReader). Reuses the exact same copyNoteForSpeech()/shareNoteForSpeech() functions the existing toolbar buttons and More menu items already call, rather than reimplementing the behavior -- guarantees identical behavior with zero risk of the two versions drifting apart. Since the Settings dropdown for each of the 4 Quick Action Bar slots is already dynamically generated from the same central QUICK_ACTION_BAR_ACTIONS registry the actual click-handling reads from, this was a pure data addition -- no separate UI wiring needed, confirmed directly rather than assumed. Verified directly: both new actions correctly call their real underlying functions (not placeholder or duplicated logic), and both correctly appear as selectable options in the actual rendered Settings dropdown. Suite: 332/332 (harness v8).
   v0.1816 - FIX: 11 sliders the original survey genuinely missed, per Lynn's report -- bold cursor width, ruler thickness/transparency, all four "line position" sliders (ruled/dot-grid/checkbox-line/margin-line), and four bubble-mode sliders (padding/spacing/radius/shadow) found while re-auditing. Confirmed root cause directly rather than guessed: every one of these uses a plain range input with no settings-range class at all, an exact-match gap in the original class-based search, not something ambiguous. Also confirmed and fixed a second, genuinely separate bug Lynn flagged as a possibility: bold cursor width's slider and value sit inline together in one flex row, competing for space -- a new button there really could push off-screen. Fixed generally (not specific to this one row) by having the button-insertion logic set flex-wrap on whatever row it lands in; verified directly with a real bounding-box measurement (button's right edge lands at 480px in a 500px viewport, not clipped) plus a screenshot confirming a clean wrap. Caught a related third issue while wiring these: several rows put their unit (px, %) as separate text AFTER the value span rather than inside it, which would have wedged the new button between the number and its unit -- fixed by attaching to the row generally instead of directly after the number, confirmed backward-compatible with every slider from the last build too. NEW: a genuine Bold Cursor preview, per Lynn's report that one never existed. Deliberately reuses the app's actual, hard-won caret-measurement system (the same one powering the real note editor, Quick Add, and Edit Paragraph) on a real, focusable preview textarea registered into the same instance list, rather than building a simplified mockup that could end up looking different from the real thing. Verified directly via screenshot: the real colored cursor renders correctly mid-word in sample text, and a width change correctly shows once the preview is refocused -- confirmed this refocus requirement matches the real feature's own authentic behavior (a cursor only shows while its text box is actually focused) rather than being a bug. Suite: 332/332 (harness v8).
+  v0.1897 - FIX for a real design flaw in v0.1896's slow-step logging, surfaced by Lynn's own direct question ("do you expect this to succeed?"): that design only writes anything when the NEXT checkpoint runs and computes elapsed time since the last one -- meaning if a step never returns at all (a true, permanent freeze requiring a force-kill, which is what Lynn actually experienced, not just a temporary slowdown), there is no next checkpoint to notice the gap and log it. The exact failure mode most worth catching was the one the previous design couldn't see -- and this specifically affects the 'input' handler, which is where the freeze appears to actually live based on everything traced so far. NEW: a cheap, proactive "last checkpoint" tracker, fully self-contained and portable like the other diagnostic modules. Deliberately does NOT use logSys() for the per-checkpoint write (that would reintroduce the exact per-keystroke cost v0.1896 just fixed) -- instead writes to one small, dedicated, overwritten-not-appended localStorage key, a cost that stays flat regardless of how large the real syslog grows, safe on every keystroke. The write happens the instant a checkpoint is reached, before whatever runs next has any chance to freeze, so even a permanent, unrecoverable hang leaves behind an accurate record of exactly where it was. Wired into all three diagnostic modules (EMTIP-HANG-DIAG, KEYDOWN-HANG-DIAG, INPUT-HANG-DIAG) for one consistent place to check regardless of which part of the flow the freeze happens in. On next startup, this is read back and reported into the real System Log via logSys() ONCE (cheap, a single call), before the current session's own typing can overwrite it with fresh values -- directly naming the last place execution reached in the PREVIOUS, crashed session. Verified: node --check passes on the full file; spot-checked the scripted find-replace used to wire the KEYDOWN/EMTIP modules (23 insertions) for truncated variable interpolation, found and fixed 4 that had lost their timing-tier label. NOT verified end-to-end against a real freeze -- this sandbox cannot simulate one; Lynn's next reproduction, and specifically what LAST-CHECKPOINT reports on the following relaunch, is the real test of whether this finally identifies where the freeze actually occurs.
+  v0.1896 - TWO real bugs fixed, both introduced by v0.1895's own diagnostic additions, per Lynn's report of genuinely new slowness and a watchdog false positive on her real test. (1) THE SLOWNESS: logSys() in this build does a full JSON.parse/stringify/localStorage.setItem of the ENTIRE syslog array on every single call -- with Lynn's syslog already at 50-80KB, and v0.1895 having added an unconditional logSys() call at every checkpoint in the 'input' handler (which fires on every keystroke) plus one for every keydown regardless of which key, every ordinary letter typed was paying 6+ full log-array rewrites, and it got WORSE over the session as the diagnostic logging itself kept growing the log. This is very likely why Lynn saw "sometimes hangs, sometimes gets really slow but recovers" -- a true infinite loop would never recover on its own, but a real, worsening-but-finite cost matches exactly. Fixed two ways: the keydown e.key logger now only fires for actual Enter presses (already confirmed from Lynn's own log that e.key IS "Enter" for her virtual keyboard, so this had already served its purpose for every other key); the INPUT-HANG-DIAG module was redesigned entirely around cheap in-memory timing (performance.now(), effectively free) between checkpoints, only escalating to the real, expensive logSys() call if a step actually took over 50ms -- preserving full diagnostic value for a genuinely slow or hung step while eliminating the overhead for the ~99% of keystrokes that behave normally. (2) THE WATCHDOG FALSE POSITIVE: Lynn's own real test showed the watchdog firing exactly when the app was backgrounded and foregrounded ~19s later -- iOS deliberately throttles/suspends JS timers in backgrounded tabs to save battery, which is completely normal, not a hang, but the original design had no way to distinguish "main thread genuinely stuck" from "OS correctly paused this tab," since the heartbeat simply stops either way. Fixed properly, not by just lengthening the threshold (which would only delay detecting a REAL hang without fixing the actual ambiguity): the main thread now explicitly tells the worker when the page is about to be hidden (suspend monitoring entirely) and when it becomes visible again (resume, resetting the heartbeat baseline so the hidden duration itself is never counted as a gap). Verified: node --check passes on the main script; the worker's own generated source was extracted and syntax-checked separately AGAIN, same as v0.1895, since a string-template change like this would never be caught by the outer file's own check. NOT verified end-to-end against a real background/foreground cycle or a real hang -- Lynn's next reproduction attempt, ideally without the confound of v0.1895's own overhead, is the real test of whether the original bug is still solidly reproducible on its own.
   v0.1895 - TWO things, both built on v0.1879 (not on any of the IndexedDB migration work), per Lynn's explicit requests while hunting a real, serious hang bug. (1) PORTED the three hang-diagnostic logging modules (EMTIP-HANG-DIAG, KEYDOWN-HANG-DIAG, INPUT-HANG-DIAG) from v0.1891/v0.1892 -- those were built on the IndexedDB-migration branch (v0.1890+), which Lynn isn't testing with, so this v0.1879-based build had none of that logging until now. Confirmed each surrounding code section matches character-for-character before porting, not assumed identical. Each module is clearly delimited (MODULE START/END comments) for easy copying to the IndexedDB-migration branch later, per Lynn's explicit request. (2) NEW: a Worker-based hang watchdog, per Lynn's own idea and explicit request to build it now. A browser tab's main JS thread is single-threaded -- if it hangs, nothing on that thread (including any timer trying to detect the hang) can run. A Web Worker runs on a genuinely separate OS thread, so it keeps running fine even while the main thread is completely stuck. The main thread sends a heartbeat to the worker every 3s; the worker's own independent timer watches for the next heartbeat to go missing, and if the gap exceeds 15s, logs the event directly to its own dedicated IndexedDB database -- deliberately NOT the app's real data store, and NOT using any of the idb*/storage* wrapper functions from the IndexedDB migration, so this entire module is fully self-contained and portable to any branch, including the migration one, with zero changes needed (this was Lynn's explicit design requirement). The honest limit, stated plainly rather than oversold: this can detect and record a hang precisely, but can't unfreeze the UI -- only the main thread could do that, and it's the one that's stuck. On next successful load (or on resuming from background, not just a full reload -- relevant given the earlier discussion of long-dormant PWA sessions), any recorded hang/recovery events are read back and surfaced into the app's own System Log via logSys(), the same place Lynn already knows to check, then cleared so they don't repeat on every subsequent load. Verified: the worker's own generated source code was extracted and syntax-checked SEPARATELY from the main script (since it lives inside a string template, the main file's own node --check pass would never have caught an error inside it) -- both passed clean. NOT verified end-to-end on a real device or against a real hang -- this sandbox has no way to simulate a genuinely frozen main thread; Lynn's own reproduction attempt, with both this watchdog and the ported diagnostic logging active simultaneously, is the real test of both at once.
   v0.1894 - MOVED, per Lynn's explicit follow-up: the two new settings-JSON debug features (v0.1893) were sitting in the always-visible "reset zone" footer, at the same level as Reset All Settings -- she wanted them properly hidden inside the collapsible Debugging body instead, styled noticeably more subdued than Show Non-Default Settings, since this is a genuine power-user escape hatch most people will never need and would only use when directed through a specific debugging scenario. Moved both (Copy Settings as JSON, and the Import textarea + button) to sit right after Clear app cache & reload, inside .settings-section-body -- confirmed correctly nested PROGRAMMATICALLY via the same depth-tracking check used earlier this session to catch and fix an actual nesting bug, not just assumed correct this time. Restyled deliberately smaller and dimmer than the surrounding Debugging buttons (0.78em vs the usual 0.85em, reduced opacity, no separate section label -- a single muted description line instead) so it visually reads as a step below even this already-advanced section, rather than competing with it. Verified: node --check passes; the footer area these were removed from confirmed back to its original, unmodified structure. No functional changes to either feature itself -- purely relocated and restyled.
   v0.1893 - NEW, built directly on v0.1879 (not on any later, unrelated build) specifically so it doesn't disturb Lynn's live investigation of a real, serious hang bug: "Copy Settings as JSON" and "Import Settings from JSON," per her explicit request during that same investigation -- she needed to replicate her exact settings state in a second test environment to isolate whether the hang was settings-dependent, and had no practical way to do it (manually toggling 48 settings through the UI is impractical for simple values and outright impossible for object/array ones like customColors or toolbarOrder). "Copy Settings as JSON" reuses the exact same non-default-detection loop as the existing "Show Non-Default Settings" button, but outputs clean, valid JSON directly to the clipboard rather than that button's human-readable current/default display, which isn't parseable as-is. "Import Settings from JSON" is a new textarea + button: parses the pasted text, validates every key against DEFAULT_SETTINGS (this build's own live, canonical settings schema) before applying anything, applies only recognized keys, and reports back exactly what was applied versus what was skipped -- per Lynn's explicit safety requirement, since a setting valid in one version may be obsolete or renamed in another, and blindly applying an unrecognized key could leave the app in a confusing state. Calls applySettings() and saveSettings() after a successful import so changes take effect immediately, matching normal settings-change behavior. Placement: sits in the same always-visible "reset zone" footer as Show Non-Default Settings/Reinstall Sample Notes -- confirmed directly (not assumed) that this whole footer area already sits outside every settings-section-body AND outside the Debugging accordion item entirely in the ORIGINAL v0.1879, a pre-existing, apparently intentional pattern (persistent utility buttons, not tied to any one section's collapse state) -- so this build's new UI correctly matches its immediate neighbors rather than introducing a new nesting inconsistency. Verified showConfirm's cancelLabel=null behavior directly in its own source before relying on it (confirmed it hides the button entirely, exactly as needed for a single-button alert) rather than assuming from a pattern used nowhere else in the file. Verified: node --check passes. NOT tested end-to-end on a real device -- Lynn's own test of pasting her already-generated non-default-settings JSON into a second environment is the real confirmation this works as intended.
@@ -13183,7 +13185,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1895';
+const APP_VERSION = '0.1897';
 
 // ===== HANG WATCHDOG MODULE START — v0.1895, per Lynn's explicit
 // request while hunting a real, serious hang bug. Fully self-contained:
@@ -13226,9 +13228,22 @@ var _hangWatchdogWorker = null;
 
 function _startHangWatchdog() {
   if (typeof Worker === 'undefined') return; // not supported here -- silently skip, this is a diagnostic aid, not a core feature
+  // v0.1896 FIX, per Lynn's real test result: a genuine false positive
+  // fired exactly when the app was backgrounded and foregrounded --
+  // iOS deliberately throttles/suspends JS timers in backgrounded tabs
+  // to save battery, which is completely normal and NOT a hang, but the
+  // original design had no way to tell the difference (the heartbeat
+  // simply stops either way). Fixed by having the main thread explicitly
+  // tell the worker when the page is about to be legitimately hidden
+  // (suspend monitoring) and when it becomes visible again (resume,
+  // resetting the baseline so the hidden duration itself is never
+  // counted as a "hang"). This is the correct fix -- not just a longer
+  // threshold, which would only have made a real hang take longer to
+  // detect without actually distinguishing the two cases.
   var workerSrc = [
     'var lastHeartbeatAt = Date.now();',
     'var hangLogged = false;',
+    'var suspended = false;',
     'var dbPromise = new Promise(function(resolve, reject) {',
     '  var req = indexedDB.open("' + HANG_WATCHDOG_DB_NAME + '", 1);',
     '  req.onupgradeneeded = function() { req.result.createObjectStore("' + HANG_WATCHDOG_STORE + '", {autoIncrement:true}); };',
@@ -13242,16 +13257,24 @@ function _startHangWatchdog() {
     '  }).catch(function() {});',
     '}',
     'self.onmessage = function(e) {',
-    '  if (e.data && e.data.type === "heartbeat") {',
+    '  if (!e.data) return;',
+    '  if (e.data.type === "heartbeat") {',
     '    var now = e.data.at;',
     '    if (hangLogged) {',
     '      logEvent({ type: "hang-recovered", hungForMs: now - lastHeartbeatAt, recoveredAt: now });',
     '      hangLogged = false;',
     '    }',
     '    lastHeartbeatAt = now;',
+    '  } else if (e.data.type === "suspend") {',
+    '    suspended = true;',
+    '  } else if (e.data.type === "resume") {',
+    '    suspended = false;',
+    '    lastHeartbeatAt = e.data.at;', // reset baseline -- the hidden duration is never counted as a gap
+    '    hangLogged = false;',
     '  }',
     '};',
     'setInterval(function() {',
+    '  if (suspended) return;', // page is legitimately backgrounded -- not a hang, don't check
     '  var gap = Date.now() - lastHeartbeatAt;',
     '  if (gap > ' + HANG_WATCHDOG_THRESHOLD_MS + ' && !hangLogged) {',
     '    hangLogged = true;',
@@ -13264,8 +13287,18 @@ function _startHangWatchdog() {
     var url = URL.createObjectURL(blob);
     _hangWatchdogWorker = new Worker(url);
     setInterval(function() {
-      if (_hangWatchdogWorker) _hangWatchdogWorker.postMessage({ type: 'heartbeat', at: Date.now() });
+      if (_hangWatchdogWorker && document.visibilityState === 'visible') {
+        _hangWatchdogWorker.postMessage({ type: 'heartbeat', at: Date.now() });
+      }
     }, HANG_WATCHDOG_HEARTBEAT_MS);
+    document.addEventListener('visibilitychange', function() {
+      if (!_hangWatchdogWorker) return;
+      if (document.visibilityState === 'hidden') {
+        _hangWatchdogWorker.postMessage({ type: 'suspend' });
+      } else {
+        _hangWatchdogWorker.postMessage({ type: 'resume', at: Date.now() });
+      }
+    });
   } catch (e) {
     // Worker/Blob creation failed (some restrictive embedding contexts
     // disallow one or both) -- fail silently rather than block startup.
@@ -13321,6 +13354,55 @@ document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible') _checkHangWatchdogHistory();
 });
 // ===== HANG WATCHDOG MODULE END =====
+
+// ===== LAST CHECKPOINT MODULE START — v0.1897, per Lynn's sharp
+// question ("do you expect this to succeed?") which surfaced a real
+// flaw in v0.1896's retroactive-only slow-step logging: that design
+// only writes anything when the NEXT checkpoint runs and computes the
+// elapsed time since the last one -- but if a step never returns at
+// all (a true, permanent freeze, which is what Lynn actually
+// experienced, not just a temporary slowdown), there IS no next
+// checkpoint to notice the gap and log it. The exact failure mode most
+// worth catching was the one the previous design couldn't see.
+//
+// Fully self-contained and portable (copy this whole block to any
+// other branch), and deliberately NOT using logSys() for the per-
+// checkpoint write itself -- logSys() rewrites the entire syslog array
+// every call, which is exactly the cost v0.1896 already fixed once;
+// reintroducing it here for every keystroke would undo that fix. This
+// writes to ONE small, dedicated localStorage key instead, overwritten
+// (not appended to) on every checkpoint -- a cost that stays flat
+// regardless of how large the real syslog grows, safe to call on every
+// single keystroke. The idea: this write happens the instant a
+// checkpoint is REACHED, before whatever runs next has any chance to
+// freeze -- so even a permanent, unrecoverable hang still leaves behind
+// an accurate record of exactly where it was, no reliance on anything
+// after the freeze ever executing.
+var LAST_CHECKPOINT_KEY = 'remember_last_checkpoint_diag';
+function _writeLastCheckpoint(label) {
+  try { localStorage.setItem(LAST_CHECKPOINT_KEY, label + '|' + Date.now()); } catch (e) {}
+}
+// Reads back whatever checkpoint was last reached -- most usefully,
+// right before a force-kill in a PREVIOUS session -- and reports it
+// into the app's own System Log via logSys() ONCE, early at startup,
+// before the current session's own typing can overwrite the key with
+// fresh values. This is the actual payoff: on the very next launch
+// after a real freeze, the log directly names the last place execution
+// reached, regardless of whether that freeze ever recovered on its own.
+function _reportLastCheckpoint() {
+  try {
+    var raw = localStorage.getItem(LAST_CHECKPOINT_KEY);
+    if (!raw) return;
+    var parts = raw.split('|');
+    var label = parts[0];
+    var at = parseInt(parts[1], 10) || 0;
+    logSys('LAST-CHECKPOINT: previous session\'s last recorded checkpoint was "' + label +
+      '" at ' + new Date(at).toISOString() + ' (' + Math.round((Date.now() - at) / 1000) + 's before this startup).', true);
+    localStorage.removeItem(LAST_CHECKPOINT_KEY);
+  } catch (e) {}
+}
+_reportLastCheckpoint();
+// ===== LAST CHECKPOINT MODULE END =====
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -32180,22 +32262,30 @@ function makeImportFolderName(label) {
     // "before" line with no matching "after," pinpointing exactly which
     // call never returned instead of the log simply going silent.
     logSys('EMTIP-HANG-DIAG: before pinToolbars (sync)');
+    _writeLastCheckpoint('EMTIP-HANG-DIAG: before pinToolbars (sync)');
     pinToolbars();
     logSys('EMTIP-HANG-DIAG: after pinToolbars (sync)');
+    _writeLastCheckpoint('EMTIP-HANG-DIAG: after pinToolbars (sync)');
     setTimeout(function() {
       logSys('EMTIP-HANG-DIAG: before pinToolbars (100ms)');
+      _writeLastCheckpoint('EMTIP-HANG-DIAG: before pinToolbars (100ms)');
       pinToolbars();
       logSys('EMTIP-HANG-DIAG: after pinToolbars (100ms)');
+      _writeLastCheckpoint('EMTIP-HANG-DIAG: after pinToolbars (100ms)');
     }, 100);
     setTimeout(function() {
       logSys('EMTIP-HANG-DIAG: before pinToolbars (350ms)');
+      _writeLastCheckpoint('EMTIP-HANG-DIAG: before pinToolbars (350ms)');
       pinToolbars();
       logSys('EMTIP-HANG-DIAG: after pinToolbars (350ms)');
+      _writeLastCheckpoint('EMTIP-HANG-DIAG: after pinToolbars (350ms)');
     }, 350);
     setTimeout(function() {
       logSys('EMTIP-HANG-DIAG: before pinToolbars (600ms)');
+      _writeLastCheckpoint('EMTIP-HANG-DIAG: before pinToolbars (600ms)');
       pinToolbars();
       logSys('EMTIP-HANG-DIAG: after pinToolbars (600ms)');
+      _writeLastCheckpoint('EMTIP-HANG-DIAG: after pinToolbars (600ms)');
     }, 600);
     // v0.1666 FIX, per Lynn's on-device diagnosis: the v0.1665 fix
     // computed the right scroll target, but area.scrollTop assignment
@@ -32208,12 +32298,16 @@ function makeImportFolderName(label) {
       var _tapArea = document.getElementById('note-content-area');
       function _ensureTapCaretVisible(_label) {
         logSys('EMTIP-HANG-DIAG: before _applyKeyboardScrollRoom (' + _label + ')');
+        _writeLastCheckpoint('EMTIP-HANG-DIAG: before _applyKeyboardScrollRoom (' + _label + ')');
         _applyKeyboardScrollRoom(_tapArea);
         logSys('EMTIP-HANG-DIAG: before getCursorY (' + _label + ')');
+        _writeLastCheckpoint('EMTIP-HANG-DIAG: before getCursorY (' + _label + ')');
         var _cy = getCursorY(ed);
         logSys('EMTIP-HANG-DIAG: before _tpadEnsureCaretVisible (' + _label + ')');
+        _writeLastCheckpoint('EMTIP-HANG-DIAG: before _tpadEnsureCaretVisible (' + _label + ')');
         _tpadEnsureCaretVisible(_cy, _tapArea);
         logSys('EMTIP-HANG-DIAG: after _ensureTapCaretVisible (' + _label + ')');
+        _writeLastCheckpoint('EMTIP-HANG-DIAG: after _ensureTapCaretVisible (' + _label + ')');
       }
       setTimeout(function() { _ensureTapCaretVisible('100ms'); }, 100);
       setTimeout(function() { _ensureTapCaretVisible('350ms'); }, 350);
@@ -33115,15 +33209,22 @@ function makeImportFolderName(label) {
     // ===== HANG DIAGNOSTIC MODULE START (KEYDOWN-HANG-DIAG) — portable,
     // copy this whole block (and its siblings EMTIP-HANG-DIAG/
     // INPUT-HANG-DIAG) to any other branch investigating the same hang.
-    // Logging e.key for every keydown here, since a virtual keyboard's
-    // Return key does not always fire the same keydown shape a physical
-    // keyboard's Enter does in every browser/webview -- if e.key isn't
-    // actually "Enter" here, the entire smart-indent branch below never
-    // runs at all, which would redirect this investigation to the
-    // beforeinput handlers instead (checked separately: no
-    // insertLineBreak/insertParagraph handling exists anywhere in this
-    // file today).
-    logSys('KEYDOWN-HANG-DIAG: e.key=' + JSON.stringify(e.key) + ' e.inputType=' + JSON.stringify(e.inputType) + ' e.isComposing=' + e.isComposing);
+    // v0.1896 FIX, per Lynn's report of new, real slowness after v0.1895:
+    // logSys() in this build (correctly, matching v0.1879) does a full
+    // JSON.parse/stringify/localStorage.setItem of the ENTIRE syslog
+    // array on every single call -- logging e.key for EVERY keystroke
+    // (not just Enter) meant every letter typed paid that full cost, and
+    // it gets WORSE over a session as the log itself grows. Restricted
+    // to Enter only: we've already confirmed from Lynn's own log that
+    // e.key IS "Enter" for her virtual keyboard's Return press, so this
+    // check has already served its diagnostic purpose for every OTHER
+    // key -- keeping it for Enter specifically is still valuable (Enter
+    // presses are infrequent, so the cost here is negligible) without
+    // paying it on every ordinary letter.
+    if (e.key === 'Enter') {
+      logSys('KEYDOWN-HANG-DIAG: e.key=' + JSON.stringify(e.key) + ' e.inputType=' + JSON.stringify(e.inputType) + ' e.isComposing=' + e.isComposing);
+      _writeLastCheckpoint('KEYDOWN-HANG-DIAG: e.key');
+    }
 
     // ===== TAB / SHIFT+TAB — indent or dedent =====
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -33144,6 +33245,7 @@ function makeImportFolderName(label) {
     // then insert a newline followed by the same prefix (WS1 + marker + WS2).
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       logSys('KEYDOWN-HANG-DIAG: entered Enter branch');
+      _writeLastCheckpoint('KEYDOWN-HANG-DIAG: entered Enter branch');
       // If a typing-mode Find session is active, Enter pressed here
       // means the user pressed it a SECOND (or later) time after
       // setCurrentMatch() already moved focus from the search box to
@@ -33163,11 +33265,14 @@ function makeImportFolderName(label) {
       var ed = this;
       if (e.key === 'Enter' && _siActive && _siTA === ed) {
         logSys('KEYDOWN-HANG-DIAG: before _siCheckAndClear');
+        _writeLastCheckpoint('KEYDOWN-HANG-DIAG: before _siCheckAndClear');
         if (_siCheckAndClear(ed, e)) {
           logSys('KEYDOWN-HANG-DIAG: _siCheckAndClear returned true, returning early');
+          _writeLastCheckpoint('KEYDOWN-HANG-DIAG: _siCheckAndClear returned true');
           e.preventDefault(); resizeEditor(); scheduleSave(); return;
         }
         logSys('KEYDOWN-HANG-DIAG: after _siCheckAndClear (false)');
+        _writeLastCheckpoint('KEYDOWN-HANG-DIAG: after _siCheckAndClear (false)');
       }
       var val = ed.value;
       var pos = ed.selectionStart;
@@ -33177,8 +33282,10 @@ function makeImportFolderName(label) {
       // continueList — see getSmartIndentPrefix()'s header comment) fires
       // here, on Enter in the main note editor.
       logSys('KEYDOWN-HANG-DIAG: before getSmartIndentPrefix, lineText=' + JSON.stringify(lineText));
+      _writeLastCheckpoint('KEYDOWN-HANG-DIAG: before getSmartIndentPrefix');
       var prefix = getSmartIndentPrefix(lineText);
       logSys('KEYDOWN-HANG-DIAG: after getSmartIndentPrefix, prefix=' + JSON.stringify(prefix));
+      _writeLastCheckpoint('KEYDOWN-HANG-DIAG: after getSmartIndentPrefix');
       if (prefix !== null) {
         e.preventDefault();
         var before = val.substring(0, pos);
@@ -33189,12 +33296,16 @@ function makeImportFolderName(label) {
         ed.setSelectionRange(newPos, newPos);
         _siSet(ed, pos + (settings.smartIndentBlankLine ? 2 : 1), prefix.length);
         logSys('KEYDOWN-HANG-DIAG: before resizeEditor (smart-indent branch)');
+        _writeLastCheckpoint('KEYDOWN-HANG-DIAG: before resizeEditor (smart-indent branch)');
         resizeEditor();
         logSys('KEYDOWN-HANG-DIAG: before scheduleSave (smart-indent branch)');
+        _writeLastCheckpoint('KEYDOWN-HANG-DIAG: before scheduleSave (smart-indent branch)');
         scheduleSave();
         logSys('KEYDOWN-HANG-DIAG: smart-indent branch complete');
+        _writeLastCheckpoint('KEYDOWN-HANG-DIAG: smart-indent branch complete');
       } else {
         logSys('KEYDOWN-HANG-DIAG: prefix is null, falling through to browser default Enter behavior');
+        _writeLastCheckpoint('KEYDOWN-HANG-DIAG: prefix is null');
       }
     }
     // ===== HANG DIAGNOSTIC MODULE END (KEYDOWN-HANG-DIAG) =====
@@ -33555,11 +33666,39 @@ function makeImportFolderName(label) {
     // ===== HANG DIAGNOSTIC MODULE START (INPUT-HANG-DIAG) — portable,
     // copy this whole block (and its siblings EMTIP-HANG-DIAG/
     // KEYDOWN-HANG-DIAG) to any other branch investigating the same
-    // hang. Careful line-by-line regex analysis of the candidates below
-    // found nothing that should hang on Lynn's exact reported text -- so
-    // this measures directly instead of guessing further. Before/after
-    // logging around every distinct step, so the log shows exactly
-    // which one never returned.
+    // hang. v0.1896 REDESIGNED, per Lynn's report of new, real slowness
+    // after v0.1895: this handler fires on EVERY keystroke, and the
+    // original design called logSys() -- which does a full JSON.parse/
+    // stringify/localStorage.setItem of the ENTIRE syslog array -- at
+    // every checkpoint unconditionally. With Lynn's syslog already at
+    // 50-80KB, that meant every single letter typed paid 6+ full log-
+    // array rewrites, getting WORSE over the session as the log itself
+    // grew from the added logging. Redesigned to use cheap in-memory
+    // timing (performance.now(), effectively free) between checkpoints,
+    // and only escalate to the real, expensive logSys() call if a step
+    // actually took longer than 50ms -- preserving the diagnostic value
+    // (a genuinely slow or hung step still gets caught and reported)
+    // while eliminating the overhead for the ~99% of keystrokes that
+    // behave completely normally.
+    var _ihdLast = performance.now();
+    var _ihdLastLabel = 'input event start';
+    _writeLastCheckpoint('INPUT-HANG-DIAG: input event start');
+    function _ihdCheckpoint(label) {
+      var now = performance.now();
+      var elapsed = now - _ihdLast;
+      if (elapsed > 50) {
+        logSys('INPUT-HANG-DIAG: SLOW -- "' + _ihdLastLabel + '" to "' + label + '" took ' + elapsed.toFixed(1) + 'ms');
+      }
+      _ihdLast = now;
+      _ihdLastLabel = label;
+      // v0.1897 NEW: proactive, cheap (single overwritten key, NOT
+      // logSys) write on every checkpoint -- see LAST CHECKPOINT MODULE
+      // above. This is what actually catches a true permanent freeze,
+      // since it happens the instant this checkpoint is reached, not
+      // retroactively when some LATER checkpoint runs (which never
+      // happens if this step never returns).
+      _writeLastCheckpoint('INPUT-HANG-DIAG: ' + label);
+    }
     // v0.1533: safety net for accidental-URL-encoding corruption that
     // arrives via an insertion path which never fires our native 'paste'
     // event listener (confirmed to happen for at least one iOS popup-menu
@@ -33571,7 +33710,6 @@ function makeImportFolderName(label) {
     // the input event gives no reliable insertion range to scope that to.
     // Idempotent: a value that has already been decoded no longer matches
     // the signature, so this cannot double-fire on the same content.
-    logSys('INPUT-HANG-DIAG: before URL-encoding check');
     if (looksLikeAccidentalUrlEncoding(this.value)) {
       var _preLen = this.value.length;
       var _decodedWhole = decodeAccidentalUrlEncoding(this.value);
@@ -33583,7 +33721,7 @@ function makeImportFolderName(label) {
         showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false, true);
       }
     }
-    logSys('INPUT-HANG-DIAG: after URL-encoding check, before naming block');
+    _ihdCheckpoint('after URL-encoding check');
     if (currentNoteId && notes[currentNoteId]) {
       var n = notes[currentNoteId];
       var trimmed = this.value.trim();
@@ -33595,19 +33733,16 @@ function makeImportFolderName(label) {
         document.getElementById('note-title').textContent = resetName;
       } else if (n.autoNamed) {
         // Still auto-naming — derive from first line
-        logSys('INPUT-HANG-DIAG: before nameFromContent, autoNamed=true');
         var derived = nameFromContent(this.value);
-        logSys('INPUT-HANG-DIAG: after nameFromContent');
+        _ihdCheckpoint('after nameFromContent');
         if (derived) {
           n.name = derived;
           document.getElementById('note-title').textContent = derived;
         }
-      } else {
-        logSys('INPUT-HANG-DIAG: naming block skipped, autoNamed=false');
       }
       // If autoNamed is false (manually named), leave the title alone
     }
-    logSys('INPUT-HANG-DIAG: after naming block, before find-refresh check');
+    _ihdCheckpoint('after naming block');
     // If Find's typing-mode session is open and the user just edited the
     // note (most likely: typed a replacement over the currently-selected
     // match), every OTHER match's stored {start, end} position may now
@@ -33626,15 +33761,11 @@ function makeImportFolderName(label) {
     // runFind() for the no-match-found case.
     if (_findActive && !isViewMode && _findQuery.trim()) {
       if (currentNoteId && notes[currentNoteId]) notes[currentNoteId].content = this.value;
-      logSys('INPUT-HANG-DIAG: before runFind');
       runFind(true); // skipJump — just refresh the count, don't move the cursor mid-edit
-      logSys('INPUT-HANG-DIAG: after runFind');
-    } else {
-      logSys('INPUT-HANG-DIAG: find-refresh skipped, not active');
+      _ihdCheckpoint('after runFind');
     }
-    logSys('INPUT-HANG-DIAG: before scheduleSave');
     scheduleSave();
-    logSys('INPUT-HANG-DIAG: after scheduleSave (input handler complete)');
+    _ihdCheckpoint('after scheduleSave');
     // ===== HANG DIAGNOSTIC MODULE END (INPUT-HANG-DIAG) =====
   });
 
