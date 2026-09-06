@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1879 -->
+<!-- Remember App - Version 0.1895 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1879
+  Version 0.1895
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -106,6 +106,9 @@
   v0.1818 - CRITICAL FIX: crash when switching to R&R mode with an active Find in Note search, per Lynn's exact report ("undefined is not an object (evaluating 'el.classList.remove')"). Root cause confirmed precisely: _findMatches has a completely different shape depending on mode -- plain {start,end} position objects in typing mode (used with the textarea's own native selection), real DOM <mark> elements in R&R mode (used for click-to-jump and highlight styling) -- and nothing ever converted between the two shapes on a mode switch. Switching to R&R mode left the stale typing-mode position-objects in place; the very next 'next match' press then tried to call .classList on a plain object instead of a real element. Per Lynn's explicit request that this actually work rather than just avoid crashing (typing mode's keyboard popping back up on every 'next' press being the specific annoyance driving the request) -- rather than just guard against the crash, the search now genuinely survives a mode switch in EITHER direction: reuses runFind()'s own existing per-mode match-building logic (rather than duplicating it) to correctly rebuild _findMatches in whichever shape the new mode needs, then restores the same match INDEX she was on (clamped, in case the match count somehow changed) rather than resetting to the first match -- fixed a related bug found while implementing this: runFind()'s R&R-mode branch never actually respected its own skipJump parameter, unlike the typing-mode branch, which would have silently discarded her position even with a naive fix. Previously, leaving R&R mode always silently cancelled an active search entirely (never crashed, but never explained why); now both directions behave the same, consistent way. Verified directly, end to end: the exact reported crash scenario (search 'apple' in a 4-match note, advance to the third match, switch to R&R mode) produces zero errors, correctly rebuilds all 4 matches as real DOM elements, and correctly marks the SAME third match as current in the new mode; switching back to typing mode correctly restores the exact right text selection (confirmed character-precise); separately verified three edge cases produce no errors: a mode switch with no active search at all, an active search with zero matches, and that explicitly closing Find still works normally afterward. Suite: 332/332 (harness v8).
   v0.1817 - NEW: Copy for Speech and Share for Speech added to the Quick Action Bar's available actions, per Lynn's request (for routing note text into external, more natural-sounding text-to-speech apps like ElevenReader). Reuses the exact same copyNoteForSpeech()/shareNoteForSpeech() functions the existing toolbar buttons and More menu items already call, rather than reimplementing the behavior -- guarantees identical behavior with zero risk of the two versions drifting apart. Since the Settings dropdown for each of the 4 Quick Action Bar slots is already dynamically generated from the same central QUICK_ACTION_BAR_ACTIONS registry the actual click-handling reads from, this was a pure data addition -- no separate UI wiring needed, confirmed directly rather than assumed. Verified directly: both new actions correctly call their real underlying functions (not placeholder or duplicated logic), and both correctly appear as selectable options in the actual rendered Settings dropdown. Suite: 332/332 (harness v8).
   v0.1816 - FIX: 11 sliders the original survey genuinely missed, per Lynn's report -- bold cursor width, ruler thickness/transparency, all four "line position" sliders (ruled/dot-grid/checkbox-line/margin-line), and four bubble-mode sliders (padding/spacing/radius/shadow) found while re-auditing. Confirmed root cause directly rather than guessed: every one of these uses a plain range input with no settings-range class at all, an exact-match gap in the original class-based search, not something ambiguous. Also confirmed and fixed a second, genuinely separate bug Lynn flagged as a possibility: bold cursor width's slider and value sit inline together in one flex row, competing for space -- a new button there really could push off-screen. Fixed generally (not specific to this one row) by having the button-insertion logic set flex-wrap on whatever row it lands in; verified directly with a real bounding-box measurement (button's right edge lands at 480px in a 500px viewport, not clipped) plus a screenshot confirming a clean wrap. Caught a related third issue while wiring these: several rows put their unit (px, %) as separate text AFTER the value span rather than inside it, which would have wedged the new button between the number and its unit -- fixed by attaching to the row generally instead of directly after the number, confirmed backward-compatible with every slider from the last build too. NEW: a genuine Bold Cursor preview, per Lynn's report that one never existed. Deliberately reuses the app's actual, hard-won caret-measurement system (the same one powering the real note editor, Quick Add, and Edit Paragraph) on a real, focusable preview textarea registered into the same instance list, rather than building a simplified mockup that could end up looking different from the real thing. Verified directly via screenshot: the real colored cursor renders correctly mid-word in sample text, and a width change correctly shows once the preview is refocused -- confirmed this refocus requirement matches the real feature's own authentic behavior (a cursor only shows while its text box is actually focused) rather than being a bug. Suite: 332/332 (harness v8).
+  v0.1895 - TWO things, both built on v0.1879 (not on any of the IndexedDB migration work), per Lynn's explicit requests while hunting a real, serious hang bug. (1) PORTED the three hang-diagnostic logging modules (EMTIP-HANG-DIAG, KEYDOWN-HANG-DIAG, INPUT-HANG-DIAG) from v0.1891/v0.1892 -- those were built on the IndexedDB-migration branch (v0.1890+), which Lynn isn't testing with, so this v0.1879-based build had none of that logging until now. Confirmed each surrounding code section matches character-for-character before porting, not assumed identical. Each module is clearly delimited (MODULE START/END comments) for easy copying to the IndexedDB-migration branch later, per Lynn's explicit request. (2) NEW: a Worker-based hang watchdog, per Lynn's own idea and explicit request to build it now. A browser tab's main JS thread is single-threaded -- if it hangs, nothing on that thread (including any timer trying to detect the hang) can run. A Web Worker runs on a genuinely separate OS thread, so it keeps running fine even while the main thread is completely stuck. The main thread sends a heartbeat to the worker every 3s; the worker's own independent timer watches for the next heartbeat to go missing, and if the gap exceeds 15s, logs the event directly to its own dedicated IndexedDB database -- deliberately NOT the app's real data store, and NOT using any of the idb*/storage* wrapper functions from the IndexedDB migration, so this entire module is fully self-contained and portable to any branch, including the migration one, with zero changes needed (this was Lynn's explicit design requirement). The honest limit, stated plainly rather than oversold: this can detect and record a hang precisely, but can't unfreeze the UI -- only the main thread could do that, and it's the one that's stuck. On next successful load (or on resuming from background, not just a full reload -- relevant given the earlier discussion of long-dormant PWA sessions), any recorded hang/recovery events are read back and surfaced into the app's own System Log via logSys(), the same place Lynn already knows to check, then cleared so they don't repeat on every subsequent load. Verified: the worker's own generated source code was extracted and syntax-checked SEPARATELY from the main script (since it lives inside a string template, the main file's own node --check pass would never have caught an error inside it) -- both passed clean. NOT verified end-to-end on a real device or against a real hang -- this sandbox has no way to simulate a genuinely frozen main thread; Lynn's own reproduction attempt, with both this watchdog and the ported diagnostic logging active simultaneously, is the real test of both at once.
+  v0.1894 - MOVED, per Lynn's explicit follow-up: the two new settings-JSON debug features (v0.1893) were sitting in the always-visible "reset zone" footer, at the same level as Reset All Settings -- she wanted them properly hidden inside the collapsible Debugging body instead, styled noticeably more subdued than Show Non-Default Settings, since this is a genuine power-user escape hatch most people will never need and would only use when directed through a specific debugging scenario. Moved both (Copy Settings as JSON, and the Import textarea + button) to sit right after Clear app cache & reload, inside .settings-section-body -- confirmed correctly nested PROGRAMMATICALLY via the same depth-tracking check used earlier this session to catch and fix an actual nesting bug, not just assumed correct this time. Restyled deliberately smaller and dimmer than the surrounding Debugging buttons (0.78em vs the usual 0.85em, reduced opacity, no separate section label -- a single muted description line instead) so it visually reads as a step below even this already-advanced section, rather than competing with it. Verified: node --check passes; the footer area these were removed from confirmed back to its original, unmodified structure. No functional changes to either feature itself -- purely relocated and restyled.
+  v0.1893 - NEW, built directly on v0.1879 (not on any later, unrelated build) specifically so it doesn't disturb Lynn's live investigation of a real, serious hang bug: "Copy Settings as JSON" and "Import Settings from JSON," per her explicit request during that same investigation -- she needed to replicate her exact settings state in a second test environment to isolate whether the hang was settings-dependent, and had no practical way to do it (manually toggling 48 settings through the UI is impractical for simple values and outright impossible for object/array ones like customColors or toolbarOrder). "Copy Settings as JSON" reuses the exact same non-default-detection loop as the existing "Show Non-Default Settings" button, but outputs clean, valid JSON directly to the clipboard rather than that button's human-readable current/default display, which isn't parseable as-is. "Import Settings from JSON" is a new textarea + button: parses the pasted text, validates every key against DEFAULT_SETTINGS (this build's own live, canonical settings schema) before applying anything, applies only recognized keys, and reports back exactly what was applied versus what was skipped -- per Lynn's explicit safety requirement, since a setting valid in one version may be obsolete or renamed in another, and blindly applying an unrecognized key could leave the app in a confusing state. Calls applySettings() and saveSettings() after a successful import so changes take effect immediately, matching normal settings-change behavior. Placement: sits in the same always-visible "reset zone" footer as Show Non-Default Settings/Reinstall Sample Notes -- confirmed directly (not assumed) that this whole footer area already sits outside every settings-section-body AND outside the Debugging accordion item entirely in the ORIGINAL v0.1879, a pre-existing, apparently intentional pattern (persistent utility buttons, not tied to any one section's collapse state) -- so this build's new UI correctly matches its immediate neighbors rather than introducing a new nesting inconsistency. Verified showConfirm's cancelLabel=null behavior directly in its own source before relying on it (confirmed it hides the button entirely, exactly as needed for a single-button alert) rather than assuming from a pattern used nowhere else in the file. Verified: node --check passes. NOT tested end-to-end on a real device -- Lynn's own test of pasting her already-generated non-default-settings JSON into a second environment is the real confirmation this works as intended.
   v0.1815 - MAJOR: default/reset buttons extended to all 23 remaining sliders in Settings, per Lynn's request, plus a much stronger visual treatment applied everywhere this pattern now exists. (1) STRONGER STYLING: per Lynn's explicit feedback that the previous text-color-only version didn't "light up" enough -- changed/non-default state is now solid accent-color BACKGROUND with a properly contrast-checked foreground, reusing the exact same contrast-picking approach already established for the move-line indicator (_pickHighContrastBW) rather than guessing at a color that might not read clearly against every theme's accent. Applied consistently to all three places this pattern now lives: the 23 sliders below, the axis sliders from v0.1814, and the original letter/word-spacing rows. (2) NEW: a general, reusable _wireSliderDefaultButton() helper wired to all 23 remaining sliders (UI/note/notes-list font sizes and weights, tooltip size, line heights, margins, editor font size and weight, view indent width, chars per line, speech rate/pause, quick-action-bar size). Deliberately non-invasive: adds a SEPARATE 'input' listener purely for button styling rather than touching any of the 23 existing, already-tested value-setting listeners, and inserts the button via generic DOM placement right after each slider's existing value-display span so it works regardless of each row's specific surrounding layout. Handles three real complications found while surveying every slider rather than assumed away: settings that default to null ("inherit contextually" -- several font-size/weight settings), a nested settings path (quickActionBar.size), and a genuine type mismatch (fontWeight's literal default is stored as the STRING '400' while the slider always writes a number, which a strict comparison would have misread as "changed" for anyone who'd never touched the slider at all -- caught before shipping and fixed with a loose-equality comparison). Verified directly across five representative, deliberately varied cases: a plain numeric default, a null/contextual default, the nested quick-action-bar path, the string-vs-number fontWeight edge case (confirmed correctly muted on a fresh, untouched load), and a float value with custom formatting -- plus three callback-dependent sliders specifically (tooltip preview sync, chars-per-line's "Off" label, speech rate's distinct apply path), all confirmed working correctly end to end, not just assumed from the shared mechanism. Suite: 332/332 (harness v8).
   v0.1814 - NEW: default-value indicator and reset button for variable-font axis sliders, per Lynn's request -- the first landing spot for a general mechanism she wants extended to other sliders next, starting here specifically because she flagged axes as what she's most anxious about not knowing a default for. Deliberately did NOT invent a new UI pattern -- checked the existing letter/word-spacing rows first (which Lynn already said she likes) and extended that exact same established design instead: an always-present small pill button reading "Default", muted gray when the axis is already at its default, accent-colored the moment it's changed, tap to reset. CAUGHT AND FIXED a real regression before shipping: the settings search specifically queries for the .settings-row-label class on each row, which the first draft of this restructuring omitted entirely (would have made every axis row permanently unfindable by search) -- fixed by placing the class on the correct element, matching exactly where the letter/word-spacing precedent puts it. Verified directly: moving a slider correctly turns both the value and the Default button accent-colored; clicking Default correctly resets the slider position, the displayed value, and the underlying setting (confirmed the stored override is genuinely deleted, not just set to the default number, matching the null-based precedent); searching an axis name by itself (e.g. "bounce") still correctly finds and shows only that row. Suite: 332/332 (harness v8).
   v0.1813 - TWO fixes, per Lynn's report. (1) FIX: font dropdown menus weren't honoring UI Font Size at all -- looked tiny even with a large size saved. Root cause: the closed select box itself was already correctly sized, but individual option/optgroup elements had no font-size rule of their own, so the open dropdown popup fell back to the browser's native default -- a well-known cross-browser quirk where that popup is partially rendered by an OS-level layer that doesn't always inherit page CSS the way regular content does. Added explicit font-size/font-family to both, the standard remedy. Verified directly: an option element's own computed font-size now correctly matches a large saved UI Font Size (confirmed 32px on both), though the actual native popup's on-device rendering is something only real-device testing can fully confirm, given its partially OS-native nature. (2) NEW: every font-CHOICE label now consistently says "Font Face", per Lynn's request for searchability -- "Note & Folder Name Font" and "Note Preview Font" renamed to end in "Font Face" (the other three -- UI Font Face, Note Font Face, and the home-item-meta Font Face row -- already said it correctly). Confirmed the settings search reads labels live from the DOM rather than a separate maintained index, so no other change was needed for the renamed rows to become findable. Verified directly: searching "font face" now surfaces all four font-choice rows correctly. Suite: 332/332 (harness v8).
@@ -12221,6 +12224,68 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
             -webkit-user-select:none;
           ">Clear app cache &amp; reload</button>
         </div>
+
+        <!-- v0.1893 NEW, per Lynn's explicit request: moved INSIDE the
+             collapsible Debugging body (confirmed nested correctly,
+             programmatically, not assumed -- see the depth-tracking
+             check run against this exact block) and deliberately styled
+             MORE subdued than Show Non-Default Settings and the other
+             Debugging buttons above -- a genuine power-user escape
+             hatch most people will never need, only used when directed
+             through a specific debugging scenario. Smaller text, dimmer
+             border/color, and no visible section label of its own (a
+             plain description line instead) so it doesn't visually
+             compete with the rest of this already-advanced section. -->
+        <div class="settings-row-desc" style="padding:14px 0 4px;font-size:0.8em;opacity:0.75">
+          Advanced: export or apply settings as raw JSON, for replicating one environment's settings state in another during debugging. Most people will never need this.
+        </div>
+        <div style="padding:2px 0;display:flex;gap:8px;flex-wrap:wrap">
+          <button id="copy-settings-json-btn" style="
+            background:none;
+            border:1px solid var(--border);
+            border-radius:var(--radius-sm);
+            color:var(--fg3, var(--fg2));
+            font-family:var(--font-body);
+            font-size:0.78em;
+            opacity:0.8;
+            padding:5px 12px;
+            cursor:pointer;
+            touch-action:manipulation;
+            user-select:none;
+            -webkit-user-select:none;
+          ">Copy Settings as JSON</button>
+        </div>
+        <textarea id="import-settings-json-textarea" placeholder='{"quickActionBar": {...}, "smartIndentBlankLine": true}' style="
+          width:100%;
+          min-height:70px;
+          box-sizing:border-box;
+          font-family:ui-monospace, monospace;
+          font-size:0.72em;
+          padding:6px;
+          margin-top:6px;
+          border:1px solid var(--border);
+          border-radius:var(--radius-sm);
+          background:var(--bg2);
+          color:var(--fg);
+          opacity:0.85;
+          resize:vertical;
+        "></textarea>
+        <div style="padding:6px 0 4px;display:flex;gap:8px;flex-wrap:wrap">
+          <button id="import-settings-json-btn" style="
+            background:none;
+            border:1px solid var(--border);
+            border-radius:var(--radius-sm);
+            color:var(--fg3, var(--fg2));
+            font-family:var(--font-body);
+            font-size:0.78em;
+            opacity:0.8;
+            padding:5px 12px;
+            cursor:pointer;
+            touch-action:manipulation;
+            user-select:none;
+            -webkit-user-select:none;
+          ">Apply Settings from JSON</button>
+        </div>
       </div>
     </div>
 
@@ -13118,7 +13183,144 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1879';
+const APP_VERSION = '0.1895';
+
+// ===== HANG WATCHDOG MODULE START — v0.1895, per Lynn's explicit
+// request while hunting a real, serious hang bug. Fully self-contained:
+// no dependency on this app's own storage layer, STORE_PREFIX, or any
+// of the idb*/storage* wrapper functions from the IndexedDB migration --
+// it uses its OWN separate, dedicated IndexedDB database, completely
+// independent of whatever storage architecture the host app happens to
+// use. This means the ENTIRE block between here and "MODULE END" can be
+// copied verbatim into any other branch/version, including the
+// IndexedDB-migration branch, with zero changes needed.
+//
+// HOW THIS WORKS: a browser tab's main JS thread is single-threaded --
+// if it hangs, nothing else on that thread can run, including any timer
+// that might try to detect the hang. A Web Worker, though, runs on a
+// genuinely separate OS thread, so it keeps running fine even while the
+// main thread is completely stuck. The main thread sends a small
+// "heartbeat" message to the worker every few seconds; the worker runs
+// its own independent timer and watches for the next expected heartbeat
+// to go missing. If the main thread hangs, it simply stops sending
+// heartbeats -- it can't do anything else either -- and the worker,
+// still running fine, notices the growing gap and logs it directly to
+// its own IndexedDB database (a Worker has direct IndexedDB access,
+// entirely decoupled from the frozen main thread).
+//
+// THE HONEST LIMIT: this can detect and record a hang, and tell us
+// precisely when it started and (if the app recovers) how long it
+// lasted -- but it can't unfreeze the UI. Only the main thread could do
+// that, and it's the one that's stuck. What this buys us: instead of a
+// System Log that simply goes silent, we get a hard, timestamped record
+// of exactly when the freeze began, decoupled from the very thread
+// that's frozen -- read back and surfaced into the app's own System Log
+// (the same place Lynn already knows to check) the next time the app
+// successfully loads.
+var HANG_WATCHDOG_DB_NAME = 'remember_hang_watchdog';
+var HANG_WATCHDOG_STORE = 'events';
+var HANG_WATCHDOG_HEARTBEAT_MS = 3000;   // main thread pings this often
+var HANG_WATCHDOG_CHECK_MS = 5000;       // worker checks for a gap this often
+var HANG_WATCHDOG_THRESHOLD_MS = 15000;  // gap beyond this = considered "hung"
+var _hangWatchdogWorker = null;
+
+function _startHangWatchdog() {
+  if (typeof Worker === 'undefined') return; // not supported here -- silently skip, this is a diagnostic aid, not a core feature
+  var workerSrc = [
+    'var lastHeartbeatAt = Date.now();',
+    'var hangLogged = false;',
+    'var dbPromise = new Promise(function(resolve, reject) {',
+    '  var req = indexedDB.open("' + HANG_WATCHDOG_DB_NAME + '", 1);',
+    '  req.onupgradeneeded = function() { req.result.createObjectStore("' + HANG_WATCHDOG_STORE + '", {autoIncrement:true}); };',
+    '  req.onsuccess = function() { resolve(req.result); };',
+    '  req.onerror = function() { reject(req.error); };',
+    '});',
+    'function logEvent(evt) {',
+    '  dbPromise.then(function(db) {',
+    '    var tx = db.transaction("' + HANG_WATCHDOG_STORE + '", "readwrite");',
+    '    tx.objectStore("' + HANG_WATCHDOG_STORE + '").add(evt);',
+    '  }).catch(function() {});',
+    '}',
+    'self.onmessage = function(e) {',
+    '  if (e.data && e.data.type === "heartbeat") {',
+    '    var now = e.data.at;',
+    '    if (hangLogged) {',
+    '      logEvent({ type: "hang-recovered", hungForMs: now - lastHeartbeatAt, recoveredAt: now });',
+    '      hangLogged = false;',
+    '    }',
+    '    lastHeartbeatAt = now;',
+    '  }',
+    '};',
+    'setInterval(function() {',
+    '  var gap = Date.now() - lastHeartbeatAt;',
+    '  if (gap > ' + HANG_WATCHDOG_THRESHOLD_MS + ' && !hangLogged) {',
+    '    hangLogged = true;',
+    '    logEvent({ type: "hang-detected", gapMs: gap, detectedAt: Date.now(), lastHeartbeatAt: lastHeartbeatAt });',
+    '  }',
+    '}, ' + HANG_WATCHDOG_CHECK_MS + ');'
+  ].join('\n');
+  try {
+    var blob = new Blob([workerSrc], { type: 'application/javascript' });
+    var url = URL.createObjectURL(blob);
+    _hangWatchdogWorker = new Worker(url);
+    setInterval(function() {
+      if (_hangWatchdogWorker) _hangWatchdogWorker.postMessage({ type: 'heartbeat', at: Date.now() });
+    }, HANG_WATCHDOG_HEARTBEAT_MS);
+  } catch (e) {
+    // Worker/Blob creation failed (some restrictive embedding contexts
+    // disallow one or both) -- fail silently rather than block startup.
+  }
+}
+
+// Reads back any hang events logged (most likely right before a force-
+// kill, in a PREVIOUS session) and surfaces them into the app's own
+// System Log via logSys() -- deliberately the SAME log Lynn already
+// knows to check, not a separate tool. Safe to call before logSys()'s
+// own declaration point further down this file: logSys is a function
+// DECLARATION (hoisted), and this function's own logSys() calls only
+// actually run inside an async IndexedDB callback anyway, which fires
+// only after the entire script has finished its first synchronous pass
+// -- by which point logSys is certainly defined. Consumes (clears)
+// events after reporting so they don't repeat on every subsequent load.
+function _checkHangWatchdogHistory() {
+  if (!('indexedDB' in window)) return;
+  var req = indexedDB.open(HANG_WATCHDOG_DB_NAME, 1);
+  req.onupgradeneeded = function() { req.result.createObjectStore(HANG_WATCHDOG_STORE, {autoIncrement:true}); };
+  req.onsuccess = function() {
+    var db = req.result;
+    var tx = db.transaction(HANG_WATCHDOG_STORE, 'readwrite');
+    var store = tx.objectStore(HANG_WATCHDOG_STORE);
+    var getAllReq = store.getAll();
+    getAllReq.onsuccess = function() {
+      var events = getAllReq.result || [];
+      if (events.length > 0) {
+        events.forEach(function(evt) {
+          if (evt.type === 'hang-detected') {
+            logSys('HANG-WATCHDOG: main thread went unresponsive -- last heartbeat at ' +
+              new Date(evt.lastHeartbeatAt).toISOString() + ', detected by the watchdog at ' +
+              new Date(evt.detectedAt).toISOString() + ' (~' + Math.round(evt.gapMs / 1000) +
+              's since the last heartbeat when detected).', true);
+          } else if (evt.type === 'hang-recovered') {
+            logSys('HANG-WATCHDOG: main thread recovered after being unresponsive for ~' +
+              Math.round(evt.hungForMs / 1000) + 's, at ' + new Date(evt.recoveredAt).toISOString() + '.', true);
+          }
+        });
+        store.clear();
+      }
+    };
+  };
+  req.onerror = function() {};
+}
+_checkHangWatchdogHistory();
+_startHangWatchdog();
+// Also re-check on every resume from background, not just at initial
+// load -- covers the case where iOS suspends/resumes the tab without a
+// full reload (relevant given the earlier discussion of long-dormant
+// PWA sessions possibly contributing to this exact hang).
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') _checkHangWatchdogHistory();
+});
+// ===== HANG WATCHDOG MODULE END =====
 
 // v0.1580 FIX (replaces the v0.1570 approach, which broke pinch-zoom):
 // iOS auto-zooms the page whenever a text field with a font size under
@@ -31968,13 +32170,33 @@ function makeImportFolderName(label) {
       if (typeof updateSelectModeBtn === 'function') updateSelectModeBtn();
     }
     updateDictateVisibility();
-    // Re-pin toolbars immediately and again after keyboard animation settles.
-    // On iOS webviews (Claude app) visualViewport events may not fire reliably,
-    // so we explicitly call pinToolbars after keyboard-open is set.
+    // ===== HANG DIAGNOSTIC MODULE START (EMTIP-HANG-DIAG) — portable,
+    // copy this whole block (both here and its Enter-key/input-handler
+    // siblings tagged KEYDOWN-HANG-DIAG/INPUT-HANG-DIAG) to any other
+    // branch investigating the same hang. Per Lynn's real, serious hang
+    // on iOS PWA right after entering typing mode on a freshly created/
+    // renamed note -- before/after logging around every call in this
+    // immediate sequence, so if this recurs, the log shows the LAST
+    // "before" line with no matching "after," pinpointing exactly which
+    // call never returned instead of the log simply going silent.
+    logSys('EMTIP-HANG-DIAG: before pinToolbars (sync)');
     pinToolbars();
-    setTimeout(pinToolbars, 100);
-    setTimeout(pinToolbars, 350);
-    setTimeout(pinToolbars, 600);
+    logSys('EMTIP-HANG-DIAG: after pinToolbars (sync)');
+    setTimeout(function() {
+      logSys('EMTIP-HANG-DIAG: before pinToolbars (100ms)');
+      pinToolbars();
+      logSys('EMTIP-HANG-DIAG: after pinToolbars (100ms)');
+    }, 100);
+    setTimeout(function() {
+      logSys('EMTIP-HANG-DIAG: before pinToolbars (350ms)');
+      pinToolbars();
+      logSys('EMTIP-HANG-DIAG: after pinToolbars (350ms)');
+    }, 350);
+    setTimeout(function() {
+      logSys('EMTIP-HANG-DIAG: before pinToolbars (600ms)');
+      pinToolbars();
+      logSys('EMTIP-HANG-DIAG: after pinToolbars (600ms)');
+    }, 600);
     // v0.1666 FIX, per Lynn's on-device diagnosis: the v0.1665 fix
     // computed the right scroll target, but area.scrollTop assignment
     // gets silently clamped by the browser to whatever's actually
@@ -31984,14 +32206,20 @@ function makeImportFolderName(label) {
     // _tpadEnsureCaretVisible, shared by all its call sites) for the fix.
     (function() {
       var _tapArea = document.getElementById('note-content-area');
-      function _ensureTapCaretVisible() {
+      function _ensureTapCaretVisible(_label) {
+        logSys('EMTIP-HANG-DIAG: before _applyKeyboardScrollRoom (' + _label + ')');
         _applyKeyboardScrollRoom(_tapArea);
-        _tpadEnsureCaretVisible(getCursorY(ed), _tapArea);
+        logSys('EMTIP-HANG-DIAG: before getCursorY (' + _label + ')');
+        var _cy = getCursorY(ed);
+        logSys('EMTIP-HANG-DIAG: before _tpadEnsureCaretVisible (' + _label + ')');
+        _tpadEnsureCaretVisible(_cy, _tapArea);
+        logSys('EMTIP-HANG-DIAG: after _ensureTapCaretVisible (' + _label + ')');
       }
-      setTimeout(_ensureTapCaretVisible, 100);
-      setTimeout(_ensureTapCaretVisible, 350);
-      setTimeout(_ensureTapCaretVisible, 600);
+      setTimeout(function() { _ensureTapCaretVisible('100ms'); }, 100);
+      setTimeout(function() { _ensureTapCaretVisible('350ms'); }, 350);
+      setTimeout(function() { _ensureTapCaretVisible('600ms'); }, 600);
     })();
+    // ===== HANG DIAGNOSTIC MODULE END (EMTIP-HANG-DIAG) =====
     // NOTE FOR CLAUDE: The auto-paste-prompt on new note focus has been removed.
     // We were calling navigator.clipboard.readText() here on first focus of a new
     // empty note, then asking 'Do you want to paste?' if the clipboard had content.
@@ -32884,6 +33112,18 @@ function makeImportFolderName(label) {
   noteEditor.addEventListener('keydown', function(e) {
     isAllSelected = false;
     document.getElementById('select-all-btn').style.color = '';
+    // ===== HANG DIAGNOSTIC MODULE START (KEYDOWN-HANG-DIAG) — portable,
+    // copy this whole block (and its siblings EMTIP-HANG-DIAG/
+    // INPUT-HANG-DIAG) to any other branch investigating the same hang.
+    // Logging e.key for every keydown here, since a virtual keyboard's
+    // Return key does not always fire the same keydown shape a physical
+    // keyboard's Enter does in every browser/webview -- if e.key isn't
+    // actually "Enter" here, the entire smart-indent branch below never
+    // runs at all, which would redirect this investigation to the
+    // beforeinput handlers instead (checked separately: no
+    // insertLineBreak/insertParagraph handling exists anywhere in this
+    // file today).
+    logSys('KEYDOWN-HANG-DIAG: e.key=' + JSON.stringify(e.key) + ' e.inputType=' + JSON.stringify(e.inputType) + ' e.isComposing=' + e.isComposing);
 
     // ===== TAB / SHIFT+TAB — indent or dedent =====
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -32903,6 +33143,7 @@ function makeImportFolderName(label) {
     //   <Whitespace1> <hyphen or checkbox-marker> <Whitespace2> <non-whitespace...>
     // then insert a newline followed by the same prefix (WS1 + marker + WS2).
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      logSys('KEYDOWN-HANG-DIAG: entered Enter branch');
       // If a typing-mode Find session is active, Enter pressed here
       // means the user pressed it a SECOND (or later) time after
       // setCurrentMatch() already moved focus from the search box to
@@ -32921,7 +33162,12 @@ function makeImportFolderName(label) {
       if (e.key !== 'Enter' && e.key !== 'Backspace') _siClear();
       var ed = this;
       if (e.key === 'Enter' && _siActive && _siTA === ed) {
-        if (_siCheckAndClear(ed, e)) { e.preventDefault(); resizeEditor(); scheduleSave(); return; }
+        logSys('KEYDOWN-HANG-DIAG: before _siCheckAndClear');
+        if (_siCheckAndClear(ed, e)) {
+          logSys('KEYDOWN-HANG-DIAG: _siCheckAndClear returned true, returning early');
+          e.preventDefault(); resizeEditor(); scheduleSave(); return;
+        }
+        logSys('KEYDOWN-HANG-DIAG: after _siCheckAndClear (false)');
       }
       var val = ed.value;
       var pos = ed.selectionStart;
@@ -32930,7 +33176,9 @@ function makeImportFolderName(label) {
       // Smart indent (aka auto continue / autoContinue / continue list /
       // continueList — see getSmartIndentPrefix()'s header comment) fires
       // here, on Enter in the main note editor.
+      logSys('KEYDOWN-HANG-DIAG: before getSmartIndentPrefix, lineText=' + JSON.stringify(lineText));
       var prefix = getSmartIndentPrefix(lineText);
+      logSys('KEYDOWN-HANG-DIAG: after getSmartIndentPrefix, prefix=' + JSON.stringify(prefix));
       if (prefix !== null) {
         e.preventDefault();
         var before = val.substring(0, pos);
@@ -32940,10 +33188,16 @@ function makeImportFolderName(label) {
         var newPos = pos + inserted.length;
         ed.setSelectionRange(newPos, newPos);
         _siSet(ed, pos + (settings.smartIndentBlankLine ? 2 : 1), prefix.length);
+        logSys('KEYDOWN-HANG-DIAG: before resizeEditor (smart-indent branch)');
         resizeEditor();
+        logSys('KEYDOWN-HANG-DIAG: before scheduleSave (smart-indent branch)');
         scheduleSave();
+        logSys('KEYDOWN-HANG-DIAG: smart-indent branch complete');
+      } else {
+        logSys('KEYDOWN-HANG-DIAG: prefix is null, falling through to browser default Enter behavior');
       }
     }
+    // ===== HANG DIAGNOSTIC MODULE END (KEYDOWN-HANG-DIAG) =====
   });
 
   // Smart-indent beforeinput: handle Backspace escape and swipe-type extra space.
@@ -33298,6 +33552,14 @@ function makeImportFolderName(label) {
   // Auto-save on input
   _tagAC.attach(document.getElementById('note-editor'));
   document.getElementById('note-editor').addEventListener('input', function() {
+    // ===== HANG DIAGNOSTIC MODULE START (INPUT-HANG-DIAG) — portable,
+    // copy this whole block (and its siblings EMTIP-HANG-DIAG/
+    // KEYDOWN-HANG-DIAG) to any other branch investigating the same
+    // hang. Careful line-by-line regex analysis of the candidates below
+    // found nothing that should hang on Lynn's exact reported text -- so
+    // this measures directly instead of guessing further. Before/after
+    // logging around every distinct step, so the log shows exactly
+    // which one never returned.
     // v0.1533: safety net for accidental-URL-encoding corruption that
     // arrives via an insertion path which never fires our native 'paste'
     // event listener (confirmed to happen for at least one iOS popup-menu
@@ -33309,6 +33571,7 @@ function makeImportFolderName(label) {
     // the input event gives no reliable insertion range to scope that to.
     // Idempotent: a value that has already been decoded no longer matches
     // the signature, so this cannot double-fire on the same content.
+    logSys('INPUT-HANG-DIAG: before URL-encoding check');
     if (looksLikeAccidentalUrlEncoding(this.value)) {
       var _preLen = this.value.length;
       var _decodedWhole = decodeAccidentalUrlEncoding(this.value);
@@ -33320,6 +33583,7 @@ function makeImportFolderName(label) {
         showToast('Pasted text was URL-encoded (an iOS clipboard quirk) — decoded it automatically', false, true);
       }
     }
+    logSys('INPUT-HANG-DIAG: after URL-encoding check, before naming block');
     if (currentNoteId && notes[currentNoteId]) {
       var n = notes[currentNoteId];
       var trimmed = this.value.trim();
@@ -33331,14 +33595,19 @@ function makeImportFolderName(label) {
         document.getElementById('note-title').textContent = resetName;
       } else if (n.autoNamed) {
         // Still auto-naming — derive from first line
+        logSys('INPUT-HANG-DIAG: before nameFromContent, autoNamed=true');
         var derived = nameFromContent(this.value);
+        logSys('INPUT-HANG-DIAG: after nameFromContent');
         if (derived) {
           n.name = derived;
           document.getElementById('note-title').textContent = derived;
         }
+      } else {
+        logSys('INPUT-HANG-DIAG: naming block skipped, autoNamed=false');
       }
       // If autoNamed is false (manually named), leave the title alone
     }
+    logSys('INPUT-HANG-DIAG: after naming block, before find-refresh check');
     // If Find's typing-mode session is open and the user just edited the
     // note (most likely: typed a replacement over the currently-selected
     // match), every OTHER match's stored {start, end} position may now
@@ -33357,9 +33626,16 @@ function makeImportFolderName(label) {
     // runFind() for the no-match-found case.
     if (_findActive && !isViewMode && _findQuery.trim()) {
       if (currentNoteId && notes[currentNoteId]) notes[currentNoteId].content = this.value;
+      logSys('INPUT-HANG-DIAG: before runFind');
       runFind(true); // skipJump — just refresh the count, don't move the cursor mid-edit
+      logSys('INPUT-HANG-DIAG: after runFind');
+    } else {
+      logSys('INPUT-HANG-DIAG: find-refresh skipped, not active');
     }
+    logSys('INPUT-HANG-DIAG: before scheduleSave');
     scheduleSave();
+    logSys('INPUT-HANG-DIAG: after scheduleSave (input handler complete)');
+    // ===== HANG DIAGNOSTIC MODULE END (INPUT-HANG-DIAG) =====
   });
 
   // v0.1650: REVERTED the v0.1649 dictation-newline smart-indent feature
@@ -34643,6 +34919,77 @@ function makeImportFolderName(label) {
         showToast('Clipboard not available — try long-pressing the text');
       }
     }, 'centered');
+  });
+
+  // v0.1893 NEW, per Lynn's explicit request while hunting a real hang
+  // bug: she needed to replicate a specific settings state in a second
+  // test environment and had no practical way to do it -- manually
+  // toggling 48 settings through the UI is impractical even for simple
+  // values, and outright impossible for object/array ones like
+  // customColors or toolbarOrder. Reuses the exact same non-default
+  // detection loop as "Show Non-Default Settings" above, but outputs
+  // clean, valid JSON directly, rather than that button's human-
+  // readable current/default display (which isn't parseable as-is).
+  document.getElementById('copy-settings-json-btn').addEventListener('click', function() {
+    var out = {};
+    Object.keys(DEFAULT_SETTINGS).forEach(function(key) {
+      var cur = settings[key];
+      var def = DEFAULT_SETTINGS[key];
+      if (JSON.stringify(cur) !== JSON.stringify(def)) out[key] = cur;
+    });
+    var json = JSON.stringify(out, null, 2);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(function() {
+        showCopiedToast(Object.keys(out).length + ' non-default setting(s) copied as JSON');
+      }).catch(function() {
+        showConfirm('Copy Settings as JSON', json, 'Close', function(){}, false, null, null, 'centered');
+      });
+    } else {
+      showConfirm('Copy Settings as JSON', json, 'Close', function(){}, false, null, null, 'centered');
+    }
+  });
+
+  // Import: validates every key against DEFAULT_SETTINGS (the CURRENT
+  // build's own known-settings schema) before applying anything --
+  // per Lynn's explicit safety requirement, since a setting valid in
+  // one version may be obsolete or renamed in another, and blindly
+  // applying an unrecognized key could leave the app in a confusing or
+  // broken state. Unknown keys are never applied, only reported.
+  document.getElementById('import-settings-json-btn').addEventListener('click', function() {
+    var raw = document.getElementById('import-settings-json-textarea').value.trim();
+    if (!raw) { showToast('Paste a JSON object first', false); return; }
+    var parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      showConfirm('Import Failed', 'That isn\u2019t valid JSON:\n\n' + e.message, 'OK', function(){}, false, null, null, 'centered');
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      showConfirm('Import Failed', 'Expected a JSON OBJECT of settingName: value pairs, e.g. {"smartIndentBlankLine": true} -- got something else.', 'OK', function(){}, false, null, null, 'centered');
+      return;
+    }
+    var applied = [];
+    var ignored = [];
+    Object.keys(parsed).forEach(function(key) {
+      if (key in DEFAULT_SETTINGS) {
+        settings[key] = parsed[key];
+        applied.push(key);
+      } else {
+        ignored.push(key);
+      }
+    });
+    if (applied.length > 0) {
+      applySettings();
+      saveSettings();
+    }
+    var msg = applied.length + ' setting(s) applied' + (applied.length ? ': ' + applied.join(', ') : '') + '.';
+    if (ignored.length > 0) {
+      msg += '\n\n' + ignored.length + ' key' + (ignored.length === 1 ? '' : 's') +
+        ' not recognized in this build and safely ignored: ' + ignored.join(', ');
+    }
+    showConfirm(ignored.length > 0 ? 'Settings Imported (with some skipped)' : 'Settings Imported', msg,
+      'OK', function(){}, false, null, null, 'centered');
   });
 
   document.getElementById('reset-defaults-btn').addEventListener('click', function() {
