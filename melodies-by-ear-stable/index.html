@@ -3,7 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Melodies by Ear v0.43</title>
+<meta name="theme-color" content="#F3F5F6">
+<meta name="color-scheme" content="light">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Melodies" id="appleTitle">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon192.png">
+<link rel="icon" type="image/png" href="icon192.png">
+<title>Melodies by Ear v0.44</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -340,12 +349,24 @@
   .err-item.copyable { cursor: pointer; }
   .err-item.copied { background: #E8F4EA; border-color: #9CCBA5; }
   .err-hint { margin: 2px 0 0; font-size: .8rem; color: #7A3A2C; }
+  .deploy-tag { font-family: system-ui, -apple-system, sans-serif; font-size: .72rem; font-weight: 700; vertical-align: middle;
+    margin-left: 6px; padding: 2px 7px; border-radius: 999px; color: #fff; background: #B84028; }
+  .deploy-tag.stable { background: #3C5AA0; }
+  /* "A new version is ready" notice (informational, so tapping it doesn't copy) */
+  .update-note {
+    position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 25;
+    max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: 10px;
+    background: #fff; border: 2px solid var(--teal); border-radius: 12px; padding: 10px 12px;
+    box-shadow: 0 6px 24px rgba(34,48,60,.2); font-size: .95rem;
+  }
+  .update-note span { flex: 1; }
+  .update-note .btn { padding: 9px 14px; font-size: .95rem; }
   .ver { font-family: system-ui, -apple-system, sans-serif; font-size: .8rem; font-weight: 500; color: var(--muted); vertical-align: middle; margin-left: 4px; }
 </style>
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.43</span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.44</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="song-row">
     <label for="songSel" data-s="ui.song"></label>
     <select id="songSel"></select>
@@ -585,6 +606,12 @@
     </div>
   </details>
 
+  <div class="update-note" id="updateNote" role="status" hidden>
+    <span data-s="app.updateReady"></span>
+    <button class="btn primary" id="updateReload" data-s="app.reload"></button>
+    <button class="btn secondary" id="updateLater" data-s="app.later"></button>
+  </div>
+
   <div class="errbox" id="errBox" role="alert" hidden>
     <div class="err-head"><strong data-s="err.title"></strong><button class="err-close" id="errClose" data-s-aria-label="err.dismiss">✕</button></div>
     <ul class="err-list" id="errList"></ul>
@@ -776,8 +803,16 @@ const STRINGS = {
     "violin": "Violin"
   },
   app: {
+    "deployDev": "Dev",
+    "deployStable": "Stable",
     "docTitle": "Melodies by Ear: {song}",
-    "name": "Melodies by Ear"
+    "homeTitle": "Melodies",
+    "homeTitleDev": "Melodies Dev",
+    "homeTitleStable": "Melodies Stable",
+    "later": "Later",
+    "name": "Melodies by Ear",
+    "reload": "Reload",
+    "updateReady": "A new version of Melodies by Ear is ready."
   },
   err: {
     "audio": "Sound problem ({where}): {msg}",
@@ -797,6 +832,7 @@ const STRINGS = {
     "storageRead": "Couldn’t read saved data ({key}): {msg}",
     "storageWrite": "Couldn’t save to this browser ({key}): {msg}. Private browsing or full storage can cause this. Use Save to a file or Copy to keep a copy of your lyrics.",
     "title": "Something went wrong",
+    "swRegister": "Offline use couldn’t be set up (service worker): {msg}",
     "uncaught": "Unexpected error: {msg}"
   },
   drill: {
@@ -989,10 +1025,21 @@ async function copyText(text) {
   }
 }
 
+// ---------- Which deployment is this? ----------
+// The same file runs in three folders on GitHub Pages: melodies-by-ear/
+// (latest), melodies-by-ear-dev/ and melodies-by-ear-stable/. They share one
+// web origin, and browser storage is per origin, not per folder, so dev and
+// stable prefix their storage keys (as Remember does) to keep data apart.
+const DEPLOYMENT = /\/melodies-by-ear-dev\//.test(location.pathname) ? "dev"
+                 : /\/melodies-by-ear-stable\//.test(location.pathname) ? "stable" : "main";
+const STORE_PREFIX = DEPLOYMENT === "main" ? "" : DEPLOYMENT + ":";
+const storageKey = key => STORE_PREFIX + key;
+
 // ---------- Saved data (this browser only) ----------
-// All storage goes through these four, so a failure is never silent.
+// All storage goes through these four, so a failure is never silent, and
+// every key gets this deployment's prefix in exactly one place.
 function storeGet(key) {
-  try { return localStorage.getItem(key); }
+  try { return localStorage.getItem(storageKey(key)); }
   catch (e) { reportError(T("err.storageRead", { key, msg: e.message })); return null; }
 }
 function storeGetJSON(key) {
@@ -1002,11 +1049,11 @@ function storeGetJSON(key) {
   catch (e) { reportError(T("err.storageCorrupt", { key, msg: e.message })); return null; }
 }
 function storeSet(key, value) {
-  try { localStorage.setItem(key, value); return true; }
+  try { localStorage.setItem(storageKey(key), value); return true; }
   catch (e) { reportError(T("err.storageWrite", { key, msg: e.message })); return false; }
 }
 function storeRemove(key) {
-  try { localStorage.removeItem(key); return true; }
+  try { localStorage.removeItem(storageKey(key)); return true; }
   catch (e) { reportError(T("err.storageWrite", { key, msg: e.message })); return false; }
 }
 
@@ -1217,6 +1264,38 @@ function validateSong() {
     for (const it of items) if (!it.bar && !(it.syl in PITCH)) say(T("err.songSyllable", { label, syl: it.syl }));
   };
   for (const [k, c] of Object.entries(SEQ_CHOICES)) check(c.label, joinFill(withItems(c.build())).flatMap(p => p.items));
+}
+
+// Dev and Stable say so next to the version, and get their own home-screen name.
+function setUpDeployment() {
+  const titleKey = { main: "app.homeTitle", dev: "app.homeTitleDev", stable: "app.homeTitleStable" }[DEPLOYMENT];
+  $("appleTitle").setAttribute("content", T(titleKey));
+  if (DEPLOYMENT === "main") return;
+  const tag = $("deployTag");
+  tag.textContent = T(DEPLOYMENT === "dev" ? "app.deployDev" : "app.deployStable");
+  tag.classList.toggle("stable", DEPLOYMENT === "stable");
+  tag.hidden = false;
+}
+
+// ---------- Offline use and updates (PWA) ----------
+// A service worker (service-worker.js, in each deployment folder) keeps a copy
+// of the app so it opens without a connection, and always fetches the newest
+// page when online. Only registered on GitHub Pages: in previews (like the
+// Claude app's viewer) there is no service-worker.js, which isn't an error.
+// When a newer version is installed while the app is open, a notice offers
+// to reload; coming back to the app checks for a newer version.
+function setUpOfflineAndUpdates() {
+  if (!("serviceWorker" in navigator) || !location.hostname.endsWith(".github.io")) return;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("./service-worker.js", { updateViaCache: "none" }).then(reg => {
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) reg.update().catch(e => reportError(T("err.swRegister", { msg: e.message })));
+    });
+  }).catch(e => reportError(T("err.swRegister", { msg: e.message })));
+  // The first install also takes control of the page; that isn't an update.
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) $("updateNote").hidden = false; });
+  $("updateReload").addEventListener("click", () => location.reload());
+  $("updateLater").addEventListener("click", () => { $("updateNote").hidden = true; });
 }
 
 // ---- The phrase drill's pool: verse 1, 2, 3 (each with the chorus) or a mix
@@ -3217,6 +3296,8 @@ renderAB();   // show any saved A–B loop
 renderTuning();
 renderLegatoRow();
 validateSong();
+setUpDeployment();
+setUpOfflineAndUpdates();
 </script>
 </body>
 </html>
