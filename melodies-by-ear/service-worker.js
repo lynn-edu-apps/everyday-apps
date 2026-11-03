@@ -1,18 +1,25 @@
-// Melodies by Ear — service worker for melodies-by-ear/ (template v1)
+// Melodies by Ear — service worker for melodies-by-ear/ (template v2)
 // Adapted from Remember's service worker (v0.1865), keeping its fail-loudly fixes:
 // only successful responses are cached, and failures are logged, never silent.
 //
-// What it does: keeps a copy of the app so it opens offline, and fetches the
-// newest page whenever the network is available ("network first" for the page).
-// deploy.yml rewrites CACHE_VERSION on every deploy, so each version gets a
-// fresh cache and the old one is removed.
+// What it does: keeps a copy of the app so it opens offline, and always tries
+// the network first for EVERY file (page, manifest, icons), using the cached
+// copy only when the network fails. deploy.yml rewrites CACHE_VERSION on every
+// deploy, so each version gets a fresh cache and the old one is removed.
+//
+// v2 (2026-11-02): v1 served manifest.json and icons from the cache first, so a
+// phone that had cached an old manifest kept showing it to the browser until the
+// next version, which made Android Chrome say a never-installed app was "already
+// installed" (the old manifest's app id). v2 also downloads the precache with
+// cache: 'reload', bypassing the browser's HTTP cache (GitHub Pages lets files be
+// reused for up to 10 minutes), so a fresh install never stores a stale copy.
 //
 // All apps on lynn-edu-apps.github.io share ONE Cache Storage (it's per origin),
 // so the cleanup below deletes only caches named with this folder's own prefix,
 // never Remember's or the other Melodies by Ear deployments'.
 
 const CACHE_PREFIX  = 'melodies-by-ear-v';
-const CACHE_VERSION = 'melodies-by-ear-v0.45';
+const CACHE_VERSION = 'melodies-by-ear-v0.46';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const LOG = '[Melodies by Ear SW melodies-by-ear]';
 
@@ -26,7 +33,7 @@ const PRECACHE_ASSETS = [
 self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(STATIC_CACHE).then(function(cache) {
-      return cache.addAll(PRECACHE_ASSETS);
+      return cache.addAll(PRECACHE_ASSETS.map(function(url) { return new Request(url, { cache: 'reload' }); }));
     }).then(function() {
       return self.skipWaiting();
     }).catch(function(err) {
@@ -76,34 +83,23 @@ self.addEventListener('fetch', function(event) {
   var url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;    // nothing outside this site
 
+  // Network first for everything: the newest file when online, the cached copy
+  // only when offline. (The page asks with cache: 'no-store' so a new deploy
+  // shows on the next open; other files may use the browser's normal caching.)
   var isHTML = (event.request.headers.get('accept') || '').includes('text/html');
   var isIndex = url.pathname.endsWith('/') || url.pathname.endsWith('.html');
+  var networkRequest = (isHTML || isIndex) ? fetch(event.request.url, { cache: 'no-store' }) : fetch(event.request, { cache: 'no-cache' });
 
-  if (isHTML || isIndex) {
-    // The page: always try the network first (so a new deploy shows up on the
-    // next open), and fall back to the cached copy when offline.
-    event.respondWith(
-      fetch(event.request.url, { cache: 'no-store' })
-        .then(function(networkResponse) { return cacheIfOk(event.request, networkResponse); })
-        .catch(function() {
-          return caches.match(event.request).then(function(cached) {
-            return cached || caches.match('./');
-          });
-        })
-    );
-    return;
-  }
-
-  // Everything else (icons, manifest): from the cache, else the network.
   event.respondWith(
-    caches.match(event.request).then(function(cached) {
-      if (cached) return cached;
-      return fetch(event.request).then(function(networkResponse) {
-        return cacheIfOk(event.request, networkResponse);
-      }).catch(function(err) {
-        console.error(LOG, 'Fetch failed for:', event.request.url, err);
-        throw err;
-      });
-    })
+    networkRequest
+      .then(function(networkResponse) { return cacheIfOk(event.request, networkResponse); })
+      .catch(function(err) {
+        return caches.match(event.request).then(function(cached) {
+          if (cached) return cached;
+          if (isHTML || isIndex) return caches.match('./');
+          console.error(LOG, 'Offline and not cached:', event.request.url, err);
+          throw err;
+        });
+      })
   );
 });
