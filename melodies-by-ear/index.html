@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.45</title>
+<title>Melodies by Ear v0.46</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -368,7 +368,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.45</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.46</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="song-row">
     <label for="songSel" data-s="ui.song"></label>
     <select id="songSel"></select>
@@ -841,6 +841,7 @@ const STRINGS = {
     "stack": "Stack trace:\n{stack}",
     "title": "Something went wrong",
     "swRegister": "Offline use couldn’t be set up (service worker): {msg}",
+    "swUpdate": "Checking for a newer version of the app failed, although the device says it is online: {msg}",
     "uncaught": "Unexpected error: {msg}",
     "uncaughtWhere": "Where: {file}, line {line}, column {col}",
     "valueType": "Value ({type}): {value}"
@@ -1344,8 +1345,16 @@ function setUpOfflineAndUpdates() {
   if (!("serviceWorker" in navigator) || !location.hostname.endsWith(".github.io")) return;
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register("./service-worker.js", { updateViaCache: "none" }).then(reg => {
+    // Coming back to the app checks for a newer version. With no network
+    // (airplane mode) there is nothing to check, so don't try: that failure
+    // is expected, not an error. navigator.onLine is false only when the
+    // device knows it is offline, so a real failure while online still shows.
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) reg.update().catch(e => reportError(T("err.swRegister", { msg: e.message })));
+      if (document.hidden || navigator.onLine === false) return;
+      reg.update().catch(e => {
+        if (navigator.onLine === false) return;     // went offline during the check
+        reportError(T("err.swUpdate", { msg: `${e.name}: ${e.message}` }));
+      });
     });
   }).catch(e => reportError(T("err.swRegister", { msg: e.message })));
   // The first install also takes control of the page; that isn't an update.
