@@ -1,0 +1,3376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F3F5F6">
+<meta name="color-scheme" content="light">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Melodies" id="appleTitle">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon192.png">
+<link rel="icon" type="image/png" href="icon192.png">
+<title>Melodies by Ear v0.47</title>
+<style>
+  :root {
+    --paper: #F3F5F6;
+    --ink: #22303C;
+    --muted: #6B7A86;
+    --teal: #1D6E7A;
+    --teal-soft: #DCEBED;
+    --gold: #D49A12;
+    --koa: #6E4527;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  main { max-width: 560px; margin: 0 auto; padding: 22px 16px 48px; }
+  h1 {
+    font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    font-weight: 600; font-size: 1.55rem; margin: 0 0 4px;
+  }
+  .drill-title {
+    font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    font-weight: 600; font-size: 1.15rem; margin: 14px 0 2px;
+  }
+  .lede { color: var(--muted); margin: 0 0 18px; font-size: .95rem; line-height: 1.4; }
+
+  .progress { display: flex; gap: 5px; margin: 0 0 6px; }
+  .pip { flex: 1; height: 8px; border-radius: 4px; background: #D5DCE0; }
+  .pip.done { background: var(--teal); }
+  .pip.now { background: var(--gold); }
+  .count { font-size: .88rem; color: var(--muted); margin: 0 0 16px; }
+
+  .stage {
+    background: #fff;
+    border: 1px solid #DDE3E7;
+    border-radius: 14px;
+    padding: 18px 16px;
+    min-height: 168px;
+    display: flex; flex-direction: column; justify-content: center; gap: 10px;
+  }
+  .prompt { font-size: 1.05rem; line-height: 1.45; margin: 0; }
+  .prompt.quiet { color: var(--muted); }
+  .phrase-id { font-size: .85rem; color: var(--muted); margin: 0; }
+  .notes { display: flex; flex-wrap: wrap; gap: 14px 4px; align-items: center; }
+  .n { position: relative; }
+  .n.s16::after {
+    content: ""; position: absolute; left: 22%; right: 22%; bottom: -11px; height: 6px;
+    border-top: 2px solid var(--teal); border-bottom: 2px solid var(--teal); opacity: .85;
+  }
+  /* the bars sit below the chip, so they keep their color when it lights up */
+  .n.pk.s16::after { border-color: #7FA9B0; }
+  .n.do.s16::after { border-color: #8A5F00; }
+  .n.dotted::after { content: "·"; font-weight: 900; margin-left: 1px; }
+  .n {
+    font-weight: 650; font-size: 1.02rem;
+    padding: 4px 8px; border-radius: 8px;
+    background: var(--teal-soft); color: var(--teal);
+    transition: background .06s, color .06s;
+  }
+  .n.pk { background: transparent; color: #7FA9B0; box-shadow: inset 0 0 0 1.5px #B9D3D7; }
+  .n.do { background: #FBF0D4; color: #8A5F00; }
+  .n.on { background: var(--teal); color: #fff; }
+  .n.do.on { background: var(--gold); color: #2B2005; }
+  .bar { color: #B5C0C7; padding: 0 2px; }
+  .reveal {
+    align-self: flex-start;
+    font: inherit; font-size: .92rem;
+    background: none; border: 0; padding: 4px 0;
+    color: var(--teal); text-decoration: underline; cursor: pointer;
+  }
+
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 10px; }
+  .btn {
+    font: inherit; font-weight: 600; font-size: 1.05rem;
+    border: 0; border-radius: 12px; padding: 16px 10px;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .btn.primary { background: var(--teal); color: #fff; }
+  .btn.secondary { background: #fff; color: var(--teal); box-shadow: inset 0 0 0 2px var(--teal); }
+  .btn.secondary.stop { background: var(--gold); color: #2B2005; box-shadow: none; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.wide { grid-column: 1 / -1; }
+  .small-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chipbtn {
+    font: inherit; font-size: .9rem;
+    background: #fff; color: var(--ink);
+    border: 1px solid #C9D2D8; border-radius: 999px;
+    padding: 7px 14px; cursor: pointer;
+  }
+  .chipbtn.active { background: var(--gold); border-color: var(--gold); color: #2B2005; }
+  .chipbtn .gold { color: #8A5F00; font-weight: 650; }
+
+  .metro {
+    margin-top: 16px;
+    background: #fff; border: 1px solid #DDE3E7; border-radius: 14px;
+    padding: 12px 16px; display: grid; gap: 10px;
+  }
+  .metro-head { display: flex; align-items: center; justify-content: space-between; }
+  .metro-title { font-weight: 600; }
+  .beats { display: flex; gap: 8px; }
+  .beat { width: 12px; height: 12px; border-radius: 50%; background: #D5DCE0; transition: background .04s; }
+  .beat.one { width: 16px; height: 16px; }
+  .beat.on { background: var(--teal); }
+  .beat.one.on { background: var(--gold); }
+  .switch { display: flex; align-items: center; gap: 12px; font-size: .97rem; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .track {
+    flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px;
+    background: #C9D2D8; transition: background .12s;
+  }
+  .track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .12s;
+  }
+  .switch input:checked + .track { background: var(--teal); }
+  .switch input:checked + .track::after { left: 21px; }
+  .switch input:focus-visible + .track { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+  .calib { display: grid; gap: 10px; padding: 10px 0 2px; border-top: 1px solid #E3E8EB; }
+  .calib-text { margin: 0; font-size: .95rem; line-height: 1.4; }
+  .tap-pad {
+    font: inherit; font-weight: 650; font-size: 1.2rem;
+    border: 0; border-radius: 14px; padding: 30px 10px;
+    background: var(--teal); color: #fff; cursor: pointer; touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  .tap-pad.hit { background: #155760; }
+  .calib-row { display: flex; align-items: center; justify-content: space-between; }
+  .calib-count { color: var(--muted); font-size: .9rem; }
+
+  /* Tap feedback: every button gives a quick press-and-glow when tapped,
+     even if you tap the same one twice in a row */
+  .btn, .chipbtn, .reveal, .tap-pad { transition: transform .08s ease; }
+  @keyframes press {
+    0%   { transform: scale(.94); filter: brightness(.82); box-shadow: 0 0 0 0 rgba(212,154,18,.75); }
+    60%  { transform: scale(1);   filter: brightness(1);   box-shadow: 0 0 0 8px rgba(212,154,18,0); }
+    100% { transform: scale(1);   filter: brightness(1);   box-shadow: 0 0 0 0 rgba(212,154,18,0); }
+  }
+  .pressed { animation: press .32s ease-out; }
+  @keyframes flash {
+    0%   { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,154,18,.45); }
+    100% { border-color: #DDE3E7; box-shadow: 0 0 0 0 rgba(212,154,18,0); }
+  }
+  .stage.flash { animation: flash .6s ease-out; }
+
+  .along {
+    margin-top: 16px; background: #fff; border: 1px solid #DDE3E7; border-radius: 14px;
+    padding: 14px 16px; display: grid; gap: 12px;
+  }
+  .along h2 {
+    font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    font-weight: 600; font-size: 1.15rem; margin: 0 0 2px;
+  }
+  .along-sub { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.4; }
+  .btn.primary.stop { background: var(--gold); color: #2B2005; }
+  .btn.secondary.resume { background: var(--teal); color: #fff; }
+  .along-notes { margin-top: 0; }
+  .along-notes summary { font-weight: 500; color: var(--teal); }
+  .all-section { font-size: .85rem; color: var(--muted); margin: 12px 0 4px; }
+  .all-line { display: flex; flex-wrap: wrap; gap: 12px 3px; align-items: center; margin: 0 0 12px; }
+  .all-line .bn { font-size: .75rem; color: var(--muted); min-width: 22px; }
+  .all-line .n { font-size: .9rem; padding: 3px 6px; }
+
+  .along-start label { font-size: .85rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  .along-btns { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .along-btns.two { grid-template-columns: 1fr 1fr; }
+  .along-status { margin: 0; font-size: .92rem; color: var(--ink); line-height: 1.4; }
+  .along-tip { margin: 6px 0 0; font-size: .85rem; color: var(--muted); }
+  .all-line { border-radius: 10px; padding: 2px 4px; margin-left: -4px; margin-right: -4px; transition: background .1s; }
+  .all-line.on { background: #EEF5F6; }
+  .all-line.resume-here { background: #FBF0D4; }
+  .all-line .bn {
+    font: inherit; font-size: .75rem; color: var(--teal); min-width: 26px;
+    background: none; border: 0; padding: 4px 2px; cursor: pointer; text-decoration: underline;
+  }
+
+  .switch.follow { margin: 10px 0 4px; font-size: .92rem; }
+  .dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(255,255,255,.96); border-top: 1px solid #DDE3E7;
+    box-shadow: 0 -2px 10px rgba(34,48,60,.08);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .dock-where { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dock .btn { padding: 11px 18px; font-size: 1rem; }
+  /* while the melody plays, extra room below the page lets even the last
+     lines scroll up to the same spot as the others */
+  body.docked main { padding-bottom: 75vh; }
+
+  .ab { display: grid; gap: 8px; justify-items: start; }
+  .ab-msg { margin: 0; font-size: .92rem; line-height: 1.4; }
+  .ab-msg strong { color: var(--teal); }
+  /* lines inside the A–B loop get a teal bracket down the left side */
+  .all-line { position: relative; }
+  .all-line.in-ab, .all-line.ab-pending { padding-left: 12px; }
+  .all-line.in-ab::before, .all-line.ab-pending::before {
+    content: ""; position: absolute; left: 0; top: -1px; bottom: -14px; width: 4px;
+    border-radius: 2px; background: var(--teal);
+  }
+  .all-line.ab-last::before, .all-line.ab-pending::before { bottom: 2px; }
+  .all-line.ab-pending::before { background: var(--gold); }
+  .picking .all-line .bn { background: #EEF5F6; border-radius: 6px; text-decoration: none; font-weight: 700; }
+  select:disabled { opacity: .55; }
+
+  .transpose-row { justify-content: flex-start; }
+  .chipbtn.step { width: 44px; height: 40px; padding: 0; font-size: 1.3rem; line-height: 1; }
+  .t-val { flex: 1; text-align: center; font-weight: 600; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .presets .chipbtn.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .hint { margin: 6px 0 0; font-size: .85rem; color: var(--muted); line-height: 1.4; }
+  .pitch-note {
+    font: inherit; font-size: .88rem; font-weight: 600; color: #2B2005;
+    background: #FBF0D4; border: 1px solid #EED9A2; border-radius: 999px;
+    padding: 5px 12px; margin: 0 0 10px; cursor: pointer;
+  }
+
+  .reveal-row { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .lyrics { display: grid; gap: 10px; border-top: 1px solid #E3E8EB; padding-top: 10px; }
+  .ly-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ly-tab {
+    font: inherit; font-size: .85rem; border: 1px solid #C9D2D8; background: #fff; color: var(--ink);
+    border-radius: 999px; padding: 4px 12px; cursor: pointer;
+  }
+  .ly-tab.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .ly-set-name { margin: 0 0 4px; font-size: .8rem; font-weight: 600; color: var(--muted); }
+  .ly-row { display: grid; grid-template-columns: 74px 1fr; gap: 8px; padding: 3px 0; }
+  .ly-label { font-size: .78rem; color: var(--muted); padding-top: 3px; }
+  .ly-text { font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif; font-size: 1.08rem; line-height: 1.35; }
+  .ly-mean { display: block; font-family: system-ui, -apple-system, sans-serif; font-size: .85rem; color: var(--muted); margin-top: 1px; }
+  .ly-empty { margin: 0; font-size: .92rem; color: var(--muted); }
+  .lyrics-panel h3 { font-size: 1rem; margin: 6px 0 4px; }
+  textarea {
+    width: 100%; font: inherit; font-size: .95rem; line-height: 1.4;
+    padding: 10px; border: 1px solid #C9D2D8; border-radius: 8px; background: #fff; color: var(--ink);
+  }
+  .mine-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .file-btn { position: relative; overflow: hidden; display: inline-block; }
+  .settings label.file-btn { font-size: .9rem; color: var(--ink); margin-bottom: 0; display: inline-block; }
+  .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  #myStatus.warn { color: #8A4B00; }
+  .settings label.fname-label { margin-top: 10px; }
+  .fname {
+    width: 100%; font: inherit; font-size: 1rem; padding: 9px 10px;
+    border: 1px solid #C9D2D8; border-radius: 8px; background: #fff; color: var(--ink);
+  }
+
+  .drill-verse { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; }
+  .dv-label { font-size: .9rem; color: var(--muted); margin-right: 4px; }
+  .dv {
+    font: inherit; font-size: .95rem; font-weight: 600; min-width: 44px; height: 36px; padding: 0 12px;
+    border: 1px solid #C9D2D8; border-radius: 999px; background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .dv.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .drill-chorus { flex-wrap: wrap; margin-top: -4px; }
+  .cm {
+    font: inherit; font-size: .88rem; height: 32px; padding: 0 11px;
+    border: 1px solid #C9D2D8; border-radius: 999px; background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .cm.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .pip.ch.done { background: #B88A12; }
+  .progress.many { gap: 3px; }
+  .ly-row.ly-current .ly-label { color: var(--teal); font-weight: 700; }
+  .ly-row.ly-current .ly-text { font-weight: 600; }
+  .trip { display: inline-flex; gap: 3px; position: relative; padding-top: 12px; }
+  .trip::before {
+    content: ""; position: absolute; top: 4px; left: 6px; right: 6px; height: 6px;
+    border: 1.5px solid #8FA4AE; border-bottom: 0; border-radius: 3px 3px 0 0;
+  }
+  .trip::after {
+    content: "3"; position: absolute; top: -3px; left: 50%; transform: translateX(-50%);
+    padding: 0 3px; background: #fff; font-size: .66rem; font-weight: 700; color: #6B7A86; line-height: 1;
+  }
+
+  .seg-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tstrings { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+  .tstr {
+    font: inherit; border: 1px solid #C9D2D8; border-radius: 12px; background: #fff; color: var(--ink);
+    padding: 10px 4px 8px; cursor: pointer; line-height: 1.15;
+  }
+  .tstr b { display: block; font-size: 1.25rem; }
+  .tstr small { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }
+  .tstr.on { background: var(--gold); border-color: var(--gold); color: #2B2005; }
+  .tstr.on small { color: #4A3608; }
+
+  .song-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
+  .song-row label { font-size: .9rem; color: var(--muted); }
+  .song-row select { flex: 1; }
+  .dv-btns { display: contents; }
+
+  details { margin-top: 22px; }
+  summary { cursor: pointer; font-weight: 600; color: var(--ink); padding: 6px 0; }
+  .settings { display: grid; gap: 14px; padding: 8px 0 4px; }
+  .settings label { font-size: .85rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row input[type=range] { flex: 1; accent-color: var(--teal); }
+  .tempo-val { min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+  select {
+    width: 100%; font: inherit; font-size: 1rem;
+    padding: 9px 10px; border: 1px solid #C9D2D8; border-radius: 8px;
+    background: #fff; color: var(--ink);
+  }
+  .check { display: flex; align-items: center; gap: 8px; font-size: .95rem; }
+  .check input { width: 18px; height: 18px; accent-color: var(--teal); }
+
+  .footnote { font-size: .82rem; color: var(--muted); margin-top: 22px; line-height: 1.45; }
+
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 3px solid var(--gold); outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pressed { animation: none; filter: brightness(.85); }
+    .stage.flash { animation: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .n { transition: none; } }
+  /* Error banner: stays until dismissed (alpha-testing phase: fail loudly) */
+  .errbox {
+    position: fixed; left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top)); z-index: 30;
+    max-width: 560px; margin: 0 auto; max-height: 60vh; overflow-y: auto;
+    background: #FFF1EE; color: #5A1408; border: 2px solid #C0391B; border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(90,20,8,.25); padding: 8px 12px 10px;
+  }
+  .err-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .err-head strong { font-size: 1rem; }
+  .err-close { font: inherit; font-size: 1.1rem; border: 0; background: none; color: #5A1408; padding: 6px 10px; cursor: pointer; }
+  .err-list { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 6px; }
+  .err-item { font-size: .9rem; line-height: 1.35; padding: 6px 8px; border-radius: 8px; background: #fff; border: 1px solid #F0B8AA; overflow-wrap: anywhere; }
+  .err-item.copyable { cursor: pointer; }
+  .err-details { display: block; margin-top: 6px; font: .74rem/1.35 ui-monospace, Menlo, Consolas, monospace;
+    color: #5A3A33; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .err-item.copied { background: #E8F4EA; border-color: #9CCBA5; }
+  .err-hint { margin: 2px 0 0; font-size: .8rem; color: #7A3A2C; }
+  .deploy-tag { font-family: system-ui, -apple-system, sans-serif; font-size: .72rem; font-weight: 700; vertical-align: middle;
+    margin-left: 6px; padding: 2px 7px; border-radius: 999px; color: #fff; background: #B84028; }
+  .deploy-tag.stable { background: #3C5AA0; }
+  /* "A new version is ready" notice (informational, so tapping it doesn't copy) */
+  .update-note {
+    position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 25;
+    max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: 10px;
+    background: #fff; border: 2px solid var(--teal); border-radius: 12px; padding: 10px 12px;
+    box-shadow: 0 6px 24px rgba(34,48,60,.2); font-size: .95rem;
+  }
+  .update-note span { flex: 1; }
+  .update-note .btn { padding: 9px 14px; font-size: .95rem; }
+  .ver { font-family: system-ui, -apple-system, sans-serif; font-size: .8rem; font-weight: 500; color: var(--muted); vertical-align: middle; margin-left: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.47</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <div class="song-row">
+    <label for="songSel" data-s="ui.song"></label>
+    <select id="songSel"></select>
+  </div>
+  <button class="pitch-note" id="pitchNote" hidden></button>
+  <h2 class="drill-title" data-s="ui.drillTitle"></h2>
+  <p class="lede" id="lede"></p>
+
+  <div class="drill-verse" role="group" aria-label="Which verse to practice" data-s-aria-label="ui.whichVerseAria">
+    <span class="dv-label" data-s="ui.verse"></span>
+    <span id="dvBtns" class="dv-btns"></span>
+    <input type="hidden" id="drillVerse" value="1">
+  </div>
+  <div class="drill-verse drill-chorus" id="chorusRow" role="group" aria-label="Chorus phrases" data-s-aria-label="ui.chorusPhrasesAria">
+    <span class="dv-label" data-s="ui.chorus"></span>
+    <button class="cm" data-m="mixed" data-s="ui.chorusMixed"></button><button class="cm" data-m="after" data-s="ui.chorusAfter"></button><button class="cm" data-m="skip" data-s="ui.chorusSkip"></button>
+    <input type="hidden" id="chorusMode" value="mixed">
+  </div>
+  <div class="progress" id="progress" aria-hidden="true"></div>
+  <p class="count" id="count"></p>
+
+  <div class="stage" aria-live="polite">
+    <p class="prompt quiet" id="prompt"></p>
+    <p class="phrase-id" id="phraseId" hidden></p>
+    <div class="notes" id="notes" hidden></div>
+    <div class="reveal-row">
+      <button class="reveal" id="revealBtn" hidden data-s="ui.showSolfege"></button>
+      <button class="reveal" id="lyricsBtn" hidden data-s="ui.showLyrics"></button>
+    </div>
+    <div class="lyrics" id="lyricBox" hidden></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn secondary" id="againBtn" disabled data-s="ui.playAgain"></button>
+    <button class="btn primary" id="nextBtn" data-s="ui.newPhrase"></button>
+  </div>
+  <div class="small-actions">
+    <button class="chipbtn" id="doBtn" data-s-html="ui.playDo"></button>
+    <button class="chipbtn" id="metroBtn" data-s="ui.metronomeOnly"></button>
+    <button class="chipbtn" id="slowBtn" data-s="ui.playSlowly"></button>
+    <button class="chipbtn" id="restartBtn" data-s="ui.reshuffle"></button>
+  </div>
+
+  <div class="metro">
+    <div class="metro-head">
+      <span class="metro-title" data-s="ui.metroTitle"></span>
+      <span class="beats" id="beats" aria-hidden="true">
+
+      </span>
+    </div>
+    <label class="switch"><input type="checkbox" id="countIn"><span class="track"></span> <span data-s="ui.countIn"></span></label>
+    <label class="switch"><input type="checkbox" id="clickAll"><span class="track"></span> <span data-s="ui.clickAll"></span></label>
+    <label class="switch"><input type="checkbox" id="loop"><span class="track"></span> <span data-s="ui.loop"></span></label>
+    <button class="reveal" id="syncOpen" data-s="ui.syncOpen"></button>
+    <div class="calib" id="calib" hidden>
+      <p class="calib-text" id="calibText" data-s="calib.intro"></p>
+      <button class="tap-pad" id="tapPad" data-s="calib.start"></button>
+      <div class="calib-row">
+        <span class="calib-count" id="calibCount"></span>
+        <button class="chipbtn" id="calibCancel" data-s="calib.cancel"></button>
+      </div>
+    </div>
+  </div>
+
+  <section class="along">
+    <div class="along-head">
+      <div>
+        <h2 data-s="ui.playAlong"></h2>
+        <p class="along-sub" id="alongSub"></p>
+      </div>
+    </div>
+    <div class="along-start">
+      <label for="seqSel" data-s="ui.playMenu"></label>
+      <select id="seqSel"></select>
+    </div>
+    <div class="along-start">
+      <label for="startFrom" data-s="ui.startFrom"></label>
+      <select id="startFrom"></select>
+    </div>
+    <div class="along-btns">
+      <button class="btn primary" id="allBtn" data-s="seq.playGeneric"></button>
+      <button class="btn secondary" id="pauseBtn" hidden data-s="along.pause"></button>
+    </div>
+    <p class="along-status" id="allStatus" hidden></p>
+    <div class="ab">
+      <label class="switch"><input type="checkbox" id="abOn"><span class="track"></span> <span data-s="ui.abSwitch"></span></label>
+      <p class="ab-msg" id="abMsg" hidden></p>
+      <button class="chipbtn" id="abClear" hidden data-s="ui.abClear"></button>
+    </div>
+    <details class="along-notes" id="allDetails">
+      <summary data-s="ui.solfegeWhilePlays"></summary>
+      <p class="along-tip" id="barTip" data-s="along.barTip"></p>
+      <label class="switch follow"><input type="checkbox" id="followLine" checked><span class="track"></span> <span data-s="ui.followLine"></span></label>
+      <div id="allNotes"></div>
+    </details>
+  </section>
+
+  <details class="tune-panel" id="tunePanel">
+    <summary data-s="ui.tuningNotes"></summary>
+    <div class="settings">
+      <p class="hint" data-s="ui.tuningHint"></p>
+      <div>
+        <label for="tuneInstSel" data-s="ui.instrument"></label>
+        <select id="tuneInstSel"></select>
+        <p class="hint" id="tuneInstNote"></p>
+      </div>
+      <div class="tstrings" id="tStrings"></div>
+      <div class="seg-row" role="group" aria-label="Sound" data-s-aria-label="ui.sound">
+        <button class="dv tsound" data-sound="steady" data-s="ui.steadyTone"></button>
+        <button class="dv tsound" data-sound="pluck" data-s="ui.pluck1"></button>
+        <button class="dv tsound" data-sound="pluck2" data-s="ui.pluck2"></button>
+      </div>
+      <div>
+        <label for="tuneVol" data-s="ui.tuneVolume"></label>
+        <div class="row">
+          <input type="range" id="tuneVol" min="20" max="100" step="5" value="80">
+          <span class="tempo-val" id="tuneVolVal"></span>
+        </div>
+        <p class="hint" data-s="ui.lowNotesHint"></p>
+      </div>
+      <div>
+        <label data-s="ui.refPitch"></label>
+        <div class="row transpose-row">
+          <button class="chipbtn step" id="refDown" aria-label="Lower by 1 hertz" data-s-aria-label="ui.refDownAria">−</button>
+          <span class="t-val" id="refVal"></span>
+          <button class="chipbtn step" id="refUp" aria-label="Raise by 1 hertz" data-s-aria-label="ui.refUpAria">+</button>
+        </div>
+        <p class="hint" id="refNote"></p>
+      </div>
+      <input type="hidden" id="tuneInst" value="uke">
+      <input type="hidden" id="tuneSound" value="steady">
+      <input type="hidden" id="tuneRef" value="440">
+    </div>
+  </details>
+
+  <details class="lyrics-panel" id="lyricsPanel">
+    <summary data-s="ui.lyrics"></summary>
+    <div class="settings">
+      <div>
+        <label for="lyricSet" data-s="ui.lyricsToShow"></label>
+        <select id="lyricSet"></select>
+      </div>
+      <label class="check"><input type="checkbox" id="showMeaning" checked> <span data-s="ui.showMeaning"></span></label>
+      <label class="check"><input type="checkbox" id="autoLyrics"> <span data-s="ui.autoLyrics"></span></label>
+      <div class="mine">
+        <h3 data-s="lyrics.mySetName"></h3>
+        <p class="hint" id="myHelp"></p>
+        <textarea id="myLyrics" rows="14" spellcheck="false"></textarea>
+        <label for="myFileName" class="fname-label" data-s="ui.fileNameLabel"></label>
+        <input type="text" id="myFileName" class="fname" value="" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <div class="mine-btns">
+          <button class="chipbtn" id="mySave" data-s="ui.save"></button>
+          <button class="chipbtn" id="myCopy" data-s="ui.copy"></button>
+          <button class="chipbtn" id="myExport" data-s="ui.saveToFile"></button>
+          <label class="chipbtn file-btn"><span data-s="ui.importFile"></span><input type="file" id="myImport" accept=".txt,text/plain"></label>
+        </div>
+        <p class="hint" id="myStatus"></p>
+        <p class="hint" data-s="ui.savedStayHint"></p>
+      </div>
+    </div>
+  </details>
+
+  <details>
+    <summary data-s="ui.settings"></summary>
+    <div class="settings">
+      <div>
+        <label for="tempo" id="tempoLabel" data-s="ui.tempoPlain"></label>
+        <div class="row">
+          <input type="range" id="tempo" min="50" max="120" step="2" value="84">
+          <span class="tempo-val" id="tempoVal"></span>
+        </div>
+      </div>
+      <div>
+        <label for="timbre" data-s="ui.sound"></label>
+        <select id="timbre">
+          <optgroup label="Plucked strings" data-s-label="ui.groupPlucked">
+            <option value="uke" data-s="sound.uke"></option>
+            <option value="guitar" data-s="sound.guitar"></option>
+          </optgroup>
+          <optgroup label="Winds and brass" data-s-label="ui.groupWinds">
+            <option value="sax" data-s="sound.sax"></option>
+            <option value="clarinet" data-s="sound.clarinet"></option>
+            <option value="flute" data-s="sound.flute"></option>
+            <option value="horn" data-s="sound.horn"></option>
+            <option value="trumpet" data-s="sound.trumpet"></option>
+          </optgroup>
+          <optgroup label="Bowed strings" data-s-label="ui.groupBowed">
+            <option value="violin" data-s="sound.violin"></option>
+            <option value="viola" data-s="sound.viola"></option>
+            <option value="cello" data-s="sound.cello"></option>
+          </optgroup>
+          <optgroup label="Keyboard" data-s-label="ui.groupKeyboard">
+            <option value="piano" data-s="sound.piano"></option>
+          </optgroup>
+        </select>
+      </div>
+      <div>
+        <input type="hidden" id="doPitch" value="69">
+        <input type="hidden" id="transpose" value="0">
+        <label data-s="ui.transpose"></label>
+        <div class="row transpose-row">
+          <button class="chipbtn step" id="tDown" aria-label="Down a half step" data-s-aria-label="ui.tDownAria">−</button>
+          <span class="t-val" id="tVal"></span>
+          <button class="chipbtn step" id="tUp" aria-label="Up a half step" data-s-aria-label="ui.tUpAria">+</button>
+        </div>
+        <div class="presets">
+          <button class="chipbtn" data-t="0" data-s="ui.presetUke"></button>
+          <button class="chipbtn" data-t="-5" data-s="ui.presetGuitar"></button>
+        </div>
+        <p class="hint" id="keyNote"></p>
+      </div>
+      <div>
+        <label for="fineTune" data-s="ui.fineTune"></label>
+        <div class="row">
+          <input type="range" id="fineTune" min="-50" max="50" step="1" value="0">
+          <span class="tempo-val" id="fineVal"></span>
+        </div>
+        <p class="hint" id="aNote"></p>
+      </div>
+      <div>
+        <label for="clickVol" data-s="ui.clickVolume"></label>
+        <div class="row">
+          <input type="range" id="clickVol" min="10" max="100" step="5" value="60">
+          <span class="tempo-val" id="clickVolVal"></span>
+        </div>
+      </div>
+      <div>
+        <label for="visDelay" data-s="ui.highlightTiming"></label>
+        <div class="row">
+          <input type="range" id="visDelay" min="-300" max="1000" step="10" value="0">
+          <span class="tempo-val" id="visDelayVal"></span>
+        </div>
+      </div>
+      <label class="check" id="legatoRow"><input type="checkbox" id="legato" checked> <span data-s="ui.legato"></span></label>
+      <label class="check"><input type="checkbox" id="autoReveal"> <span data-s="ui.autoReveal"></span></label>
+      <label class="check"><input type="checkbox" id="doFirst"> <span data-s="ui.doFirst"></span></label>
+    </div>
+  </details>
+
+  <div class="update-note" id="updateNote" role="status" hidden>
+    <span data-s="app.updateReady"></span>
+    <button class="btn primary" id="updateReload" data-s="app.reload"></button>
+    <button class="btn secondary" id="updateLater" data-s="app.later"></button>
+  </div>
+
+  <div class="errbox" id="errBox" role="alert" hidden>
+    <div class="err-head"><strong data-s="err.title"></strong><button class="err-close" id="errClose" data-s-aria-label="err.dismiss">✕</button></div>
+    <ul class="err-list" id="errList"></ul>
+    <p class="err-hint" id="errHint" data-s="err.hint"></p>
+  </div>
+
+  <div class="dock" id="dock" hidden>
+    <span class="dock-where" id="dockWhere"></span>
+    <button class="btn secondary" id="dockPause" data-s="along.pause"></button>
+    <button class="btn primary stop" id="dockStop" data-s="ui.stop"></button>
+  </div>
+
+  <p class="footnote" data-s="ui.footnote"></p>
+</main>
+
+<script>
+// Build history: see melodies-by-ear-changelog-v<N>.md (not kept in this file).
+// ---------- Interface text ----------
+// Every word the app shows lives in STRINGS, so it can be translated one day.
+// Static markup names its text with data-s="group.key" (or data-s-html,
+// data-s-aria-label, data-s-placeholder, data-s-title, data-s-label); script
+// text uses T("group.key", { name: value }), which fills in each {name}.
+// Song content (titles, lyrics) stays with the songs, not here.
+const STRINGS = {
+  ui: {
+    "abClear": "Clear A–B loop",
+    "abSwitch": "A–B loop: repeat just some lines",
+    "autoLyrics": "Show lyrics right away",
+    "autoReveal": "Show solfège right away",
+    "chorus": "Chorus",
+    "chorusAfter": "After the verse",
+    "chorusMixed": "Mixed in",
+    "chorusPhrasesAria": "Chorus phrases",
+    "chorusSkip": "Skip",
+    "clickAll": "Keep clicking through the phrase",
+    "clickVolume": "Click volume",
+    "copy": "Copy",
+    "countIn": "One-measure count-in",
+    "doFirst": "Play do before each phrase",
+    "drillTitle": "Phrase Parrot",
+    "fileNameLabel": "File name for Save to a file",
+    "fineTune": "Fine tune, for an instrument that's slightly off pitch",
+    "followLine": "Keep the playing line in view",
+    "footnote": "If an alert or call interrupts the sound, just tap Play again. On older iPhones, turn off silent mode if you hear nothing. On Android, use the media volume buttons while the page is open.",
+    "groupBowed": "Bowed strings",
+    "groupKeyboard": "Keyboard",
+    "groupPlucked": "Plucked strings",
+    "groupWinds": "Winds and brass",
+    "highlightTiming": "Highlight timing (how long after the beat the dots and syllables light)",
+    "importFile": "Import a file",
+    "instrument": "Instrument",
+    "legato": "Legato: connect the notes smoothly (winds, brass and bowed strings)",
+    "loop": "Loop until I tap Stop",
+    "lowNotesHint": "Lower notes are automatically made louder and fuller, since ears and phone speakers hear low pitches more weakly.",
+    "lyrics": "Lyrics",
+    "lyricsToShow": "Lyrics to show",
+    "metroTitle": "Metronome and looping",
+    "metronomeOnly": "Metronome only",
+    "newPhrase": "New phrase",
+    "playAgain": "Play again",
+    "playAlong": "Play along",
+    "playDo": "Play <span class=\"gold\">do</span>",
+    "playMenu": "Play",
+    "playSlowly": "Play slowly",
+    "pluck1": "Pluck every second",
+    "pluck2": "Pluck every 2 seconds",
+    "presetGuitar": "Guitar, same fingering",
+    "presetUke": "Ukulele, as written",
+    "refDownAria": "Lower by 1 hertz",
+    "refPitch": "Reference pitch",
+    "refUpAria": "Raise by 1 hertz",
+    "reshuffle": "Reshuffle",
+    "save": "Save",
+    "saveToFile": "Save to a file",
+    "savedStayHint": "Saved lyrics stay in this browser on this device. Use Save to a file or Copy to keep a copy, or to move them to another device. Import a file reads that same layout back in.",
+    "settings": "Settings",
+    "showLyrics": "Show the lyrics",
+    "showMeaning": "Show a plain English meaning under lyrics in other languages",
+    "showSolfege": "Show the solfège",
+    "solfegeWhilePlays": "Show the solfège while it plays",
+    "song": "Song",
+    "sound": "Sound",
+    "startFrom": "Start from",
+    "steadyTone": "Steady tone",
+    "stop": "Stop",
+    "syncOpen": "Dots out of step with the clicks? Sync them",
+    "tDownAria": "Down a half step",
+    "tUpAria": "Up a half step",
+    "tempoPlain": "Tempo (beats per minute)",
+    "transpose": "Transpose",
+    "tuneVolume": "Tuning note volume",
+    "tuningHint": "Tap a string to hear its note, and tap it again to stop. These are always true reference pitches, whatever Transpose and Fine tune are set to.",
+    "tuningNotes": "Tuning notes",
+    "verse": "Verse",
+    "whichVerseAria": "Which verse to practice"
+  },
+  calib: {
+    "again": "Sync again",
+    "cancel": "Cancel",
+    "close": "Close",
+    "count": "{n} of {total} taps",
+    "done": "Done. The sound reaches you about {ms} ms after the app plays it, so the highlights now wait that long. If you switch between speaker and headphones, sync again.",
+    "intro": "You'll hear 10 slow clicks. Look away from the dots and tap the big button exactly when you hear each click.",
+    "start": "Start",
+    "tapEach": "Tap on each click",
+    "tooFew": "Not enough taps lined up with the clicks to measure. Tap Start to try again, and tap right on each click."
+  },
+  seq: {
+    "beginning": "The beginning",
+    "beginningPickup": "The beginning (bar {bar} pickup)",
+    "playAB": "Play bars {a}–{b} on a loop",
+    "playFromBar": "Play from bar {bar}",
+    "playGeneric": "Play whole melody",
+    "playVerseAndChorus": "Play verse and chorus",
+    "playVerseAndChorusN": "Play verse {v} and chorus",
+    "playVerseN": "Play verse {v}",
+    "playWhole": "Play the whole song",
+    "span": "bars {a}–{b}",
+    "startFromBarAria": "Start from bar {bar}",
+    "subOne": "{label}, {span}, straight through. Uses the metronome switches and tempo above.",
+    "subSong": "All {n} verses, each followed by the chorus, {span}. Uses the metronome switches and tempo above.",
+    "subSongNoChorus": "All {n} verses, {span}. Uses the metronome switches and tempo above.",
+    "verseAndChorus": "Verse and chorus",
+    "verseAndChorusN": "Verse {v} and chorus",
+    "verseN": "Verse {v}",
+    "whole": "The whole song"
+  },
+  along: {
+    "abInactive": "A–B is set to {range}, but it only applies while “Loop until I tap Stop” is on. Turn that on to repeat these lines.",
+    "abLooping": "Looping <strong>{range}</strong>, from {from} to {to}.",
+    "abPickA": "Tap the bar number of the <strong>first</strong> line to repeat.",
+    "abPickB": "Starts at bar {bar}. Now tap the bar number of the <strong>last</strong> line to repeat (or the same one to loop just that line).",
+    "barTip": "Tap a bar number to start from that line.",
+    "barTipPicking": "Choosing the A–B loop: tap a bar number.",
+    "dockBar": "Bar {bar}",
+    "dockPaused": "Paused, bar {bar}",
+    "getReady": "Get ready…",
+    "pause": "Pause",
+    "paused": "Paused in {phrase}. Resume starts that phrase again, after a one-measure count-in.",
+    "playingFrom": "Playing from {phrase}.",
+    "resume": "Resume",
+    "resumeAtBar": "Resume at bar {bar}"
+  },
+  lyrics: {
+    "allOfThem": "All of them",
+    "choruses1": "1 chorus",
+    "chorusesN": "{n} choruses",
+    "copied": "Copied as plain text.",
+    "copyFailed": "Couldn’t copy to the clipboard. Select the text in the box and copy it by hand.",
+    "defaultFile": "{song}-my-lyrics.txt",
+    "fileType": "Text file",
+    "downloaded": "Downloaded as {name} to your Downloads folder.",
+    "empty": "No lyrics in this set yet. Open <strong>Lyrics</strong> below to type in your own, or choose one of the built-in sets.",
+    "help": "Type or paste a verse as {v} lines, one line per phrase, with a blank line between verses. Start a verse with a heading like “Verse 2” if you like, and put the chorus under a line that says “Chorus”: {c} lines, or {half} if both halves of the chorus use the same words. For a second version of the chorus, add another “Chorus” block.",
+    "helpChorusOdd": "Type or paste a verse as {v} lines, one line per phrase, with a blank line between verses. Start a verse with a heading like “Verse 2” if you like, and put the chorus under a line that says “Chorus”: {c} lines. For a second version of the chorus, add another “Chorus” block.",
+    "helpNoChorus": "Type or paste a verse as {v} lines, one line per phrase, with a blank line between verses. Start a verse with a heading like “Verse 2” if you like.",
+    "iosNoSave": "This viewer can’t save files, so nothing was saved. Tap Copy and paste into Notes or a text file instead, or open this app in Safari, where Save to a file can save to the Files app.",
+    "iosShared": "If you chose Save to Files, it’s saved as a text file in the folder you picked.",
+    "lines1": "1 line",
+    "linesN": "{n} lines",
+    "mySetName": "My lyrics",
+    "noLine": "(no line)",
+    "nothingSaved": "Nothing saved yet.",
+    "placeholder": "Verse 1\nwords for phrase 1\nwords for phrase 2\n…\nwords for phrase {v}\n\nVerse 2\n…",
+    "placeholderChorus": "Verse 1\nwords for phrase 1\nwords for phrase 2\n…\nwords for phrase {v}\n\nVerse 2\n…\n\nChorus\nwords for chorus phrase 1\n…",
+    "problemChorus": "{label} has {lines}; it needs {need} (or {half}, which repeat).",
+    "problemChorusOdd": "{label} has {lines}; it needs {need}.",
+    "problemVerse": "{label} has {lines}; it needs {need}, one per phrase.",
+    "savedAs": "Saved as {name}.",
+    "savedNoChorus": "Saved: {verses}, no chorus.",
+    "savedWith": "Saved: {verses} and {choruses}.",
+    "shared": "Shared. If you chose a files app, it’s saved as a text file there.",
+    "tabAll": "All",
+    "tabMine": "Mine",
+    "verses1": "1 verse",
+    "versesN": "{n} verses"
+  },
+  sound: {
+    "cello": "Cello",
+    "clarinet": "Clarinet",
+    "flute": "Flute",
+    "guitar": "Guitar",
+    "horn": "French horn",
+    "piano": "Piano",
+    "sax": "Saxophone",
+    "trumpet": "Trumpet",
+    "uke": "Ukulele",
+    "viola": "Viola",
+    "violin": "Violin"
+  },
+  app: {
+    "deployDev": "Dev",
+    "deployStable": "Stable",
+    "docTitle": "Melodies by Ear: {song}",
+    "homeTitle": "Melodies",
+    "homeTitleDev": "Melodies Dev",
+    "homeTitleStable": "Melodies Stable",
+    "later": "Later",
+    "name": "Melodies by Ear",
+    "reload": "Reload",
+    "updateReady": "A new version of Melodies by Ear is ready."
+  },
+  err: {
+    "audio": "Sound problem ({where}): {msg}",
+    "chipMismatch": "Highlights may be off: {chips} syllables are shown for {notes} notes.",
+    "copied": "Copied. You can paste it now.",
+    "dismiss": "Dismiss",
+    "fileRead": "Couldn’t read the file {name}: {msg}",
+    "hint": "Tap a message to copy it, so you can paste it to Claude.",
+    "hintNoCopy": "This message is about the clipboard, so tapping it doesn’t copy.",
+    "missingText": "Missing interface text: {key}",
+    "missingValue": "Interface text {key} needs a value for {name}",
+    "saveFile": "Saving the file didn’t work ({how}): {msg}. Trying another way.",
+    "song": "Song data problem in {song}: {msg}",
+    "songBar": "{label}: bar {i} has {sum} eighths, not {need}",
+    "songSyllable": "{label}: unknown syllable \"{syl}\"",
+    "storageCorrupt": "Saved data was damaged and was ignored ({key}): {msg}",
+    "storageRead": "Couldn’t read saved data ({key}): {msg}",
+    "storageWrite": "Couldn’t save to this browser ({key}): {msg}. Private browsing or full storage can cause this. Use Save to a file or Copy to keep a copy of your lyrics.",
+    "context": "App: Melodies by Ear {version}, {deployment} deployment, {mode}\nTime: {time}\nPage: {page}\nBrowser: {ua}",
+    "ignoredShareSheet": "Ignored the browser’s hidden \"Script error.\" with no file, line, column or error object. Safari raises exactly this on every page when its Share button is tapped (shown with errorprobe-v1.html on a page with no app code). Any other error is still reported on screen.",
+    "hiddenScriptError": "Unexpected error from code outside this app, so the browser hid every detail of it: all it reports is \"{msg}\" (no file, line or stack). Errors in Melodies by Ear’s own code always come with full details, so this one most likely came from a browser extension or content blocker, or from the browser’s own built-in scripts. If it keeps happening, note what you were doing just before it appeared.",
+    "modeApp": "running as an installed app",
+    "modeBrowser": "running in a browser tab",
+    "rejection": "Unexpected error (unhandled promise rejection): {msg}",
+    "stack": "Stack trace:\n{stack}",
+    "title": "Something went wrong",
+    "swRegister": "Offline use couldn’t be set up (service worker): {msg}",
+    "swUpdate": "Checking for a newer version of the app failed, although the device says it is online: {msg}",
+    "uncaught": "Unexpected error: {msg}",
+    "uncaughtWhere": "Where: {file}, line {line}, column {col}",
+    "valueType": "Value ({type}): {value}"
+  },
+  drill: {
+    "allVerses": "All {n} verses",
+    "countNone": "0 of {n} played this round",
+    "countNow": "Phrase {k} of {n} this round",
+    "currentOrNew": "Tap Play again to hear your current phrase, or New phrase.",
+    "firstPrompt": "Tap New phrase to hear the first one. Each phrase plays in random order, and none repeats until all {n} have played.",
+    "interrupted": "Playback was interrupted. Tap Play again to hear the phrase from the start.",
+    "introAfter": "{verses}, then the chorus: {n} phrases. Tap New phrase to start.",
+    "introMixed": "{verses} and the chorus, mixed together: {n} phrases. Tap New phrase to start.",
+    "introNoChorus": "{verses}: {n} phrases. Tap New phrase to start.",
+    "introSkip": "{verses}, without the chorus: {n} phrases. Tap New phrase to start.",
+    "ledeDefault": "{title}, phrase by phrase.",
+    "ledeTail": "Tap New phrase, listen, then play it back on your instrument. Replay as often as you like.",
+    "listen": "Listen, then play it back on your instrument.",
+    "mix": "Mix",
+    "phraseIdBars": "{id}, {bars}",
+    "reshuffled": "New round shuffled. Tap New phrase to start.",
+    "startNewRound": "Start a new round",
+    "stop": "Stop",
+    "stopMetronome": "Stop metronome",
+    "welcomeBack": "Welcome back. Tap Play again to hear your current phrase."
+  },
+  phrase: {
+    "bar": "bar {a}",
+    "bars": "bars {a}–{b}",
+    "chorus": "Chorus",
+    "half1": "first half",
+    "half1Short": "1st half",
+    "half2": "second half",
+    "half2Short": "2nd half",
+    "label": "{name} (bar {bar})",
+    "name": "{section} line {line}",
+    "namePart": "{section} line {line}, {part}",
+    "partN": "part {n}",
+    "verse": "Verse",
+    "verseN": "Verse {v}"
+  },
+  pitch: {
+    "aShifted": "A4 sounds at {hz} Hz. 100 cents = one half step.",
+    "aStandard": "A4 sounds at {hz} Hz (standard pitch).",
+    "asWritten": "As written",
+    "cents": "{c} cents",
+    "down1": "Down 1 half step",
+    "downN": "Down {n} half steps",
+    "fine": "fine tune {c} cents",
+    "guitarHint": "On guitar, use your ukulele fingerings on the top four strings (D G B E).",
+    "interval0": "",
+    "interval1": "a half step",
+    "interval10": "a minor seventh",
+    "interval11": "a major seventh",
+    "interval12": "an octave",
+    "interval2": "a whole step",
+    "interval3": "a minor third",
+    "interval4": "a major third",
+    "interval5": "a perfect fourth",
+    "interval6": "a tritone",
+    "interval7": "a perfect fifth",
+    "interval8": "a minor sixth",
+    "interval9": "a major sixth",
+    "keyAsWritten": "Key of {key} major, do = {do}.",
+    "keyDown": "Key of {key} major, do = {do}. That’s down {interval} from the sheet music.",
+    "keyUp": "Key of {key} major, do = {do}. That’s up {interval} from the sheet music.",
+    "listSep": ", ",
+    "transposedDown1": "Transposed down 1 half step (do = {do})",
+    "transposedDownN": "Transposed down {n} half steps (do = {do})",
+    "transposedUp1": "Transposed up 1 half step (do = {do})",
+    "transposedUpN": "Transposed up {n} half steps (do = {do})",
+    "up1": "Up 1 half step",
+    "upN": "Up {n} half steps"
+  },
+  tuning: {
+    "hz": "{hz} Hz",
+    "name_baritone": "Baritone ukulele (D G B E)",
+    "name_cello": "Cello (C G D A)",
+    "name_dulcimer": "Mountain dulcimer (D A d)",
+    "name_guitalele": "Guitalele, A to A",
+    "name_guitaleleE": "Guitalele, E to E (like a guitar)",
+    "name_guitar": "Guitar (E A D G B E)",
+    "name_irishbanjo": "Tenor banjo, Irish (G D A E)",
+    "name_lowg": "Ukulele, low G",
+    "name_mandolin": "Mandolin (G D A E)",
+    "name_tenorbanjo": "Tenor banjo (C G D A)",
+    "name_uke": "Ukulele (G C E A)",
+    "name_viola": "Viola (C G D A)",
+    "name_violin": "Violin / fiddle (G D A E)",
+    "name_winds": "Wind instruments: tuning notes",
+    "note_dulcimer": "The usual D–A–d tuning; the high d is the melody string.",
+    "note_guitalele": "The top four strings match a low-G ukulele, so your uke fingerings work there.",
+    "note_guitaleleE": "Same notes as a standard guitar. Check your string pack, since this tuning needs strings made for it.",
+    "note_irishbanjo": "An octave below a fiddle, the usual tuning for Irish tunes.",
+    "note_mandolin": "Same notes as a violin. Each pair of strings is tuned alike.",
+    "note_winds": "Orchestras and most players tune to A; bands often tune to B♭.",
+    "refHigher": "Higher than standard (440 Hz), about {cents} cents. Useful to match an instrument that’s a little off.",
+    "refLower": "Lower than standard (440 Hz), about {cents} cents. Useful to match an instrument that’s a little off.",
+    "refStandard": "440 Hz is standard pitch, what tuners use unless set otherwise.",
+    "refVal": "A4 = {hz} Hz",
+    "stringAria": "{name} string, {note}, {hz} hertz"
+  },
+  chips: {
+    "dotted": "dotted",
+    "sixteenth": "16th note"
+  },
+  units: {
+    "bpm": "{n} bpm",
+    "ms": "{n} ms",
+    "pct": "{n}%"
+  },
+  tempo: {
+    "beat1": "eighth-note",
+    "beat2": "quarter-note",
+    "beat3": "dotted-quarter-note",
+    "beat4": "half-note",
+    "label": "Tempo ({beat} beats per minute, {meter})"
+  }
+};
+
+function T(key, vars) {
+  const [group, name] = key.split(".");
+  let text = STRINGS[group] && STRINGS[group][name];
+  if (typeof text !== "string") { reportError(STRINGS.err.missingText.replace("{key}", key)); return key; }
+  return text.replace(/\{(\w+)\}/g, (all, v) => {
+    if (vars && v in vars) return String(vars[v]);
+    reportError(T("err.missingValue", { key, name: v }));
+    return all;
+  });
+}
+// Picks the "1 thing" or "n things" form of a text.
+const TN = (n, oneKey, manyKey, vars) => T(n === 1 ? oneKey : manyKey, Object.assign({ n }, vars));
+function applyStrings(root) {
+  root.querySelectorAll("[data-s]").forEach(el => { el.textContent = T(el.dataset.s); });
+  root.querySelectorAll("[data-s-html]").forEach(el => { el.innerHTML = T(el.dataset.sHtml); });
+  for (const attr of ["aria-label", "placeholder", "title", "label"]) {
+    const data_attr = "data-s-" + attr;
+    root.querySelectorAll(`[${data_attr}]`).forEach(el => el.setAttribute(attr, T(el.getAttribute(data_attr))));
+  }
+}
+
+// ---------- Which deployment is this? ----------
+// The same file runs in three folders on GitHub Pages: melodies-by-ear/
+// (latest), melodies-by-ear-dev/ and melodies-by-ear-stable/. They share one
+// web origin, and browser storage is per origin, not per folder, so dev and
+// stable prefix their storage keys (as Remember does) to keep data apart.
+const DEPLOYMENT = /\/melodies-by-ear-dev\//.test(location.pathname) ? "dev"
+                 : /\/melodies-by-ear-stable\//.test(location.pathname) ? "stable" : "main";
+const STORE_PREFIX = DEPLOYMENT === "main" ? "" : DEPLOYMENT + ":";
+const storageKey = key => STORE_PREFIX + key;
+
+// ---------- Loud errors ----------
+// During alpha testing every failure shows a banner that stays until it's
+// dismissed (a fading toast is too easy to miss). Tapping a message copies it,
+// so it can be pasted to Claude, except messages about the clipboard itself,
+// since copying them would overwrite what the person was trying to copy.
+// Every report also shows (and copies) the technical context: app version,
+// deployment, installed app or browser tab, time, page and browser identity.
+// opts.details: extra technical lines (where, stack trace) shown under the message.
+const shownErrors = new Set();
+function appVersion() {
+  const ver = document.querySelector("h1 .ver");
+  return ver ? ver.textContent : "(unknown version)";
+}
+function errorContext() {
+  const installed = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  return T("err.context", {
+    version: appVersion(), deployment: DEPLOYMENT, mode: T(installed ? "err.modeApp" : "err.modeBrowser"),
+    time: new Date().toISOString(), page: location.href, ua: navigator.userAgent
+  });
+}
+function reportError(message, opts) {
+  const copy = !(opts && opts.noCopy);
+  const details = [opts && opts.details, errorContext()].filter(Boolean).join("\n");
+  const fullText = message + "\n\n" + details;
+  console.error("[Melodies by Ear] " + fullText);
+  const dedupKey = message + "\n" + ((opts && opts.details) || "");
+  if (shownErrors.has(dedupKey)) return;          // the same problem once is enough
+  shownErrors.add(dedupKey);
+  const box = document.getElementById("errBox"), list = document.getElementById("errList");
+  if (!box || !list) { alert(fullText); return; }
+  const item = document.createElement("li");
+  item.className = "err-item" + (copy ? " copyable" : "");
+  const msgEl = document.createElement("span");
+  msgEl.className = "err-msg"; msgEl.textContent = message;
+  const detailsEl = document.createElement("span");
+  detailsEl.className = "err-details"; detailsEl.textContent = details;
+  item.append(msgEl, detailsEl);
+  if (copy) {
+    item.setAttribute("role", "button"); item.tabIndex = 0;
+    const copyIt = () => copyText(fullText).then(ok => {
+      if (ok) { item.classList.add("copied"); setHint(T("err.copied")); }
+    });
+    item.addEventListener("click", copyIt);
+    item.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copyIt(); } });
+  }
+  list.appendChild(item);
+  setHint(copy ? T("err.hint") : T("err.hintNoCopy"));
+  box.querySelector("strong").textContent = T("err.title");
+  box.hidden = false;
+  function setHint(t) { document.getElementById("errHint").textContent = t; }
+}
+function dismissErrors() {
+  document.getElementById("errBox").hidden = true;
+  document.getElementById("errList").innerHTML = "";
+  shownErrors.clear();
+}
+// Describes any thrown value: an Error's name, message and stack, or the raw value.
+function describeThrown(value) {
+  if (value instanceof Error || (value && typeof value === "object" && "message" in value && "stack" in value)) {
+    return { msg: `${value.name || "Error"}: ${value.message}`, stack: value.stack || "" };
+  }
+  let text;
+  try { text = typeof value === "string" ? value : JSON.stringify(value); } catch (e) { text = String(value); }
+  return { msg: T("err.valueType", { type: value === null ? "null" : typeof value, value: text }), stack: "" };
+}
+// Safari raises this exact hidden error on EVERY page that listens for errors
+// when its Share button is tapped, even a blank test page (errorprobe-v1.html,
+// 2026-11-02). It is the only error the app ignores, and only when every field
+// matches exactly; anything different still gets the full banner.
+const isSafariShareSheetError = e =>
+  e.message === "Script error." && e.filename === "" && e.lineno === 0 && e.colno === 0 && e.error == null;
+window.addEventListener("error", e => {
+  if (isSafariShareSheetError(e)) { console.warn("[Melodies by Ear] " + T("err.ignoredShareSheet")); return; }
+  // A bare "Script error." with no file means the browser hid an error from
+  // code that isn't this page's own (an extension, a content blocker, the
+  // browser itself). There is nothing more to read, so say so plainly.
+  if (!e.filename && !e.error && /^Script error\.?$/i.test(e.message || "")) {
+    reportError(T("err.hiddenScriptError", { msg: e.message }));
+    return;
+  }
+  const thrown = e.error ? describeThrown(e.error) : { msg: e.message, stack: "" };
+  const lines = [T("err.uncaughtWhere", { file: e.filename || "?", line: e.lineno || "?", col: e.colno || "?" })];
+  if (thrown.stack) lines.push(T("err.stack", { stack: thrown.stack }));
+  reportError(T("err.uncaught", { msg: thrown.msg || e.message }), { details: lines.join("\n") });
+});
+window.addEventListener("unhandledrejection", e => {
+  const thrown = describeThrown(e.reason);
+  reportError(T("err.rejection", { msg: thrown.msg }), { details: thrown.stack ? T("err.stack", { stack: thrown.stack }) : "" });
+});
+
+// Copies text to the clipboard. Resolves to true if it worked. Never reports
+// a copy failure through a copyable message (that would overwrite the clipboard).
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+    ta.remove();
+    return ok;
+  }
+}
+
+
+// ---------- Saved data (this browser only) ----------
+// All storage goes through these four, so a failure is never silent, and
+// every key gets this deployment's prefix in exactly one place.
+function storeGet(key) {
+  try { return localStorage.getItem(storageKey(key)); }
+  catch (e) { reportError(T("err.storageRead", { key, msg: e.message })); return null; }
+}
+function storeGetJSON(key) {
+  const raw = storeGet(key);
+  if (raw === null) return null;
+  try { return JSON.parse(raw); }
+  catch (e) { reportError(T("err.storageCorrupt", { key, msg: e.message })); return null; }
+}
+function storeSet(key, value) {
+  try { localStorage.setItem(storageKey(key), value); return true; }
+  catch (e) { reportError(T("err.storageWrite", { key, msg: e.message })); return false; }
+}
+function storeRemove(key) {
+  try { localStorage.removeItem(storageKey(key)); return true; }
+  catch (e) { reportError(T("err.storageWrite", { key, msg: e.message })); return false; }
+}
+
+// ---------- Melody data ----------
+// Durations are in eighth notes. Notes in ( ) are pickups.
+// Semitones from do: mi -8, fa -7, fi -6, so -5, si -4, la -3, ti -1,
+// do 0, re 2, mi' 4, fa' 5, so' 7
+const PITCH = { "mi":-8, "fa":-7, "fi":-6, "so":-5, "si":-4, "la":-3, "ti":-1,
+                "do":0, "re":2, "mi'":4, "fa'":5, "so'":7 };
+
+// ---------- Songs ----------
+// Each song lists its phrases in the same short notation: solfège syllables
+// with lengths in eighth notes ("do:3" is a dotted quarter, "so:2/3" one
+// note of an eighth-note triplet), "|" for barlines and ( ) around pickups.
+// A song also says its meter, where do sits, how its bars are numbered, and
+// any built-in public-domain lyrics. Adding a song means adding an entry here.
+//
+// The Internationale: verses 2 and 3 (bars 37–52 and 69–84 in the Bragg
+// sheet music) differ from verse 1 in a few places: triplets ("those who
+// have", "let us be"), held notes across barlines, and small rhythm changes.
+const INTERNATIONALE_VERSES = {
+  1: [
+    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
+    "| re:3 do:1 ti:1 la:1 so:1 fa:1 | mi:7",
+    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:3",
+    "(fa:1) | re:3 do:1 ti:1 ti:1.5 do:0.5 re:1 | fa':2 ti:2 do:3",
+    "(do:1) | ti:3 ti:1 la:1.5 ti:0.5 do:1 la:1 | ti:4 so:2",
+    "(so:1.5 so:0.5) | la:2 la:1.5 la:0.5 re:2 do:2 | ti:6",
+    "(re:1 re:1) | re:3 ti:1 so:1 so:1 fi:1 so:1 | mi':3 so:2",
+    "(la:1 ti:1 do:1) | ti:2 re:2 do:2 la:2 | so:6"
+  ],
+  2: [
+    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
+    "| re:3 do:1 ti:1 la:1 so:1.5 fa:0.5 | mi:7",
+    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:3",
+    "(re:1) | re:3 do:1 ti:1.5 ti:0.5 do:1 re:1 | fa':2 ti:2 do:2",
+    "(do:1 do:1) | ti:3 ti:1 la:1.5 ti:0.5 do:1 la:1 | ti:4 so:2",
+    "(so:2/3 so:2/3 so:2/3) | la:2 la:1.5 la:0.5 re:2 do:2 | ti:7",
+    "(re:1) | re:3 ti:1 so:1 fi:1 so:1 re:1 | mi':3 so:2",
+    "(la:1 ti:1 do:1) | ti:2 re:2 do:2 la:2 | so:6"
+  ],
+  3: [
+    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
+    "| re:3 do:1 ti:1 la:1 so:1 fa:1 | mi:7",
+    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
+    "| re:3 do:1 ti:2 re:2 | fa':3 ti:1 do:2",
+    "(do:1 do:1) | ti:3 ti:1 la:1.5 ti:0.5 do:1 la:1 | ti:4 so:2",
+    "(so:2/3 so:2/3 so:2/3) | la:2 la:1.5 la:0.5 re:2 do:2 | ti:7",
+    "(re:1) | re:3 ti:1 so:1 fi:1 so:1 re:1 | mi':3 so:2",
+    "(la:2 do:1) | ti:2 re:2 do:2 la:2 | so:6"
+  ]
+};
+const INTERNATIONALE_CHORUS = [
+  "(mi':1.5 re:0.5) | do:4 so:2 la:2 | la:4 fa:2",
+  "(re:1.5 do:0.5) | ti:2 ti:2 la:2 so:2 | so:6",
+  "(so:2) | mi':3 mi':1 re:2 so:2 | do:4 ti:3",
+  "(ti:1) | la:3 si:1 la:2 re:2 | re:6",
+  "(mi':1.5 re:0.5) | do:4 so:2 la:2 | la:4 fa:2",
+  "(re:1.5 do:0.5) | ti:2 ti:2 la:3 (so:1) | mi':7",
+  "(mi':1) | so':3 so':1 fa':1.5 fa':0.5 mi':2 | re:2 mi':2 fa':3",
+  "(fa':1) | mi':3 mi':1 re:3 do:1 | do:6"
+];
+
+const SONGS = {
+  internationale: {
+    id: "internationale",
+    title: "The Internationale",
+    lede: "The Internationale, phrase by phrase: each verse and the chorus split into half lines.",
+    doMidi: 69,                                   // do = A4
+    // perBar and beatLen are in eighth notes: 4/4 has 8 per bar, beats of 2
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: INTERNATIONALE_VERSES,
+    chorus: INTERNATIONALE_CHORUS,
+    phrasesPerLine: 2, barsPerPhrase: 2,
+    verseFirstBar: v => 5 + 32 * (v - 1),
+    chorusFirstBar: v => 21 + 32 * (v - 1),
+    wholeLabel: "The whole song, as recorded",
+    fileName: "internationale-my-lyrics.txt"
+    // lyrics: added below, with the lyrics code
+  }
+};
+// (a test page can add songs here before the app starts)
+Object.assign(SONGS, window.EXTRA_SONGS || {});
+
+// Which song is open is saved with your settings; switching songs reloads.
+const SONG_ID = (() => {
+  const p = storeGetJSON("phrase-parrot-prefs-v1") || {};
+  return SONGS[p.songSel] ? p.songSel : "internationale";
+})();
+const SONG = SONGS[SONG_ID];
+const $ = id => document.getElementById(id);
+const SONG_DO_MIDI = SONG.doMidi || 69;          // the song's do, as written (before Transpose)
+const METER = SONG.meter;
+const BEATS_PER_BAR = METER.perBar / METER.beatLen;
+const VERSE_M = SONG.verses;
+const CHORUS_M = SONG.chorus || [];
+const VERSE_COUNT = Object.keys(VERSE_M).length;
+const HAS_CHORUS = CHORUS_M.length > 0;
+// Storage keys: the Internationale keeps its original keys, so nothing
+// you've saved is lost; other songs get their own.
+const songKey = base => SONG_ID === "internationale" ? base : `${base}-${SONG_ID}`;
+
+function sectionName(kind, verse) {
+  return kind === "verse" ? (VERSE_COUNT > 1 ? T("phrase.verseN", { v: verse }) : T("phrase.verse")) : T("phrase.chorus");
+}
+// "Verse 2 line 3, first half"; short = "1st half" (used in tighter places)
+function phraseName(kind, verse, k, short) {
+  const per = SONG.phrasesPerLine || 1;
+  const line = Math.floor(k / per) + 1;
+  const section = sectionName(kind, verse);
+  const part = per === 2 ? T(`phrase.half${(k % 2) + 1}${short ? "Short" : ""}`) : per > 2 ? T("phrase.partN", { n: (k % per) + 1 }) : "";
+  return part ? T("phrase.namePart", { section, line, part }) : T("phrase.name", { section, line });
+}
+// A phrase can be a plain string, or { m, bars } when it doesn't take the
+// song's usual number of bars.
+function mkPhrase(kind, verse, k, firstBarNum) {
+  const entry = kind === "verse" ? VERSE_M[verse][k] : CHORUS_M[k];
+  const m = typeof entry === "string" ? entry : entry.m;
+  const nBars = typeof entry === "string" ? (SONG.barsPerPhrase || 2) : entry.bars;
+  const lastBarNum = firstBarNum + nBars - 1;
+  return {
+    kind, verse, k, m, nBars, firstBarNum, lastBarNum,
+    section: sectionName(kind, verse),
+    id: phraseName(kind, verse, k),
+    shortId: phraseName(kind, verse, k, true),
+    bars: nBars > 1 ? T("phrase.bars", { a: firstBarNum, b: lastBarNum }) : T("phrase.bar", { a: firstBarNum })
+  };
+}
+function phraseRun(kind, v, first) {
+  const list = kind === "verse" ? VERSE_M[v] : CHORUS_M;
+  let bar = first;
+  return list.map((_, k) => { const p = mkPhrase(kind, v, k, bar); bar += p.nBars; return p; });
+}
+const verseOf = v => phraseRun("verse", v, SONG.verseFirstBar(v));
+applyStrings(document);
+$("errClose").addEventListener("click", dismissErrors);
+(function fillSongMarkup() {
+  const el = id => document.getElementById(id);
+  el("songSel").innerHTML = Object.values(SONGS).map(sg => `<option value="${sg.id}">${sg.title}</option>`).join("");
+  el("songSel").value = SONG_ID;
+  el("lede").textContent = (SONG.lede || T("drill.ledeDefault", { title: SONG.title })) + " " + T("drill.ledeTail");
+  el("dvBtns").innerHTML = Object.keys(VERSE_M).map(v => `<button class="dv" data-v="${v}">${v}</button>`).join("") +
+    (VERSE_COUNT > 1 ? `<button class="dv" data-v="mix">${T("drill.mix")}</button>` : "");
+  el("dvBtns").closest(".drill-verse").hidden = VERSE_COUNT < 2;
+  el("chorusRow").hidden = !HAS_CHORUS;
+  el("beats").innerHTML = Array.from({ length: METER.perBar / METER.beatLen }, (_, i) => `<span class="beat${i === 0 ? " one" : ""}"></span>`).join("");
+  el("doPitch").value = SONG_DO_MIDI;
+  el("tempoLabel").textContent = METER.label
+    ? T("tempo.label", { beat: T(`tempo.beat${METER.beatLen}`), meter: METER.label })
+    : T("ui.tempoPlain");
+  document.title = T("app.docTitle", { song: SONG.title });
+})();
+const chorusAfter = v => HAS_CHORUS ? phraseRun("chorus", v, SONG.chorusFirstBar(v)) : [];
+
+function parse(str) {
+  const items = []; let inPk = false;
+  for (let tok of str.trim().split(/\s+/)) {
+    if (tok === "|") { items.push({ bar: true }); continue; }
+    let open = false, close = false;
+    if (tok.startsWith("(")) { open = true; tok = tok.slice(1); }
+    if (tok.endsWith(")")) { close = true; tok = tok.slice(0, -1); }
+    if (open) inPk = true;
+    const [syl, dur] = tok.split(":");
+    const d = dur.includes("/") ? dur.split("/").reduce((x, y) => +x / +y) : parseFloat(dur);
+    items.push({ syl, dur: d, pk: inPk });
+    if (close) inPk = false;
+  }
+  return items;
+}
+const withItems = list => list.map(p => ({ ...p, items: parse(p.m) }));
+
+// When phrases are joined, a held note fills out its bar if the next
+// phrase's pickup is shorter than the gap. (At the end of a chorus that
+// leads into the next verse, the sheet music holds "race" for 7 eighths.)
+// How many eighth notes of pickup come before a phrase's first barline.
+function pickupEighths(items) {
+  let pickup = 0;
+  for (const it of items) { if (it.bar) break; pickup += it.dur; }
+  return pickup;
+}
+function joinFill(list) {
+  const near8 = 1e-6;
+  for (let i = 0; i < list.length - 1; i++) {
+    const a = list[i].items, b = list[i + 1].items;
+    let lastBar = 0;
+    for (let j = a.length - 1; j >= 0 && !a[j].bar; j--) lastBar += a[j].dur;
+    const gap = METER.perBar - lastBar - pickupEighths(b);
+    if (gap > near8) {
+      const lastNote = [...a].reverse().find(x => !x.bar);
+      if (lastNote) lastNote.dur += gap;
+    }
+  }
+  return list;
+}
+
+// Every full bar must add up to the meter, and every syllable must be known.
+// Checked at startup, so a mistake in a song shows on screen right away.
+function validateSong() {
+  const say = msg => reportError(T("err.song", { song: SONG.title, msg }));
+  const check = (label, items) => {
+    const segs = [[]];
+    for (const it of items) { if (it.bar) segs.push([]); else segs[segs.length - 1].push(it); }
+    segs.forEach((seg, i) => {
+      const sum = seg.reduce((a, n) => a + n.dur, 0);
+      const edge = i === 0 || i === segs.length - 1;     // pickup and final bar may be short
+      if (edge ? sum > METER.perBar + 1e-6 : Math.abs(sum - METER.perBar) > 1e-6) say(T("err.songBar", { label, i, sum, need: METER.perBar }));
+    });
+    for (const it of items) if (!it.bar && !(it.syl in PITCH)) say(T("err.songSyllable", { label, syl: it.syl }));
+  };
+  for (const [k, c] of Object.entries(SEQ_CHOICES)) check(c.label, joinFill(withItems(c.build())).flatMap(p => p.items));
+}
+
+// Dev and Stable say so next to the version, and get their own home-screen name.
+function setUpDeployment() {
+  const titleKey = { main: "app.homeTitle", dev: "app.homeTitleDev", stable: "app.homeTitleStable" }[DEPLOYMENT];
+  $("appleTitle").setAttribute("content", T(titleKey));
+  if (DEPLOYMENT === "main") return;
+  const tag = $("deployTag");
+  tag.textContent = T(DEPLOYMENT === "dev" ? "app.deployDev" : "app.deployStable");
+  tag.classList.toggle("stable", DEPLOYMENT === "stable");
+  tag.hidden = false;
+}
+
+// ---------- Offline use and updates (PWA) ----------
+// A service worker (service-worker.js, in each deployment folder) keeps a copy
+// of the app so it opens without a connection, and always fetches the newest
+// page when online. Only registered on GitHub Pages: in previews (like the
+// Claude app's viewer) there is no service-worker.js, which isn't an error.
+// When a newer version is installed while the app is open, a notice offers
+// to reload; coming back to the app checks for a newer version.
+function setUpOfflineAndUpdates() {
+  if (!("serviceWorker" in navigator) || !location.hostname.endsWith(".github.io")) return;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("./service-worker.js", { updateViaCache: "none" }).then(reg => {
+    // Coming back to the app checks for a newer version. With no network
+    // (airplane mode) there is nothing to check, so don't try: that failure
+    // is expected, not an error. navigator.onLine is false only when the
+    // device knows it is offline, so a real failure while online still shows.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden || navigator.onLine === false) return;
+      reg.update().catch(e => {
+        if (navigator.onLine === false) return;     // went offline during the check
+        reportError(T("err.swUpdate", { msg: `${e.name}: ${e.message}` }));
+      });
+    });
+  }).catch(e => reportError(T("err.swRegister", { msg: e.message })));
+  // The first install also takes control of the page; that isn't an update.
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) $("updateNote").hidden = false; });
+  $("updateReload").addEventListener("click", () => location.reload());
+  $("updateLater").addEventListener("click", () => { $("updateNote").hidden = true; });
+}
+
+// ---- The phrase drill's pool: verse 1, 2, 3 (each with the chorus) or a mix
+let drillVerse = "1";
+const VERSE_NUMS = Object.keys(VERSE_M).map(Number);
+function buildPool(v) {
+  if (v === "mix") return withItems([...VERSE_NUMS.flatMap(n => verseOf(n)), ...chorusAfter(1)]);
+  return withItems([...verseOf(+v || 1), ...chorusAfter(1)]);
+}
+let PHRASES = buildPool("1");
+
+// ---- The play-along sequence: one verse with its chorus, or the whole song
+const SEQ_CHOICES = {};
+VERSE_NUMS.forEach(v => {
+  SEQ_CHOICES[String(v)] = VERSE_COUNT > 1 ? {
+    label: T(HAS_CHORUS ? "seq.verseAndChorusN" : "seq.verseN", { v }),
+    play: T(HAS_CHORUS ? "seq.playVerseAndChorusN" : "seq.playVerseN", { v }),
+    build: () => [...verseOf(v), ...chorusAfter(v)]
+  } : {
+    label: T(HAS_CHORUS ? "seq.verseAndChorus" : "seq.whole"),
+    play: T(HAS_CHORUS ? "seq.playVerseAndChorus" : "seq.playWhole"),
+    build: () => [...verseOf(v), ...chorusAfter(v)]
+  };
+});
+if (VERSE_COUNT > 1) SEQ_CHOICES.song = {
+  label: SONG.wholeLabel || T("seq.whole"),
+  play: T("seq.playWhole"),
+  build: () => VERSE_NUMS.flatMap(v => [...verseOf(v), ...chorusAfter(v)])
+};
+document.getElementById("seqSel").innerHTML = Object.entries(SEQ_CHOICES)
+  .map(([k, c]) => `<option value="${k}">${c.label}</option>`).join("");
+let SEQ = joinFill(withItems(SEQ_CHOICES[Object.keys(SEQ_CHOICES)[0]].build()));
+
+// ---------- Plucked-string synth (Karplus–Strong), no libraries ----------
+let ctx = null;
+const cache = new Map();
+// ---------- Audio that survives iPhone interruptions ----------
+// When an alert, alarm, call or Siri interrupts the page, iOS can leave the
+// audio engine "interrupted", stuck in "suspended", or reporting "running"
+// while its clock has frozen. Any of those means silence until reload.
+// So on every tap we check the engine, and if it looks stuck we throw it away
+// and build a fresh one, inside the tap (which iOS requires).
+let needsFresh = false;     // set when we notice an interruption
+let lastCheck = null;       // { wall, audio } clock readings from the last tap
+
+function newContext() {
+  if (ctx && ctx.state !== "closed") ctx.close().catch(e => reportError(T("err.audio", { where: "close", msg: e.message })));
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  cache.clear();            // sounds are rebuilt for the new engine
+  needsFresh = false;
+  ctx.onstatechange = () => {
+    if (ctx.state === "interrupted" || ctx.state === "suspended") {
+      needsFresh = true;
+      if (typeof onAudioInterrupted === "function") onAudioInterrupted();
+    }
+  };
+}
+
+function ensureAudio() {
+  // iOS 17+: treat this page like a music player. It then keeps playing with
+  // the silent switch on, and recovers more reliably after interruptions.
+  if (navigator.audioSession) {
+    try { navigator.audioSession.type = "playback"; }
+    catch (e) { reportError(T("err.audio", { where: "audioSession", msg: e.message })); }
+  }
+
+  const now = performance.now();
+  let frozen = false;
+  if (ctx && ctx.state === "running" && lastCheck) {
+    const wallGap = (now - lastCheck.wall) / 1000;
+    const audioGap = ctx.currentTime - lastCheck.audio;
+    if (wallGap > 0.5 && audioGap < wallGap * 0.2) frozen = true;
+  }
+  if (!ctx || needsFresh || frozen || ctx.state === "closed" || ctx.state === "interrupted") {
+    if (typeof stopAll === "function" && ctx) stopAll();
+    newContext();
+  }
+  if (ctx.state !== "running") ctx.resume().catch(e => reportError(T("err.audio", { where: "resume", msg: e.message })));
+
+  // A silent blip, played inside the tap, "unlocks" output on iOS.
+  try {
+    const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const s = ctx.createBufferSource();
+    s.buffer = b; s.connect(ctx.destination); s.start(0);
+  } catch (e) { reportError(T("err.audio", { where: "unlock", msg: e.message })); }
+
+  lastCheck = { wall: now, audio: ctx.currentTime };
+}
+
+// Leaving the page (switching apps, locking the phone) or coming back from an
+// alert: stop cleanly and start fresh on the next tap.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (typeof wholeRun !== "undefined" && wholeRun) pauseWhole();
+    else if (typeof stopAll === "function") stopAll();
+    needsFresh = true;
+  }
+});
+window.addEventListener("pageshow", () => { needsFresh = true; });
+window.addEventListener("blur", () => { needsFresh = true; });
+// Every note's pitch goes through here, so transposing and fine tuning
+// apply to the phrases, the whole melody and "Play do" alike.
+// transpose = whole half steps; fineTune = cents (hundredths of a half step).
+function pitchShift() {
+  const t = +(document.getElementById("transpose") || { value: 0 }).value;
+  const c = +(document.getElementById("fineTune") || { value: 0 }).value;
+  return t + c / 100;
+}
+const freqOf = m => 440 * Math.pow(2, (m + pitchShift() - 69) / 12);
+
+// ---------- Consistent pluck tone ----------
+// Each note starts as a short burst of noise. Truly random noise made some
+// sessions sound brighter and others duller, because the sounds are rebuilt
+// whenever the audio restarts. Now the noise comes from a fixed "recipe" per
+// note: we try 9 recipes, measure how bright each one is, and keep the middle
+// one. So every note has a typical, steady tone, the same every session.
+function seededNoise(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function excitation(N, passes, freq) {
+  const candidates = [];
+  for (let c = 0; c < 9; c++) {
+    const rnd = seededNoise(Math.round(freq * 100) * 31 + c * 7919 + passes);
+    let ring = new Float32Array(N);
+    for (let i = 0; i < N; i++) ring[i] = rnd() * 2 - 1;
+    for (let p = 0; p < passes; p++) {
+      const r2 = new Float32Array(N);
+      for (let i = 0; i < N; i++) r2[i] = (ring[i] + ring[(i + 1) % N]) / 2;
+      ring = r2;
+    }
+    const mean = ring.reduce((a, b) => a + b, 0) / N;
+    for (let i = 0; i < N; i++) ring[i] -= mean;
+    // brightness: how much the wave jumps sample to sample, relative to its size
+    let edge = 0, size = 0;
+    for (let i = 0; i < N; i++) { edge += Math.abs(ring[i] - ring[(i + 1) % N]); size += Math.abs(ring[i]); }
+    candidates.push({ ring, bright: edge / (size || 1) });
+  }
+  candidates.sort((a, b) => a.bright - b.bright);
+  return candidates[4].ring;
+}
+
+function makePluck(freq, timbre) {
+  const key = freq.toFixed(3) + timbre;
+  if (cache.has(key)) return cache.get(key);
+  const sr = ctx.sampleRate;
+  const N = Math.max(2, Math.floor(sr / freq - 0.5));
+  const rate = freq / (sr / (N + 0.5));
+  const dur = timbre === "uke" ? 2.2 : 3.0;
+  const decay = timbre === "uke" ? 0.994 : 0.997;
+  const passes = timbre === "uke" ? 3 : 1;
+  const len = Math.floor(sr * dur);
+  const buf = ctx.createBuffer(1, len, sr);
+  const out = buf.getChannelData(0);
+  const ring = excitation(N, passes, freq);
+  for (let i = 0; i < len; i++) {
+    const idx = i % N, nxt = (idx + 1) % N;
+    out[i] = ring[idx];
+    ring[idx] = decay * 0.5 * (ring[idx] + ring[nxt]);
+  }
+  let peak = 0;
+  for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(out[i]));
+  const fadeStart = len - Math.floor(sr * 0.15);
+  for (let i = 0; i < len; i++) {
+    out[i] /= (peak || 1);
+    if (i > fadeStart) out[i] *= (len - i) / (len - fadeStart);
+  }
+  const res = { buf, rate };
+  cache.set(key, res);
+  return res;
+}
+
+let activeNodes = [];
+// ---------- Wind and brass sounds ----------
+// Built from scratch (no recordings): a tone with that instrument's overtone
+// "fingerprint", filters that shape it, a breath or attack envelope, a little
+// vibrato where players use it, and for flute and sax some breath noise.
+// They're recognizable stand-ins, not lifelike recordings.
+// partials = strength of overtones 1, 2, 3...
+const WINDS = {
+  // clarinet: mostly odd overtones (hollow, woody), no vibrato
+  clarinet: { partials: [1, 0.05, 0.75, 0.04, 0.5, 0.03, 0.32, 0.02, 0.2, 0.01, 0.12],
+              lowpass: 2600, q: 0.7, attack: 0.045, release: 0.07, vib: 0, breath: 0.004, level: 0.30 },
+  // saxophone: rich and reedy, with a vocal-like bump around 1–2 kHz and vibrato
+  sax:      { partials: [1, 0.9, 0.75, 0.62, 0.5, 0.4, 0.32, 0.25, 0.19, 0.14, 0.1, 0.07],
+              lowpass: 3200, q: 1.2, peak: { f: 1300, gain: 7, q: 1.1 },
+              attack: 0.035, release: 0.08, vib: { rate: 5.2, cents: 14, delay: 0.25 }, breath: 0.012, level: 0.21 },
+  // flute: nearly pure, airy, gentle vibrato
+  flute:    { partials: [1, 0.22, 0.08, 0.04, 0.02],
+              lowpass: 5000, q: 0.5, attack: 0.06, release: 0.09, vib: { rate: 5, cents: 10, delay: 0.2 }, breath: 0.03, level: 0.34 },
+  // French horn: warm and round, the brightness swells in at the start
+  horn:     { partials: [1, 0.75, 0.5, 0.33, 0.22, 0.14, 0.09, 0.06],
+              lowpass: 1100, q: 0.9, swell: { from: 450, time: 0.12 }, attack: 0.07, release: 0.1, vib: 0, breath: 0, level: 0.34 },
+  // trumpet: bright and brassy, with a quick "blat" of brightness at the start
+  trumpet:  { partials: [1, 0.95, 0.85, 0.75, 0.62, 0.5, 0.4, 0.31, 0.24, 0.18, 0.13, 0.09],
+              lowpass: 3800, q: 1.0, swell: { from: 900, time: 0.05 }, attack: 0.025, release: 0.06, vib: { rate: 5.5, cents: 6, delay: 0.35 }, breath: 0, level: 0.24 },
+  // Bowed strings (rebuilt in v0.38, following established synthesis
+  // practice): the bow drags the string into a sawtooth shape, so the source
+  // is a full, bright sawtooth. The instrument's identity comes from its
+  // wooden body, modeled as a bank of resonances ("formants"): for violin
+  // about 300 Hz, 700 Hz and a broad 2–4 kHz region, lower for viola and
+  // cello. Wide, delayed vibrato (with a slight pulse in volume) sweeps the
+  // overtones through those resonances, the shimmer that says "strings".
+  violin:   { partials: [1.0000, 0.5000, 0.3333, 0.2500, 0.2000, 0.1667, 0.1429, 0.1250, 0.1111, 0.1000, 0.0909, 0.0833, 0.0769, 0.0714, 0.0667, 0.0625, 0.0588, 0.0556, 0.0526, 0.0500, 0.0476, 0.0455, 0.0435, 0.0417, 0.0400, 0.0385, 0.0370, 0.0357, 0.0345, 0.0333, 0.0323, 0.0312, 0.0303, 0.0294, 0.0286, 0.0278, 0.0270, 0.0263, 0.0256, 0.0250], bowed: { hp: 190, formants: [[300, 2.0, 0.9], [700, 2.0, 1.0], [3000, 7.0, 1.2]], dry: 0.25 },
+              lowpass: 7000, track: 14, q: 0.5, voices: [-2, 2], glide: 0.012,
+              attack: 0.12, release: 0.15, vib: { rate: 5.8, cents: 28, delay: 0.16 }, trem: 0.1,
+              breath: 0.003, level: 0.072, slide: 1, scrape: 0.035 },
+  viola:    { partials: [1.0000, 0.5000, 0.3333, 0.2500, 0.2000, 0.1667, 0.1429, 0.1250, 0.1111, 0.1000, 0.0909, 0.0833, 0.0769, 0.0714, 0.0667, 0.0625, 0.0588, 0.0556, 0.0526, 0.0500, 0.0476, 0.0455, 0.0435, 0.0417, 0.0400, 0.0385, 0.0370, 0.0357, 0.0345, 0.0333, 0.0323, 0.0312, 0.0303, 0.0294, 0.0286, 0.0278, 0.0270, 0.0263, 0.0256, 0.0250], bowed: { hp: 140, formants: [[240, 2.0, 0.9], [560, 2.0, 1.0], [2400, 6.0, 1.2]], dry: 0.25 },
+              lowpass: 6000, track: 14, q: 0.5, voices: [-2, 2], glide: 0.014,
+              attack: 0.13, release: 0.17, vib: { rate: 5.4, cents: 26, delay: 0.18 }, trem: 0.1,
+              breath: 0.003, level: 0.088, slide: 1, scrape: 0.035 },
+  cello:    { partials: [1.0000, 0.5000, 0.3333, 0.2500, 0.2000, 0.1667, 0.1429, 0.1250, 0.1111, 0.1000, 0.0909, 0.0833, 0.0769, 0.0714, 0.0667, 0.0625, 0.0588, 0.0556, 0.0526, 0.0500, 0.0476, 0.0455, 0.0435, 0.0417, 0.0400, 0.0385, 0.0370, 0.0357, 0.0345, 0.0333, 0.0323, 0.0312, 0.0303, 0.0294, 0.0286, 0.0278, 0.0270, 0.0263, 0.0256, 0.0250], bowed: { hp: 70, formants: [[180, 1.6, 0.9], [420, 2.0, 1.0], [1500, 5.0, 1.2]], dry: 0.3 },
+              lowpass: 4500, track: 14, q: 0.5, voices: [-1.5, 1.5], glide: 0.016,
+              attack: 0.14, release: 0.2, vib: { rate: 5.0, cents: 22, delay: 0.2 }, trem: 0.08,
+              breath: 0.0025, level: 0.095, slide: 1, scrape: 0.03 }
+};
+const windWaves = new Map();
+function windWave(type) {
+  const hit = windWaves.get(type);
+  if (hit && hit.ctx === ctx) return hit.wave;
+  const p = WINDS[type].partials;
+  const real = new Float32Array(p.length + 1), imag = new Float32Array(p.length + 1);
+  p.forEach((a, i) => { imag[i + 1] = a; });
+  const wave = ctx.createPeriodicWave(real, imag);
+  windWaves.set(type, { ctx, wave });
+  return wave;
+}
+let noiseBuf = null;
+function breathNoise() {
+  if (noiseBuf && noiseBuf.sampleRate === ctx.sampleRate && noiseBuf.ctxRef === ctx) return noiseBuf;
+  const len = ctx.sampleRate * 2;
+  noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  const rnd = seededNoise(12345);
+  for (let i = 0; i < len; i++) d[i] = rnd() * 2 - 1;
+  noiseBuf.ctxRef = ctx;
+  return noiseBuf;
+}
+function windAt(midi, when, holdSec, type) {
+  const w = WINDS[type];
+  const freq = freqOf(midi);
+  // a tiny gap before the next note, so repeated notes are tongued separately
+  const end = when + Math.max(0.06, holdSec - 0.035);
+  const voices = w.voices || [0];
+  const oscs = voices.map(c => {
+    const o = ctx.createOscillator();
+    o.setPeriodicWave(windWave(type));
+    o.frequency.value = freq; o.detune.value = c;
+    return o;
+  });
+  const osc = { connect: n => oscs.forEach(o => o.connect(n)), start: t => oscs.forEach(o => o.start(t)),
+                stop: t => oscs.forEach(o => o.stop(t)) };
+  if (w.vib) {
+    const lfo = ctx.createOscillator(), depth = ctx.createGain();
+    lfo.frequency.value = w.vib.rate;
+    const amount = freq * (Math.pow(2, w.vib.cents / 1200) - 1);
+    depth.gain.setValueAtTime(0, when);
+    depth.gain.setValueAtTime(0, when + w.vib.delay);
+    depth.gain.linearRampToValueAtTime(amount, when + w.vib.delay + 0.3);
+    oscs.forEach(o => depth.connect(o.frequency));
+    lfo.connect(depth);
+    lfo.start(when); lfo.stop(end + w.release + 0.05);
+    activeNodes.push(lfo);
+  }
+  // keep very high notes from getting shrill
+  const cutoff = Math.min(w.lowpass, Math.max(freq * (w.track || 6), 1200));
+  const shaped = toneChain(w, cutoff);
+  const lp = shaped.lp;
+  if (w.swell) {
+    lp.frequency.setValueAtTime(Math.min(w.swell.from, cutoff), when);
+    lp.frequency.exponentialRampToValueAtTime(cutoff, when + w.swell.time);
+  }
+  osc.connect(shaped.input);
+  const trem = tremoloNode(w, when, end);
+  shaped.output.connect(trem);
+  const chain = trem;
+  const g = ctx.createGain();
+  const level = w.level * (0.8 + 0.2 * Math.min(1.6, 330 / freq)) / Math.sqrt(voices.length);   // a touch more for lower notes
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(level, when + w.attack);
+  g.gain.setValueAtTime(level, end);
+  g.gain.exponentialRampToValueAtTime(0.0001, end + w.release);
+  chain.connect(g).connect(ctx.destination);
+  osc.start(when); osc.stop(end + w.release + 0.05);
+  activeNodes.push(...oscs);
+  if (w.scrape) bowScrape(when, freq, w.scrape);
+  if (w.breath) {
+    const n = ctx.createBufferSource(); n.buffer = breathNoise(); n.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = Math.min(6000, freq * 3); bp.Q.value = 0.8;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, when);
+    ng.gain.exponentialRampToValueAtTime(w.breath * 2.5, when + 0.02);   // a puff at the start
+    ng.gain.exponentialRampToValueAtTime(w.breath, when + 0.12);
+    ng.gain.setValueAtTime(w.breath, end);
+    ng.gain.exponentialRampToValueAtTime(0.0001, end + w.release);
+    n.connect(bp).connect(ng).connect(ctx.destination);
+    n.start(when, Math.random() * 1.5); n.stop(end + w.release + 0.05);
+    activeNodes.push(n);
+  }
+}
+
+// Shapes the raw tone. Winds/brass: a lowpass plus optional peaks.
+// Bowed strings: a highpass, then the body resonances in parallel (plus a
+// little of the direct sound), then a gentle top-end lowpass.
+// Returns { input, output, lp } — lp is the filter whose cutoff can follow the note.
+function toneChain(w, cutoff) {
+  if (w.bowed) {
+    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = w.bowed.hp; hp.Q.value = 0.7;
+    const sum = ctx.createGain();
+    for (const [f, gain, q] of w.bowed.formants) {
+      const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = f; bp.Q.value = q;
+      const g = ctx.createGain(); g.gain.value = gain;
+      hp.connect(bp).connect(g).connect(sum);
+    }
+    const dry = ctx.createGain(); dry.gain.value = w.bowed.dry;
+    hp.connect(dry).connect(sum);
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = w.q; lp.frequency.value = cutoff;
+    sum.connect(lp);
+    return { input: hp, output: lp, lp };
+  }
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = w.q; lp.frequency.value = cutoff;
+  let out = lp;
+  for (const pkDef of [...(w.peak ? [w.peak] : []), ...(w.body || [])]) {
+    const pk = ctx.createBiquadFilter();
+    pk.type = "peaking"; pk.frequency.value = pkDef.f; pk.gain.value = pkDef.gain; pk.Q.value = pkDef.q;
+    out.connect(pk); out = pk;
+  }
+  return { input: lp, output: out, lp };
+}
+// A slight pulse in volume that goes with the vibrato (bowed strings)
+function tremoloNode(w, when, end) {
+  const node = ctx.createGain(); node.gain.value = 1;
+  if (!w.trem) return node;
+  const lfo = ctx.createOscillator(), depth = ctx.createGain();
+  lfo.frequency.value = w.vib ? w.vib.rate : 5.5;
+  depth.gain.setValueAtTime(0, when);
+  depth.gain.setValueAtTime(0, when + (w.vib ? w.vib.delay : 0.15));
+  depth.gain.linearRampToValueAtTime(w.trem, when + (w.vib ? w.vib.delay : 0.15) + 0.3);
+  lfo.connect(depth).connect(node.gain);
+  lfo.start(when); lfo.stop(end + 0.4);
+  activeNodes.push(lfo);
+  return node;
+}
+
+// The sound of the bow catching the string: a brief, soft scrape of
+// filtered noise at the start of each bow stroke.
+function bowScrape(when, freq, amount) {
+  const n = ctx.createBufferSource(); n.buffer = breathNoise();
+  const hp = ctx.createBiquadFilter(); hp.type = "bandpass";
+  hp.frequency.value = Math.min(5000, Math.max(1800, freq * 5)); hp.Q.value = 0.9;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(amount, when + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.09);
+  n.connect(hp).connect(g).connect(ctx.destination);
+  n.start(when, Math.random() * 1.5); n.stop(when + 0.1);
+  activeNodes.push(n);
+}
+
+// Legato: the whole run of notes is ONE continuous sound that changes pitch
+// at each note, the way a player slurs, so nothing overlaps. A repeated
+// note gets a brief dip in volume so you still hear it as a new note.
+// events: [{ midi, t, dur }] in time order.
+function legatoVoice(events, type) {
+  if (!events.length) return;
+  const w = WINDS[type];
+  const first = events[0], last = events[events.length - 1];
+  const start = first.t, end = last.t + Math.max(0.06, last.dur - 0.035);
+  const f0 = freqOf(first.midi);
+  const voices = w.voices || [0];
+  const oscs = voices.map(c => {
+    const o = ctx.createOscillator();
+    o.setPeriodicWave(windWave(type));
+    o.frequency.setValueAtTime(f0, start); o.detune.value = c;
+    return o;
+  });
+  // one handle that moves every voice together
+  const osc = {
+    connect: n => oscs.forEach(o => o.connect(n)),
+    start: t => oscs.forEach(o => o.start(t)),
+    stop: t => oscs.forEach(o => o.stop(t)),
+    frequency: {
+      setValueAtTime: (v, t) => oscs.forEach(o => o.frequency.setValueAtTime(v, t)),
+      exponentialRampToValueAtTime: (v, t) => oscs.forEach(o => o.frequency.exponentialRampToValueAtTime(v, t))
+    }
+  };
+  const shaped = toneChain(w, 1000);
+  const lp = shaped.lp;
+  const g = ctx.createGain();
+  const levelFor = m => w.level * (0.8 + 0.2 * Math.min(1.6, 330 / freqOf(m))) / Math.sqrt(voices.length);
+  const cutFor = m => Math.min(w.lowpass, Math.max(freqOf(m) * (w.track || 6), 1200));
+  if (w.swell) {
+    lp.frequency.setValueAtTime(Math.min(w.swell.from, cutFor(first.midi)), start);
+    lp.frequency.exponentialRampToValueAtTime(cutFor(first.midi), start + w.swell.time);
+  } else lp.frequency.setValueAtTime(cutFor(first.midi), start);
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(levelFor(first.midi), start + w.attack);
+  events.forEach((e, i) => {
+    if (i === 0) return;
+    const prev = events[i - 1];
+    const f = freqOf(e.midi), lvl = levelFor(e.midi);
+    if (e.midi === prev.midi) {
+      if (w.scrape) bowScrape(e.t, f, w.scrape * 0.7);
+      // same note again: a quick dip, like a light re-tongue or bow change
+      g.gain.setValueAtTime(levelFor(prev.midi), e.t - 0.035);
+      g.gain.linearRampToValueAtTime(levelFor(prev.midi) * 0.3, e.t - 0.004);
+      g.gain.linearRampToValueAtTime(lvl, e.t + 0.03);
+    } else {
+      // move to the new pitch: winds slide very briefly, so it sounds
+      // connected; bowed strings change instantly, like a finger on the string
+      if (w.slide === 0) {
+        osc.frequency.setValueAtTime(f, e.t);
+      } else {
+        const gl = w.glide || 0.022;
+        osc.frequency.setValueAtTime(freqOf(prev.midi), e.t - gl / 2);
+        osc.frequency.exponentialRampToValueAtTime(f, e.t + gl / 2);
+      }
+      g.gain.setValueAtTime(levelFor(prev.midi), e.t - 0.012);
+      g.gain.linearRampToValueAtTime(lvl, e.t + 0.04);
+      lp.frequency.setValueAtTime(cutFor(prev.midi), e.t - 0.012);
+      lp.frequency.linearRampToValueAtTime(cutFor(e.midi), e.t + 0.01);
+    }
+  });
+  g.gain.setValueAtTime(levelFor(last.midi), end);
+  g.gain.exponentialRampToValueAtTime(0.0001, end + w.release);
+  osc.connect(shaped.input);
+  const trem = tremoloNode(w, start, end);
+  shaped.output.connect(trem);
+  trem.connect(g).connect(ctx.destination);
+  osc.start(start); osc.stop(end + w.release + 0.05);
+  activeNodes.push(...oscs);
+  if (w.scrape) bowScrape(start, f0, w.scrape);
+  if (w.vib) {
+    // vibrato that eases in after each new pitch, as players do
+    const lfo = ctx.createOscillator(), depth = ctx.createGain();
+    lfo.frequency.value = w.vib.rate;
+    events.forEach(e => {
+      const amount = freqOf(e.midi) * (Math.pow(2, w.vib.cents / 1200) - 1);
+      depth.gain.setValueAtTime(0, e.t);
+      if (e.dur > w.vib.delay + 0.1) {
+        depth.gain.setValueAtTime(0, e.t + w.vib.delay);
+        depth.gain.linearRampToValueAtTime(amount, e.t + Math.min(e.dur - 0.02, w.vib.delay + 0.3));
+      }
+    });
+    oscs.forEach(o => depth.connect(o.frequency));
+    lfo.connect(depth);
+    lfo.start(start); lfo.stop(end + w.release + 0.05);
+    activeNodes.push(lfo);
+  }
+  if (w.breath) {
+    const n = ctx.createBufferSource(); n.buffer = breathNoise(); n.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = Math.min(6000, f0 * 3); bp.Q.value = 0.8;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, start);
+    ng.gain.exponentialRampToValueAtTime(w.breath * 2.5, start + 0.02);
+    ng.gain.exponentialRampToValueAtTime(w.breath, start + 0.12);
+    ng.gain.setValueAtTime(w.breath, end);
+    ng.gain.exponentialRampToValueAtTime(0.0001, end + w.release);
+    n.connect(bp).connect(ng).connect(ctx.destination);
+    n.start(start, Math.random() * 1.5); n.stop(end + w.release + 0.05);
+    activeNodes.push(n);
+  }
+}
+
+// ---------- Piano ----------
+// A struck string: overtones slightly stretched (as real piano strings are),
+// each fading at its own rate (higher ones faster, higher notes faster), plus
+// a soft hammer "thunk". Built once per pitch and reused, like the ukulele.
+const pianoCache = new Map();
+function makePiano(freq) {
+  const key = freq.toFixed(3) + "|" + ctx.sampleRate;
+  const hit = pianoCache.get(key);
+  if (hit && hit.ctx === ctx) return hit.buf;
+  const sr = ctx.sampleRate, dur = 3.2, len = Math.floor(sr * dur);
+  const buf = ctx.createBuffer(1, len, sr), out = buf.getChannelData(0);
+  const B = 0.00035;                                  // string stiffness (stretches overtones)
+  const pitchFactor = Math.pow(freq / 261.6, 0.6);     // higher notes fade faster
+  const rnd = seededNoise(Math.round(freq * 10));
+  for (let n = 1; n <= 14; n++) {
+    const fn = n * freq * Math.sqrt(1 + B * n * n);
+    if (fn > sr / 2 - 500) break;
+    const amp = Math.pow(n, -1.15) * (n === 1 ? 1 : 0.9) * (1 + 0.15 * Math.sin(n * 1.7));
+    const decay = 1.6 * pitchFactor * (1 + 0.35 * (n - 1));     // per second (shortened in v0.36 and v0.37)
+    const phase = rnd() * 6.283;
+    const w = 2 * Math.PI * fn / sr;
+    for (let i = 0; i < len; i++) out[i] += amp * Math.exp(-decay * i / sr) * Math.sin(w * i + phase);
+  }
+  // hammer: a short, soft thump of low noise at the very start
+  let lpState = 0;
+  const thump = Math.floor(sr * 0.03);
+  for (let i = 0; i < thump; i++) {
+    lpState += 0.08 * ((rnd() * 2 - 1) - lpState);
+    out[i] += lpState * 1.6 * (1 - i / thump);
+  }
+  // quick attack and normalize
+  let peak = 0;
+  for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(out[i]));
+  const att = Math.floor(sr * 0.004);
+  for (let i = 0; i < len; i++) { out[i] /= (peak || 1); if (i < att) out[i] *= i / att; }
+  pianoCache.set(key, { ctx, buf });
+  return buf;
+}
+function pianoAt(midi, when, holdSec) {
+  const src = ctx.createBufferSource();
+  src.buffer = makePiano(freqOf(midi));
+  const g = ctx.createGain();
+  // the key is released when the note ends: the damper stops the string
+  g.gain.setValueAtTime(0.55, when);
+  g.gain.setValueAtTime(0.55, when + holdSec);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + holdSec + 0.12);
+  src.connect(g).connect(ctx.destination);
+  src.start(when); src.stop(when + holdSec + 0.15);
+  activeNodes.push(src);
+}
+
+function pluckAt(midi, when, holdSec) {
+  const timbre = $("timbre").value;
+  if (timbre === "piano") return pianoAt(midi, when, holdSec);
+  if (WINDS[timbre]) return windAt(midi, when, holdSec, timbre);
+  const { buf, rate } = makePluck(freqOf(midi), timbre);
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.playbackRate.value = rate;
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = timbre === "uke" ? 2600 : 4800;
+  const g = ctx.createGain();
+  // Damp the string gently when the next note starts, like a player's finger
+  g.gain.setValueAtTime(0.6, when);
+  g.gain.setValueAtTime(0.6, when + holdSec);
+  g.gain.linearRampToValueAtTime(0.0001, when + holdSec + 0.06);
+  src.connect(lp).connect(g).connect(ctx.destination);
+  src.start(when);
+  src.stop(when + holdSec + 0.1);
+  activeNodes.push(src);
+}
+let looping = null;      // timer for scheduling the next loop pass
+let endTimer = null;     // timer that flips the button back after a single pass
+let playing = false;
+
+function setPlaying(on, kind) {
+  playing = on;
+  const metro = kind === true || kind === "metro";
+  const all = $("allBtn");
+  all.textContent = on && kind === "all" ? T("drill.stop") : playLabel();
+  all.classList.toggle("stop", !!(on && kind === "all"));
+  const btn = $("againBtn");
+  btn.textContent = on ? T("drill.stop") : T("ui.playAgain");
+  btn.classList.toggle("stop", on);
+  btn.disabled = on ? false : pos < 0;
+  const m = $("metroBtn");
+  m.textContent = on && metro ? T("drill.stopMetronome") : T("ui.metronomeOnly");
+  m.classList.toggle("active", !!(on && metro));
+  if (!(on && kind === "tune")) tuneMidi = null;
+  document.querySelectorAll(".tstr").forEach(b => b.classList.toggle("on", !!(on && kind === "tune" && +b.dataset.midi === tuneMidi)));
+}
+function stopAll() {
+  activeNodes.forEach(s => {
+    try { s.stop(); }
+    catch (e) { if (e.name !== "InvalidStateError") reportError(T("err.audio", { where: "stop", msg: e.message })); }
+  });
+  activeNodes = [];
+  timers.forEach(clearTimeout); timers = [];
+  clearTimeout(looping); looping = null;
+  clearTimeout(endTimer); endTimer = null;
+  visuals = [];
+  document.querySelectorAll(".n.on, .beat.on, .all-line.on").forEach(el => el.classList.remove("on"));
+  if (typeof endWhole === "function" && (wholeRun || wholePaused !== null)) endWhole();
+  if (calibrating) {           // stopped partway through a sync: reset it
+    calibrating = false; calib = null;
+    $("tapPad").textContent = T("calib.start"); $("calibCount").textContent = "";
+  }
+  setPlaying(false);
+}
+
+// ---------- Highlights that follow the sound ----------
+// Highlights follow the audio clock rather than a separate timer, so they
+// wait for the sound if the phone starts it late. Two iPhone quirks matter:
+// 1. Its audio clock often moves in jumps instead of smoothly, so we smooth
+//    it, using the phone's "what is being heard right now" timestamp when it
+//    offers one.
+// 2. A jump can skip right over a short highlight, so instead of asking
+//    "is this one on right now?", each group (beat dots, note syllables)
+//    lights its most recent event and holds it long enough to see.
+let visuals = [];          // { el, group, start, end } in audio-clock seconds
+let rafId = null;
+const MIN_HOLD_MS = 120;
+let lastCT = -1, lastCTwall = 0, lastHeard = 0, heardCtx = null;
+
+function showAt(el, when, dur) {
+  const group = el.classList.contains("beat") ? "beat" : el.classList.contains("all-line") ? "line" : "note";
+  visuals.push({ el, group, start: when, end: when + dur, shownAt: 0 });
+  if (!rafId) rafId = requestAnimationFrame(drawVisuals);
+}
+
+function heardTime() {
+  const wall = performance.now();
+  const ct = ctx.currentTime;
+  if (ctx !== heardCtx) { heardCtx = ctx; lastCT = -1; lastHeard = 0; }
+  if (ct !== lastCT) { lastCT = ct; lastCTwall = wall; }
+  const sinceTick = (wall - lastCTwall) / 1000;
+  // If the clock hasn't moved for a while, the sound isn't playing yet
+  // (or has paused): hold still rather than run ahead of it.
+  const ahead = sinceTick > 0.35 ? 0 : sinceTick;
+  const lag = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+  let t = ct + ahead - lag;
+  try {
+    if (ctx.getOutputTimestamp) {
+      const ts = ctx.getOutputTimestamp();
+      if (ts && ts.contextTime > 0 && ts.performanceTime > 0) {
+        const heard = ts.contextTime + (wall - ts.performanceTime) / 1000;
+        t = Math.min(heard, ct + ahead);   // never ahead of the clock itself
+      }
+    }
+  } catch (e) { reportError(T("err.audio", { where: "getOutputTimestamp", msg: e.message })); }
+  lastHeard = Math.max(lastHeard, t);     // never step backwards
+  return lastHeard;
+}
+
+function drawVisuals() {
+  rafId = null;
+  if (!ctx || !visuals.length) return;
+  const now = heardTime() - (+$("visDelay").value) / 1000;
+  const wall = performance.now();
+  const keep = [];
+  for (const group of ["beat", "note", "line"]) {
+    const items = visuals.filter(v => v.group === group);
+    // the latest event that has started
+    let current = null;
+    for (const v of items) if (v.start <= now && (!current || v.start > current.start)) current = v;
+    if (current && !current.shownAt) current.shownAt = wall;
+    const lit = current && (now < current.end || wall - current.shownAt < MIN_HOLD_MS) ? current : null;
+    for (const v of items) {
+      if (v !== lit && v.el !== (lit && lit.el)) v.el.classList.remove("on");
+      // keep future events, and the current one until it's done showing
+      if (v.start > now || v === lit) keep.push(v);
+    }
+    if (lit) lit.el.classList.add("on");
+    if (group === "line" && lit && lit.el !== lastLineEl) { lastLineEl = lit.el; onLineChange(lit.el); }
+  }
+  visuals = keep;
+  if (visuals.length) rafId = requestAnimationFrame(drawVisuals);
+  else document.querySelectorAll(".n.on, .beat.on").forEach(el => el.classList.remove("on"));
+}
+
+// ---------- Playback ----------
+let timers = [];
+// Metronome click: a short pitched tick. The first beat of each measure is
+// higher and louder so you can hear where "1" is.
+function clickAt(when, accent, beatIndex) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = "triangle";
+  osc.frequency.value = accent ? 1760 : 1100;
+  const peak = (accent ? 0.55 : 0.28) * (+$("clickVol").value / 100);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), when + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + (accent ? 0.07 : 0.05));
+  osc.connect(g).connect(ctx.destination);
+  osc.start(when); osc.stop(when + 0.09);
+  activeNodes.push(osc);
+  const dot = calibrating ? null : document.querySelectorAll("#beats .beat")[beatIndex];
+  if (dot) {
+    showAt(dot, when, 0.14);
+  }
+}
+
+// Schedules one pass of a phrase starting at audio time t.
+// Returns the time the pass is finished. In loop mode the pass always has a
+// lead-in measure (clicked if count-in is on) and the last measure is filled
+// out to a full bar, so every repeat lines up with the beat.
+// opt.beat is one metronome beat in seconds (a quarter note in 4/4 or 3/4,
+// a dotted quarter in 6/8); opt.eighth is an eighth note.
+function schedulePass(phrase, t, opt) {
+  const { beat, eighth, doMidi, countIn, clickAll, loop } = opt;
+  const notes = phrase.items.filter(x => !x.bar);
+  const pickup = pickupEighths(phrase.items);
+  const total = notes.reduce((s, n) => s + n.dur, 0);
+
+  const leadIn = countIn || loop;
+  const downbeat = leadIn ? t + BEATS_PER_BAR * beat : t + pickup * eighth;
+  if (countIn) for (let b = 0; b < BEATS_PER_BAR; b++) clickAt(t + b * beat, b === 0, b);
+
+  const noteStart = downbeat - pickup * eighth;
+  const phraseEnd = noteStart + total * eighth;
+  const fullBars = Math.ceil((total - pickup) / METER.perBar - 1e-6);
+  const barEnd = downbeat + fullBars * BEATS_PER_BAR * beat;
+  const clickUntil = loop ? barEnd : phraseEnd;
+
+  if (clickAll) {
+    const firstBeat = countIn ? 0 : -Math.floor(pickup / METER.beatLen);
+    for (let k = firstBeat; downbeat + k * beat < clickUntil - 0.01; k++) {
+      const pos = ((k % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR;
+      clickAt(downbeat + k * beat, pos === 0, pos);
+    }
+  }
+
+  const chips = opt.chips || [...document.querySelectorAll(opt.chipSel || "#notes .n")];
+  if (chips.length !== notes.length) reportError(T("err.chipMismatch", { chips: chips.length, notes: notes.length }));
+  opt.noteStart = noteStart;
+  let nt = noteStart;
+  const timbreNow = $("timbre").value;
+  const legatoRun = WINDS[timbreNow] && $("legato").checked ? [] : null;
+  notes.forEach((n, i) => {
+    const dur = n.dur * eighth;
+    if (legatoRun) legatoRun.push({ midi: doMidi + PITCH[n.syl], t: nt, dur });
+    else pluckAt(doMidi + PITCH[n.syl], nt, dur);
+    const chip = chips[i];
+    if (chip) {
+      showAt(chip, nt, Math.max(0.05, dur - 0.03));
+    }
+    nt += dur;
+  });
+  if (legatoRun) legatoVoice(legatoRun, timbreNow);
+  return loop ? barEnd : phraseEnd;
+}
+
+// What the user sees if the audio gets interrupted mid-play
+function onAudioInterrupted() {
+  if (wholeRun) { pauseWhole(); return; }
+  if (!playing) return;
+  stopAll();
+  $("prompt").textContent = T("drill.interrupted");
+}
+
+// The whole melody is just the 16 phrases joined end to end. Each phrase
+// already carries its own pickups, so joined together they rebuild the
+// sheet music exactly: the opening pickup in bar 4, then bars 5–36.
+const wholeItems = () => SEQ.flatMap(p => p.items);
+
+// ---------- Syllable chips with rhythm marks ----------
+// Durations are in eighth notes, so a 16th is 0.5. Every 16th gets a double
+// underline (like the two beams on a written 16th). If the note just before
+// a 16th is dotted (a dotted 16th, eighth, quarter or half), it gets a dot
+// after its name, as in sheet music. Works for any song's data.
+const SIXTEENTH = 0.5;
+const DOTTED = [0.75, 1.5, 3, 6];
+const near = (a, b) => Math.abs(a - b) < 1e-6;
+const isTrip = it => it && !it.bar && Math.abs(it.dur - 2 / 3) < 1e-6;
+function chipsHTML(items) {
+  const notes = items.filter(x => !x.bar);
+  let html = "", k = 0, tripLeft = 0;
+  for (let ii = 0; ii < items.length; ii++) {
+    const it = items[ii];
+    if (it.bar) { html += `<span class="bar">|</span>`; continue; }
+    // three triplet eighths get a small "3" bracket over them, as in sheet music
+    if (!tripLeft && isTrip(it) && isTrip(items[ii + 1]) && isTrip(items[ii + 2])) { html += `<span class="trip">`; tripLeft = 3; }
+    const nextNote = notes[k + 1];
+    const is16 = near(it.dur, SIXTEENTH);
+    const dotted = DOTTED.some(d => near(it.dur, d)) && nextNote && near(nextNote.dur, SIXTEENTH);
+    const cls = ["n", it.pk ? "pk" : "", it.syl === "do" ? "do" : "", is16 ? "s16" : "", dotted ? "dotted" : ""].join(" ");
+    const label = is16 ? T("chips.sixteenth") : dotted ? T("chips.dotted") : "";
+    html += `<span class="${cls}"${label ? ` title="${label}"` : ""}>${it.syl}</span>`;
+    if (tripLeft && --tripLeft === 0) html += `</span>`;
+    k++;
+  }
+  return html;
+}
+
+function renderWhole() {
+  let html = "";
+  SEQ.forEach((p, i) => {
+    if (i === 0 || SEQ[i - 1].section !== p.section) html += `<p class="all-section">${p.section}</p>`;
+    const bar = barNums(p)[0];
+    html += `<div class="all-line" data-i="${i}"><button class="bn" data-start="${i}" aria-label="${T("seq.startFromBarAria", { bar })}">${bar}</button>`;
+    html += chipsHTML(p.items);
+    html += `</div>`;
+  });
+  $("allNotes").innerHTML = html;
+}
+
+// ---------- A–B loop ----------
+// Turn on the switch, tap the bar number of the first line to repeat (A),
+// then the bar number of the last line (B). The loop runs from the start of
+// A's phrase to the end of B's phrase, then counts in and repeats.
+let abRange = null;        // { a, b } phrase indexes, or null
+let abPick = null;         // "a" or "b" while you're choosing
+let abFirst = null;        // the A you've tapped, while choosing B
+const AB_STORE = songKey("phrase-parrot-ab-v1");
+const barNums = p => p.nBars > 1 ? [String(p.firstBarNum), String(p.lastBarNum)] : [String(p.firstBarNum)];
+const firstBar = i => barNums(SEQ[i])[0];
+const lastBar = i => barNums(SEQ[i])[1] || firstBar(i);
+const abActive = () => !!abRange && $("loop").checked;
+
+function playLabel() {
+  if (abActive()) return T("seq.playAB", { a: firstBar(abRange.a), b: lastBar(abRange.b) });
+  const sf = document.getElementById("startFrom");
+  const i = sf ? +sf.value : 0;
+  const sv = $("seqSel").value;
+  const what = SEQ_CHOICES[sv] ? SEQ_CHOICES[sv].play : T("seq.playGeneric");
+  return i === 0 ? what : T("seq.playFromBar", { bar: firstBar(i) });
+}
+
+function renderAB() {
+  const lines = [...document.querySelectorAll("#allNotes .all-line")];
+  lines.forEach((l, i) => {
+    l.classList.toggle("in-ab", !!abRange && i >= abRange.a && i <= abRange.b);
+    l.classList.toggle("ab-last", !!abRange && i === abRange.b);
+    l.classList.toggle("ab-pending", abPick === "b" && i === abFirst);
+  });
+  $("allNotes").classList.toggle("picking", !!abPick);
+  $("abOn").checked = !!abRange || !!abPick;
+  $("abClear").hidden = !abRange;
+  $("startFrom").disabled = abActive();
+  const msg = $("abMsg");
+  if (abPick === "a") {
+    msg.innerHTML = T("along.abPickA");
+  } else if (abPick === "b") {
+    msg.innerHTML = T("along.abPickB", { bar: firstBar(abFirst) });
+  } else if (abRange) {
+    const range = T("seq.span", { a: firstBar(abRange.a), b: lastBar(abRange.b) });
+    msg.innerHTML = $("loop").checked
+      ? T("along.abLooping", { range, from: esc(SEQ[abRange.a].shortId), to: esc(SEQ[abRange.b].shortId) })
+      : T("along.abInactive", { range });
+  }
+  msg.hidden = !abPick && !abRange;
+  $("barTip").textContent = abPick ? T("along.barTipPicking") : T("along.barTip");
+  updateAllLabel();
+}
+
+function startPickingAB() {
+  if (wholeRun || wholePaused !== null) stopAll();
+  abPick = "a"; abFirst = null; abRange = null;
+  $("allDetails").open = true;
+  renderAB();
+  // bring the list into view so you can tap a line
+  requestAnimationFrame(() => {
+    const first = document.querySelector("#allNotes .all-section");
+    if (first) window.scrollTo({ top: first.getBoundingClientRect().top + window.scrollY - 80, behavior: "smooth" });
+  });
+}
+function clearAB() {
+  abRange = null; abPick = null; abFirst = null;
+  storeRemove(AB_STORE);
+  renderAB();
+}
+function onBarTap(i) {
+  if (abPick === "a") { abFirst = i; abPick = "b"; renderAB(); return; }
+  if (abPick === "b") {
+    abRange = { a: Math.min(abFirst, i), b: Math.max(abFirst, i) };
+    abPick = null; abFirst = null;
+    $("loop").checked = true;              // an A–B loop is meant to loop
+    savePrefs();
+    storeSet(AB_STORE, JSON.stringify({ ...abRange, seq: $("seqSel").value }));
+    renderAB();
+    return;
+  }
+  $("startFrom").value = abActive() ? $("startFrom").value : i;
+  playWhole(i);
+}
+
+// ---------- Whole melody: play, pause, resume, start anywhere ----------
+let wholeRun = null;       // { from, opt, passes: [{ starts: [audio times per phrase] }] }
+let wholePaused = null;    // phrase index to resume at
+
+function phraseLabel(i) {
+  const p = SEQ[i];
+  return T("phrase.label", { name: p.shortId, bar: p.firstBarNum });
+}
+
+function playWhole(from = 0, resuming = false) {
+  ensureAudio(); stopAll();
+  const beat = 60 / +$("tempo").value;
+  // The phrases, lines and syllables for a pass starting at phrase i
+  // With an A–B loop: the first pass plays from where you started to the end
+  // of B (or to the end of the song if you started after B), and every
+  // repeat plays A to B. Without one: the first pass plays to the end, and
+  // repeats start from the beginning of the song.
+  const ab = abActive() ? { ...abRange } : null;
+  const lastI = SEQ.length - 1;
+  const segment = (i, j) => {
+    const lines = [...document.querySelectorAll("#allNotes .all-line")].slice(i, j + 1);
+    const part = SEQ.slice(i, j + 1);
+    return { lines, chips: lines.flatMap(l => [...l.querySelectorAll(".n")]),
+             part, items: part.flatMap(p => p.items) };
+  };
+  const opt = {
+    beat, eighth: beat / METER.beatLen,
+    doMidi: +$("doPitch").value,
+    countIn: $("countIn").checked || resuming,   // always count in when resuming
+    clickAll: $("clickAll").checked,
+    loop: $("loop").checked
+  };
+  let t = ctx.currentTime + 0.12;
+  if ($("doFirst").checked) { pluckAt(opt.doMidi, t, 1.0); t += 1.5; }
+  setPlaying(true, "all");
+  wholeRun = { from, opt, starts: [] };
+  lastLineEl = null;
+  handScrollUntil = 0;
+  followTo(document.querySelector(`#allNotes .all-line[data-i="${from}"]`), true);
+  // iPhone can still be coasting from your last swipe, which can cancel a
+  // scroll, so set the position again a moment later.
+  setTimeout(() => { if (wholeRun) followTo(document.querySelector(`#allNotes .all-line[data-i="${from}"]`), true); }, 250);
+  showDock("playing", T("along.getReady"));
+  $("pauseBtn").hidden = false; $("pauseBtn").textContent = T("along.pause");
+  $("pauseBtn").parentElement.classList.add("two");
+  showStatus(ab ? "" : from > 0 ? T("along.playingFrom", { phrase: phraseLabel(from) }) : "");
+
+  // Each pass starts at phrase passFrom. The first pass starts wherever you
+  // chose; when it loops, it goes back to the very beginning of the song.
+  const pass = (start, passFrom, passTo) => {
+    timers = timers.slice(-200);
+    activeNodes = activeNodes.slice(-400);
+    const { lines, chips, part, items } = segment(passFrom, passTo);
+    opt.chips = chips;
+    wholeRun.from = passFrom;
+    const end = schedulePass({ items }, start, opt);
+    // when each phrase starts, so Pause knows where you are
+    let at = opt.noteStart;
+    const starts = part.map((p, k) => {
+      const here = at;
+      at += p.items.filter(x => !x.bar).reduce((s, n) => s + n.dur, 0) * opt.eighth;
+      // light the line while it plays. The first line lights from the very
+      // start of the pass, so the page is already back at the top during the
+      // count-in (and the silent lead-in measure when looping).
+      const from = k === 0 ? Math.min(start, here) : here;
+      // the last line stays lit through the rest of its final measure
+      const to = k === part.length - 1 ? Math.max(at, end) : at;
+      if (lines[k]) showAt(lines[k], from, to - from);
+      return here;
+    });
+    wholeRun.starts = starts;
+    if (opt.loop) {
+      const nextFrom = ab ? ab.a : 0, nextTo = ab ? ab.b : lastI;
+      looping = setTimeout(() => pass(end, nextFrom, nextTo), Math.max(0, (end - ctx.currentTime - 0.35) * 1000));
+    } else {
+      endTimer = setTimeout(() => { setPlaying(false); endWhole(); }, (end - ctx.currentTime) * 1000 + 600);
+    }
+  };
+  // One extra "get ready" measure of metronome clicks before the first pass
+  // only, so you have time to get your hands on the uke after tapping.
+  // With the count-in on, that's two full measures of clicks before beat 1,
+  // and a pickup note comes in at the end of the second. Loops don't repeat it.
+  // With the count-in (or looping) on, the pass brings its own lead-in
+  // measure. Without one, the pickup has to sit at the end of the "get ready"
+  // measure, so that beat 1 lands right after it, on the clicks' grid.
+  // If "Keep clicking" is on, the pass clicks the pickup's beats itself, so the
+  // get-ready measure leaves those out rather than clicking them twice.
+  const pickup = opt.countIn || opt.loop ? 0 : pickupEighths(SEQ[from].items);
+  const pickupBeats = opt.clickAll ? Math.floor(pickup / METER.beatLen + 1e-9) : 0;
+  for (let b = 0; b < BEATS_PER_BAR - pickupBeats; b++) clickAt(t + b * beat, b === 0, b);
+  t += BEATS_PER_BAR * beat;
+  pass(t - pickup * opt.eighth, from, ab && from <= ab.b ? ab.b : lastI);
+}
+
+// Which phrase is sounding right now
+function currentPhrase() {
+  if (!wholeRun || !ctx) return 0;
+  const now = heardTime() - (+$("visDelay").value) / 1000;
+  let k = 0;
+  wholeRun.starts.forEach((st, j) => { if (st <= now) k = j; });
+  return wholeRun.from + k;
+}
+
+function pauseWhole() {
+  if (!wholeRun) return;
+  const at = currentPhrase();
+  stopAll();                      // clears wholeRun
+  wholePaused = at;
+  $("pauseBtn").hidden = false;
+  $("pauseBtn").parentElement.classList.add("two");
+  $("pauseBtn").textContent = T("along.resumeAtBar", { bar: firstBar(at) });
+  $("pauseBtn").classList.add("resume");
+  document.querySelectorAll("#allNotes .all-line").forEach((l, i) => l.classList.toggle("resume-here", i === at));
+  showStatus(T("along.paused", { phrase: phraseLabel(at) }));
+  showDock("paused", T("along.dockPaused", { bar: firstBar(at) }));
+}
+
+// ---------- Keep the playing line in view ----------
+// When a new line starts, the page glides so that line sits about a third of
+// the way down the screen, leaving the next lines visible for reading ahead.
+// It moves only when the music reaches a new line, so it follows any tempo.
+// If you scroll by hand, it waits a few seconds before following again.
+let lastLineEl = null;
+let handScrollUntil = 0;
+// Only an actual drag or wheel counts as scrolling by hand. (A tap on a
+// button, like Play whole melody, must not pause the following.)
+// Scrolling only counts once the melody is playing, so scrolling down to
+// reach the Play button doesn't hold anything back.
+["touchmove", "wheel"].forEach(ev => window.addEventListener(ev, e => {
+  if (!wholeRun) return;
+  if (!e.target.closest(".dock")) handScrollUntil = performance.now() + 4000;
+}, { passive: true }));
+window.addEventListener("keydown", e => {
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key) && e.target === document.body)
+    handScrollUntil = performance.now() + 4000;
+});
+
+function onLineChange(el) {
+  const bar = el.querySelector(".bn");
+  if (bar) $("dockWhere").textContent = T("along.dockBar", { bar: bar.textContent });
+  followTo(el, false);
+}
+
+// instant = jump right away (used the moment you tap play); otherwise glide
+function followTo(el, instant) {
+  if (!el || !$("followLine").checked || !$("allDetails").open) return;
+  if (!instant && performance.now() < handScrollUntil) return;
+  // Every playing line sits in the same spot: near the top of the screen,
+  // with just enough room above it for a "Verse 1" or "Chorus" heading, so
+  // the lines ahead fill the rest of the screen. Only at the end of the song,
+  // when the page can't scroll any further, do lines sit lower.
+  const LINE_TOP = 56;
+  const top = el.getBoundingClientRect().top + window.scrollY - LINE_TOP;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({ top: Math.max(0, top), behavior: reduce || instant ? "auto" : "smooth" });
+}
+
+function showDock(mode, where) {
+  $("dock").hidden = mode === "off";
+  document.body.classList.toggle("docked", mode !== "off");
+  $("dockPause").textContent = mode === "paused" ? T("along.resume") : T("along.pause");
+  $("dockPause").classList.toggle("resume", mode === "paused");
+  if (where) $("dockWhere").textContent = where;
+}
+
+function endWhole() {
+  wholeRun = null; wholePaused = null;
+  showDock("off");
+  $("pauseBtn").hidden = true;
+  $("pauseBtn").classList.remove("resume");
+  $("pauseBtn").parentElement.classList.remove("two");
+  document.querySelectorAll("#allNotes .resume-here").forEach(l => l.classList.remove("resume-here"));
+  showStatus("");
+}
+
+function showStatus(text) {
+  $("allStatus").textContent = text;
+  $("allStatus").hidden = !text;
+}
+
+function playPhrase(phrase, slow) {
+  ensureAudio(); stopAll();
+  const bpm = +$("tempo").value * (slow ? 0.6 : 1);
+  const beat = 60 / bpm;
+  const opt = {
+    beat, eighth: beat / METER.beatLen,
+    doMidi: +$("doPitch").value,
+    countIn: $("countIn").checked,
+    clickAll: $("clickAll").checked,
+    loop: $("loop").checked
+  };
+  let t = ctx.currentTime + 0.12;
+  if ($("doFirst").checked) { pluckAt(opt.doMidi, t, 1.0); t += 1.5; }
+  setPlaying(true);
+
+  const pass = start => {
+    // drop finished timers and audio nodes so a long loop stays light
+    timers = timers.slice(-200);
+    activeNodes = activeNodes.slice(-200);
+    const end = schedulePass(phrase, start, opt);
+    if (opt.loop) {
+      // schedule the next pass a moment before this one ends
+      const ms = (end - ctx.currentTime - 0.35) * 1000;
+      looping = setTimeout(() => pass(end), Math.max(0, ms));
+    } else {
+      endTimer = setTimeout(() => setPlaying(false), (end - ctx.currentTime) * 1000 + 600);
+    }
+  };
+  pass(t);
+}
+
+// Metronome only: clicks at the set tempo, beat 1 accented, until Stop.
+// It schedules one measure at a time, so a tempo change takes effect at the
+// next measure.
+function playMetronome() {
+  ensureAudio(); stopAll();
+  setPlaying(true, "metro");
+  let t = ctx.currentTime + 0.12;
+  const measure = () => {
+    const beat = 60 / +$("tempo").value;
+    timers = timers.slice(-200); activeNodes = activeNodes.slice(-200);
+    for (let b = 0; b < BEATS_PER_BAR; b++) clickAt(t + b * beat, b === 0, b);
+    t += BEATS_PER_BAR * beat;
+    looping = setTimeout(measure, Math.max(0, (t - ctx.currentTime - 0.35) * 1000));
+  };
+  measure();
+}
+
+// ---------- Sync calibration ----------
+// The phone doesn't tell web pages how long the sound takes to reach your
+// ears (speaker, wired or Bluetooth all differ). So we measure it: play slow,
+// evenly spaced clicks, you tap when you hear each one, and the typical gap
+// between "click scheduled" and "you tapped" becomes the highlight delay.
+// Clicks are 1.5 s apart so even a long Bluetooth delay can't be mistaken
+// for the next click.
+let calibrating = false;
+let calib = null;
+const CAL_CLICKS = 10, CAL_GAP = 1.5;
+
+function openCalib() {
+  stopAll();
+  $("calib").hidden = false; $("syncOpen").hidden = true;
+  $("calibText").textContent = T("calib.intro");
+  $("tapPad").textContent = T("calib.start"); $("calibCount").textContent = "";
+  $("calibCancel").textContent = T("calib.cancel");
+  calib = null;
+}
+function closeCalib() {
+  calibrating = false; calib = null; stopAll();
+  $("calib").hidden = true; $("syncOpen").hidden = false;
+}
+function startCalib() {
+  ensureAudio(); stopAll();
+  calibrating = true;
+  const t0 = ctx.currentTime + 0.6;
+  const clicks = [];
+  for (let i = 0; i < CAL_CLICKS; i++) {
+    const when = t0 + i * CAL_GAP;
+    clickAt(when, true, 0);
+    clicks.push(when);
+  }
+  calib = { clicks, taps: [] };
+  setPlaying(true);
+  $("tapPad").textContent = T("calib.tapEach");
+  $("calibCount").textContent = T("calib.count", { n: 0, total: CAL_CLICKS });
+  // keep the smoothed clock running so taps are measured accurately
+  const keepAlive = () => { if (calibrating) { heardTime(); requestAnimationFrame(keepAlive); } };
+  keepAlive();
+  endTimer = setTimeout(finishCalib, (t0 - ctx.currentTime + CAL_CLICKS * CAL_GAP + 0.6) * 1000);
+}
+function calibTap() {
+  if (!calib) { startCalib(); return; }
+  const t = heardTime();
+  calib.taps.push(t);
+  $("calibCount").textContent = T("calib.count", { n: calib.taps.length, total: CAL_CLICKS });
+  $("tapPad").classList.add("hit"); setTimeout(() => $("tapPad").classList.remove("hit"), 90);
+}
+function finishCalib() {
+  if (!calib) return;
+  const diffs = [];
+  for (const tap of calib.taps) {
+    // match each tap to the click it belongs to: up to 0.4 s early, 1.1 s late
+    let best = null;
+    for (const c of calib.clicks.slice(2)) {          // skip the first two while you settle in
+      const d = tap - c;
+      if (d > -0.4 && d < 1.1 && (best === null || Math.abs(d) < Math.abs(best))) best = d;
+    }
+    if (best !== null) diffs.push(best);
+  }
+  calibrating = false;
+  setPlaying(false);
+  if (diffs.length < 4) {
+    calib = null;
+    $("calibText").textContent = T("calib.tooFew");
+    $("tapPad").textContent = T("calib.start"); $("calibCount").textContent = "";
+    return;
+  }
+  diffs.sort((a, b) => a - b);
+  const mid = diffs[Math.floor(diffs.length / 2)];
+  const ms = Math.max(-300, Math.min(1000, Math.round(mid * 100) * 10));
+  $("visDelay").value = ms;
+  $("visDelayVal").textContent = T("units.ms", { n: ms });
+  savePrefs();
+  calib = null;
+  $("calibText").textContent = T("calib.done", { ms });
+  $("tapPad").textContent = T("calib.again"); $("calibCount").textContent = "";
+  $("calibCancel").textContent = T("calib.close");
+}
+
+// ---------- Transpose ----------
+const KEY_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+function noteName(m) { return KEY_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
+
+function renderPitch() {
+  const t = +$("transpose").value, c = +$("fineTune").value;
+  const n = Math.abs(t);
+  $("tVal").textContent = t === 0 ? T("pitch.asWritten") : TN(n, t < 0 ? "pitch.down1" : "pitch.up1", t < 0 ? "pitch.downN" : "pitch.upN");
+  const doM = SONG_DO_MIDI + t;
+  const keyVars = { key: KEY_NAMES[((doM % 12) + 12) % 12], do: noteName(doM), interval: T(`pitch.interval${n}`) };
+  $("keyNote").textContent = t === 0 ? T("pitch.keyAsWritten", keyVars)
+    : T(t < 0 ? "pitch.keyDown" : "pitch.keyUp", keyVars) + (t === -5 ? " " + T("pitch.guitarHint") : "");
+  document.querySelectorAll(".presets .chipbtn").forEach(b => b.classList.toggle("on", +b.dataset.t === t));
+  const signed_c = `${c > 0 ? "+" : ""}${c}`;
+  $("fineVal").textContent = T("pitch.cents", { c: signed_c });
+  $("aNote").textContent = T(c === 0 ? "pitch.aStandard" : "pitch.aShifted", { hz: (440 * Math.pow(2, c / 1200)).toFixed(1) });
+  // a reminder at the top whenever the pitch isn't as written
+  const parts = [];
+  if (t !== 0) parts.push(TN(n, t < 0 ? "pitch.transposedDown1" : "pitch.transposedUp1", t < 0 ? "pitch.transposedDownN" : "pitch.transposedUpN", { do: noteName(doM) }));
+  if (c !== 0) parts.push(T("pitch.fine", { c: signed_c }));
+  $("pitchNote").hidden = parts.length === 0;
+  $("pitchNote").textContent = parts.join(T("pitch.listSep"));
+}
+function setTranspose(t) {
+  $("transpose").value = Math.max(-12, Math.min(12, t));
+  renderPitch(); savePrefs();
+}
+
+// ---------- Tuning notes ----------
+// Open-string notes as MIDI numbers, low string first, as you'd tune them.
+// Each instrument: a menu name, an optional note, and its open strings as
+// [string name, MIDI note], in the usual tuning order (low string first,
+// except ukulele-style re-entrant tunings, listed G C E A as players say it).
+// The menu name and any note for each instrument are in STRINGS
+// (tuning.name_<id>, tuning.note_<id>).
+const TUNING_LIST = [
+  ["uke",        [["G", 67], ["C", 60], ["E", 64], ["A", 69]]],
+  ["lowg",       [["G", 55], ["C", 60], ["E", 64], ["A", 69]]],
+  ["baritone",   [["D", 50], ["G", 55], ["B", 59], ["E", 64]]],
+  ["guitalele",  [["A", 45], ["D", 50], ["G", 55], ["C", 60], ["E", 64], ["A", 69]]],
+  ["guitaleleE", [["E", 40], ["A", 45], ["D", 50], ["G", 55], ["B", 59], ["E", 64]]],
+  ["guitar",     [["E", 40], ["A", 45], ["D", 50], ["G", 55], ["B", 59], ["E", 64]]],
+  ["violin",     [["G", 55], ["D", 62], ["A", 69], ["E", 76]]],
+  ["mandolin",   [["G", 55], ["D", 62], ["A", 69], ["E", 76]]],
+  ["viola",      [["C", 48], ["G", 55], ["D", 62], ["A", 69]]],
+  ["cello",      [["C", 36], ["G", 43], ["D", 50], ["A", 57]]],
+  ["dulcimer",   [["D", 50], ["A", 57], ["d", 62]]],
+  ["tenorbanjo", [["C", 48], ["G", 55], ["D", 62], ["A", 69]]],
+  ["irishbanjo", [["G", 43], ["D", 50], ["A", 57], ["E", 64]]],
+  ["winds",      [["A", 69], ["B♭", 70]]]
+];
+const TUNINGS = Object.fromEntries(TUNING_LIST);
+const tuningNote = id => STRINGS.tuning["note_" + id] || "";
+let tuneMidi = null;
+const refHz = () => +$("tuneRef").value;
+const tuneFreq = m => refHz() * Math.pow(2, (m - 69) / 12);   // ignores Transpose and Fine tune
+
+// A clean tone at exactly the right frequency: a fundamental plus a few
+// gentle overtones, which makes it easier to hear against a string.
+let toneWave = null;
+// Low notes need help: our ears hear low pitches as much quieter, and phone
+// speakers, earbuds and hearing aids play them weakly. So lower notes get
+//  1. more overtones, which small speakers can play (the ear fills in the
+//     low pitch from them), and
+//  2. a volume boost, growing gradually toward the lowest notes.
+// The pitch stays exact; only the tone color and loudness change.
+const BASE_PARTIALS = [0, 1, 0.35, 0.18, 0.09, 0.05, 0, 0, 0, 0];
+const RICH_PARTIALS = [0, 1, 0.85, 0.7, 0.55, 0.42, 0.32, 0.24, 0.17, 0.12];
+const waveCache = new Map();
+function toneWaveFor(freq) {
+  // richness: 0 at 300 Hz and above, rising to 1 at about 100 Hz and below
+  const key = Math.round(Math.max(0, Math.min(1, (300 - freq) / 200)) * 20);
+  const hit = waveCache.get(key);
+  if (!hit || hit.ctx !== ctx) {
+    const r = key / 20;
+    const real = new Float32Array(BASE_PARTIALS.map((b0, i) => b0 * (1 - r) + RICH_PARTIALS[i] * r));
+    waveCache.set(key, { ctx, wave: ctx.createPeriodicWave(real, new Float32Array(real.length)) });
+  }
+  return waveCache.get(key).wave;
+}
+// Louder for lower notes: about 1.5x at 110 Hz (low A), 1.9x at 65 Hz (cello C)
+const lowBoost = freq => Math.max(1, Math.min(2.2, Math.pow(330 / freq, 0.45)));
+const tuneVolume = () => +(document.getElementById("tuneVol") || { value: 80 }).value / 100;
+
+function toneAt(freq, when, steady, gap = 1) {
+  const osc = ctx.createOscillator();
+  osc.setPeriodicWave(toneWaveFor(freq));
+  osc.frequency.value = freq;
+  const g = ctx.createGain();
+  const level = lowBoost(freq) * tuneVolume() / 0.8;   // 80% on the slider = the original loudness
+  const steadyPeak = 0.22 * level, pluckPeak = 0.32 * level;
+  g.gain.setValueAtTime(0.0001, when);
+  if (steady) {
+    g.gain.exponentialRampToValueAtTime(steadyPeak, when + 0.08);      // soft start, then hold
+  } else {
+    // plucked: quick attack, then a natural ring that fades gradually,
+    // still clearly sounding when the next pluck arrives
+    g.gain.exponentialRampToValueAtTime(pluckPeak, when + 0.006);
+    g.gain.setTargetAtTime(0.0001, when + 0.02, gap * 0.55);
+    // a short fade right at the end, so there's no click
+    g.gain.setValueAtTime(pluckPeak * Math.exp(-(gap - 0.06) / (gap * 0.55)), when + gap - 0.04);
+    g.gain.linearRampToValueAtTime(0.0001, when + gap + 0.02);
+  }
+  osc.connect(g).connect(ctx.destination);
+  osc.start(when);
+  if (!steady) osc.stop(when + gap + 0.05);
+  activeNodes.push(osc);
+}
+
+function playTuning(midi) {
+  ensureAudio(); stopAll();
+  tuneMidi = midi;
+  setPlaying(true, "tune");
+  const f = tuneFreq(midi);
+  let t = ctx.currentTime + 0.05;
+  const sound = $("tuneSound").value;
+  if (sound === "steady") { toneAt(f, t, true); return; }
+  const gap = sound === "pluck2" ? 2 : 1;
+  const tick = () => {
+    activeNodes = activeNodes.slice(-20);
+    toneAt(f, t, false, gap);
+    t += gap;
+    looping = setTimeout(tick, Math.max(0, (t - ctx.currentTime - 0.3) * 1000));
+  };
+  tick();
+}
+
+function noteLabel(m) { return ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"][m % 12] + (Math.floor(m / 12) - 1); }
+function renderTuning() {
+  const inst = $("tuneInst").value, sound = $("tuneSound").value;
+  if (!TUNINGS[inst]) { $("tuneInst").value = "uke"; return renderTuning(); }
+  $("tuneInstSel").value = inst;
+  $("tuneInstNote").textContent = tuningNote(inst);
+  $("tuneInstNote").hidden = !tuningNote(inst);
+  document.querySelectorAll(".tsound").forEach(b => b.classList.toggle("on", b.dataset.sound === sound));
+  $("tStrings").innerHTML = TUNINGS[inst].map(([name, m]) =>
+    `<button class="tstr${playing && tuneMidi === m && $("tStrings").dataset.inst === inst ? " on" : ""}" data-midi="${m}" aria-label="${T("tuning.stringAria", { name, note: noteLabel(m), hz: tuneFreq(m).toFixed(2) })}">
+       <b>${name}</b><small>${noteLabel(m)}</small><small>${T("tuning.hz", { hz: tuneFreq(m).toFixed(1) })}</small></button>`).join("");
+  $("tStrings").dataset.inst = inst;
+  const r = refHz();
+  $("refVal").textContent = T("tuning.refVal", { hz: r });
+  $("refNote").textContent = r === 440 ? T("tuning.refStandard")
+    : T(r < 440 ? "tuning.refLower" : "tuning.refHigher", { cents: Math.abs(Math.round(1200 * Math.log2(r / 440))) });
+}
+function setRef(hz) {
+  $("tuneRef").value = Math.max(415, Math.min(466, hz));
+  savePrefs(); renderTuning();
+  if (playing && tuneMidi !== null && document.querySelector(".tstr.on")) playTuning(tuneMidi);
+}
+
+function playDo() {
+  ensureAudio(); stopAll();
+  pluckAt(+$("doPitch").value, ctx.currentTime + 0.05, 1.4);
+}
+
+// ---------- Quiz state ----------
+const STORE = songKey("phrase-parrot-v1");
+let order = [], pos = -1;
+
+// Chorus setting: "mixed" shuffles verse and chorus phrases together;
+// "after" shuffles the verse phrases, then the chorus phrases; "skip"
+// leaves the chorus out of the round.
+const chorusMode = () => ($("chorusMode") && $("chorusMode").value) || "mixed";
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function shuffle() {
+  const all = PHRASES.map((_, i) => i);
+  const verse = all.filter(i => PHRASES[i].kind === "verse");
+  const chorus = all.filter(i => PHRASES[i].kind === "chorus");
+  const mode = chorusMode();
+  order = mode === "after" ? [...shuffled(verse), ...shuffled(chorus)]
+        : mode === "skip" ? shuffled(verse)
+        : shuffled(all);
+  pos = -1;
+}
+function save() {
+  storeSet(STORE + "-" + drillVerse, JSON.stringify({ order, pos, mode: chorusMode() }));
+}
+function load() {
+  const s = storeGetJSON(STORE + "-" + drillVerse);
+  // only resume a round shuffled with today's chorus setting
+  if (s && Array.isArray(s.order) && s.mode === chorusMode() && s.order.length && s.order.every(i => i >= 0 && i < PHRASES.length)) {
+    order = s.order; pos = s.pos; return true;
+  }
+  return false;
+}
+
+function renderProgress() {
+  const n = order.length;
+  $("progress").classList.toggle("many", n > 16);
+  // played pips show verse (teal) and chorus (darker gold), so you can see the mix;
+  // upcoming ones stay plain so they don't give away what's next
+  $("progress").innerHTML = order.map((ix, i) =>
+    `<span class="pip ${i < pos && PHRASES[ix] && PHRASES[ix].kind === "chorus" ? "ch" : ""} ${i < pos ? "done" : i === pos ? "now" : ""}"></span>`).join("");
+  if (pos < 0) $("count").textContent = T("drill.countNone", { n });
+  else $("count").textContent = T("drill.countNow", { k: pos + 1, n });
+  $("nextBtn").textContent = pos >= n - 1 ? T("drill.startNewRound") : T("ui.newPhrase");
+}
+
+// ---------- Lyrics ----------
+// Each lyric set has verses (8 lines each, one per verse phrase) and one or
+// more choruses (8 lines each, one per chorus phrase). The public-domain
+// French and English texts are built in; "My lyrics" are whatever you type,
+// kept only in this browser (use Export to keep a copy).
+const BUILT_IN_LYRICS = {
+  fr: {
+    name: "French (Pottier, 1871)", tab: "French",
+    verses: [
+      { label: "Couplet 1", lines: [
+        "Debout ! les damnés de la terre !", "Debout ! les forçats de la faim !",
+        "La raison tonne en son cratère,", "C'est l'éruption de la fin.",
+        "Du passé faisons table rase,", "Foule esclave, debout ! debout !",
+        "Le monde va changer de base :", "Nous ne sommes rien, soyons tout !"],
+        meaning: [
+        "Arise, damned of the earth!", "Arise, convicts of hunger!",
+        "Reason thunders in its crater,", "it's the eruption of the end.",
+        "Let's wipe the slate clean of the past,", "enslaved crowd, arise! arise!",
+        "The world is going to change its foundation:", "we are nothing, let us be everything!"] },
+      { label: "Couplet 2", lines: [
+        "Il n'est pas de sauveurs suprêmes,", "Ni Dieu, ni César, ni tribun,",
+        "Producteurs, sauvons-nous nous-mêmes !", "Décrétons le salut commun !",
+        "Pour que le voleur rende gorge,", "Pour tirer l'esprit du cachot,",
+        "Soufflons nous-mêmes notre forge,", "Battons le fer quand il est chaud !"],
+        meaning: [
+        "There are no supreme saviors,", "neither God, nor Caesar, nor tribune,",
+        "Producers, let us save ourselves!", "Let us decree the common good!",
+        "So that the thief gives back what he took,", "to free the mind from its dungeon,",
+        "let us fan our own forge ourselves,", "strike the iron while it's hot!"] },
+      { label: "Couplet 6", lines: [
+        "Ouvriers, paysans, nous sommes", "Le grand parti des travailleurs ;",
+        "La terre n'appartient qu'aux hommes,", "L'oisif ira loger ailleurs.",
+        "Combien de nos chairs se repaissent !", "Mais si les corbeaux, les vautours,",
+        "Un de ces matins disparaissent,", "Le soleil brillera toujours !"],
+        meaning: [
+        "Workers, peasants, we are", "the great party of those who labor;",
+        "the earth belongs only to people,", "the idle will go live elsewhere.",
+        "How many feed on our flesh!", "But if the ravens, the vultures,",
+        "one of these mornings disappear,", "the sun will still shine on!"] }
+    ],
+    choruses: [
+      { label: "Refrain", lines: [
+        "C'est la lutte finale :", "Groupons-nous, et demain,",
+        "L'Internationale", "Sera le genre humain.",
+        "C'est la lutte finale :", "Groupons-nous, et demain,",
+        "L'Internationale", "Sera le genre humain."],
+        meaning: [
+        "It's the final struggle:", "let's band together, and tomorrow",
+        "the International", "will be the human race.",
+        "It's the final struggle:", "let's band together, and tomorrow",
+        "the International", "will be the human race."] }
+    ]
+  },
+  en: {
+    name: "English (Kerr, 1900)", tab: "English",
+    verses: [
+      { label: "Verse 1", lines: [
+        "Arise, ye prisoners of starvation!", "Arise, ye wretched of the earth,",
+        "For justice thunders condemnation,", "A better world's in birth.",
+        "No more tradition's chains shall bind us,", "Arise, ye slaves; no more in thrall!",
+        "The earth shall rise on new foundations,", "We have been naught, we shall be all."] },
+      { label: "Verse 2", lines: [
+        "We want no condescending saviors", "To rule us from a judgment hall;",
+        "We workers ask not for their favors;", "Let us consult for all.",
+        "To make the thief disgorge his booty", "To free the spirit from its cell,",
+        "We must ourselves decide our duty,", "We must decide and do it well."] },
+      { label: "Verse 3", lines: [
+        "The law oppresses us and tricks us,", "Wage systems drain our blood;",
+        "The rich are free from obligations,", "The laws the poor delude.",
+        "Too long we've languished in subjection,", "Equality has other laws;",
+        "“No rights,” says she, “without their duties,", "No claims on equals without cause.”"] }
+    ],
+    choruses: [
+      { label: "Chorus", lines: [
+        "'Tis the final conflict,", "Let each stand in his place,",
+        "The international working class", "Shall be the human race.",
+        "'Tis the final conflict,", "Let each stand in his place,",
+        "The international working class", "Shall be the human race."] }
+    ]
+  }
+};
+const LYRICS_STORE = songKey("phrase-parrot-lyrics-v1");
+const VERSE_PHRASES = VERSE_M[VERSE_NUMS[0]].length, CHORUS_PHRASES = CHORUS_M.length;
+SONGS.internationale.lyrics = BUILT_IN_LYRICS;
+
+// Apple Notes (and some other apps) mark line breaks with special characters
+// (Unicode "line separator" U+2028 or "paragraph separator" U+2029, or an old
+// Mac carriage return) instead of a normal newline. A text box shows those as
+// nothing, so pasted lines look run together. This turns them all into normal
+// newlines. If a normal newline was also typed right next to one, the pair
+// counts as a single line break, so lines don't end up double-spaced.
+function normalizeBreaks(text) {
+  return String(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/[\u2028\u2029\u0085\r][ \t]*\n|\n[ \t]*[\u2028\u2029\u0085\r]/g, "\n")
+    .replace(/[\u2028\u2029\u0085\r]/g, "\n");
+}
+
+function loadMyText() {
+  const t = storeGet(LYRICS_STORE) || "";
+  const clean = normalizeBreaks(t);
+  // tidy lyrics saved by an earlier version
+  if (clean !== t) storeSet(LYRICS_STORE, clean);
+  return clean;
+}
+
+// Section headings written into lyric files. These are part of the file
+// format (Import looks for them), so they are not translated.
+const FILE_LABELS = { verse: n => `Verse ${n}`, chorus: "Chorus", chorusN: n => `Chorus ${n}` };
+
+// Turn typed text into verses and choruses.
+// Blocks are separated by a blank line. A block may start with a heading
+// like "Verse 2" or "Chorus"; without one, it's counted as the next verse.
+// A 4-line chorus is used twice, since the chorus melody repeats.
+function parseMyLyrics(text) {
+  const blocks = text.replace(/\r/g, "").split(/\n\s*\n/).map(b => b.split("\n").map(l => l.trim()).filter(Boolean)).filter(b => b.length);
+  const verses = [], choruses = [], problems = [];
+  for (const b of blocks) {
+    let label = null, lines = b;
+    if (/^(verse|couplet|chorus|refrain)\b[^a-z]*\d*\s*:?\s*$/i.test(b[0])) { label = b[0].replace(/:$/, ""); lines = b.slice(1); }
+    const isChorus = label && /^(chorus|refrain)/i.test(label);
+    if (isChorus) {
+      if (CHORUS_PHRASES % 2 === 0 && lines.length === CHORUS_PHRASES / 2) lines = lines.concat(lines);
+      if (lines.length !== CHORUS_PHRASES) problems.push(T(CHORUS_PHRASES % 2 === 0 ? "lyrics.problemChorus" : "lyrics.problemChorusOdd",
+        { label, lines: TN(lines.length, "lyrics.lines1", "lyrics.linesN"), need: CHORUS_PHRASES, half: CHORUS_PHRASES / 2 }));
+      choruses.push({ label, lines });
+    } else {
+      label = label || FILE_LABELS.verse(verses.length + 1);
+      if (lines.length !== VERSE_PHRASES) problems.push(T("lyrics.problemVerse", { label, lines: TN(lines.length, "lyrics.lines1", "lyrics.linesN"), need: VERSE_PHRASES }));
+      verses.push({ label, lines });
+    }
+  }
+  return { name: T("lyrics.mySetName"), verses, choruses, problems };
+}
+
+// This song's built-in lyric sets (public-domain texts), plus "My lyrics"
+const builtInSets = () => SONG.lyrics || {};
+function lyricSets() {
+  const choice = $("lyricSet").value;
+  const mine = parseMyLyrics(loadMyText());
+  const all = { ...builtInSets(), mine };
+  if (choice === "all") return Object.values(all).filter(s => s.verses.length || s.choruses.length);
+  return [all[choice] || mine].filter(Boolean);
+}
+(function fillLyricChoices() {
+  const sets = builtInSets();
+  document.getElementById("lyricSet").innerHTML =
+    Object.entries(sets).map(([k, st]) => `<option value="${k}">${st.name}</option>`).join("") +
+    `<option value="mine">${T("lyrics.mySetName")}</option>` +
+    (Object.keys(sets).length ? `<option value="all">${T("lyrics.allOfThem")}</option>` : "");
+})();
+
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// The lyric lines for one phrase (0–7 are verse phrases, 8–15 chorus)
+// For a verse phrase, the line for the verse you're hearing comes first and
+// is highlighted (French couplets 1, 2 and 6 stand in for verses 1, 2, 3).
+function lyricsHTML(p) {
+  const sets = lyricSets();
+  const chorus = p.kind === "chorus";
+  const k = p.k;
+  const showMeaning = $("showMeaning").checked;
+  const many = sets.length > 1;
+  let html = "";
+  for (const set of sets) {
+    let groups = chorus ? set.choruses : set.verses;
+    if (!groups.length) continue;
+    const cur = chorus ? -1 : p.verse - 1;
+    if (cur > 0 && cur < groups.length) groups = [groups[cur], ...groups.filter((_, gi) => gi !== cur)];
+    const curGroup = cur >= 0 && cur < (chorus ? set.choruses : set.verses).length ? (chorus ? set.choruses : set.verses)[cur] : null;
+    // Choruses that are identical only need showing once
+    const seen = new Set();
+    let rows = "";
+    for (const g of groups) {
+      const line = g.lines[k];
+      if (chorus && seen.has(line)) continue;
+      seen.add(line);
+      const meaning = showMeaning && g.meaning ? `<span class="ly-mean">${esc(g.meaning[k] || "")}</span>` : "";
+      rows += `<div class="ly-row${g === curGroup && !chorus ? " ly-current" : ""}"><span class="ly-label">${esc(g.label)}</span><span class="ly-text">${line ? esc(line) : `<em>${T("lyrics.noLine")}</em>`}${meaning}</span></div>`;
+    }
+    html += `<div class="ly-set">${many ? `<p class="ly-set-name">${esc(set.name)}</p>` : ""}${rows}</div>`;
+  }
+  if (!html) {
+    html = `<p class="ly-empty">${T("lyrics.empty")}</p>`;
+  }
+  return html;
+}
+
+// Quick buttons at the top of the lyrics, so you can switch sets right there
+const SET_TABS = [...Object.entries(builtInSets()).map(([k, st]) => [k, st.tab || st.name]),
+  ["mine", T("lyrics.tabMine")], ...(Object.keys(builtInSets()).length ? [["all", T("lyrics.tabAll")]] : [])];
+function renderLyricBox() {
+  if (pos < 0) return;
+  const cur = $("lyricSet").value;
+  const tabs = `<div class="ly-tabs" role="group" aria-label="${T("ui.lyricsToShow")}">${SET_TABS.map(([v, t]) =>
+    `<button class="ly-tab${v === cur ? " on" : ""}" data-set="${v}" aria-pressed="${v === cur}">${t}</button>`).join("")}</div>`;
+  $("lyricBox").innerHTML = tabs + lyricsHTML(PHRASES[order[pos]]);
+}
+
+function renderLyricsPanel() {
+  const mine = parseMyLyrics(loadMyText());
+  const n = mine.verses.length, c = mine.choruses.length;
+  const status = $("myStatus");
+  const verses = TN(n, "lyrics.verses1", "lyrics.versesN");
+  if (!n && !c) status.textContent = T("lyrics.nothingSaved");
+  else status.textContent = (c ? T("lyrics.savedWith", { verses, choruses: TN(c, "lyrics.choruses1", "lyrics.chorusesN") }) : T("lyrics.savedNoChorus", { verses })) +
+    (mine.problems.length ? " " + mine.problems.join(" ") : "");
+  status.classList.toggle("warn", mine.problems.length > 0);
+}
+
+function saveMyLyrics() {
+  const text = normalizeBreaks($("myLyrics").value);
+  $("myLyrics").value = text;
+  if (!storeSet(LYRICS_STORE, text)) return;      // storeSet already showed the error
+  renderLyricsPanel(); renderLyricBox();
+}
+
+// Export as a real plain-text file. On phones, the share sheet is the
+// reliable way: "Save to Files" there writes a true .txt file. (A plain
+// download link makes iPhone Safari open the text as a web page instead.)
+// Elsewhere, fall back to a download that browsers save rather than open.
+// ---------- Save lyrics to a file ----------
+// The file always uses the same tidy layout, which Import reads back:
+//   Verse 1            <- a label line
+//   words for phrase 1 <- one line per phrase, single-spaced
+//   ...
+//                      <- one blank line between verses and the chorus
+//   Chorus
+//   ...
+function lyricsFileText() {
+  const parsed = parseMyLyrics(normalizeBreaks($("myLyrics").value || loadMyText()));
+  const blocks = [];
+  parsed.verses.forEach((v, i) => blocks.push([v.label || FILE_LABELS.verse(i + 1), ...v.lines]));
+  parsed.choruses.forEach((c, i) => {
+    // a chorus whose two halves match is saved as its 4 lines
+    const L = c.lines;
+    const halvesMatch = L.length === 8 && L.slice(0, 4).every((x, j) => x === L[4 + j]);
+    blocks.push([c.label || (parsed.choruses.length > 1 ? FILE_LABELS.chorusN(i + 1) : FILE_LABELS.chorus), ...(halvesMatch ? L.slice(0, 4) : L)]);
+  });
+  return blocks.map(b => b.join("\n")).join("\n\n") + "\n";
+}
+
+const defaultFileName = () => SONG.fileName || T("lyrics.defaultFile", { song: SONG_ID });
+function fileName() {
+  let n = ($("myFileName").value || "").trim() || defaultFileName();
+  n = n.replace(/[\\/:*?"<>|]+/g, "-");
+  if (!/\.txt$/i.test(n)) n += ".txt";
+  return n;
+}
+
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+async function exportMyLyrics() {
+  const text = lyricsFileText();
+  const name = fileName();
+  const say = t => { $("myStatus").textContent = t; };
+
+  // 1. Computers with Chrome or Edge (Windows, Chromebook, Mac):
+  //    the real Save dialog, starting in Downloads, with the name filled in.
+  if (window.showSaveFilePicker && !isIOS) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: name, startIn: "downloads",
+        types: [{ description: T("lyrics.fileType"), accept: { "text/plain": [".txt"] } }]
+      });
+      const w = await handle.createWritable();
+      await w.write(text); await w.close();
+      say(T("lyrics.savedAs", { name: handle.name }));
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return;      // you pressed Cancel
+      reportError(T("err.saveFile", { how: "showSaveFilePicker", msg: e.message }));
+    }
+  }
+
+  // 2. Phones and tablets: the share sheet. On iPhone choose Save to Files
+  //    (pick a folder there); on Android choose Files, Drive, or similar.
+  try {
+    const file = new File([text], name, { type: "text/plain" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      say(isIOS ? T("lyrics.iosShared") : T("lyrics.shared"));
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;        // you closed the share sheet
+    reportError(T("err.saveFile", { how: "share", msg: e.message }));
+  }
+
+  // 3. An iPhone viewer that can't save files (such as a preview inside
+  //    another app): don't hand the file to Safari. Offer Copy instead.
+  if (isIOS) {
+    say(T("lyrics.iosNoSave"));
+    return;
+  }
+
+  // 4. Everywhere else: an ordinary download to the Downloads folder,
+  //    using the name in the box above.
+  const blob = new Blob([text], { type: "application/octet-stream" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = name;
+  document.body.appendChild(link); link.click();
+  setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+  say(T("lyrics.downloaded", { name }));
+}
+
+// Copy as plain text, for pasting into Notes, an email, or another phone
+async function copyMyLyrics() {
+  if (!(await copyText(lyricsFileText()))) {
+    reportError(T("lyrics.copyFailed"), { noCopy: true });   // about the clipboard: tapping must not copy
+    return;
+  }
+  $("myStatus").textContent = T("lyrics.copied");
+  setTimeout(renderLyricsPanel, 2500);
+}
+
+function importMyLyrics(file) {
+  const r = new FileReader();
+  r.onload = () => { $("myLyrics").value = normalizeBreaks(r.result); saveMyLyrics(); };
+  r.onerror = () => reportError(T("err.fileRead", { name: file.name, msg: (r.error && r.error.message) || "unknown" }));
+  r.readAsText(file);
+}
+
+function renderStage() {
+  const has = pos >= 0;
+  $("againBtn").disabled = !has;
+  $("slowBtn").disabled = !has;
+  if (!has) return;
+  const p = PHRASES[order[pos]];
+  $("prompt").textContent = T("drill.listen");
+  $("prompt").classList.remove("quiet");
+  let html = "";
+  html += chipsHTML(p.items);
+  $("notes").innerHTML = html;
+  $("phraseId").textContent = T("drill.phraseIdBars", { id: p.id, bars: p.bars });
+  const show = $("autoReveal").checked;
+  $("notes").hidden = !show;
+  $("phraseId").hidden = !show;
+  $("revealBtn").hidden = show;
+  const showLy = $("autoLyrics").checked;
+  renderLyricBox();
+  $("lyricBox").hidden = !showLy;
+  $("lyricsBtn").hidden = showLy;
+}
+
+function next() {
+  if (pos >= order.length - 1) shuffle();
+  pos++;
+  const st = document.querySelector(".stage");
+  st.classList.remove("flash"); void st.offsetWidth; st.classList.add("flash");
+  save(); renderProgress(); renderStage();
+  playPhrase(PHRASES[order[pos]], false);
+}
+
+// ---------- Wire up ----------
+$("nextBtn").addEventListener("click", next);
+$("againBtn").addEventListener("click", () => playing ? stopAll() : playPhrase(PHRASES[order[pos]], false));
+$("slowBtn").addEventListener("click", () => playPhrase(PHRASES[order[pos]], true));
+$("doBtn").addEventListener("click", playDo);
+$("metroBtn").addEventListener("click", () => $("metroBtn").classList.contains("active") ? stopAll() : playMetronome());
+$("tStrings").addEventListener("click", e => {
+  const b = e.target.closest(".tstr"); if (!b) return;
+  b.classList.contains("on") ? stopAll() : playTuning(+b.dataset.midi);
+});
+$("tuneInstSel").innerHTML = TUNING_LIST.map(([id]) => `<option value="${id}">${T("tuning.name_" + id)}</option>`).join("");
+$("tuneInstSel").addEventListener("change", () => {
+  if (tuneMidi !== null) stopAll();
+  $("tuneInst").value = $("tuneInstSel").value; savePrefs(); renderTuning();
+});
+document.querySelectorAll(".tsound").forEach(b => b.addEventListener("click", () => {
+  $("tuneSound").value = b.dataset.sound; savePrefs(); renderTuning();
+  if (tuneMidi !== null) playTuning(tuneMidi);       // switch sound on the fly
+}));
+$("refDown").addEventListener("click", () => setRef(refHz() - 1));
+function renderLegatoRow() { $("legatoRow").hidden = !WINDS[$("timbre").value]; }
+$("timbre").addEventListener("change", renderLegatoRow);
+$("tuneVol").addEventListener("input", () => {
+  $("tuneVolVal").textContent = T("units.pct", { n: $("tuneVol").value });
+  savePrefs();
+  if (tuneMidi !== null && $("tuneSound").value === "steady") playTuning(tuneMidi);   // hear the change right away
+});
+$("refUp").addEventListener("click", () => setRef(refHz() + 1));
+$("syncOpen").addEventListener("click", openCalib);
+$("tDown").addEventListener("click", () => setTranspose(+$("transpose").value - 1));
+$("tUp").addEventListener("click", () => setTranspose(+$("transpose").value + 1));
+document.querySelectorAll(".presets .chipbtn").forEach(b => b.addEventListener("click", () => setTranspose(+b.dataset.t)));
+$("fineTune").addEventListener("input", () => { renderPitch(); savePrefs(); });
+$("pitchNote").addEventListener("click", () => {
+  const d = document.querySelector("details:not(.along-notes)");
+  d.open = true; $("transpose").closest("div").scrollIntoView({ behavior: "smooth", block: "center" });
+});
+$("allBtn").addEventListener("click", () => {
+  if ($("allBtn").classList.contains("stop")) { stopAll(); return; }
+  if (abPick) { abPick = null; abFirst = null; renderAB(); }
+  playWhole(abActive() ? abRange.a : +$("startFrom").value);
+});
+$("abOn").addEventListener("change", () => $("abOn").checked ? startPickingAB() : clearAB());
+$("abClear").addEventListener("click", clearAB);
+$("loop").addEventListener("change", renderAB);
+// Opening the solfège (or turning following back on) in the middle of the
+// melody jumps straight to the line that's playing, or to where you paused,
+// instead of waiting for the next line to start.
+function jumpToNow() {
+  let el = null;
+  if (wholeRun) el = document.querySelector(`#allNotes .all-line[data-i="${currentPhrase()}"]`);
+  else if (wholePaused !== null) el = document.querySelector(`#allNotes .all-line[data-i="${wholePaused}"]`);
+  if (!el) return;
+  handScrollUntil = 0;
+  // wait a frame so the newly opened list has its size before we scroll
+  requestAnimationFrame(() => requestAnimationFrame(() => followTo(el, true)));
+}
+$("allDetails").addEventListener("toggle", () => { if ($("allDetails").open) jumpToNow(); });
+$("followLine").addEventListener("change", () => { if ($("followLine").checked) jumpToNow(); });
+
+$("dockPause").addEventListener("click", () => $("pauseBtn").click());
+$("dockStop").addEventListener("click", () => stopAll());
+$("pauseBtn").addEventListener("click", () => {
+  if (wholeRun) pauseWhole();
+  else if (wholePaused !== null) { const at = wholePaused; playWhole(at, true); }
+});
+function renderStartFrom() {
+  const hasPickup = pickupEighths(SEQ[0].items) > 0;
+  $("startFrom").innerHTML = SEQ.map((p, i) => `<option value="${i}">${i === 0 ? (hasPickup ? T("seq.beginningPickup", { bar: +firstBar(0) - 1 }) : T("seq.beginning")) : phraseLabel(i)}</option>`).join("");
+}
+renderStartFrom();
+$("startFrom").addEventListener("change", () => {
+  if (!wholeRun && wholePaused === null) updateAllLabel();
+});
+function updateAllLabel() {
+  if (!$("allBtn").classList.contains("stop")) $("allBtn").textContent = playLabel();
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("#allNotes .bn");
+  if (!b) return;
+  onBarTap(+b.dataset.start);
+});
+renderWhole();
+// Practice a different verse in the drill: starts a fresh shuffled round
+// (each verse choice keeps its own place in its round).
+function renderDrillVerse() {
+  document.querySelectorAll(".drill-verse .dv").forEach(b => b.classList.toggle("on", b.dataset.v === drillVerse));
+}
+function roundIntro() {
+  const v = drillVerse, m = chorusMode();
+  const verses = v === "mix" ? T("drill.allVerses", { n: VERSE_COUNT }) : VERSE_COUNT > 1 ? T("phrase.verseN", { v }) : SONG.title;
+  const key = !HAS_CHORUS ? "drill.introNoChorus" : m === "skip" ? "drill.introSkip" : m === "after" ? "drill.introAfter" : "drill.introMixed";
+  return T(key, { verses, n: order.length });
+}
+function renderChorusMode() {
+  document.querySelectorAll(".cm").forEach(b => b.classList.toggle("on", b.dataset.m === chorusMode()));
+}
+function setDrillVerse(v) {
+  stopAll();
+  drillVerse = v; $("drillVerse").value = v; savePrefs();
+  PHRASES = buildPool(v);
+  if (!load()) shuffle();
+  renderDrillVerse(); renderProgress();
+  if (pos >= 0) { renderStage(); $("prompt").textContent = T("drill.currentOrNew"); }
+  else {
+    $("prompt").textContent = roundIntro();
+    $("prompt").classList.add("quiet");
+    $("notes").hidden = $("phraseId").hidden = $("revealBtn").hidden = true;
+    $("lyricBox").hidden = $("lyricsBtn").hidden = true;
+    $("againBtn").disabled = $("slowBtn").disabled = true;
+  }
+}
+document.querySelectorAll(".drill-verse .dv").forEach(b => b.addEventListener("click", () => { if (b.dataset.v !== drillVerse) setDrillVerse(b.dataset.v); }));
+// Changing the chorus setting always starts a fresh round in the new style
+document.querySelectorAll(".cm").forEach(b => b.addEventListener("click", () => {
+  if (b.dataset.m === chorusMode()) return;
+  stopAll();
+  $("chorusMode").value = b.dataset.m; savePrefs(); renderChorusMode();
+  shuffle(); save(); renderProgress();
+  $("prompt").textContent = roundIntro(); $("prompt").classList.add("quiet");
+  $("notes").hidden = $("phraseId").hidden = $("revealBtn").hidden = true;
+  $("lyricBox").hidden = $("lyricsBtn").hidden = true;
+  $("againBtn").disabled = $("slowBtn").disabled = true;
+}));
+
+// Choose what Play along plays
+function renderAlongSub() {
+  // a pickup starts in the bar before the first full bar
+  const hasPickup = pickupEighths(SEQ[0].items) > 0;
+  const first = hasPickup ? +firstBar(0) - 1 : +firstBar(0);
+  const lastNum = barNums(SEQ[SEQ.length - 1]).slice(-1)[0];
+  const span = T("seq.span", { a: first >= 1 && first < +firstBar(0) ? first : firstBar(0), b: lastNum });
+  $("alongSub").textContent = $("seqSel").value === "song"
+    ? T(HAS_CHORUS ? "seq.subSong" : "seq.subSongNoChorus", { n: VERSE_COUNT, span })
+    : T("seq.subOne", { label: SEQ_CHOICES[$("seqSel").value].label, span });
+}
+function setSeq(v) {
+  stopAll();
+  SEQ = joinFill(withItems(SEQ_CHOICES[v].build()));
+  abRange = null; abPick = null; abFirst = null;
+  storeRemove(AB_STORE);
+  renderWhole(); renderStartFrom(); renderAlongSub(); renderAB();
+}
+$("seqSel").addEventListener("change", () => { setSeq($("seqSel").value); savePrefs(); });
+// The saved A–B loop, if it belongs to the current Play choice and still fits it
+function loadAB() {
+  const saved = storeGetJSON(AB_STORE);
+  if (saved && saved.seq === $("seqSel").value && saved.a >= 0 && saved.b < SEQ.length && saved.a <= saved.b) abRange = { a: saved.a, b: saved.b };
+}
+
+// Press feedback on every button (restarts each tap, so repeat taps show too)
+function pressFx(el) {
+  el.classList.remove("pressed");
+  void el.offsetWidth;            // restart the animation
+  el.classList.add("pressed");
+}
+document.addEventListener("pointerdown", e => {
+  const b = e.target.closest("button");
+  if (b && !b.disabled) pressFx(b);
+});
+document.addEventListener("animationend", e => e.target.classList.remove("pressed", "flash"));
+$("calibCancel").addEventListener("click", closeCalib);
+$("tapPad").addEventListener("pointerdown", e => { e.preventDefault(); calibTap(); });
+$("tapPad").addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); calibTap(); } });
+$("visDelay").addEventListener("input", e => $("visDelayVal").textContent = T("units.ms", { n: e.target.value }));
+$("restartBtn").addEventListener("click", () => {
+  stopAll(); shuffle(); save(); renderProgress();
+  $("prompt").textContent = T("drill.reshuffled");
+  $("prompt").classList.add("quiet");
+  $("notes").hidden = $("phraseId").hidden = $("revealBtn").hidden = true;
+  $("lyricBox").hidden = $("lyricsBtn").hidden = true;
+  $("againBtn").disabled = $("slowBtn").disabled = true;
+});
+$("lyricsBtn").addEventListener("click", () => {
+  renderLyricBox();
+  $("lyricBox").hidden = false; $("lyricsBtn").hidden = true;
+});
+["lyricSet", "showMeaning"].forEach(id => $(id).addEventListener("change", renderLyricBox));
+$("lyricBox").addEventListener("click", e => {
+  const t = e.target.closest(".ly-tab");
+  if (!t) return;
+  $("lyricSet").value = t.dataset.set; savePrefs(); renderLyricBox();
+});
+$("autoLyrics").addEventListener("change", renderStage);
+$("mySave").addEventListener("click", saveMyLyrics);
+$("myExport").addEventListener("click", exportMyLyrics);
+$("myCopy").addEventListener("click", copyMyLyrics);
+// Fix line breaks as soon as you paste or type, keeping the cursor in place
+$("myLyrics").addEventListener("input", () => {
+  const ta = $("myLyrics");
+  if (!/[\u2028\u2029\u0085\r]/.test(ta.value)) return;
+  const before = normalizeBreaks(ta.value.slice(0, ta.selectionStart));
+  ta.value = normalizeBreaks(ta.value);
+  ta.selectionStart = ta.selectionEnd = before.length;
+});
+$("myImport").addEventListener("change", e => { if (e.target.files[0]) importMyLyrics(e.target.files[0]); e.target.value = ""; });
+$("myLyrics").value = loadMyText();
+renderLyricsPanel();
+$("revealBtn").addEventListener("click", () => {
+  $("notes").hidden = $("phraseId").hidden = false;
+  $("revealBtn").hidden = true;
+});
+$("autoReveal").addEventListener("change", renderStage);
+$("tempo").addEventListener("input", e => $("tempoVal").textContent = T("units.bpm", { n: e.target.value }));
+$("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("units.pct", { n: e.target.value }));
+
+// Remember settings between visits (same browser only)
+// Storage keys keep the old "phrase-parrot-" prefix on purpose (app renamed in v0.39),
+// so saved lyrics, sync and settings carry over from earlier versions.
+const PREFS = "phrase-parrot-prefs-v1";
+const prefIds = ["followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "transpose", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "myFileName", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato"];
+function savePrefs() {
+  const p = {};
+  prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
+  storeSet(PREFS, JSON.stringify(p));
+}
+// ---------- Startup: restore settings, then render everything once ----------
+const savedPrefs = storeGetJSON(PREFS);
+if (savedPrefs) prefIds.forEach(id => {
+  const el = $(id); if (!(id in savedPrefs)) return;
+  if (el.type === "checkbox") el.checked = !!savedPrefs[id]; else el.value = savedPrefs[id];
+});
+$("tempoVal").textContent = T("units.bpm", { n: $("tempo").value });
+$("clickVolVal").textContent = T("units.pct", { n: $("clickVol").value });
+$("visDelayVal").textContent = T("units.ms", { n: $("visDelay").value });
+$("tuneVolVal").textContent = T("units.pct", { n: $("tuneVol").value });
+prefIds.forEach(id => $(id).addEventListener("change", savePrefs));
+// settings from before Transpose existed stored an absolute do (always the Internationale, in A)
+if (savedPrefs && savedPrefs.doPitch && !("transpose" in savedPrefs)) { $("transpose").value = +savedPrefs.doPitch - 69; savePrefs(); }
+$("doPitch").value = SONG_DO_MIDI;
+renderPitch();
+// saved choices that don't exist in this song fall back to the first one
+if (!SEQ_CHOICES[$("seqSel").value]) $("seqSel").value = Object.keys(SEQ_CHOICES)[0];
+if (!VERSE_M[$("drillVerse").value] && !($("drillVerse").value === "mix" && VERSE_COUNT > 1)) $("drillVerse").value = String(VERSE_NUMS[0]);
+// each song remembers its own lyric choice
+const LYRICSET_STORE = songKey("phrase-parrot-lyricset-v1");
+const savedLyricSet = storeGet(LYRICSET_STORE);
+if (savedLyricSet) $("lyricSet").value = savedLyricSet;
+if (![...$("lyricSet").options].some(o => o.value === $("lyricSet").value)) $("lyricSet").value = $("lyricSet").options[0].value;
+const rememberLyricSet = () => storeSet(LYRICSET_STORE, $("lyricSet").value);
+$("lyricSet").addEventListener("change", rememberLyricSet);
+$("lyricBox").addEventListener("click", e => { if (e.target.closest(".ly-tab")) setTimeout(rememberLyricSet, 0); });
+// apply the saved verse choice and play-along choice
+if ($("seqSel").value !== Object.keys(SEQ_CHOICES)[0]) {
+  SEQ = joinFill(withItems(SEQ_CHOICES[$("seqSel").value].build()));
+  renderWhole(); renderStartFrom();
+}
+loadAB();
+renderAlongSub();
+drillVerse = $("drillVerse").value || "1";
+PHRASES = buildPool(drillVerse);
+renderDrillVerse();
+renderChorusMode();
+// Switching songs: start that song at verse 1, then reload with it
+$("songSel").addEventListener("change", () => {
+  stopAll();
+  $("drillVerse").value = "1"; $("seqSel").value = Object.keys(SEQ_CHOICES)[0];
+  savePrefs();
+  location.reload();
+});
+// a saved file name from another song gets this song's default
+if (!$("myFileName").value || (/-my-lyrics\.txt$/.test($("myFileName").value) && !$("myFileName").value.startsWith(SONG_ID))) $("myFileName").value = defaultFileName();
+// text that depends on the song's shape (phrase counts)
+const halfChorus = CHORUS_PHRASES / 2;
+$("myHelp").textContent = !HAS_CHORUS ? T("lyrics.helpNoChorus", { v: VERSE_PHRASES })
+  : T(CHORUS_PHRASES % 2 === 0 ? "lyrics.help" : "lyrics.helpChorusOdd", { v: VERSE_PHRASES, c: CHORUS_PHRASES, half: halfChorus });
+$("myLyrics").placeholder = T(HAS_CHORUS ? "lyrics.placeholderChorus" : "lyrics.placeholder", { v: VERSE_PHRASES });
+// the drill round: resume a saved one, or shuffle a new one
+if (!load()) { shuffle(); save(); }
+renderProgress();
+if (pos >= 0) { renderStage(); $("prompt").textContent = T("drill.welcomeBack"); }
+else $("prompt").textContent = T("drill.firstPrompt", { n: order.length });
+renderAB();   // show any saved A–B loop
+renderTuning();
+renderLegatoRow();
+validateSong();
+setUpDeployment();
+setUpOfflineAndUpdates();
+</script>
+</body>
+</html>
