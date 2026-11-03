@@ -12,7 +12,7 @@
 // never Remember's or the other Melodies by Ear deployments'.
 
 const CACHE_PREFIX  = 'melodies-by-ear-v';
-const CACHE_VERSION = 'melodies-by-ear-v0.44';
+const CACHE_VERSION = 'melodies-by-ear-v0.43';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const LOG = '[Melodies by Ear SW melodies-by-ear]';
 
