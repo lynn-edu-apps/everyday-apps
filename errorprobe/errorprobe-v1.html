@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error probe v1</title>
+<style>
+  body { font: 16px/1.4 system-ui, -apple-system, sans-serif; margin: 0; padding: 16px; background: #F3F5F6; color: #22303C; }
+  h1 { font-size: 1.3rem; margin: 0 0 8px; }
+  p { margin: 0 0 10px; }
+  .mode { font-weight: 700; color: #1D6E7A; }
+  #log { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+  #log li { background: #FFF1EE; border: 2px solid #C0391B; border-radius: 10px; padding: 8px 10px; font: 13px/1.35 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #none { color: #6B7A86; }
+  a { color: #1D6E7A; }
+</style>
+</head>
+<body>
+<h1>Error probe v1</h1>
+<p>A test page with no app code. It only listens for errors and lists every one it gets, with every detail the browser gives.</p>
+<p>Mode: <span class="mode" id="mode"></span></p>
+<p>Switch: <a href="./">plain page</a> · <a href="./?tags=1">with the same head tags as Melodies by Ear</a></p>
+<p><b>Test:</b> tap Safari's Share button, then close the share sheet without choosing anything. Then note whether anything appeared below.</p>
+<p id="none">No errors so far.</p>
+<ul id="log"></ul>
+<script>
+// Logs every error event with all its fields. Nothing else runs on this page.
+var count = 0;
+function show(kind, fields) {
+  count++;
+  document.getElementById('none').textContent = count + ' error(s):';
+  var li = document.createElement('li');
+  li.textContent = '#' + count + ' ' + kind + ' at ' + new Date().toISOString() + '\n' +
+    Object.keys(fields).map(function (k) { return k + ': ' + fields[k]; }).join('\n') +
+    '\nvisibility: ' + document.visibilityState + ', focus: ' + document.hasFocus() +
+    '\nbrowser: ' + navigator.userAgent;
+  document.getElementById('log').appendChild(li);
+}
+window.addEventListener('error', function (e) {
+  show('error event', {
+    message: JSON.stringify(e.message), filename: JSON.stringify(e.filename),
+    lineno: e.lineno, colno: e.colno,
+    error: e.error ? (e.error.name + ': ' + e.error.message + '\n' + (e.error.stack || '(no stack)')) : String(e.error),
+    target: e.target && e.target !== window ? (e.target.tagName || String(e.target)) : 'window'
+  });
+}, true);   // capture phase: also sees failed resource loads (an icon or manifest that fails)
+window.addEventListener('unhandledrejection', function (e) {
+  var r = e.reason;
+  show('unhandled rejection', { reason: r && r.stack ? r.stack : JSON.stringify(r) });
+});
+// ?tags=1 adds the same <head> tags Melodies by Ear has, pointing at its real
+// manifest and icon, in case Safari's share sheet trips over one of them.
+var withTags = /[?&]tags=1/.test(location.search);
+document.getElementById('mode').textContent = withTags ? 'with Melodies by Ear’s head tags' : 'plain page (no extra head tags)';
+if (withTags) {
+  var tags = [
+    ['meta', { name: 'theme-color', content: '#F3F5F6' }],
+    ['meta', { name: 'color-scheme', content: 'light' }],
+    ['meta', { name: 'mobile-web-app-capable', content: 'yes' }],
+    ['meta', { name: 'apple-mobile-web-app-capable', content: 'yes' }],
+    ['meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'default' }],
+    ['meta', { name: 'apple-mobile-web-app-title', content: 'Probe' }],
+    ['link', { rel: 'manifest', href: '../melodies-by-ear/manifest.json' }],
+    ['link', { rel: 'apple-touch-icon', href: '../melodies-by-ear/icon192.png' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '../melodies-by-ear/icon192.png' }]
+  ];
+  tags.forEach(function (t) {
+    var el = document.createElement(t[0]);
+    Object.keys(t[1]).forEach(function (k) { el.setAttribute(k, t[1][k]); });
+    document.head.appendChild(el);
+  });
+}
+</script>
+</body>
+</html>
