@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.46</title>
+<title>Melodies by Ear v0.47</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -368,7 +368,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.46</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.47</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="song-row">
     <label for="songSel" data-s="ui.song"></label>
     <select id="songSel"></select>
@@ -834,6 +834,7 @@ const STRINGS = {
     "storageRead": "Couldn’t read saved data ({key}): {msg}",
     "storageWrite": "Couldn’t save to this browser ({key}): {msg}. Private browsing or full storage can cause this. Use Save to a file or Copy to keep a copy of your lyrics.",
     "context": "App: Melodies by Ear {version}, {deployment} deployment, {mode}\nTime: {time}\nPage: {page}\nBrowser: {ua}",
+    "ignoredShareSheet": "Ignored the browser’s hidden \"Script error.\" with no file, line, column or error object. Safari raises exactly this on every page when its Share button is tapped (shown with errorprobe-v1.html on a page with no app code). Any other error is still reported on screen.",
     "hiddenScriptError": "Unexpected error from code outside this app, so the browser hid every detail of it: all it reports is \"{msg}\" (no file, line or stack). Errors in Melodies by Ear’s own code always come with full details, so this one most likely came from a browser extension or content blocker, or from the browser’s own built-in scripts. If it keeps happening, note what you were doing just before it appeared.",
     "modeApp": "running as an installed app",
     "modeBrowser": "running in a browser tab",
@@ -1058,7 +1059,14 @@ function describeThrown(value) {
   try { text = typeof value === "string" ? value : JSON.stringify(value); } catch (e) { text = String(value); }
   return { msg: T("err.valueType", { type: value === null ? "null" : typeof value, value: text }), stack: "" };
 }
+// Safari raises this exact hidden error on EVERY page that listens for errors
+// when its Share button is tapped, even a blank test page (errorprobe-v1.html,
+// 2026-11-02). It is the only error the app ignores, and only when every field
+// matches exactly; anything different still gets the full banner.
+const isSafariShareSheetError = e =>
+  e.message === "Script error." && e.filename === "" && e.lineno === 0 && e.colno === 0 && e.error == null;
 window.addEventListener("error", e => {
+  if (isSafariShareSheetError(e)) { console.warn("[Melodies by Ear] " + T("err.ignoredShareSheet")); return; }
   // A bare "Script error." with no file means the browser hid an error from
   // code that isn't this page's own (an extension, a content blocker, the
   // browser itself). There is nothing more to read, so say so plainly.
