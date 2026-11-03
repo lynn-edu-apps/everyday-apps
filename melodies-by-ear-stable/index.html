@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.44</title>
+<title>Melodies by Ear v0.45</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -347,6 +347,8 @@
   .err-list { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 6px; }
   .err-item { font-size: .9rem; line-height: 1.35; padding: 6px 8px; border-radius: 8px; background: #fff; border: 1px solid #F0B8AA; overflow-wrap: anywhere; }
   .err-item.copyable { cursor: pointer; }
+  .err-details { display: block; margin-top: 6px; font: .74rem/1.35 ui-monospace, Menlo, Consolas, monospace;
+    color: #5A3A33; white-space: pre-wrap; overflow-wrap: anywhere; }
   .err-item.copied { background: #E8F4EA; border-color: #9CCBA5; }
   .err-hint { margin: 2px 0 0; font-size: .8rem; color: #7A3A2C; }
   .deploy-tag { font-family: system-ui, -apple-system, sans-serif; font-size: .72rem; font-weight: 700; vertical-align: middle;
@@ -366,7 +368,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.44</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.45</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="song-row">
     <label for="songSel" data-s="ui.song"></label>
     <select id="songSel"></select>
@@ -831,9 +833,17 @@ const STRINGS = {
     "storageCorrupt": "Saved data was damaged and was ignored ({key}): {msg}",
     "storageRead": "Couldn’t read saved data ({key}): {msg}",
     "storageWrite": "Couldn’t save to this browser ({key}): {msg}. Private browsing or full storage can cause this. Use Save to a file or Copy to keep a copy of your lyrics.",
+    "context": "App: Melodies by Ear {version}, {deployment} deployment, {mode}\nTime: {time}\nPage: {page}\nBrowser: {ua}",
+    "hiddenScriptError": "Unexpected error from code outside this app, so the browser hid every detail of it: all it reports is \"{msg}\" (no file, line or stack). Errors in Melodies by Ear’s own code always come with full details, so this one most likely came from a browser extension or content blocker, or from the browser’s own built-in scripts. If it keeps happening, note what you were doing just before it appeared.",
+    "modeApp": "running as an installed app",
+    "modeBrowser": "running in a browser tab",
+    "rejection": "Unexpected error (unhandled promise rejection): {msg}",
+    "stack": "Stack trace:\n{stack}",
     "title": "Something went wrong",
     "swRegister": "Offline use couldn’t be set up (service worker): {msg}",
-    "uncaught": "Unexpected error: {msg}"
+    "uncaught": "Unexpected error: {msg}",
+    "uncaughtWhere": "Where: {file}, line {line}, column {col}",
+    "valueType": "Value ({type}): {value}"
   },
   drill: {
     "allVerses": "All {n} verses",
@@ -972,25 +982,56 @@ function applyStrings(root) {
   }
 }
 
+// ---------- Which deployment is this? ----------
+// The same file runs in three folders on GitHub Pages: melodies-by-ear/
+// (latest), melodies-by-ear-dev/ and melodies-by-ear-stable/. They share one
+// web origin, and browser storage is per origin, not per folder, so dev and
+// stable prefix their storage keys (as Remember does) to keep data apart.
+const DEPLOYMENT = /\/melodies-by-ear-dev\//.test(location.pathname) ? "dev"
+                 : /\/melodies-by-ear-stable\//.test(location.pathname) ? "stable" : "main";
+const STORE_PREFIX = DEPLOYMENT === "main" ? "" : DEPLOYMENT + ":";
+const storageKey = key => STORE_PREFIX + key;
+
 // ---------- Loud errors ----------
 // During alpha testing every failure shows a banner that stays until it's
 // dismissed (a fading toast is too easy to miss). Tapping a message copies it,
 // so it can be pasted to Claude, except messages about the clipboard itself,
 // since copying them would overwrite what the person was trying to copy.
+// Every report also shows (and copies) the technical context: app version,
+// deployment, installed app or browser tab, time, page and browser identity.
+// opts.details: extra technical lines (where, stack trace) shown under the message.
 const shownErrors = new Set();
+function appVersion() {
+  const ver = document.querySelector("h1 .ver");
+  return ver ? ver.textContent : "(unknown version)";
+}
+function errorContext() {
+  const installed = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  return T("err.context", {
+    version: appVersion(), deployment: DEPLOYMENT, mode: T(installed ? "err.modeApp" : "err.modeBrowser"),
+    time: new Date().toISOString(), page: location.href, ua: navigator.userAgent
+  });
+}
 function reportError(message, opts) {
   const copy = !(opts && opts.noCopy);
-  console.error("[Melodies by Ear] " + message);
-  if (shownErrors.has(message)) return;           // the same problem once is enough
-  shownErrors.add(message);
+  const details = [opts && opts.details, errorContext()].filter(Boolean).join("\n");
+  const fullText = message + "\n\n" + details;
+  console.error("[Melodies by Ear] " + fullText);
+  const dedupKey = message + "\n" + ((opts && opts.details) || "");
+  if (shownErrors.has(dedupKey)) return;          // the same problem once is enough
+  shownErrors.add(dedupKey);
   const box = document.getElementById("errBox"), list = document.getElementById("errList");
-  if (!box || !list) { alert(message); return; }
+  if (!box || !list) { alert(fullText); return; }
   const item = document.createElement("li");
   item.className = "err-item" + (copy ? " copyable" : "");
-  item.textContent = message;
+  const msgEl = document.createElement("span");
+  msgEl.className = "err-msg"; msgEl.textContent = message;
+  const detailsEl = document.createElement("span");
+  detailsEl.className = "err-details"; detailsEl.textContent = details;
+  item.append(msgEl, detailsEl);
   if (copy) {
     item.setAttribute("role", "button"); item.tabIndex = 0;
-    const copyIt = () => copyText(message).then(ok => {
+    const copyIt = () => copyText(fullText).then(ok => {
       if (ok) { item.classList.add("copied"); setHint(T("err.copied")); }
     });
     item.addEventListener("click", copyIt);
@@ -1007,8 +1048,32 @@ function dismissErrors() {
   document.getElementById("errList").innerHTML = "";
   shownErrors.clear();
 }
-window.addEventListener("error", e => reportError(T("err.uncaught", { msg: e.message })));
-window.addEventListener("unhandledrejection", e => reportError(T("err.uncaught", { msg: (e.reason && e.reason.message) || String(e.reason) })));
+// Describes any thrown value: an Error's name, message and stack, or the raw value.
+function describeThrown(value) {
+  if (value instanceof Error || (value && typeof value === "object" && "message" in value && "stack" in value)) {
+    return { msg: `${value.name || "Error"}: ${value.message}`, stack: value.stack || "" };
+  }
+  let text;
+  try { text = typeof value === "string" ? value : JSON.stringify(value); } catch (e) { text = String(value); }
+  return { msg: T("err.valueType", { type: value === null ? "null" : typeof value, value: text }), stack: "" };
+}
+window.addEventListener("error", e => {
+  // A bare "Script error." with no file means the browser hid an error from
+  // code that isn't this page's own (an extension, a content blocker, the
+  // browser itself). There is nothing more to read, so say so plainly.
+  if (!e.filename && !e.error && /^Script error\.?$/i.test(e.message || "")) {
+    reportError(T("err.hiddenScriptError", { msg: e.message }));
+    return;
+  }
+  const thrown = e.error ? describeThrown(e.error) : { msg: e.message, stack: "" };
+  const lines = [T("err.uncaughtWhere", { file: e.filename || "?", line: e.lineno || "?", col: e.colno || "?" })];
+  if (thrown.stack) lines.push(T("err.stack", { stack: thrown.stack }));
+  reportError(T("err.uncaught", { msg: thrown.msg || e.message }), { details: lines.join("\n") });
+});
+window.addEventListener("unhandledrejection", e => {
+  const thrown = describeThrown(e.reason);
+  reportError(T("err.rejection", { msg: thrown.msg }), { details: thrown.stack ? T("err.stack", { stack: thrown.stack }) : "" });
+});
 
 // Copies text to the clipboard. Resolves to true if it worked. Never reports
 // a copy failure through a copyable message (that would overwrite the clipboard).
@@ -1025,15 +1090,6 @@ async function copyText(text) {
   }
 }
 
-// ---------- Which deployment is this? ----------
-// The same file runs in three folders on GitHub Pages: melodies-by-ear/
-// (latest), melodies-by-ear-dev/ and melodies-by-ear-stable/. They share one
-// web origin, and browser storage is per origin, not per folder, so dev and
-// stable prefix their storage keys (as Remember does) to keep data apart.
-const DEPLOYMENT = /\/melodies-by-ear-dev\//.test(location.pathname) ? "dev"
-                 : /\/melodies-by-ear-stable\//.test(location.pathname) ? "stable" : "main";
-const STORE_PREFIX = DEPLOYMENT === "main" ? "" : DEPLOYMENT + ":";
-const storageKey = key => STORE_PREFIX + key;
 
 // ---------- Saved data (this browser only) ----------
 // All storage goes through these four, so a failure is never silent, and
