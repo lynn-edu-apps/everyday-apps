@@ -1,6 +1,16 @@
 # Remember App - Version 0.1865 (deploy_v2.yml)
+# + Melodies by Ear (deploy_v3.yml, 2026-11-02)
 # GitHub Actions workflow — deploys latest versioned HTML to index.html
 # for all app subdirectories in everyday-apps.
+#
+# v3: adds Melodies by Ear's three deployments (melodies-by-ear/,
+# melodies-by-ear-dev/, melodies-by-ear-stable/) as NEW steps placed after
+# Remember's. Remember's own steps are unchanged. Every Melodies step uses
+# continue-on-error and is checked by the final step, so a Melodies
+# problem can never stop Remember from deploying (or the other way round),
+# yet still turns the run red. The Melodies steps also verify that the
+# service-worker CACHE_VERSION line was really rewritten, instead of
+# assuming sed matched (an unmatched sed silently changes nothing).
 #
 # v2 FAIL LOUDLY fix, per Lynn's report: a real build (remember-dev,
 # 2026-08-14) silently "succeeded" (green checkmark, whole job exit 0)
@@ -35,6 +45,10 @@
 #   remember-stable/stable-version.txt  →  remember-stable/index.html
 #   remember-dev/stable-version.txt     →  remember-dev/index.html
 #
+# Melodies by Ear Stable & Dev: the same, from melodies-by-ear/:
+#   melodies-by-ear-stable/stable-version.txt  →  melodies-by-ear-stable/index.html
+#   melodies-by-ear-dev/stable-version.txt     →  melodies-by-ear-dev/index.html
+#
 # Place this file at: .github/workflows/deploy.yml in your repo
 
 name: Deploy Latest App Versions
@@ -61,6 +75,9 @@ jobs:
             # Skip remember-stable and remember-dev — handled separately below
             [ "$app" = "remember-stable" ] && continue
             [ "$app" = "remember-dev" ] && continue
+            # Melodies by Ear stable/dev — also handled separately below
+            [ "$app" = "melodies-by-ear-stable" ] && continue
+            [ "$app" = "melodies-by-ear-dev" ] && continue
 
             latest=$(ls "$app"/"$app"-v*.html 2>/dev/null | sort -V | tail -1)
 
@@ -131,6 +148,103 @@ jobs:
             echo "⏭️  remember-dev → no stable-version.txt, skipping"
           fi
 
+      - name: Melodies by Ear — check main folder and update its service worker
+        # The loop above already copied the newest melodies-by-ear-v*.html to
+        # melodies-by-ear/index.html. This step updates the service worker's
+        # cache name to match, and fails (without blocking anything else) if
+        # there is no versioned HTML or the rewrite didn't take.
+        id: deploy_mel_main
+        continue-on-error: true
+        run: |
+          app="melodies-by-ear"
+          if [ ! -d "$app" ]; then
+            echo "⏭️  $app → folder not in repo, skipping"
+            exit 0
+          fi
+          latest=$(ls "$app"/"$app"-v*.html 2>/dev/null | sort -V | tail -1)
+          if [ -z "$latest" ]; then
+            echo "::error::$app/ has no $app-v*.html file at all — it is the source-of-truth folder that melodies-by-ear-stable and melodies-by-ear-dev deploy FROM."
+            exit 1
+          fi
+          VERSION=$(basename "$latest" .html)
+          VERSION=${VERSION#"$app"-}
+          if [ -f "$app/service-worker.js" ]; then
+            sed -i "s/const CACHE_VERSION = '$app-v[^']*'/const CACHE_VERSION = '$app-$VERSION'/" "$app/service-worker.js"
+            if grep -q "const CACHE_VERSION = '$app-$VERSION'" "$app/service-worker.js"; then
+              echo "   ↳ service-worker.js updated to: $app-$VERSION"
+            else
+              echo "::error::$app/service-worker.js — CACHE_VERSION line not found or not rewritten (expected const CACHE_VERSION = '$app-v…'). The app would keep serving an old cached copy."
+              exit 1
+            fi
+          else
+            echo "::error::$app/service-worker.js is missing — the app can't work offline or pick up updates reliably."
+            exit 1
+          fi
+
+      - name: Deploy melodies-by-ear-stable from stable-version.txt
+        id: deploy_mel_stable
+        continue-on-error: true
+        run: |
+          app="melodies-by-ear-stable"
+          if [ -f "$app/stable-version.txt" ]; then
+            VERSION=$(cat "$app/stable-version.txt" | tr -d '[:space:]')
+            SRC="melodies-by-ear/melodies-by-ear-${VERSION}.html"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "$app/index.html"
+              echo "✅ $app → deployed $VERSION → index.html"
+              if [ -f "$app/service-worker.js" ]; then
+                sed -i "s/const CACHE_VERSION = '$app-v[^']*'/const CACHE_VERSION = '$app-${VERSION}'/" "$app/service-worker.js"
+                if grep -q "const CACHE_VERSION = '$app-${VERSION}'" "$app/service-worker.js"; then
+                  echo "   ↳ service-worker.js updated to: $app-${VERSION}"
+                else
+                  echo "::error::$app/service-worker.js — CACHE_VERSION line not found or not rewritten (expected const CACHE_VERSION = '$app-v…')."
+                  exit 1
+                fi
+              else
+                echo "::error::$app/service-worker.js is missing."
+                exit 1
+              fi
+            else
+              echo "❌ $app → $SRC not found"
+              echo "::error::$app deployment failed — $SRC not found. stable-version.txt says '$VERSION' but that HTML file is not committed to the melodies-by-ear/ folder (check for a filename mismatch, e.g. underscore vs dot before the version number)."
+              exit 1
+            fi
+          else
+            echo "⏭️  $app → no stable-version.txt, skipping"
+          fi
+
+      - name: Deploy melodies-by-ear-dev from stable-version.txt
+        id: deploy_mel_dev
+        continue-on-error: true
+        run: |
+          app="melodies-by-ear-dev"
+          if [ -f "$app/stable-version.txt" ]; then
+            VERSION=$(cat "$app/stable-version.txt" | tr -d '[:space:]')
+            SRC="melodies-by-ear/melodies-by-ear-${VERSION}.html"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "$app/index.html"
+              echo "✅ $app → deployed $VERSION → index.html"
+              if [ -f "$app/service-worker.js" ]; then
+                sed -i "s/const CACHE_VERSION = '$app-v[^']*'/const CACHE_VERSION = '$app-${VERSION}'/" "$app/service-worker.js"
+                if grep -q "const CACHE_VERSION = '$app-${VERSION}'" "$app/service-worker.js"; then
+                  echo "   ↳ service-worker.js updated to: $app-${VERSION}"
+                else
+                  echo "::error::$app/service-worker.js — CACHE_VERSION line not found or not rewritten (expected const CACHE_VERSION = '$app-v…')."
+                  exit 1
+                fi
+              else
+                echo "::error::$app/service-worker.js is missing."
+                exit 1
+              fi
+            else
+              echo "❌ $app → $SRC not found"
+              echo "::error::$app deployment failed — $SRC not found. stable-version.txt says '$VERSION' but that HTML file is not committed to the melodies-by-ear/ folder (check for a filename mismatch, e.g. underscore vs dot before the version number)."
+              exit 1
+            fi
+          else
+            echo "⏭️  $app → no stable-version.txt, skipping"
+          fi
+
       - name: Commit and push updated files
         run: |
           git config user.name "github-actions[bot]"
@@ -139,7 +253,7 @@ jobs:
           git diff --staged --quiet || git commit -m "Auto-update index.html from latest versioned HTML"
           git push
 
-      - name: Fail the job if either deploy step failed
+      - name: Fail the job if any deploy step failed
         # deploy_stable and deploy_dev each use continue-on-error above
         # SPECIFICALLY so a failure in one never prevents the other from
         # attempting its own, fully independent deploy (they don't depend
@@ -148,7 +262,8 @@ jobs:
         # overall job failure (red ❌ on the Actions tab, not masked by
         # continue-on-error's own "succeeded with a warning" treatment)
         # once both independent attempts have had their chance to run.
-        if: steps.deploy_stable.outcome == 'failure' || steps.deploy_dev.outcome == 'failure'
+        # v3: the three Melodies by Ear steps are included the same way.
+        if: steps.deploy_stable.outcome == 'failure' || steps.deploy_dev.outcome == 'failure' || steps.deploy_mel_main.outcome == 'failure' || steps.deploy_mel_stable.outcome == 'failure' || steps.deploy_mel_dev.outcome == 'failure'
         run: |
-          echo "::error::Deployment failed — remember-stable outcome: ${{ steps.deploy_stable.outcome }}, remember-dev outcome: ${{ steps.deploy_dev.outcome }}. See each step's own log/annotation above for details."
+          echo "::error::Deployment failed — remember-stable outcome: ${{ steps.deploy_stable.outcome }}, remember-dev outcome: ${{ steps.deploy_dev.outcome }}, melodies-by-ear outcome: ${{ steps.deploy_mel_main.outcome }}, melodies-by-ear-stable outcome: ${{ steps.deploy_mel_stable.outcome }}, melodies-by-ear-dev outcome: ${{ steps.deploy_mel_dev.outcome }}. See each step's own log/annotation above for details."
           exit 1
