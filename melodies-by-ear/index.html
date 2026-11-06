@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.61</title>
+<title>Melodies by Ear v0.75</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -188,13 +188,60 @@
   /* the bars sit below the chip, so they keep their color when it lights up */
   .n.pk.s16::after { border-color: var(--pk); }
   .n.do.s16::after { border-color: var(--gold-text); }
-  .n.dotted::after { content: "·"; font-weight: 900; margin-left: 1px; }
+  /* the dot of a dotted note: bigger, and a little apart from the octave mark */
+  .n.dotted::after { content: "•"; font-weight: 900; font-size: .8em; margin-left: 5px; vertical-align: .1em; }
+  /* octave marks: high as an apostrophe, low as an apostrophe dropped below the line */
+  .oh { margin-left: 1px; }
+  .ol { display: inline-block; transform: translateY(.42em); margin-left: 1px; }
   .n {
     font-weight: 650; font-size: 1.02rem;
     padding: 4px 8px; border-radius: 8px;
     background: var(--teal-soft); color: var(--teal);
     transition: background .06s, color .06s;
   }
+  /* Shape notes: every chip carries its shape and its syllable; the setting
+     (html[data-shapes]) decides which show. Off: syllable only, as before. */
+  .n .sh { display: none; }
+  .n .sh svg { width: 1.25em; height: .95em; vertical-align: -.08em; fill: currentColor; overflow: visible; }
+  .n .sh::after { content: attr(data-acc); font-size: 1.12em; line-height: 0; font-weight: 700; margin-left: 1px; vertical-align: -.04em; }
+  html[data-shapes="shapes"] .n .sh, html[data-shapes="both"] .n .sh { display: inline; }
+  html[data-shapes="both"] .n .sy { margin-left: 4px; font-size: .9em; }
+  html[data-shapes="shapes"] .n .sy { display: none; }
+  html[data-shapes="shapes"] .n.peek .sy { display: inline; margin-left: 4px; font-size: .9em; }
+  html[data-shapes="shapes"] .n { cursor: pointer; }
+  /* Numbers (jianpu): the number, with its octave dots above or below */
+  .nm { display: none; white-space: nowrap; }
+  .nm-acc { font-size: .8em; margin-right: 1px; vertical-align: .1em; }
+  .nm-d { position: relative; display: inline-block; }
+  .nm-d[data-up]::before, .nm-d[data-down]::after {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    white-space: pre; font-size: .62em; line-height: .55; font-weight: 900; text-align: center; }
+  .nm-d[data-up]::before { content: attr(data-up); bottom: 90%; }
+  .nm-d[data-down]::after { content: attr(data-down); top: 92%; }
+  html[data-shapes="numbers"] .n .nm, html[data-shapes="numsyl"] .n .nm { display: inline; }
+  html[data-shapes="numbers"] .n .sy, html[data-shapes="numbers"] .n .oh, html[data-shapes="numbers"] .n .ol,
+  html[data-shapes="numsyl"] .n .oh, html[data-shapes="numsyl"] .n .ol { display: none; }
+  html[data-shapes="numsyl"] .n .sy { margin-left: 5px; font-size: .85em; opacity: .85; }
+  html[data-shapes="numbers"] .n.peek .sy { display: inline; margin-left: 5px; font-size: .85em; }
+  html[data-shapes="numbers"] .n { cursor: pointer; }
+  /* room inside the chip for the dots, so they never touch its edge;
+     a chip with two dots above or below gets a little more */
+  html[data-shapes="numbers"] .n, html[data-shapes="numsyl"] .n { padding-top: 8px; padding-bottom: 10px; }
+  html[data-shapes="numbers"] .n:has(.nm-d[data-up*="\a"]), html[data-shapes="numsyl"] .n:has(.nm-d[data-up*="\a"]) { padding-top: 13px; }
+  html[data-shapes="numbers"] .n:has(.nm-d[data-down*="\a"]), html[data-shapes="numsyl"] .n:has(.nm-d[data-down*="\a"]) { padding-bottom: 15px; }
+  html[data-shapes="numbers"] .notes, html[data-shapes="numsyl"] .notes { row-gap: 18px; }
+  .wq-note .nm, .wq-choice .nm { display: inline; }
+  .wq-note .nm-d[data-up]::before { bottom: 88%; } .wq-note .nm-d[data-down]::after { top: 90%; }
+  .wq-note.only-num .wq-sh, .wq-note.only-num .wq-acc, .wq-note.only-num .wq-sy, .wq-note.only-num .oh, .wq-note.only-num .ol,
+  .wq-choices.only-num .wq-sh, .wq-choices.only-num .wq-acc, .wq-choices.only-num .wq-sy, .wq-choices.only-num .oh, .wq-choices.only-num .ol { display: none; }
+  .wq-note:not(.only-num) .nm, .wq-choices:not(.only-num) .nm { display: none; }
+  .wq-answer .nm { display: inline; }
+  .wq-answer .wq-oct { margin-top: 6px; }
+  .wq-note.only-num { padding: .2em 0; }
+  .shape-quick[hidden] { display: none; }
+  .shape-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 0; font-size: .9rem; color: var(--ink); }
+  .shape-legend span { white-space: nowrap; }
+  .shape-legend svg { width: 1.3em; height: 1em; vertical-align: -.12em; fill: currentColor; margin-right: 3px; overflow: visible; }
   .n.pk { background: transparent; color: var(--pk); box-shadow: inset 0 0 0 1.5px var(--pk-ring); }
   .n.do { background: var(--gold-soft); color: var(--gold-text); }
   .n.on { background: var(--teal); color: var(--on-teal); }
@@ -291,9 +338,11 @@
 
   .along-beats {
     position: sticky; top: 0; z-index: 2;
-    display: flex; justify-content: center; align-items: center; gap: 14px;
-    height: 30px; margin: 0 -16px; background: var(--glass);
+    display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px;
+    min-height: 30px; padding: 5px 0; box-sizing: border-box; margin: 0 -16px; background: var(--glass);
   }
+  /* one row of dots per count-in measure */
+  .lead-row { display: flex; justify-content: center; align-items: center; gap: 14px; height: 18px; }
   .along-beats[hidden] { display: none; }
   .along-beats .beat { width: 14px; height: 14px; }
   .along-beats .beat.one { width: 18px; height: 18px; }
@@ -310,7 +359,11 @@
   .btn.secondary.resume { background: var(--teal); color: var(--on-teal); }
   .along-notes { margin-top: 0; }
   .along-notes summary { font-weight: 500; color: var(--teal); }
-  .all-section { font-size: .85rem; color: var(--muted); margin: 12px 0 4px; }
+  /* each verse and chorus starts after a clear gap, under a big heading */
+  .all-section { font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    font-size: 1.45rem; font-weight: 700; line-height: 1.2; color: var(--teal);
+    margin: 44px 0 10px; padding-top: 14px; border-top: 2px solid var(--line); }
+  .all-section:first-child { margin-top: 6px; padding-top: 0; border-top: 0; }
   .all-line { display: flex; flex-wrap: wrap; gap: 12px 3px; align-items: center; margin: 0 0 12px; }
   .all-line .bn { font-size: .75rem; color: var(--muted); min-width: 22px; }
   .all-line .n { font-size: .9rem; padding: 3px 6px; }
@@ -427,11 +480,11 @@
   }
   .dv.on { background: var(--teal); border-color: var(--teal); color: var(--on-teal); }
   .drill-chorus { flex-wrap: wrap; margin-top: -4px; }
-  .cm, .dm, .ct {
+  .cm, .dm, .ct, .wo {
     font: inherit; font-size: .88rem; height: 32px; padding: 0 11px;
     border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink); cursor: pointer;
   }
-  .cm.on, .dm.on, .ct.on { background: var(--teal); border-color: var(--teal); color: var(--on-teal); }
+  .cm.on, .dm.on, .ct.on, .wo.on { background: var(--teal); border-color: var(--teal); color: var(--on-teal); }
   /* Cue first: the lyric line to play, large; and the Got it / Not yet buttons */
   .cue-lyric { margin: 0; }
   .cl-text { display: block; font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
@@ -468,7 +521,7 @@
   .song-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
   .song-row label { font-size: .9rem; color: var(--muted); }
   .song-row select { flex: 1; }
-  .dv-btns { display: contents; }
+  .dv-btns { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
 
   details { margin-top: 22px; }
   summary { cursor: pointer; font-weight: 600; color: var(--ink); padding: 6px 0; }
@@ -536,14 +589,95 @@
   .info-card .fine { color: var(--muted); font-size: .85rem; }
   .info-close { display: flex; justify-content: flex-end; margin-top: 8px; }
   .backup-note { color: var(--warn); }
+  /* Warm-up: find the note */
+  .warm { margin: 0 0 16px; background: var(--card); border: 1px solid var(--line-soft); border-radius: 14px; padding: 6px 16px; }
+  .warm[open] { padding-bottom: 14px; }
+  .warm > summary { font-weight: 600; color: var(--teal); }
+  .warm-body { display: grid; gap: 10px; padding-top: 4px; }
+  .warm-body .hint { margin: 0; }
+  .warm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .warm-row .dv-label { margin-right: 2px; }
+  .warm-count { margin: 0; color: var(--muted); font-size: .88rem; }
+  .wq-note { font-size: 3rem; font-weight: 700; line-height: 1.1; text-align: center; color: var(--ink); min-height: 1.2em; }
+  .wq-note.is-do { color: var(--gold-text); }
+  .wq-note svg { width: 1.3em; height: 1em; vertical-align: -.1em; fill: currentColor; overflow: visible; }
+  .wq-note .wq-acc { font-size: .8em; line-height: 0; vertical-align: .1em; margin-left: 2px; }
+  .wq-note .wq-sy { margin-left: .2em; }
+  .wq-note.only-shape .wq-sy, .wq-note.only-syl .wq-sh, .wq-note.only-syl .wq-acc { display: none; }
+  .wq-note .wq-sh + .wq-acc + .wq-sy { margin-left: .25em; }
+  .wq-key, .wq-answer { margin: 0; text-align: center; }
+  .wq-key { color: var(--muted); font-size: .92rem; }
+  .wq-answer { font-size: 1.15rem; font-weight: 600; }
+  .wq-answer .wq-oct { display: block; font-size: .85rem; font-weight: 400; color: var(--muted); }
+  .warm-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .warm-actions[hidden], .wq-answer[hidden], .warm-row[hidden], .warm-hear[hidden] { display: none; }
+  /* the key, big, at the top of the warm-up */
+  .wq-keytop { margin: 2px 0 0; padding: 8px 12px; text-align: center; background: var(--gold-soft); border: 1px solid var(--gold-line); border-radius: 10px; }
+  .wq-keytop b { display: block; font-size: 1.45rem; line-height: 1.2; color: var(--ink); }
+  .wq-keytop span { display: block; font-size: .88rem; color: var(--muted); }
+  .warm-hear { display: grid; gap: 10px; }
+  .wq-choices { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .wq-choice { font: inherit; font-weight: 650; font-size: 1.05rem; min-width: 52px; height: 40px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--teal-soft); color: var(--teal); cursor: pointer; }
+  .wq-choice svg { width: 1.25em; height: .95em; vertical-align: -.08em; fill: currentColor; overflow: visible; }
+  .wq-choice .wq-acc { font-size: 1.1em; line-height: 0; margin-left: 1px; }
+  .wq-choice .wq-sh + .wq-acc + .wq-sy { margin-left: 4px; }
+  .wq-choices.only-shape .wq-sy, .wq-choices.only-syl .wq-sh, .wq-choices.only-syl .wq-acc { display: none; }
+  .wq-choice.do { color: var(--gold-text); }
+  .wq-choice.wrong { opacity: .35; text-decoration: line-through; }
+  .wq-choice.right { background: var(--teal); color: var(--on-teal); border-color: var(--teal); }
+  .hooks { width: 100%; border-collapse: collapse; margin: 4px 0 10px; }
+  .hooks td { padding: 6px 4px; border-top: 1px solid var(--line-soft); vertical-align: middle; font-size: .92rem; line-height: 1.35; }
+  .hooks td.hk-shape { width: 2.2em; text-align: center; }
+  .hooks td.hk-syl { width: 2.6em; font-weight: 650; }
+  .hooks svg { width: 1.6em; height: 1.25em; fill: currentColor; overflow: visible; vertical-align: middle; }
+  /* Chord symbols above the chips (html[data-chords] says which style, or off) */
+  /* The name is in the flow, so it takes up its width (the next note moves over
+     rather than the names overlapping), but has no height: it's lifted above the chip. */
+  .chw { display: inline-flex; flex-direction: column; align-items: flex-start; }
+  .chd { display: block; height: 0; position: relative; top: calc(-1em - 4px); padding-right: 6px; font-size: .78rem; font-weight: 700; line-height: 1;
+    color: var(--ink); white-space: nowrap; pointer-events: none; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .chd sup { font-size: .75em; vertical-align: .45em; line-height: 0; }
+  .chs { display: inline-flex; flex-direction: column; align-items: flex-start; align-self: center; font-weight: 700; color: var(--muted); padding: 0 2px; }
+  .chs .chd { top: calc(-1em - 5.5px); }
+  .ngrp { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  html[data-chords="off"] .chd, html[data-chords="off"] .chs { display: none; }
+  html:not([data-chords="off"]) .notes, html:not([data-chords="off"]) .all-line { row-gap: 30px; padding-top: 16px; }
+  /* a little more room above the names, so the highlighted line's edge clears them */
+  html:not([data-chords="off"]) .all-line { padding-top: 23px; }
+  html:not([data-chords="off"]) #allNotes.lyrics-only .all-line { padding-top: 0; }
+  #allNotes.lyrics-only .chs, #allNotes.lyrics-only .chd, #allNotes.lyrics-only .chw, #allNotes.lyrics-only .ngrp { display: none; }
+  /* Lyric syllables in Play along: the one being sung lights up; a syllable on
+     a bar's first beat is bold, a pickup syllable lighter */
+  .syl { border-radius: 4px; transition: background .08s; }
+  .syl.db { font-weight: 700; }
+  .syl.pkl { opacity: .72; }
+  .syl.on { background: var(--teal); color: var(--on-teal); opacity: 1; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  /* The song plan: verse buttons, each followed by its chorus toggle */
+  .plan { margin: 4px 0 10px; }
+  .plan[hidden], .plan-chorus[hidden] { display: none; }
+  .plan-chorus { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .plan-row { display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: center; }
+  .plan-pair { display: inline-flex; gap: 2px; align-items: center; margin-right: 6px; }
+  .pv, .pc { font: inherit; font-weight: 650; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); }
+  .pv { min-width: 34px; height: 34px; background: var(--teal); color: var(--on-teal); border-color: var(--teal); }
+  .pv.off { background: transparent; color: var(--muted); text-decoration: line-through; border-style: dashed; }
+  .pc { min-width: 26px; height: 26px; font-size: .78rem; background: transparent; color: var(--muted); border-style: dashed; padding: 0 4px; }
+  .pc.on { background: var(--gold-soft); color: var(--gold-text); border: 1px solid var(--gold-line); }
+  .pc.last { cursor: default; }
+  .pc[hidden] { display: none; }
+  .count-bars { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0 10px; }
+  .count-bars select { width: auto; }
+  .count-bars .hint { flex-basis: 100%; margin: 0; }
   .ver { font-family: system-ui, -apple-system, sans-serif; font-size: .8rem; font-weight: 500; color: var(--muted); vertical-align: middle; margin-left: 4px; }
 </style>
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.61</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.75</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
+    <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
     <button class="chipbtn" id="creditsBtn" data-s="info.credits"></button>
     <button class="chipbtn" id="helpBtn" data-s="info.help"></button>
   </div>
@@ -552,6 +686,53 @@
     <select id="songSel"></select>
   </div>
   <button class="pitch-note" id="pitchNote" hidden></button>
+  <details class="warm" id="warmPanel">
+    <summary data-s="warm.title"></summary>
+    <div class="warm-body">
+      <p class="wq-keytop" id="warmKeyTop"></p>
+      <p class="hint" id="warmIntro"></p>
+      <div class="warm-row" role="group" data-s-aria-label="warm.modeAria">
+        <span class="dv-label" data-s="warm.mode"></span>
+        <button class="wo" data-wmode="see" data-s="warm.modeSee"></button><button class="wo" data-wmode="hear" data-s="warm.modeHear"></button>
+        <input type="hidden" id="warmMode" value="see">
+      </div>
+      <div class="warm-row" role="group" data-s-aria-label="warm.showAria">
+        <span class="dv-label" data-s="warm.show"></span>
+        <button class="wo" data-wshow="syl" data-s="warm.showSyl"></button><button class="wo" data-wshow="shape" data-s="warm.showShape"></button><button class="wo" data-wshow="both" data-s="warm.showBoth"></button><button class="wo" data-wshow="num" data-s="warm.showNum"></button>
+        <input type="hidden" id="warmShow" value="syl">
+      </div>
+      <div class="warm-row" role="group" data-s-aria-label="warm.setAria">
+        <span class="dv-label" data-s="warm.set"></span>
+        <button class="wo" data-wset="song" data-s="warm.setSong"></button><button class="wo" data-wset="scale" data-s="warm.setScale"></button>
+        <input type="hidden" id="warmSet" value="song">
+      </div>
+      <label class="check warm-row" id="warmDoFirstRow" hidden><input type="checkbox" id="warmDoFirst" checked> <span data-s="warm.doFirst"></span></label>
+      <p class="warm-count" id="warmCount"></p>
+      <div class="wq-note" id="warmNote" aria-live="polite"></div>
+      <p class="wq-key" id="warmKey"></p>
+      <p class="wq-answer" id="warmAnswer" hidden></p>
+      <div class="warm-actions" id="warmSee">
+        <button class="btn primary" id="warmCheck" data-s="warm.check"></button>
+      </div>
+      <div class="warm-actions" id="warmScore" hidden>
+        <button class="btn secondary" id="warmGot" data-s="drill.gotIt"></button>
+        <button class="btn secondary notyet" id="warmNotYet" data-s="drill.notYet"></button>
+      </div>
+      <div class="warm-hear" id="warmHear" hidden>
+        <div class="warm-actions">
+          <button class="btn primary" id="warmPlay" data-s="warm.play"></button>
+          <button class="btn secondary" id="warmNext" data-s="warm.next" hidden></button>
+        </div>
+        <div class="wq-choices" id="warmChoices" role="group" data-s-aria-label="warm.choicesAria"></div>
+      </div>
+      <div class="warm-actions">
+        <button class="chipbtn" id="warmDo" data-s-html="ui.playDo"></button>
+        <button class="chipbtn" id="warmRestart" data-s="warm.restart"></button>
+        <button class="chipbtn" id="warmHooks" data-s="hooks.button"></button>
+      </div>
+    </div>
+  </details>
+
   <h2 class="drill-title" data-s="ui.drillTitle"></h2>
   <p class="lede" id="lede"></p>
 
@@ -584,6 +765,7 @@
     <p class="cue-note" id="cueNote" hidden></p>
     <p class="phrase-id" id="phraseId" hidden><span class="pn-name" id="phraseNameText"></span><span class="pn-bars" id="phraseBars"></span></p>
     <div class="notes" id="notes" hidden></div>
+    <label class="switch follow shape-quick" id="shapeSylDrillRow" hidden><input type="checkbox" id="shapeSylDrill"><span class="track"></span> <span data-s="ui.shapeSyl"></span></label>
     <div class="reveal-row">
       <button class="reveal" id="whichBtn" hidden data-s="ui.whichPhrase"></button>
       <button class="reveal" id="revealBtn" hidden data-s="ui.showSolfege"></button>
@@ -629,6 +811,16 @@
       <p class="hint" data-s="ui.metroMeterHint"></p>
     </div>
     <label class="switch"><input type="checkbox" id="countIn"><span class="track"></span> <span data-s="ui.countIn"></span></label>
+    <div class="count-bars">
+      <label for="countBars" data-s="ui.countBars"></label>
+      <select id="countBars">
+        <option value="1" data-s="ui.countBars1"></option>
+        <option value="2" data-s="ui.countBars2"></option>
+        <option value="3" data-s="ui.countBars3"></option>
+        <option value="4" data-s="ui.countBars4"></option>
+      </select>
+      <p class="hint" data-s="ui.countBarsHint"></p>
+    </div>
     <label class="switch"><input type="checkbox" id="clickAll"><span class="track"></span> <span data-s="ui.clickAll"></span></label>
     <label class="switch"><input type="checkbox" id="loop"><span class="track"></span> <span data-s="ui.loop"></span></label>
     <button class="reveal" id="syncOpen" data-s="ui.syncOpen"></button>
@@ -703,6 +895,20 @@
       <label for="seqSel" data-s="ui.playMenu"></label>
       <select id="seqSel"></select>
     </div>
+    <div class="plan" id="planBox" hidden>
+      <div class="plan-chorus" id="planChorusRow">
+        <label for="chorusPlan" data-s="plan.chorus"></label>
+        <select id="chorusPlan">
+          <option value="every" data-s="plan.every"></option>
+          <option value="other" data-s="plan.other"></option>
+          <option value="end" data-s="plan.end"></option>
+          <option value="ends" data-s="plan.ends"></option>
+          <option value="custom" data-s="plan.custom"></option>
+        </select>
+      </div>
+      <div class="plan-row" id="planRow" role="group" data-s-aria-label="plan.rowAria"></div>
+      <p class="hint" id="planHint"></p>
+    </div>
     <div class="along-start">
       <label for="startFrom" data-s="ui.startFrom"></label>
       <select id="startFrom"></select>
@@ -727,6 +933,7 @@
       <label class="switch follow"><input type="checkbox" id="followLine" checked><span class="track"></span> <span data-s="ui.followLine"></span></label>
       <label class="switch follow"><input type="checkbox" id="alongLyrics" checked><span class="track"></span> <span data-s="ui.alongLyrics"></span></label>
       <label class="switch follow"><input type="checkbox" id="lyricsOnly"><span class="track"></span> <span data-s="ui.lyricsOnly"></span></label>
+      <label class="switch follow shape-quick" id="shapeSylAlongRow" hidden><input type="checkbox" id="shapeSylAlong"><span class="track"></span> <span data-s="ui.shapeSyl"></span></label>
       <div class="along-beats" id="alongBeats" hidden aria-hidden="true"></div>
       <div id="allNotes"></div>
     </details>
@@ -878,6 +1085,36 @@
       <label class="check"><input type="checkbox" id="autoPhraseName"> <span data-s="ui.autoPhraseName"></span></label>
       <label class="check"><input type="checkbox" id="autoReveal"> <span data-s="ui.autoReveal"></span></label>
       <label class="check"><input type="checkbox" id="doFirst"> <span data-s="ui.doFirst"></span></label>
+      <div>
+        <label for="chordStyle" data-s="ui.chords"></label>
+        <select id="chordStyle">
+          <option value="names" data-s="ui.chordsNames"></option>
+          <option value="roman" data-s="ui.chordsRoman"></option>
+          <option value="nashville" data-s="ui.chordsNashville"></option>
+          <option value="off" data-s="ui.chordsOff"></option>
+        </select>
+        <label class="check"><input type="checkbox" id="chordSimple"> <span data-s="ui.chordSimple"></span></label>
+        <label for="chordKey" data-s="ui.chordKey"></label>
+        <select id="chordKey">
+          <option value="sound" data-s="ui.chordKeySound"></option>
+          <option value="written" data-s="ui.chordKeyWritten"></option>
+        </select>
+        <p class="hint" data-s="ui.chordsHint"></p>
+      </div>
+      <div>
+        <label for="noteShapes" data-s="ui.noteShapes"></label>
+        <select id="noteShapes">
+          <option value="off" data-s="ui.noteShapesOff"></option>
+          <option value="shapes" data-s="ui.noteShapesOnly"></option>
+          <option value="both" data-s="ui.noteShapesBoth"></option>
+          <option value="numbers" data-s="ui.noteNumbersOnly"></option>
+          <option value="numsyl" data-s="ui.noteNumbersBoth"></option>
+        </select>
+        <div class="shape-legend" id="shapeLegend" aria-hidden="true"></div>
+        <button class="chipbtn" id="hooksBtn" data-s="hooks.button"></button>
+        <p class="hint" data-s="ui.noteShapesHint"></p>
+        <p class="hint" data-s="ui.noteNumbersHint"></p>
+      </div>
       <label class="check"><input type="checkbox" id="wakeOn" checked> <span data-s="ui.wakeOn"></span></label>
       <p class="hint" id="wakeNote" hidden></p>
       <div>
@@ -955,7 +1192,13 @@ const STRINGS = {
     "clickAll": "Keep clicking through the phrase",
     "clickVolume": "Click volume",
     "copy": "Copy",
-    "countIn": "One-measure count-in",
+    "countIn": "Count in before each phrase and loop",
+    "countBars": "Count-in measures",
+    "countBars1": "1 measure",
+    "countBars2": "2 measures",
+    "countBars3": "3 measures",
+    "countBars4": "4 measures",
+    "countBarsHint": "How many measures of beats come before the music starts. Play along always starts with them; with the switch above on, every phrase and every loop gets them too. Songs with two beats a bar start at 2.",
     "doFirst": "Play do before each phrase",
     "cue": "Cue",
     "cueAria": "What the cue shows",
@@ -981,6 +1224,25 @@ const STRINGS = {
     "lyrics": "Lyrics",
     "lyricsToShow": "Lyrics to show",
     "metroTitle": "Tempo and metronome",
+    "chords": "Chords",
+    "chordsNames": "Letter names (A7)",
+    "chordsRoman": "Roman numerals (V7)",
+    "chordsNashville": "Nashville numbers (5⁷)",
+    "chordsOff": "Off",
+    "chordSimple": "Simple chords (for ukulele): E9 → E7, Dmaj9 → D, no slash bass notes",
+    "chordKey": "Chord names when transposed",
+    "chordKeySound": "As they sound (follow Transpose)",
+    "chordKeyWritten": "As written (the song's own key)",
+    "chordsHint": "Chords show above the note where they start. A \"/\" between notes marks a chord that changes while a note is held. Numerals and Nashville numbers are the same in any key.",
+    "noteShapes": "Show notes as",
+    "noteShapesOff": "Syllables",
+    "noteShapesOnly": "Shapes only (tap a shape to see its syllable)",
+    "noteShapesBoth": "Shapes and syllables",
+    "noteNumbersOnly": "Numbers (jianpu) only (tap a number to see its syllable)",
+    "noteNumbersBoth": "Numbers (jianpu) and syllables",
+    "noteNumbersHint": "Numbers (jianpu, as in Chinese numbered notation): 1 is do up to 7 for ti, ♯4 is fi; a dot above is an octave up, a dot below an octave down.",
+    "noteShapesHint": "Shape notes show each note's place in the key by its shape, like movable do. A sharp or flat note keeps its step's shape, with ♯ or ♭ beside it (fi is fa's shape ♯).",
+    "shapeSyl": "Show the syllables too",
     "wakeOn": "Keep the screen on while playing",
     "wakeUnsupported": "This browser can't keep the screen on; you may need to tap it now and then.",
     "wakeFailed": "Couldn't keep the screen on ({msg}). Battery saver can block this.",
@@ -1071,6 +1333,8 @@ const STRINGS = {
     "startFromBarAria": "Start from bar {bar}",
     "subOne": "{label}, {span}, straight through. Uses the metronome switches and tempo above.",
     "subSong": "All {n} verses, each followed by the chorus, {span}. Uses the metronome switches and tempo above.",
+    "subPlan": "Your plan: verses {verses}, with the chorus {c} times, {span}. Uses the metronome switches and tempo above.",
+    "subPlanNoChorus": "Your plan: verses {verses}, {span}. Uses the metronome switches and tempo above.",
     "subSongNoChorus": "All {n} verses, {span}. Uses the metronome switches and tempo above.",
     "verseAndChorus": "Verse and chorus",
     "verseAndChorusN": "Verse {v} and chorus",
@@ -1175,6 +1439,11 @@ const STRINGS = {
     "lyricSetBad": "A saved lyric set is damaged and was skipped ({key}, set {i}): {what}",
     "alongLines": "Play along lyrics can’t be placed: {lines} lines on screen for {phrases} phrases.",
     "audio": "Sound problem ({where}): {msg}",
+    "noShape": "No note shape for the syllable \"{syl}\".",
+    "noPitch": "No pitch for the syllable \"{syl}\".",
+    "badChord": "Can't read the chord \"{chord}\" in bar {bar}.",
+    "sylCount": "Lyric syllables, {set}, {label} line {line}: {syl} syllables for {notes} notes.",
+    "sylText": "Lyric syllables, {set}, {label} line {line}: \"{marked}\" doesn't read the same as \"{plain}\".",
     "leadDots": "Play along's beat dots don't match the measure: {dots} dots for {beats} beats.",
     "chipMismatch": "Highlights may be off: {chips} syllables are shown for {notes} notes.",
     "copied": "Copied. You can paste it now.",
@@ -1354,6 +1623,9 @@ const STRINGS = {
   info: {
     "about": "About",
     "credits": "Song credits",
+    "history": "Song history",
+    "historyTitle": "{song}: a short history",
+    "noHistory": "No history written for this song yet.",
     "help": "Help",
     "close": "Close",
     "aboutTitle": "About Melodies by Ear",
@@ -1386,6 +1658,76 @@ const STRINGS = {
     "help5": "Bluetooth speakers and hearing aids delay the sound. Tap “Dots out of step? Sync them” in Tempo and metronome.",
     "help6Title": "Installing",
     "help6": "iPhone: in Safari, Share → Add to Home Screen. Android: in Chrome, ⋮ → Install app. It then works offline."
+  },
+  warm: {
+    "title": "Warm-up: find the note",
+    "intro": "Before you play, find the notes of this key on your instrument. Play the note you see, then tap Check to hear the right one.",
+    "introHear": "The app plays do, then a note of this key. Tap the syllable you hear.",
+    "keyTop": "Key: {key} major",
+    "keySong": "{song} · do = {do}",
+    "keyTopFrom": "Transposed. As written: {orig} major.",
+    "mode": "Quiz",
+    "modeAria": "Which quiz",
+    "modeSee": "See it, play it",
+    "modeHear": "Hear it, name it",
+    "doFirst": "Play do before each note",
+    "play": "Play the note",
+    "playAgain": "Play it again",
+    "next": "Next note",
+    "choicesAria": "Which note was it?",
+    "hearStart": "Tap Play the note.",
+    "wrong": "Not {syl}. Listen again.",
+    "right": "Yes! {syl} = {letter} in {key} major",
+    "show": "Show",
+    "showAria": "What the quiz shows",
+    "showSyl": "Syllable",
+    "showShape": "Shape",
+    "showBoth": "Both",
+    "showNum": "Number",
+    "set": "Notes",
+    "setAria": "Which notes to quiz",
+    "setSong": "This song's notes",
+    "setScale": "The scale",
+    "count": "Note {k} of {n}",
+    "doneCount": "All {n} notes found",
+    "done": "Done! Tap Start again for another round.",
+    "markHint": "No mark: the octave from do up to ti. A mark up high (do') is an octave higher; a mark down low, an octave lower.",
+    "markHintNum": "No dot: the octave from 1 (do) up to 7 (ti). A dot above is an octave higher; a dot below, an octave lower.",
+    "check": "Check",
+    "hearAgain": "Hear it again",
+    "answer": "{syl} = {letter} in {key} major",
+    "octave": "This one: {name} (middle C is C4)",
+    "restart": "Start again"
+  },
+  plan: {
+    "chorus": "Chorus",
+    "every": "After every verse",
+    "other": "After every other verse",
+    "end": "Only at the end",
+    "ends": "At the start and the end",
+    "custom": "My own plan",
+    "rowAria": "Which verses to sing, and where the chorus goes",
+    "hint": "Tap a verse number to leave that verse out (tap again to bring it back). Tap a C to put the chorus after that verse or take it out. The chorus always comes after the last verse.",
+    "hintNoChorus": "Tap a verse number to leave that verse out (tap again to bring it back).",
+    "verseOn": "Verse {v}: sung. Tap to leave it out.",
+    "verseOff": "Verse {v}: left out. Tap to sing it.",
+    "chorusOn": "Chorus after verse {v}. Tap to take it out.",
+    "chorusOff": "No chorus after verse {v}. Tap to add it.",
+    "chorusLast": "The chorus always comes after the last verse.",
+    "keepOne": "At least one verse has to stay in."
+  },
+  hooks: {
+    "button": "Shape memory hooks",
+    "title": "Remembering the seven shapes",
+    "intro": "Not traditional, just ways to make the shapes stick:",
+    "do": "A tent or a house: do is home base.",
+    "re": "A half-moon, rising just above do.",
+    "mi": "A diamond, a gem: \"mi, a jewel for me.\"",
+    "fa": "A flag or a sail: sail far (fa) away.",
+    "so": "Round like the sun (sol means sun in Spanish).",
+    "la": "A box: \"a la-box.\"",
+    "ti": "An ice-cream cone, a treat that leads back home to do.",
+    "history": "Shape notes began in the United States. Four shapes (fa, sol, la, mi) came first, in Little and Smith's The Easy Instructor (Philadelphia, 1801); Jesse B. Aikin's The Christian Minstrel (Philadelphia, 1846) added do, re and ti, making the seven shapes used here. A sharp or flat keeps its step's shape (fi is fa's shape with ♯)."
   },
   units: {
     "bpm": "{n} bpm",
@@ -1562,10 +1904,24 @@ function storeRemove(key) {
 
 // ---------- Melody data ----------
 // Durations are in eighth notes. Notes in ( ) are pickups.
-// Semitones from do: mi -8, fa -7, fi -6, so -5, si -4, la -3, ti -1,
-// do 0, re 2, mi' 4, fa' 5, so' 7
-const PITCH = { "mi":-8, "fa":-7, "fi":-6, "so":-5, "si":-4, "la":-3, "ti":-1,
-                "do":0, "re":2, "mi'":4, "fa'":5, "so'":7 };
+// Octave marks, the usual way: no mark is the octave from do up to ti; each
+// ' after a syllable is an octave higher (do', do''); each , an octave lower
+// (so, la,, ). On screen a low mark shows as a lowered apostrophe.
+const STEP = { do: 0, di: 1, ra: 1, re: 2, ri: 3, me: 3, mi: 4, fa: 5, fi: 6, se: 6,
+               so: 7, si: 8, le: 8, la: 9, li: 10, te: 10, ti: 11 };
+// Half steps from do, or null for a syllable the app doesn't know.
+function pitchOf(syl) {
+  const m = /^([a-z]+)('*|,*)$/.exec(syl || "");
+  if (!m || !(m[1] in STEP)) return null;
+  return STEP[m[1]] + 12 * (m[2][0] === "," ? -m[2].length : m[2].length);
+}
+const sylBase = syl => syl.replace(/['，,]+$/, "");
+// The octave mark, for display: high marks as they are, low marks lowered.
+function markHTML(syl) {
+  const mark = syl.slice(sylBase(syl).length);
+  if (!mark) return "";
+  return mark[0] === "," ? `<span class="ol">${"'".repeat(mark.length)}</span>` : `<span class="oh">${mark}</span>`;
+}
 
 // ---------- Songs ----------
 // Each song lists its phrases in the same short notation: solfège syllables
@@ -1579,67 +1935,95 @@ const PITCH = { "mi":-8, "fa":-7, "fi":-6, "so":-5, "si":-4, "la":-3, "ti":-1,
 // have", "let us be"), held notes across barlines, and small rhythm changes.
 const INTERNATIONALE_VERSES = {
   1: [
-    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
-    "| re:3 do:1 ti:1 la:1 so:1 fa:1 | mi:7",
-    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:3",
-    "(fa:1) | re:3 do:1 ti:1 ti:1.5 do:0.5 re:1 | fa':2 ti:2 do:3",
-    "(do:1) | ti:3 ti:1 la:1.5 ti:0.5 do:1 la:1 | ti:4 so:2",
-    "(so:1.5 so:0.5) | la:2 la:1.5 la:0.5 re:2 do:2 | ti:6",
-    "(re:1 re:1) | re:3 ti:1 so:1 so:1 fi:1 so:1 | mi':3 so:2",
-    "(la:1 ti:1 do:1) | ti:2 re:2 do:2 la:2 | so:6"
+    "(so,:1) | do:3 ti,:1 re:1 do:1 so,:1 mi,:1 | la,:4 fa,:4",
+    "| re:3 do:1 ti,:1 la,:1 so,:1 fa,:1 | mi,:7",
+    "(so,:1) | do:3 ti,:1 re:1 do:1 so,:1 mi,:1 | la,:4 fa,:3",
+    "(fa,:1) | re:3 do:1 ti,:1 ti,:1.5 do:0.5 re:1 | fa:2 ti,:2 do:3",
+    "(do:1) | ti,:3 ti,:1 la,:1.5 ti,:0.5 do:1 la,:1 | ti,:4 so,:2",
+    "(so,:1.5 so,:0.5) | la,:2 la,:1.5 la,:0.5 re:2 do:2 | ti,:6",
+    "(re:1 re:1) | re:3 ti,:1 so,:1 so,:1 fi,:1 so,:1 | mi:3 so,:2",
+    "(la,:1 ti,:1 do:1) | ti,:2 re:2 do:2 la,:2 | so,:6"
   ],
   2: [
-    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
-    "| re:3 do:1 ti:1 la:1 so:1.5 fa:0.5 | mi:7",
-    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:3",
-    "(re:1) | re:3 do:1 ti:1.5 ti:0.5 do:1 re:1 | fa':2 ti:2 do:2",
-    "(do:1 do:1) | ti:3 ti:1 la:1.5 ti:0.5 do:1 la:1 | ti:4 so:2",
-    "(so:2/3 so:2/3 so:2/3) | la:2 la:1.5 la:0.5 re:2 do:2 | ti:7",
-    "(re:1) | re:3 ti:1 so:1 fi:1 so:1 re:1 | mi':3 so:2",
-    "(la:1 ti:1 do:1) | ti:2 re:2 do:2 la:2 | so:6"
+    "(so,:1) | do:3 ti,:1 re:1 do:1 so,:1 mi,:1 | la,:4 fa,:4",
+    "| re:3 do:1 ti,:1 la,:1 so,:1.5 fa,:0.5 | mi,:7",
+    "(so,:1) | do:3 ti,:1 re:1 do:1 so,:1 mi,:1 | la,:4 fa,:3",
+    "(re:1) | re:3 do:1 ti,:1.5 ti,:0.5 do:1 re:1 | fa:2 ti,:2 do:2",
+    "(do:1 do:1) | ti,:3 ti,:1 la,:1.5 ti,:0.5 do:1 la,:1 | ti,:4 so,:2",
+    "(so,:2/3 so,:2/3 so,:2/3) | la,:2 la,:1.5 la,:0.5 re:2 do:2 | ti,:7",
+    "(re:1) | re:3 ti,:1 so,:1 fi,:1 so,:1 re:1 | mi:3 so,:2",
+    "(la,:1 ti,:1 do:1) | ti,:2 re:2 do:2 la,:2 | so,:6"
   ],
   3: [
-    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
-    "| re:3 do:1 ti:1 la:1 so:1 fa:1 | mi:7",
-    "(so:1) | do:3 ti:1 re:1 do:1 so:1 mi:1 | la:4 fa:4",
-    "| re:3 do:1 ti:2 re:2 | fa':3 ti:1 do:2",
-    "(do:1 do:1) | ti:3 ti:1 la:1.5 ti:0.5 do:1 la:1 | ti:4 so:2",
-    "(so:2/3 so:2/3 so:2/3) | la:2 la:1.5 la:0.5 re:2 do:2 | ti:7",
-    "(re:1) | re:3 ti:1 so:1 fi:1 so:1 re:1 | mi':3 so:2",
-    "(la:2 do:1) | ti:2 re:2 do:2 la:2 | so:6"
+    "(so,:1) | do:3 ti,:1 re:1 do:1 so,:1 mi,:1 | la,:4 fa,:4",
+    "| re:3 do:1 ti,:1 la,:1 so,:1 fa,:1 | mi,:7",
+    "(so,:1) | do:3 ti,:1 re:1 do:1 so,:1 mi,:1 | la,:4 fa,:4",
+    "| re:3 do:1 ti,:2 re:2 | fa:3 ti,:1 do:2",
+    "(do:1 do:1) | ti,:3 ti,:1 la,:1.5 ti,:0.5 do:1 la,:1 | ti,:4 so,:2",
+    "(so,:2/3 so,:2/3 so,:2/3) | la,:2 la,:1.5 la,:0.5 re:2 do:2 | ti,:7",
+    "(re:1) | re:3 ti,:1 so,:1 fi,:1 so,:1 re:1 | mi:3 so,:2",
+    "(la,:2 do:1) | ti,:2 re:2 do:2 la,:2 | so,:6"
   ]
 };
 const INTERNATIONALE_CHORUS = [
-  "(mi':1.5 re:0.5) | do:4 so:2 la:2 | la:4 fa:2",
-  "(re:1.5 do:0.5) | ti:2 ti:2 la:2 so:2 | so:6",
-  "(so:2) | mi':3 mi':1 re:2 so:2 | do:4 ti:3",
-  "(ti:1) | la:3 si:1 la:2 re:2 | re:6",
-  "(mi':1.5 re:0.5) | do:4 so:2 la:2 | la:4 fa:2",
-  "(re:1.5 do:0.5) | ti:2 ti:2 la:3 (so:1) | mi':7",
-  "(mi':1) | so':3 so':1 fa':1.5 fa':0.5 mi':2 | re:2 mi':2 fa':3",
-  "(fa':1) | mi':3 mi':1 re:3 do:1 | do:6"
+  "(mi:1.5 re:0.5) | do:4 so,:2 la,:2 | la,:4 fa,:2",
+  "(re:1.5 do:0.5) | ti,:2 ti,:2 la,:2 so,:2 | so,:6",
+  "(so,:2) | mi:3 mi:1 re:2 so,:2 | do:4 ti,:3",
+  "(ti,:1) | la,:3 si,:1 la,:2 re:2 | re:6",
+  "(mi:1.5 re:0.5) | do:4 so,:2 la,:2 | la,:4 fa,:2",
+  "(re:1.5 do:0.5) | ti,:2 ti,:2 la,:3 (so,:1) | mi:7",
+  "(mi:1) | so:3 so:1 fa:1.5 fa:0.5 mi:2 | re:2 mi:2 fa:3",
+  "(fa:1) | mi:3 mi:1 re:3 do:1 | do:6"
 ];
 
 // Yankee Doodle, in G (do = G4), cut time (two half-note beats a bar), as in
-// Lynn's songbook (top melody line only). Every verse has the same tune:
-// 16 bars, verse (bars 1–8) then chorus (bars 9–16). One phrase = 2 bars =
-// one lyric line. Bar 2 ends on ti (F♯), as printed; many versions have a low so there.
+// Lynn's songbook (top melody line only). 16 bars a verse: verse (bars 1–8)
+// then chorus (bars 9–16). One phrase = 2 bars = one lyric line; a word that
+// starts a line on the last beat of the bar before ("A-long", "And", "As") is
+// that line's pickup. Bar 2 ends on ti (F♯), as printed; many versions have a
+// low so there.
+// Verses 2–9, "The Yankee's Return from Camp":
 const YANKEE_VERSE = [
-  "| do:2 do:2 re:2 mi':2 | do:2 mi':2 re:2 ti:2",       // Father'n I went down to camp, A-
-  "| do:2 do:2 re:2 mi':2 | do:4 ti:2",                   // -long with Captain Gooding
-  "(so:2) | do:2 do:2 re:2 mi':2 | fa':2 mi':2 re:2 do:2", // And there we saw the men and boys
-  "| ti:2 so:2 la:2 ti:2 | do:4 do:4"                     // As thick as hasty pudding
+  "| do:2 do:2 re:2 mi:2 | do:2 mi:2 re:2",              // Father'n I went down to camp
+  "(ti,:2) | do:2 do:2 re:2 mi:2 | do:4 ti,:2",             // A-long with Captain Gooding
+  "(so,:2) | do:2 do:2 re:2 mi:2 | fa:2 mi:2 re:2",      // And there we saw the men and boys
+  "(do:2) | ti,:2 so,:2 la,:2 ti,:2 | do:4 do:4"               // As thick as hasty pudding
+];
+// Verse 1, "Yankee Doodle went to town": "po-ny" holds its last note (no
+// pickup into "Stuck a feather"), so lines 2 and 3 differ a little.
+const YANKEE_VERSE_TOWN = [
+  "| do:2 do:2 re:2 mi:2 | do:2 mi:2 re:2",              // Yankee Doodle went to town
+  "(ti,:2) | do:2 do:2 re:2 mi:2 | do:4 ti,:4",             // A-riding on a pony
+  "| do:2 do:2 re:2 mi:2 | fa:2 mi:2 re:2",             // Stuck a feather in his cap
+  "(do:2) | ti,:2 so,:2 la,:2 ti,:2 | do:4 do:4"               // And called it macaroni
 ];
 const YANKEE_CHORUS = [
-  "| la:3 ti:1 la:2 so:2 | la:2 ti:2 do:4",               // Yankee Doodle keep it up
-  "| so:3 la:1 so:2 fa:2 | mi:4 so:4",                    // Yankee Doodle dandy
-  "| la:3 ti:1 la:2 so:2 | la:2 ti:2 do:2 la:2",          // Mind the music and the step, And
-  "| so:2 do:2 ti:2 re:2 | do:4 do:4"                     // with the girls be handy
+  "| la,:3 ti,:1 la,:2 so,:2 | la,:2 ti,:2 do:4",                // Yankee Doodle keep it up
+  "| so,:3 la,:1 so,:2 fa,:2 | mi,:4 so,:4",                     // Yankee Doodle dandy
+  "| la,:3 ti,:1 la,:2 so,:2 | la,:2 ti,:2 do:2",                // Mind the music and the step
+  "(la,:2) | so,:2 do:2 ti,:2 re:2 | do:4 do:4"               // And with the girls be handy
 ];
+// Yankee Doodle's lyrics split into sung syllables, one per note (checked by
+// Lynn, 2026-11-05). "\-" keeps a real hyphen ("A-riding").
+const YANKEE_SYL = {
+  verses: [
+    ["Yan-kee Doo-dle went to town", "A\\-rid-ing on a po-ny", "Stuck a fea-ther in his cap", "And called it mac-a-ro-ni"],
+    ["Fa-ther'n I went down to camp", "A-long with Cap-tain Good-ing", "And there we saw the men and boys", "As thick as hast-y pud-ding"],
+    ["There was Cap-tain Wash-ing-ton", "Up-on a slap-ping stal-lion", "A\\-giv-ing or-ders to his men", "There must have been a mil-lion"],
+    ["Then I saw a swamp-ing gun", "As large as logs of ma-ple", "Up-on a ver-y lit-tle cart", "A load for fa-ther's cat-tle"],
+    ["Ev'-ry time they shot it off", "It took a horn of pow-der", "And made a noise like fa-ther's gun", "On-ly a na-tion loud-er"],
+    ["There I saw a wood-en keg", "With heads made out of lea-ther", "They knocked up-on it with some sticks", "To call the folks to-geth-er"],
+    ["Then they'd fife a-way like fun", "And play on corn-stalk fid-dles", "And some had rib-bons red as blood", "All bound a-round their mid-dles"],
+    ["Troop-ers too would gal-lop up", "And shoot right in our fa-ces", "It scared me al-most half to death", "To see them run such ra-ces"],
+    ["I can't tell you all I saw", "They kept up such a smoth-er", "I took my hat off, made a bow", "And scam-pered home to moth-er"]
+  ],
+  chorus: ["Yan-kee Doo-dle keep it up", "Yan-kee Doo-dle dan-dy", "Mind the mu-sic and the step", "And with the girls be hand-y"]
+};
 const YANKEE_LYRICS = {
   trad: {
     name: "Traditional (about 1775)", tab: "Traditional",
     verses: [
+      ["Yankee Doodle went to town", "A-riding on a pony", "Stuck a feather in his cap", "And called it macaroni"],
       ["Father'n I went down to camp", "Along with Captain Gooding", "And there we saw the men and boys", "As thick as hasty pudding"],
       ["There was Captain Washington", "Upon a slapping stallion", "A-giving orders to his men", "There must have been a million"],
       ["Then I saw a swamping gun", "As large as logs of maple", "Upon a very little cart", "A load for father's cattle"],
@@ -1648,9 +2032,9 @@ const YANKEE_LYRICS = {
       ["Then they'd fife away like fun", "And play on cornstalk fiddles", "And some had ribbons red as blood", "All bound around their middles"],
       ["Troopers too would gallop up", "And shoot right in our faces", "It scared me almost half to death", "To see them run such races"],
       ["I can't tell you all I saw", "They kept up such a smother", "I took my hat off, made a bow", "And scampered home to mother"]
-    ].map((lines, i) => ({ label: "Verse " + (i + 1), lines })),
+    ].map((lines, i) => ({ label: "Verse " + (i + 1), lines, syl: YANKEE_SYL.verses[i] })),
     choruses: [
-      { label: "Chorus", lines: ["Yankee Doodle keep it up", "Yankee Doodle dandy", "Mind the music and the step", "And with the girls be handy"] }
+      { label: "Chorus", lines: ["Yankee Doodle keep it up", "Yankee Doodle dandy", "Mind the music and the step", "And with the girls be handy"], syl: YANKEE_SYL.chorus }
     ]
   }
 };
@@ -1664,8 +2048,17 @@ const SONGS = {
       "Music: Pierre De Geyter, 1888. Public domain.",
       "French words: Eugène Pottier, 1871 (couplets 1, 2 and 6 and the refrain). Public domain.",
       "English words: Charles H. Kerr, 1900 (verses 1–3 and the chorus). Public domain. Verse 3's wording varies between printings.",
-      "Plain English meanings under the French: written for this app, a close, literal rendering."
+      "Plain English meanings under the French: written for this app, a close, literal rendering.",
+      "Chords: from Billy Bragg's arrangement."
     ],
+    // Chords, bar by bar within a verse or the chorus (see "Chords" below the songs)
+    chords: {
+      verse: ["1 1/3@4", "4 2-@4", "57 4@4", "1 1/3@6", "1 1/3@4", "4 2-7@4", "57 2-7@4", "59 1@4",
+              "5 27@4", "5 57@4", "2 2/#4@4", "5 59@6", "57 1@4", "1/3 6-@4", "27 2@4", "5 57@6"],
+      // (verseBars: { 2: { 6: "..." } } would give one verse its own chords for a bar; the Internationale's three verses share theirs)
+      chorus: ["1", "4", "5 4/6@4", "1 57@4", "1 7-7@4", "6- 5@4", "2/#4 27@4", "2 57@6",
+               "1", "4", "5 4/6@4", "1 17@6", "67 6@4", "2-7 4@4", "1 57@4", "1"]
+    },
     doMidi: 69,                                   // do = A4
     // perBar and beatLen are in eighth notes: 4/4 has 8 per bar, beats of 2
     meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
@@ -1681,21 +2074,42 @@ const SONGS = {
   yankeedoodle: {
     id: "yankeedoodle",
     title: "Yankee Doodle",
-    lede: "Yankee Doodle, phrase by phrase: every verse and the chorus split into two-bar lines. All eight verses share one tune.",
+    lede: "Yankee Doodle, phrase by phrase: every verse and the chorus split into two-bar lines. All nine verses share one tune.",
     credits: [
       "Tune: traditional, from the 1700s. Public domain.",
-      "Words: traditional, from the time of the American Revolution; these verses (\"Father and I went down to camp\") are often credited to Edward Bangs, about 1775. Public domain.",
-      "Melody as printed in a songbook arrangement (top line only); bar 2 ends on ti, where many versions have a low so."
+      "Verse 1 (\"Yankee Doodle went to town\"): traditional, first known in print in 1842. Public domain.",
+      "Verses 2–9 and the chorus: \"The Yankee's Return from Camp\" (\"Father and I went down to camp\"), traditional, usually credited to Edward Bangs, 1775 or 1776. Public domain.",
+      "Melody as printed in a songbook arrangement (top line only); bar 2 ends on ti, where many versions have a low so.",
+      "Chords: as printed in the same songbook arrangement."
     ],
+    chords: {
+      verse: ["1", "57@4", "1", "57sus4 57@4", "1 17@4", "4 4-6@4", "57", "1"],
+      chorus: ["4", "", "1", "", "4", "", "1 57@4", "1"]
+    },
     doMidi: 67,                                   // do = G4
     // cut time: 8 eighths a bar, beats of a half note (4 eighths)
     meter: { perBar: 8, beatLen: 4, label: "2/2", beatName: "half-note" },
-    verses: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map(v => [v, YANKEE_VERSE])),
+    verses: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map(v => [v, v === 1 ? YANKEE_VERSE_TOWN : YANKEE_VERSE])),
     chorus: YANKEE_CHORUS,
     phrasesPerLine: 1, barsPerPhrase: 2,
     verseFirstBar: v => 1 + 16 * (v - 1),
     chorusFirstBar: v => 9 + 16 * (v - 1),
-    wholeLabel: "The whole song, all 8 verses",
+    wholeLabel: "The whole song, all 9 verses",
+    history: [
+      { h: "The tune", p: [
+        "Nobody knows where the tune came from. It is older than any of its words, and historians have proposed more than a dozen origins (English, Dutch, Irish, Hungarian, even Oliver Cromwell's time) without proving any. Its second half matches an Irish tune, \"All the Way to Galway.\" It was in circulation in the American colonies by the 1760s, and appears in a 1762 Pennsylvania ballad opera, The Disappointment.",
+        "In England the same tune carries the nursery rhyme \"Lucy Locket\" (Lucy loses her pocket and Kitty Fisher finds it; first printed in 1842). Kitty Fisher was probably a famous London beauty of the 1750s and 60s, and the tune is said to have also been known as \"Kitty Fisher's Jig.\" Which words came first isn't known."] },
+      { h: "A song to make fun of the colonists", p: [
+        "\"Yankee\" was a British nickname for New Englanders, used as an insult by the 1750s. A \"doodle\" was a fool or simpleton. A \"macaroni\" was a young man who followed the extreme London fashions of the 1760s and 70s: towering wigs, tight clothes, tiny hats. So a Yankee who sticks a feather in his cap and calls it macaroni is a country bumpkin who thinks he's the height of style.",
+        "Tradition says a British army surgeon, Richard Shuckburgh, wrote the first words around 1755 to mock the ragged colonial troops he saw during the French and Indian War. One Connecticut legend says those troops wore chicken feathers in their hats because they had no uniforms. Both stories are traditions, not documented fact."] },
+      { h: "The colonists take it back", p: [
+        "British soldiers played and sang the song at the colonists, reportedly even on the march to Lexington and Concord in April 1775. After the colonists drove them back that day, a Boston paper quoted a British officer complaining that the Yankees had \"made us dance it till we were tired.\"",
+        "From then on the Americans sang it as their own, proud to be Yankee Doodles, and wrote verse after verse. The best known is \"The Yankee's Return from Camp\" (\"Father and I went down to camp\"), usually credited to Edward Bangs, a young Harvard student and Minuteman, in 1775 or 1776: a country boy's wide-eyed account of a visit to the army camp. Its chorus, \"Yankee Doodle keep it up,\" is the one sung here. The tune was played when the British surrendered at Saratoga in 1777; a famous story that it was played at Yorktown in 1781 may be only a legend."] },
+      { h: "Later", p: [
+        "Through the 1800s it served almost as a national anthem. Soldiers on both sides of the Civil War made up versions to mock each other; a Confederate one, \"Dixie Doodle,\" was published in New Orleans in 1862. George M. Cohan's \"The Yankee Doodle Boy\" (1904) is a different song that quotes it. Connecticut made \"Yankee Doodle\" its state song in 1978."] },
+      { h: "The words in this app", p: [
+        "Verse 1, \"Yankee Doodle went to town,\" is the verse most Americans know today, but it isn't known in print before 1842 and may be younger than the Revolution. Verses 2–9 and the chorus are \"The Yankee's Return from Camp\" from Lynn's songbook. Hundreds of other verses exist, from both sides of every war the song has seen."] }
+    ],
     fileName: "yankeedoodle-my-lyrics.txt",
     lyrics: YANKEE_LYRICS
   }
@@ -1766,7 +2180,7 @@ $("errClose").addEventListener("click", dismissErrors);
   el("dvBtns").closest(".drill-verse").hidden = VERSE_COUNT < 2;
   el("chorusRow").hidden = !HAS_CHORUS;
   renderBeatDots(METER.perBar / METER.beatLen);
-  el("alongBeats").innerHTML = Array.from({ length: METER.perBar / METER.beatLen }, (_, i) => `<span class="beat lead-beat${i === 0 ? " one" : ""}"></span>`).join("");
+  // (the lead-in dots are drawn by renderLeadDots, once the count-in setting is known)
   el("doPitch").value = SONG_DO_MIDI;
   el("tempoLabel").textContent = METER.label
     ? T("tempo.label", { beat: T(`tempo.beat${METER.beatLen}`), meter: METER.label })
@@ -1790,7 +2204,106 @@ function parse(str) {
   }
   return items;
 }
-const withItems = list => list.map(p => ({ ...p, items: parse(p.m) }));
+// ---------- Chords ----------
+// A song's chords are stored per bar, relative to do, Nashville style: the
+// scale step 1–7 (with b or # in front for a chromatic root), then the
+// quality ("" major, "-" minor, "7", "-7", "maj9", "9", "7sus4", "-6", ...),
+// then "/3" for a bass note other than the root. "@4" puts a chord 4 eighths
+// into the bar (no "@": the start of the bar). A bar with no chord keeps the
+// one before it. Kept as numbers so any key and any display style work.
+let CHORD_BARS = null;        // global bar number -> its chord tokens
+function chordBars() {
+  if (CHORD_BARS) return CHORD_BARS;
+  CHORD_BARS = {};
+  const c = SONG.chords;
+  if (!c) return CHORD_BARS;
+  for (const v of Object.keys(VERSE_M).map(Number)) {
+    (c.verse || []).forEach((str, i) => {
+      const over = c.verseBars && c.verseBars[v] && c.verseBars[v][i + 1];
+      CHORD_BARS[SONG.verseFirstBar(v) + i] = over != null ? over : str;
+    });
+    if (HAS_CHORUS && c.chorus) c.chorus.forEach((str, i) => { CHORD_BARS[SONG.chorusFirstBar(v) + i] = str; });
+  }
+  return CHORD_BARS;
+}
+// The chords of one bar: [{ at: eighths into the bar, tok }]
+function chordsInBar(bar) {
+  const str = chordBars()[bar];
+  if (!str) return [];
+  return str.trim().split(/\s+/).map(t => { const [tok, at] = t.split("@"); return { tok, at: at ? +at : 0 }; });
+}
+// Mark a phrase's notes with the chords that start on them (it.ch), and with
+// chords that change while they're held (it.chAfter, shown on a "/" marker).
+function withChords(items, p) {
+  if (!SONG.chords || p.firstBarNum == null) return items;
+  const notes = items.filter(x => !x.bar);
+  let t = 0;
+  for (const n of notes) { n.t0 = t; t += n.dur; }
+  const total = t, pick = pickupEighths(items), per = METER.perBar;
+  for (let bar = p.firstBarNum - 1; bar <= p.lastBarNum; bar++) {
+    for (const c of chordsInBar(bar)) {
+      const at = pick + (bar - p.firstBarNum) * per + c.at;
+      if (at < -1e-6 || at >= total - 1e-6) continue;
+      const on = notes.find(n => Math.abs(n.t0 - at) < 1e-6);
+      if (on) { on.ch = c.tok; continue; }
+      const held = notes.find(n => n.t0 < at && at < n.t0 + n.dur);
+      if (held) (held.chAfter = held.chAfter || []).push(c.tok);
+    }
+  }
+  return items;
+}
+const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
+const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII"];
+// A chord token's parts, or null if it can't be read
+function parseChord(tok) {
+  const m = /^([b#]?)([1-7])([^/]*)(?:\/([b#]?)([1-7]))?$/.exec(tok);
+  if (!m) return null;
+  return { acc: m[1], deg: +m[2], q: m[3], bassAcc: m[4] || "", bass: m[5] ? +m[5] : 0 };
+}
+// Simple chords, for ukulele: drop the extensions and the slash bass
+const SIMPLE_Q = { "9": "7", "maj9": "", "maj7": "", "6": "", "sus4": "", "sus2": "", "7sus": "7", "7sus4": "7", "-7": "-", "-6": "-", "-9": "-", "add9": "" };
+// The letter name of a scale step in the key whose do is doMidi, spelled by its place in the key
+function stepLetter(deg, acc, doMidi) {
+  const keyLetter = LETTERS.indexOf(KEY_NAMES[((doMidi % 12) + 12) % 12][0]);
+  const li = (keyLetter + deg - 1) % 7;
+  const pc = ((doMidi + MAJOR_STEPS[deg - 1] + (acc === "#" ? 1 : acc === "b" ? -1 : 0)) % 12 + 12) % 12;
+  const diff = ((pc - LETTER_PC[li]) + 18) % 12 - 6;
+  return LETTERS[li] + (ACC[diff] ?? "");
+}
+const ACC_SIGN = { "#": "♯", "b": "♭", "": "" };
+// How a chord shows: style "names" | "roman" | "nashville"; doMidi for letter names
+function chordLabel(tok, style, simple, doMidi) {
+  const c = parseChord(tok);
+  if (!c) return esc(tok);
+  let q = c.q, bass = c.bass;
+  if (simple) { if (q in SIMPLE_Q) q = SIMPLE_Q[q]; bass = 0; }
+  const minor = q.startsWith("-"), rest = minor ? q.slice(1) : q;
+  if (style === "roman") {
+    let r = ROMAN[c.deg - 1];
+    if (minor || rest === "dim") r = r.toLowerCase();
+    const tail = rest === "dim" ? "°" : rest;
+    return ACC_SIGN[c.acc] + r + esc(tail) + (bass ? "/" + ACC_SIGN[c.bassAcc] + bass : "");
+  }
+  if (style === "nashville") {
+    return ACC_SIGN[c.acc] + c.deg + (minor ? "-" : "") + (rest ? `<sup>${esc(rest)}</sup>` : "")
+      + (bass ? "/" + ACC_SIGN[c.bassAcc] + bass : "");
+  }
+  const tail = (minor ? "m" : "") + rest;
+  return stepLetter(c.deg, c.acc, doMidi) + esc(tail) + (bass ? "/" + stepLetter(c.bass, c.bassAcc, doMidi) : "");
+}
+// The current settings' label for a chord
+function chordNow(tok) {
+  const style = $("chordStyle").value;
+  const doM = SONG_DO_MIDI + ($("chordKey").value === "written" ? 0 : +$("transpose").value);
+  return chordLabel(tok, style === "off" ? "names" : style, $("chordSimple").checked, doM);
+}
+const chordSpan = tok => `<span class="chd" data-ch="${esc(tok)}">${chordNow(tok)}</span>`;
+// After a setting or Transpose changes: relabel every chord on the page (no re-render)
+function refreshChords() {
+  document.documentElement.dataset.chords = $("chordStyle").value;
+  document.querySelectorAll(".chd[data-ch]").forEach(el => { el.innerHTML = chordNow(el.dataset.ch); });
+}
+const withItems = list => list.map(p => ({ ...p, items: withChords(parse(p.m), p) }));
 
 // When phrases are joined, a held note fills out its bar if the next
 // phrase's pickup is shorter than the gap. (At the end of a chorus that
@@ -1828,9 +2341,15 @@ function validateSong() {
       const edge = i === 0 || i === segs.length - 1;     // pickup and final bar may be short
       if (edge ? sum > METER.perBar + 1e-6 : Math.abs(sum - METER.perBar) > 1e-6) say(T("err.songBar", { label, i, sum, need: METER.perBar }));
     });
-    for (const it of items) if (!it.bar && !(it.syl in PITCH)) say(T("err.songSyllable", { label, syl: it.syl }));
+    for (const it of items) if (!it.bar && pitchOf(it.syl) === null) say(T("err.songSyllable", { label, syl: it.syl }));
   };
   for (const [k, c] of Object.entries(SEQ_CHOICES)) check(c.label, joinFill(withItems(c.build())).flatMap(p => p.items));
+  validateSyllables();
+  for (const [bar, str] of Object.entries(chordBars()))
+    for (const t of (str || "").trim().split(/\s+/).filter(Boolean)) {
+      const [tok, at] = t.split("@");
+      if (!parseChord(tok) || (at != null && !(+at >= 0 && +at < METER.perBar))) say(T("err.badChord", { chord: t, bar }));
+    }
 }
 
 // A song marked instrumental has no lyrics, so every lyric control is hidden.
@@ -1901,10 +2420,36 @@ VERSE_NUMS.forEach(v => {
     build: () => [...verseOf(v), ...chorusAfter(v)]
   };
 });
+// ---- The song plan (whole song only): which verses, and where the chorus goes.
+// Saved per song: { chorus: "every" | "other" | "end" | "ends" | "custom",
+// off: [verses left out], custom: [verses followed by the chorus] }.
+const PLAN_STORE = songKey("phrase-parrot-songplan-v1");
+let PLAN = { chorus: "every", off: [], custom: [] };
+(function loadPlan() {
+  const saved = storeGetJSON(PLAN_STORE);
+  if (saved && typeof saved === "object") PLAN = {
+    chorus: ["every", "other", "end", "ends", "custom"].includes(saved.chorus) ? saved.chorus : "every",
+    off: Array.isArray(saved.off) ? saved.off.filter(v => VERSE_M[v]) : [],
+    custom: Array.isArray(saved.custom) ? saved.custom.filter(v => VERSE_M[v]) : []
+  };
+  if (PLAN.off.length >= VERSE_NUMS.length) PLAN.off = [];
+})();
+const savePlan = () => storeSet(PLAN_STORE, JSON.stringify(PLAN));
+// The verses sung, in order
+const planVerses = () => VERSE_NUMS.filter(v => !PLAN.off.includes(v));
+// Is the chorus sung after verse v? (Always after the last verse sung.)
+function planChorusAfter(v) {
+  if (!HAS_CHORUS) return false;
+  const sung = planVerses(), i = sung.indexOf(v);
+  if (i < 0) return false;
+  if (i === sung.length - 1) return true;
+  return { every: true, other: i % 2 === 1, end: false, ends: i === 0, custom: PLAN.custom.includes(v) }[PLAN.chorus];
+}
+const planIsDefault = () => !PLAN.off.length && (!HAS_CHORUS || PLAN.chorus === "every" || planVerses().every(planChorusAfter));
 if (VERSE_COUNT > 1) SEQ_CHOICES.song = {
   label: SONG.wholeLabel || T("seq.whole"),
   play: T("seq.playWhole"),
-  build: () => VERSE_NUMS.flatMap(v => [...verseOf(v), ...chorusAfter(v)])
+  build: () => planVerses().flatMap(v => [...verseOf(v), ...(planChorusAfter(v) ? chorusAfter(v) : [])])
 };
 document.getElementById("seqSel").innerHTML = Object.entries(SEQ_CHOICES)
   .map(([k, c]) => `<option value="${k}">${c.label}</option>`).join("");
@@ -2460,7 +3005,7 @@ function stopAll() {
   clearTimeout(looping); looping = null;
   clearTimeout(endTimer); endTimer = null;
   visuals = [];
-  document.querySelectorAll(".n.on, .beat.on, .all-line.on").forEach(el => el.classList.remove("on"));
+  document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on").forEach(el => el.classList.remove("on"));
   if (typeof endWhole === "function" && (wholeRun || wholePaused !== null)) endWhole();
   if (calibrating) {           // stopped partway through a sync: reset it
     calibrating = false; calib = null;
@@ -2484,7 +3029,7 @@ const MIN_HOLD_MS = 120;
 let lastCT = -1, lastCTwall = 0, lastHeard = 0, heardCtx = null;
 
 function showAt(el, when, dur) {
-  const group = el.classList.contains("lead-beat") ? "lead" : el.classList.contains("beat") ? "beat" : el.classList.contains("all-line") ? "line" : "note";
+  const group = el.classList.contains("lead-beat") ? "lead" : el.classList.contains("beat") ? "beat" : el.classList.contains("all-line") ? "line" : el.classList.contains("syl") ? "syl" : "note";
   visuals.push({ el, group, start: when, end: when + dur, shownAt: 0 });
   if (!rafId) rafId = requestAnimationFrame(drawVisuals);
 }
@@ -2519,7 +3064,7 @@ function drawVisuals() {
   const now = heardTime() - (+$("visDelay").value) / 1000;
   const wall = performance.now();
   const keep = [];
-  for (const group of ["beat", "lead", "note", "line"]) {
+  for (const group of ["beat", "lead", "note", "line", "syl"]) {
     const items = visuals.filter(v => v.group === group);
     // the latest event that has started
     let current = null;
@@ -2536,7 +3081,7 @@ function drawVisuals() {
   }
   visuals = keep;
   if (visuals.length) rafId = requestAnimationFrame(drawVisuals);
-  else document.querySelectorAll(".n.on, .beat.on").forEach(el => el.classList.remove("on"));
+  else document.querySelectorAll(".n.on, .beat.on, .syl.on").forEach(el => el.classList.remove("on"));
 }
 
 // ---------- About, Song credits, Help ----------
@@ -2561,6 +3106,10 @@ function creditsHTML() {
   return para("info.creditsIntro", "fine") + songs.map(sg => `<h3>${esc(sg.title)}</h3>` +
     (Array.isArray(sg.credits) && sg.credits.length ? `<ul>${sg.credits.map(c => `<li class="song-credit">${esc(c)}</li>`).join("")}</ul>` : para("info.noCredits", "fine"))).join("");
 }
+// The current song's history, from the song data (like its lyrics, not translated).
+const historyHTML = () => Array.isArray(SONG.history) && SONG.history.length
+  ? SONG.history.map(sec => `<h3>${esc(sec.h)}</h3>` + sec.p.map(t => `<p class="song-history">${esc(t)}</p>`).join("")).join("")
+  : para("info.noHistory", "fine");
 const helpHTML = () => [1, 2, 3, 4, 5, 6].map(i => `<h3>${esc(T(`info.help${i}Title`))}</h3>` + para(`info.help${i}`)).join("");
 
 // ---------- Keep the screen on while playing ----------
@@ -2617,13 +3166,26 @@ function renderBeatDots(n) {
   const box = $("beats");
   if (box.children.length !== n) box.innerHTML = Array.from({ length: n }, (_, i) => `<span class="beat${i === 0 ? " one" : ""}"></span>`).join("");
 }
+// How many count-in measures (saved per song; 2 by default when a bar has only two beats)
+const COUNTBARS_STORE = songKey("phrase-parrot-countbars-v1");
+const countBars = () => Math.max(1, Math.min(4, +$("countBars").value || 1));
+function renderLeadDots() {
+  const n = countBars();
+  $("alongBeats").innerHTML = Array.from({ length: n }, () => `<div class="lead-row">` +
+    Array.from({ length: BEATS_PER_BAR }, (_, i) => `<span class="beat lead-beat${i === 0 ? " one" : ""}"></span>`).join("") + `</div>`).join("");
+}
 // Play along's dots above the lines: they light through each lead-in measure
 // (the get-ready measure, the count-in, a loop's lead-in), whether or not the
 // metronome is sounding, so you can see where "1" is coming.
-function showLeadMeasure(t, beat) {
-  const dots = document.querySelectorAll("#alongBeats .beat");
-  if (dots.length !== BEATS_PER_BAR) { reportError(T("err.leadDots", { dots: dots.length, beats: BEATS_PER_BAR })); return; }
-  for (let b = 0; b < BEATS_PER_BAR; b++) showAt(dots[b], t + b * beat, Math.min(0.3, beat * 0.6));
+// n measures from time t: the rows light in turn, one row per measure.
+function showLeadMeasure(t, beat, n = 1) {
+  const rows = document.querySelectorAll("#alongBeats .lead-row");
+  for (let m = 0; m < n; m++) {
+    const row = rows[Math.min(m, rows.length - 1)];
+    const dots = row ? row.querySelectorAll(".beat") : [];
+    if (dots.length !== BEATS_PER_BAR) { reportError(T("err.leadDots", { dots: dots.length, beats: BEATS_PER_BAR })); return; }
+    for (let b = 0; b < BEATS_PER_BAR; b++) showAt(dots[b], t + (m * BEATS_PER_BAR + b) * beat, Math.min(0.3, beat * 0.6));
+  }
 }
 // Metronome beat: a short pitched tick. The first beat of each measure is
 // higher and louder so you can hear where "1" is. Every metronome beat in the
@@ -2847,10 +3409,11 @@ function schedulePass(phrase, t, opt) {
   const pickup = pickupEighths(phrase.items);
   const total = notes.reduce((s, n) => s + n.dur, 0);
 
-  const leadIn = countIn || loop;
-  const downbeat = leadIn ? t + BEATS_PER_BAR * beat : t + pickup * eighth;
-  if (countIn) for (let b = 0; b < BEATS_PER_BAR; b++) clickAt(t + b * beat, b === 0, b, beat);
-  if (opt.leadDots && leadIn) showLeadMeasure(t, beat);
+  // the count-in is opt.countBars measures; a loop without one gets a single silent lead-in measure
+  const leadBars = countIn ? (opt.countBars || 1) : loop ? 1 : 0;
+  const downbeat = leadBars ? t + leadBars * BEATS_PER_BAR * beat : t + pickup * eighth;
+  if (countIn) for (let b = 0; b < leadBars * BEATS_PER_BAR; b++) clickAt(t + b * beat, b % BEATS_PER_BAR === 0, b % BEATS_PER_BAR, beat);
+  if (opt.leadDots && leadBars) showLeadMeasure(t, beat, leadBars);
 
   const noteStart = downbeat - pickup * eighth;
   const phraseEnd = noteStart + total * eighth;
@@ -2875,11 +3438,12 @@ function schedulePass(phrase, t, opt) {
   notes.forEach((n, i) => {
     const dur = n.dur * eighth;
     if (opt.silent) { /* melody off: highlights only */ }
-    else if (legatoRun) legatoRun.push({ midi: doMidi + PITCH[n.syl], t: nt, dur });
-    else pluckAt(doMidi + PITCH[n.syl], nt, dur);
+    else if (legatoRun) legatoRun.push({ midi: doMidi + pitchOf(n.syl), t: nt, dur });
+    else pluckAt(doMidi + pitchOf(n.syl), nt, dur);
     const chip = chips[i];
     if (chip) {
       showAt(chip, nt, Math.max(0.05, dur - 0.03));
+      if (chip._syl) showAt(chip._syl, nt, Math.max(0.05, dur - 0.03));
     }
     nt += dur;
   });
@@ -2899,6 +3463,205 @@ function onAudioInterrupted() {
 // already carries its own pickups, so joined together they rebuild the
 // sheet music exactly: the opening pickup in bar 4, then bars 5–36.
 const wholeItems = () => SEQ.flatMap(p => p.items);
+
+// ---------- Seven-shape note heads ----------
+// The common seven-shape forms (as in Aikin's books, 1846, and later gospel
+// books): do a pointed triangle, re a half-moon, mi a diamond, fa a right
+// triangle, sol an oval, la a rectangle, ti an "ice-cream cone". Drawn on a
+// 26 × 20 grid, filled with the chip's text color, so they work in light and
+// dark mode and light up with the chip.
+const SHAPE_SVG = {
+  do: '<polygon points="13,1 25,19 1,19"/>',
+  re: '<path d="M1 4 H25 A12 12 0 0 1 1 4 Z"/>',
+  mi: '<polygon points="13,0 25,10 13,20 1,10"/>',
+  fa: '<polygon points="1,19 25,19 25,1"/>',
+  sol: '<ellipse cx="13" cy="10" rx="12" ry="8.5"/>',
+  la: '<rect x="2" y="3" width="22" height="14"/>',
+  ti: '<path d="M1 8 A12 7 0 0 1 25 8 L13 20 Z"/>'
+};
+// Each syllable's step shape and its sharp or flat (chromatic notes keep their step's shape).
+const SHAPE_OF = {
+  do: ["do", ""], re: ["re", ""], mi: ["mi", ""], fa: ["fa", ""], so: ["sol", ""], la: ["la", ""], ti: ["ti", ""],
+  di: ["do", "♯"], ri: ["re", "♯"], fi: ["fa", "♯"], si: ["sol", "♯"], li: ["la", "♯"],
+  ra: ["re", "♭"], me: ["mi", "♭"], se: ["sol", "♭"], le: ["la", "♭"], te: ["ti", "♭"]
+};
+// Jianpu: each syllable's number and its sharp or flat (written in front).
+const NUM_OF = {
+  do: ["", 1], re: ["", 2], mi: ["", 3], fa: ["", 4], so: ["", 5], la: ["", 6], ti: ["", 7],
+  di: ["♯", 1], ri: ["♯", 2], fi: ["♯", 4], si: ["♯", 5], li: ["♯", 6],
+  ra: ["♭", 2], me: ["♭", 3], se: ["♭", 5], le: ["♭", 6], te: ["♭", 7]
+};
+// The number with its octave dots: one dot per octave, above (up) or below (down).
+function numHTML(syl) {
+  const base = sylBase(syl), mark = syl.slice(base.length), nm = NUM_OF[base];
+  if (!nm) return "";
+  const dots = "•\n".repeat(mark.length).trim();
+  const oct = !mark ? "" : mark[0] === "," ? ` data-down="${dots}"` : ` data-up="${dots}"`;
+  return `<span class="nm">${nm[0] ? `<span class="nm-acc">${nm[0]}</span>` : ""}<span class="nm-d"${oct}>${nm[1]}</span></span>`;
+}
+const shapeSVG = name => `<svg viewBox="0 0 26 20" aria-hidden="true">${SHAPE_SVG[name]}</svg>`;
+// A chip's inside: its shape (hidden unless shapes are on), then the syllable.
+// The octave mark comes after the syllable (or the shape, in Shapes only).
+function chipInner(syl) {
+  const base = sylBase(syl);
+  const sh = SHAPE_OF[base];
+  if (!sh) { reportError(T("err.noShape", { syl })); return `<span class="sy">${syl}</span>`; }
+  return `<span class="sh"${sh[1] ? ` data-acc="${sh[1]}"` : ""}>${shapeSVG(sh[0])}</span>${numHTML(syl)}<span class="sy">${base}</span>${markHTML(syl)}`;
+}
+function applyShapes() {
+  const mode = $("noteShapes").value;
+  document.documentElement.dataset.shapes = mode;
+  for (const id of ["shapeSylDrill", "shapeSylAlong"]) $(id).checked = mode === "both" || mode === "numsyl";
+  for (const id of ["shapeSylDrillRow", "shapeSylAlongRow"]) $(id).hidden = mode === "off";
+}
+
+// ---------- Warm-up: find the note ----------
+// Spelling a note by its place in the key, so fi in G is C♯ (not D♭) and ti
+// in F♯ is E♯: the letter comes from the scale step, the sharp or flat from
+// how far the pitch is from that letter.
+const LETTERS = "CDEFGAB", LETTER_PC = [0, 2, 4, 5, 7, 9, 11];
+const STEP_OF = { do: 0, di: 0, ra: 1, re: 1, ri: 1, me: 2, mi: 2, fa: 3, fi: 3, se: 4, so: 4, si: 4, le: 5, la: 5, li: 5, te: 6, ti: 6 };
+const ACC = { "-2": "𝄫", "-1": "♭", "0": "", "1": "♯", "2": "𝄪" };
+function spellNote(base, midi, doMidi) {
+  const keyLetter = LETTERS.indexOf(KEY_NAMES[((doMidi % 12) + 12) % 12][0]);
+  const li = (keyLetter + STEP_OF[base]) % 7;
+  const pc = ((midi % 12) + 12) % 12;
+  const diff = ((pc - LETTER_PC[li]) + 18) % 12 - 6;
+  const letter = LETTERS[li] + (ACC[diff] ?? "");
+  return { letter, name: letter + (Math.floor((midi - diff) / 12) - 1) };
+}
+// The scale, do up to ti, half steps above do
+const WARM_SCALE = [["do", 0], ["re", 2], ["mi", 4], ["fa", 5], ["so", 7], ["la", 9], ["ti", 11]];
+// The quiz notes: { syl (as shown, with any octave mark), base, step (half steps from do) }
+function warmNotes() {
+  if ($("warmSet").value === "scale") return WARM_SCALE.map(([syl, step]) => ({ syl, base: syl, step }));
+  const seen = new Map();
+  for (const p of buildPool("mix")) for (const it of p.items) {
+    if (it.bar || seen.has(it.syl)) continue;
+    if (pitchOf(it.syl) === null) { reportError(T("err.noPitch", { syl: it.syl })); continue; }
+    seen.set(it.syl, { syl: it.syl, base: sylBase(it.syl), step: pitchOf(it.syl) });
+  }
+  return [...seen.values()].sort((a, b) => a.step - b.step);
+}
+// One round: warmDeck[0] is the current note. "See it, play it": Check plays
+// it, then Got it / Not yet. "Hear it, name it": the app plays it (after do),
+// you tap syllables until you find it; a note you missed comes back later.
+let warmDeck = [], warmTotal = 0, warmDone = 0, warmChecked = false;
+let warmWrong = new Set(), warmSolved = false;
+function warmStart() {
+  warmDeck = shuffled(warmNotes()); warmTotal = warmDeck.length; warmDone = 0;
+  warmNewNote();
+  renderWarm();
+}
+function warmNewNote() { warmChecked = false; warmWrong = new Set(); warmSolved = false; }
+const warmDoMidi = () => SONG_DO_MIDI + +$("transpose").value;
+const keyOf = m => KEY_NAMES[((m % 12) + 12) % 12];
+const warmHearing = () => $("warmMode").value === "hear";
+// A note's face: its shape, sharp or flat, syllable and octave mark (CSS shows what Show asks for)
+function noteFace(n) {
+  const sh = SHAPE_OF[n.base] || ["do", ""];
+  return `<span class="wq-sh">${shapeSVG(sh[0])}</span><span class="wq-acc">${sh[1]}</span>${numHTML(n.syl)}<span class="wq-sy">${n.base}</span>${markHTML(n.syl)}`;
+}
+const showClass = () => ({ shape: " only-shape", syl: " only-syl", num: " only-num" })[$("warmShow").value] || "";
+// How the answer names a note: the syllable with its mark, or in Number mode "♯4 (fi)"
+const warmName = syl => $("warmShow").value === "num"
+  ? `${numHTML(syl)} (${esc(sylBase(syl))}${markHTML(syl)})` : esc(sylBase(syl)) + markHTML(syl);
+function warmAnswerHTML(key, cur, doM) {
+  const sp = spellNote(cur.base, doM + cur.step, doM);
+  return T(key, { syl: "\u0000", letter: esc(sp.letter), key: keyOf(doM) }).replace("\u0000", warmName(cur.syl))
+    + `<span class="wq-oct">${esc(T("warm.octave", { name: sp.name }))}</span>`;
+}
+function renderWarm() {
+  const show = $("warmShow").value, set = $("warmSet").value, mode = $("warmMode").value, hear = mode === "hear";
+  document.querySelectorAll(".wo[data-wshow]").forEach(b => b.classList.toggle("on", b.dataset.wshow === show));
+  document.querySelectorAll(".wo[data-wset]").forEach(b => b.classList.toggle("on", b.dataset.wset === set));
+  document.querySelectorAll(".wo[data-wmode]").forEach(b => b.classList.toggle("on", b.dataset.wmode === mode));
+  // the song and its key now, with Transpose
+  const doM = warmDoMidi(), t = +$("transpose").value;
+  $("warmKeyTop").innerHTML = `<b>${esc(T("warm.keyTop", { key: keyOf(doM) }))}</b>`
+    + `<span>${esc(T("warm.keySong", { song: SONG.title, do: keyOf(doM) }))}</span>`
+    + (t ? `<span>${esc(T("warm.keyTopFrom", { orig: keyOf(SONG_DO_MIDI) }))}</span>` : "");
+  $("warmIntro").textContent = T(hear ? "warm.introHear" : "warm.intro");
+  $("warmDoFirstRow").hidden = !hear;
+  const notes = warmNotes();
+  const marks = set === "song" && notes.some(n => n.syl !== n.base);
+  $("warmKey").textContent = marks ? T($("warmShow").value === "num" ? "warm.markHintNum" : "warm.markHint") : "";
+  $("warmKey").hidden = !marks;
+  const cur = warmDeck[0], note = $("warmNote"), ans = $("warmAnswer");
+  $("warmSee").hidden = hear || !cur;
+  $("warmScore").hidden = hear || !cur || !warmChecked;
+  $("warmHear").hidden = !hear || !cur;
+  if (!cur) {
+    $("warmCount").textContent = T("warm.doneCount", { n: warmTotal });
+    note.className = "wq-note"; note.textContent = ""; note.removeAttribute("aria-label");
+    ans.hidden = false; ans.textContent = T("warm.done");
+    return;
+  }
+  $("warmCount").textContent = T("warm.count", { k: warmDone + 1, n: warmTotal });
+  const reveal = !hear || warmSolved;
+  note.className = "wq-note" + (reveal && cur.base === "do" ? " is-do" : "") + showClass();
+  if (reveal) { note.innerHTML = noteFace(cur); note.setAttribute("aria-label", cur.syl); }
+  else { note.textContent = "?"; note.removeAttribute("aria-label"); }
+  if (!hear) {
+    $("warmCheck").textContent = T(warmChecked ? "warm.hearAgain" : "warm.check");
+    ans.hidden = !warmChecked;
+    if (warmChecked) ans.innerHTML = warmAnswerHTML("warm.answer", cur, doM);
+    return;
+  }
+  // Hear it, name it
+  $("warmPlay").textContent = T(warmSolved ? "warm.playAgain" : "warm.play");
+  $("warmNext").hidden = !warmSolved;
+  $("warmChoices").className = "wq-choices" + showClass();
+  $("warmChoices").innerHTML = notes.map(n => {
+    const cls = "wq-choice" + (n.base === "do" ? " do" : "") + (warmWrong.has(n.syl) ? " wrong" : "") + (warmSolved && n.syl === cur.syl ? " right" : "");
+    return `<button class="${cls}" data-syl="${esc(n.syl)}" aria-label="${esc(n.syl)}">${noteFace(n)}</button>`;
+  }).join("");
+  ans.hidden = false;
+  if (warmSolved) ans.innerHTML = warmAnswerHTML("warm.right", cur, doM);
+  else if (warmWrong.size) { const w = [...warmWrong].pop(); ans.innerHTML = esc(T("warm.wrong", { syl: "\u0000" })).replace("\u0000", warmName(w)); }
+  else ans.textContent = T("warm.hearStart");
+}
+function warmCheck() {
+  const cur = warmDeck[0];
+  if (!cur) return;
+  ensureAudio(); stopAll();
+  pluckAt(SONG_DO_MIDI + cur.step, ctx.currentTime + 0.05, 1.2);   // pluckAt adds Transpose and fine tuning
+  warmChecked = true; renderWarm();
+}
+// Hear it, name it: do (unless turned off), then the note
+function warmPlay() {
+  const cur = warmDeck[0];
+  if (!cur) return;
+  ensureAudio(); stopAll();
+  let t = ctx.currentTime + 0.05;
+  if ($("warmDoFirst").checked) { pluckAt(SONG_DO_MIDI, t, 0.9); t += 1.2; }
+  pluckAt(SONG_DO_MIDI + cur.step, t, 1.2);
+}
+function warmGuess(syl) {
+  const cur = warmDeck[0];
+  if (!cur || warmSolved) return;
+  if (syl === cur.syl) warmSolved = true;
+  else warmWrong.add(syl);
+  renderWarm();
+}
+// moving on: a note you got right first time is done; one you missed comes back in a couple of notes
+function warmScore(got) {
+  const cur = warmDeck.shift();
+  if (!cur) return;
+  if (got) warmDone++;
+  else warmDeck.splice(Math.min(2, warmDeck.length), 0, cur);
+  warmNewNote(); renderWarm();
+}
+function warmNext() {
+  if (!warmSolved) return;
+  warmScore(warmWrong.size === 0);
+  if (warmDeck.length) warmPlay();
+}
+function hooksHTML() {
+  return para("hooks.intro") + `<table class="hooks">` + ["do", "re", "mi", "fa", "so", "la", "ti"].map(syl =>
+    `<tr><td class="hk-shape">${shapeSVG(SHAPE_OF[syl][0])}</td><td class="hk-syl">${syl}</td><td>${esc(T("hooks." + syl))}</td></tr>`).join("")
+    + `</table>` + para("hooks.history", "fine");
+}
 
 // ---------- Syllable chips with rhythm marks ----------
 // Durations are in eighth notes, so a 16th is 0.5. Every 16th gets a double
@@ -2920,9 +3683,12 @@ function chipsHTML(items) {
     const nextNote = notes[k + 1];
     const is16 = near(it.dur, SIXTEENTH);
     const dotted = DOTTED.some(d => near(it.dur, d)) && nextNote && near(nextNote.dur, SIXTEENTH);
-    const cls = ["n", it.pk ? "pk" : "", it.syl === "do" ? "do" : "", is16 ? "s16" : "", dotted ? "dotted" : ""].join(" ");
+    const cls = ["n", it.pk ? "pk" : "", sylBase(it.syl) === "do" ? "do" : "", is16 ? "s16" : "", dotted ? "dotted" : ""].join(" ");
     const label = is16 ? T("chips.sixteenth") : dotted ? T("chips.dotted") : "";
-    html += `<span class="${cls}"${label ? ` title="${label}"` : ""}>${it.syl}</span>`;
+    const bare = `<span class="${cls}"${label ? ` title="${label}"` : ""}>${chipInner(it.syl)}</span>`;
+    const chip = it.ch ? `<span class="chw">${chordSpan(it.ch)}${bare}</span>` : bare;
+    // a "/" for each chord that comes while this note is held; kept on the same line as the note
+    html += it.chAfter ? `<span class="ngrp">${chip}${it.chAfter.map(tok => `<span class="chs" aria-hidden="true">${chordSpan(tok)}/</span>`).join("")}</span>` : chip;
     if (tripLeft && --tripLeft === 0) html += `</span>`;
     k++;
   }
@@ -2945,6 +3711,93 @@ function renderWhole() {
 
 // The lyric line (and, for another language, its plain English meaning) for
 // one Play along phrase, from the lyrics chosen under "Lyrics to show". With
+// ---------- Lyric syllables ----------
+// A line with syllable marks, as in MuseScore: "-" between syllables of a
+// word, "_" holds the syllable before it over one more note, "\-" is a real
+// hyphen that stays visible (and also starts a new syllable). LilyPond's
+// " -- " and "__" mean the same. Returns the syllables in order, each with
+// how many notes it takes, or null if the line has nothing to read.
+function parseSyl(marked) {
+  if (!marked) return null;
+  const text = marked.replace(/\s+--\s+/g, "-").replace(/__/g, "_").trim();
+  const syls = [];
+  for (const word of text.split(/\s+/)) {
+    if (/^_+$/.test(word)) {                       // "_" on its own: hold the last syllable
+      if (syls.length) syls[syls.length - 1].notes += word.length;
+      continue;
+    }
+    // "\-" and "-" both split; "\-" keeps its hyphen on show
+    const parts = word.split(/(\\-|-)/);
+    for (let i = 0; i < parts.length; i += 2) {
+      let piece = parts[i];
+      const sep = parts[i + 1];
+      let held = 0;
+      const m = /_+$/.exec(piece);
+      if (m) { held = m[0].length; piece = piece.slice(0, -held); }
+      if (piece) syls.push({ t: piece, notes: 1 + held, hy: false, end: false });
+      else if (held && syls.length) syls[syls.length - 1].notes += held;
+      if (sep === "\\-" && syls.length) syls[syls.length - 1].hy = true;
+    }
+    if (syls.length) syls[syls.length - 1].end = true;
+  }
+  return syls.length ? syls : null;
+}
+// The line as it reads, marks removed (whole words; real hyphens kept)
+const sylPlain = syls => syls.map(x => x.t + (x.hy ? "-" : "") + (x.end ? " " : "")).join("").trim();
+const sylNotes = syls => syls.reduce((n, x) => n + x.notes, 0);
+// Which notes start on a bar's first beat (for bold syllables)
+function downbeats(items) {
+  const pick = pickupEighths(items), out = [];
+  let t = 0;
+  for (const n of items.filter(x => !x.bar)) {
+    const into = t - pick;
+    out.push(!n.pk && into > -1e-6 && Math.abs(into / METER.perBar - Math.round(into / METER.perBar)) < 1e-6);
+    t += n.dur;
+  }
+  return out;
+}
+// A line's words as syllable spans, linked to the chips of its notes so each
+// lights with its note. Returns false (and leaves the line alone) if the
+// syllables don't fit the notes.
+function fillSyllables(textEl, chips, marked, items) {
+  const syls = parseSyl(marked);
+  const notes = items.filter(x => !x.bar);
+  if (!syls || sylNotes(syls) !== notes.length || chips.length !== notes.length) return false;
+  const db = downbeats(items);
+  let html = "", j = 0;
+  syls.forEach((x, k) => {
+    const first = notes[j];
+    const cls = "syl" + (db[j] ? " db" : "") + (first.pk ? " pkl" : "");
+    html += `<span class="${cls}" data-k="${k}">${esc(x.t)}</span>${x.hy ? "-" : ""}${x.end ? " " : ""}`;
+    j += x.notes;
+  });
+  textEl.innerHTML = html.trim();
+  const spans = textEl.querySelectorAll(".syl");
+  j = 0;
+  syls.forEach((x, k) => { for (let r = 0; r < x.notes; r++) chips[j++]._syl = spans[k]; });
+  return true;
+}
+// Startup check of the built-in syllable marks: one syllable per note, and
+// the marked line reads the same as the plain one.
+function validateSyllables() {
+  const say = msg => reportError(T("err.song", { song: SONG.title, msg }));
+  for (const set of Object.values(SONG.lyrics || {})) {
+    const check = (group, phrases) => {
+      if (!group.syl) return;
+      group.syl.forEach((marked, k) => {
+        const syls = parseSyl(marked), p = phrases[k];
+        const vars = { set: set.name, label: group.label, line: k + 1 };
+        if (!syls || !p) return;
+        const notes = p.items.filter(x => !x.bar).length;
+        if (sylNotes(syls) !== notes) say(T("err.sylCount", { ...vars, syl: sylNotes(syls), notes }));
+        if (sylPlain(syls) !== (group.lines[k] || "")) say(T("err.sylText", { ...vars, marked, plain: group.lines[k] || "" }));
+      });
+    };
+    (set.verses || []).forEach((g, i) => { if (VERSE_M[i + 1]) check(g, withItems(verseOf(i + 1))); });
+    (set.choruses || []).forEach(g => check(g, withItems(chorusAfter(1))));
+  }
+}
+
 // "All of them" the first set is used, since several would crowd the line.
 // A verse phrase uses that verse's words; a chorus uses the chorus that goes
 // with that verse if there is one, otherwise the first chorus.
@@ -2953,7 +3806,7 @@ function alongLyricFor(set, p) {
   const groups = p.kind === "verse" ? set.verses : set.choruses;
   const group = groups[p.verse - 1] || (p.kind === "chorus" ? groups[0] : null);
   if (!group || !group.lines[p.k]) return null;
-  return { text: group.lines[p.k], meaning: group.meaning ? group.meaning[p.k] : "" };
+  return { text: group.lines[p.k], meaning: group.meaning ? group.meaning[p.k] : "", syl: group.syl ? group.syl[p.k] : "" };
 }
 // Fills in the lyrics under every Play along line, in place (the lines
 // themselves stay, so highlighting keeps working if this runs while playing).
@@ -2968,7 +3821,11 @@ function renderAlongLyrics() {
     const lyric = show ? alongLyricFor(set, SEQ[i]) : null;
     box.hidden = !lyric;
     if (!lyric) return;
-    box.querySelector(".al-text").textContent = lyric.text;
+    const textEl = box.querySelector(".al-text");
+    const chips = [...line.querySelectorAll(".n")];
+    chips.forEach(c => { c._syl = null; });
+    // with syllable marks, each syllable lights with its note; otherwise the plain line
+    if (!(lyric.syl && fillSyllables(textEl, chips, lyric.syl, SEQ[i].items))) textEl.textContent = lyric.text;
     const mean = box.querySelector(".al-mean");
     mean.textContent = lyric.meaning || "";
     mean.hidden = !(withMeaning && lyric.meaning);
@@ -3091,6 +3948,7 @@ function playWhole(from = 0, resuming = false) {
     beat, eighth: beat / METER.beatLen,
     doMidi: +$("doPitch").value,
     countIn: $("countIn").checked || resuming,   // always count in when resuming
+    countBars: countBars(),
     // with the melody off, the metronome keeps time through the whole song
     silent: !$("alongMelody").checked,
     leadDots: true,
@@ -3155,9 +4013,10 @@ function playWhole(from = 0, resuming = false) {
   // get-ready measure leaves those out rather than clicking them twice.
   const pickup = opt.countIn || opt.loop ? 0 : pickupEighths(SEQ[from].items);
   const pickupBeats = opt.clickAll ? Math.floor(pickup / METER.beatLen + 1e-9) : 0;
-  for (let b = 0; b < BEATS_PER_BAR - pickupBeats; b++) clickAt(t + b * beat, b === 0, b, beat);
-  showLeadMeasure(t, beat);           // every beat of it, the pickup's beats too
-  t += BEATS_PER_BAR * beat;
+  const ready = countBars();          // the get-ready lead-in: as many measures as the count-in
+  for (let b = 0; b < ready * BEATS_PER_BAR - pickupBeats; b++) clickAt(t + b * beat, b % BEATS_PER_BAR === 0, b % BEATS_PER_BAR, beat);
+  showLeadMeasure(t, beat, ready);    // every beat of it, the pickup's beats too
+  t += ready * BEATS_PER_BAR * beat;
   pass(t - pickup * opt.eighth, from, ab && from <= ab.b ? ab.b : lastI);
 }
 
@@ -3257,6 +4116,7 @@ function playPhrase(phrase, slow) {
     beat, eighth: beat / METER.beatLen,
     doMidi: +$("doPitch").value,
     countIn: $("countIn").checked,
+    countBars: countBars(),
     clickAll: $("clickAll").checked,
     loop: $("loop").checked
   };
@@ -3406,7 +4266,7 @@ function renderPitch() {
 }
 function setTranspose(t) {
   $("transpose").value = Math.max(-12, Math.min(12, t));
-  renderPitch(); savePrefs();
+  renderPitch(); renderWarm(); refreshChords(); savePrefs();
 }
 
 // ---------- Tuning notes ----------
@@ -4319,16 +5179,67 @@ function renderAlongSub() {
   const first = hasPickup ? +firstBar(0) - 1 : +firstBar(0);
   const lastNum = barNums(SEQ[SEQ.length - 1]).slice(-1)[0];
   const span = T("seq.span", { a: first >= 1 && first < +firstBar(0) ? first : firstBar(0), b: lastNum });
-  $("alongSub").textContent = $("seqSel").value === "song"
+  const song = $("seqSel").value === "song";
+  if (song && !planIsDefault()) {
+    const verses = planVerses();
+    $("alongSub").textContent = T(HAS_CHORUS ? "seq.subPlan" : "seq.subPlanNoChorus",
+      { verses: verses.join(", "), c: verses.filter(planChorusAfter).length, span });
+    return;
+  }
+  $("alongSub").textContent = song
     ? T(HAS_CHORUS ? "seq.subSong" : "seq.subSongNoChorus", { n: VERSE_COUNT, span })
     : T("seq.subOne", { label: SEQ_CHOICES[$("seqSel").value].label, span });
 }
+function renderPlan() {
+  const show = $("seqSel").value === "song" && VERSE_COUNT > 1;
+  $("planBox").hidden = !show;
+  if (!show) return;
+  $("planChorusRow").hidden = !HAS_CHORUS;
+  $("chorusPlan").value = PLAN.chorus;
+  const sung = planVerses();
+  $("planRow").innerHTML = VERSE_NUMS.map(v => {
+    const on = !PLAN.off.includes(v), ch = planChorusAfter(v), last = on && sung[sung.length - 1] === v;
+    const vb = `<button class="pv${on ? "" : " off"}" data-pv="${v}" aria-pressed="${on}" title="${esc(T(on ? "plan.verseOn" : "plan.verseOff", { v }))}">${v}</button>`;
+    const cb = HAS_CHORUS ? `<button class="pc${ch ? " on" : ""}${last ? " last" : ""}" data-pc="${v}" aria-pressed="${ch}"${on ? "" : " hidden"}
+      title="${esc(T(last ? "plan.chorusLast" : ch ? "plan.chorusOn" : "plan.chorusOff", { v }))}">C</button>` : "";
+    return `<span class="plan-pair">${vb}${cb}</span>`;
+  }).join("");
+  $("planHint").textContent = T(HAS_CHORUS ? "plan.hint" : "plan.hintNoChorus");
+}
+// After the plan changes: save it and rebuild the whole song
+function planChanged() {
+  savePlan();
+  if ($("seqSel").value === "song") setSeq("song");
+  renderPlan();
+}
+$("chorusPlan").addEventListener("change", () => {
+  // starting "my own plan" from what was showing, so nothing jumps
+  if ($("chorusPlan").value === "custom" && PLAN.chorus !== "custom") PLAN.custom = planVerses().filter(planChorusAfter);
+  PLAN.chorus = $("chorusPlan").value;
+  planChanged();
+});
+$("planRow").addEventListener("click", e => {
+  const vb = e.target.closest(".pv"), cb = e.target.closest(".pc");
+  if (vb) {
+    const v = +vb.dataset.pv;
+    if (PLAN.off.includes(v)) PLAN.off = PLAN.off.filter(x => x !== v);
+    else if (planVerses().length > 1) PLAN.off = [...PLAN.off, v];
+    else { $("planHint").textContent = T("plan.keepOne"); return; }
+    planChanged();
+  } else if (cb && !cb.classList.contains("last")) {
+    const v = +cb.dataset.pc;
+    // tapping a C makes it "my own plan", starting from what was showing
+    if (PLAN.chorus !== "custom") { PLAN.custom = planVerses().filter(planChorusAfter); PLAN.chorus = "custom"; }
+    PLAN.custom = PLAN.custom.includes(v) ? PLAN.custom.filter(x => x !== v) : [...PLAN.custom, v];
+    planChanged();
+  }
+});
 function setSeq(v) {
   stopAll();
   SEQ = joinFill(withItems(SEQ_CHOICES[v].build()));
   abRange = null; abPick = null; abFirst = null;
   storeRemove(AB_STORE);
-  renderWhole(); renderStartFrom(); renderAlongSub(); renderAB();
+  renderWhole(); renderStartFrom(); renderAlongSub(); renderAB(); renderPlan();
 }
 $("seqSel").addEventListener("change", () => { setSeq($("seqSel").value); savePrefs(); });
 // The saved A–B loop, if it belongs to the current Play choice and still fits it
@@ -4378,12 +5289,54 @@ $("mySaveAll").addEventListener("click", exportAllSets);
 $("backupSave").addEventListener("click", () => { $("backupNotice").hidden = true; exportAllSets(); });
 $("backupLater").addEventListener("click", () => { $("backupNotice").hidden = true; noteBackup("snooze", Date.now() + SNOOZE_DAYS * DAY); });
 $("aboutBtn").addEventListener("click", () => openInfo(T("info.aboutTitle"), aboutHTML()));
+$("historyBtn").addEventListener("click", () => openInfo(T("info.historyTitle", { song: SONG.title }), historyHTML()));
 $("creditsBtn").addEventListener("click", () => openInfo(T("info.creditsTitle"), creditsHTML()));
 $("helpBtn").addEventListener("click", () => openInfo(T("info.helpTitle"), helpHTML()));
 $("infoClose").addEventListener("click", closeInfo);
 $("infoModal").addEventListener("click", e => { if (e.target === $("infoModal")) closeInfo(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("infoModal").hidden) closeInfo(); });
 $("wakeOn").addEventListener("change", updateWakeLock);
+$("noteShapes").addEventListener("change", applyShapes);
+for (const id of ["chordStyle", "chordSimple", "chordKey"]) $(id).addEventListener("change", () => { refreshChords(); savePrefs(); });
+$("warmCheck").addEventListener("click", warmCheck);
+$("warmGot").addEventListener("click", () => warmScore(true));
+$("warmNotYet").addEventListener("click", () => warmScore(false));
+$("warmDo").addEventListener("click", playDo);
+$("warmRestart").addEventListener("click", warmStart);
+$("warmPlay").addEventListener("click", warmPlay);
+$("warmNext").addEventListener("click", warmNext);
+$("warmChoices").addEventListener("click", e => { const b = e.target.closest(".wq-choice"); if (b) warmGuess(b.dataset.syl); });
+$("warmDoFirst").addEventListener("change", savePrefs);
+document.querySelectorAll(".wo[data-wmode]").forEach(b => b.addEventListener("click", () => {
+  if ($("warmMode").value === b.dataset.wmode) return;
+  stopAll();
+  $("warmMode").value = b.dataset.wmode; savePrefs(); warmStart();
+}));
+for (const id of ["warmHooks", "hooksBtn"]) $(id).addEventListener("click", () => openInfo(T("hooks.title"), hooksHTML()));
+document.querySelectorAll(".wo[data-wshow]").forEach(b => b.addEventListener("click", () => {
+  $("warmShow").value = b.dataset.wshow; savePrefs(); renderWarm();
+}));
+document.querySelectorAll(".wo[data-wset]").forEach(b => b.addEventListener("click", () => {
+  if ($("warmSet").value === b.dataset.wset) return;
+  $("warmSet").value = b.dataset.wset; savePrefs(); warmStart();
+}));
+// the quick switches flip between Shapes only and Shapes and syllables
+for (const id of ["shapeSylDrill", "shapeSylAlong"]) $(id).addEventListener("change", e => {
+  const nums = /^num/.test($("noteShapes").value);
+  $("noteShapes").value = e.target.checked ? (nums ? "numsyl" : "both") : (nums ? "numbers" : "shapes");
+  applyShapes(); savePrefs();
+});
+// Shapes only: tap a shape to peek at its syllable for two seconds
+document.addEventListener("click", e => {
+  if (!["shapes", "numbers"].includes(document.documentElement.dataset.shapes)) return;
+  const chip = e.target.closest(".n");
+  if (!chip) return;
+  chip.classList.add("peek");
+  clearTimeout(chip._peek);
+  chip._peek = setTimeout(() => chip.classList.remove("peek"), 2000);
+});
+$("shapeLegend").innerHTML = ["do", "re", "mi", "fa", "so", "la", "ti"]
+  .map(syl => `<span>${shapeSVG(SHAPE_OF[syl][0])}${syl}</span>`).join("");
 $("theme").addEventListener("change", applyTheme);
 $("myNewSet").addEventListener("click", newLyricSet);
 $("myDeleteSet").addEventListener("click", deleteLyricSet);
@@ -4469,7 +5422,7 @@ $("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("u
 // Storage keys keep the old "phrase-parrot-" prefix on purpose (app renamed in v0.39),
 // so saved lyrics, sync and settings carry over from earlier versions.
 const PREFS = "phrase-parrot-prefs-v1";
-const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "transpose", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme"];
+const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "transpose", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey"];
 function savePrefs() {
   const p = {};
   prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
@@ -4485,6 +5438,9 @@ if (savedPrefs) prefIds.forEach(id => {
 });
 renderTempo();
 applyTheme();
+applyShapes();
+refreshChords();
+warmStart();
 renderBackup(true);
 $("clickVolVal").textContent = T("units.pct", { n: $("clickVol").value });
 $("visDelayVal").textContent = T("units.ms", { n: $("visDelay").value });
@@ -4524,6 +5480,11 @@ if ($("seqSel").value !== Object.keys(SEQ_CHOICES)[0]) {
 }
 loadAB();
 renderAlongSub();
+renderPlan();
+// the count-in measures: this song's saved choice, or 2 for two beats a bar
+$("countBars").value = String(+storeGet(COUNTBARS_STORE) || (BEATS_PER_BAR === 2 ? 2 : 1));
+renderLeadDots();
+$("countBars").addEventListener("change", () => { stopAll(); storeSet(COUNTBARS_STORE, $("countBars").value); renderLeadDots(); });
 drillVerse = $("drillVerse").value || "1";
 PHRASES = buildPool(drillVerse);
 renderDrillVerse();
