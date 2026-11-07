@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.77</title>
+<title>Melodies by Ear v0.80</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -652,6 +652,12 @@
   .syl { border-radius: 4px; transition: background .08s; }
   .syl.db { font-weight: 700; }
   .syl.pkl { opacity: .72; }
+  /* a held syllable's extender line: about half an em for each extra note */
+  .hold { display: inline-flex; gap: 2px; margin: 0 2px; vertical-align: .05em; }
+  .hseg { display: inline-block; width: .5em; height: 0; border-bottom: 2px solid var(--muted); opacity: .7; }
+  /* each segment lights as its note starts, and stays lit to the end of the syllable */
+  .hseg.on { border-bottom: 3px solid var(--teal); opacity: 1; }
+  html[data-holds="off"] .hold { display: none; }
   .syl.on { background: var(--teal); color: var(--on-teal); opacity: 1; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   /* The song plan: verse buttons, each followed by its chorus toggle */
   .plan { margin: 4px 0 10px; }
@@ -674,7 +680,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.77</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.80</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -933,6 +939,7 @@
       <label class="switch follow"><input type="checkbox" id="followLine" checked><span class="track"></span> <span data-s="ui.followLine"></span></label>
       <label class="switch follow"><input type="checkbox" id="alongLyrics" checked><span class="track"></span> <span data-s="ui.alongLyrics"></span></label>
       <label class="switch follow"><input type="checkbox" id="lyricsOnly"><span class="track"></span> <span data-s="ui.lyricsOnly"></span></label>
+      <label class="switch follow"><input type="checkbox" id="showHolds" checked><span class="track"></span> <span data-s="ui.showHolds"></span></label>
       <label class="switch follow shape-quick" id="shapeSylAlongRow" hidden><input type="checkbox" id="shapeSylAlong"><span class="track"></span> <span data-s="ui.shapeSyl"></span></label>
       <div class="along-beats" id="alongBeats" hidden aria-hidden="true"></div>
       <div id="allNotes"></div>
@@ -1220,6 +1227,7 @@ const STRINGS = {
     "legato": "Legato: connect the notes smoothly (winds, brass and bowed strings)",
     "loop": "Loop until I tap Stop",
     "lyricsOnly": "Lyrics only (hide the solfège; bar numbers stay)",
+    "showHolds": "Show held syllables (a line after a syllable sung over more than one note)",
     "lowNotesHint": "Lower notes are automatically made louder and fuller, since ears and phone speakers hear low pitches more weakly.",
     "lyrics": "Lyrics",
     "lyricsToShow": "Lyrics to show",
@@ -1397,6 +1405,7 @@ const STRINGS = {
     "problemChorusOdd": "{label} has {lines}; it needs {need}.",
     "problemMeaning": "{label}: a meaning line (starting with =) must come right after a lyric line.",
     "problemVerse": "{label} has {lines}; it needs {need}, one per phrase.",
+    "problemSyl": "{label}, line {line}: {syl} syllables for {notes} notes.",
     "saveAll": "Save all my sets",
     "backupNote": "Your sets have changed since you last used Save all my sets. They live only in this browser, so save a copy now and then.",
     "backupNotice": "Your lyric sets have changed since you last saved them to a file.",
@@ -3005,7 +3014,7 @@ function stopAll() {
   clearTimeout(looping); looping = null;
   clearTimeout(endTimer); endTimer = null;
   visuals = [];
-  document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on").forEach(el => el.classList.remove("on"));
+  document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
   if (typeof endWhole === "function" && (wholeRun || wholePaused !== null)) endWhole();
   if (calibrating) {           // stopped partway through a sync: reset it
     calibrating = false; calib = null;
@@ -3029,7 +3038,7 @@ const MIN_HOLD_MS = 120;
 let lastCT = -1, lastCTwall = 0, lastHeard = 0, heardCtx = null;
 
 function showAt(el, when, dur) {
-  const group = el.classList.contains("lead-beat") ? "lead" : el.classList.contains("beat") ? "beat" : el.classList.contains("all-line") ? "line" : el.classList.contains("syl") ? "syl" : "note";
+  const group = el.dataset.g || (el.classList.contains("lead-beat") ? "lead" : el.classList.contains("beat") ? "beat" : el.classList.contains("all-line") ? "line" : el.classList.contains("syl") ? "syl" : "note");
   visuals.push({ el, group, start: when, end: when + dur, shownAt: 0 });
   if (!rafId) rafId = requestAnimationFrame(drawVisuals);
 }
@@ -3064,7 +3073,7 @@ function drawVisuals() {
   const now = heardTime() - (+$("visDelay").value) / 1000;
   const wall = performance.now();
   const keep = [];
-  for (const group of ["beat", "lead", "note", "line", "syl"]) {
+  for (const group of ["beat", "lead", "note", "line", "syl", ...new Set(visuals.map(v => v.group).filter(g => g.startsWith("hold")))]) {
     const items = visuals.filter(v => v.group === group);
     // the latest event that has started
     let current = null;
@@ -3081,7 +3090,7 @@ function drawVisuals() {
   }
   visuals = keep;
   if (visuals.length) rafId = requestAnimationFrame(drawVisuals);
-  else document.querySelectorAll(".n.on, .beat.on, .syl.on").forEach(el => el.classList.remove("on"));
+  else document.querySelectorAll(".n.on, .beat.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
 }
 
 // ---------- About, Song credits, Help ----------
@@ -3447,6 +3456,11 @@ function schedulePass(phrase, t, opt) {
     if (chip) {
       showAt(chip, nt, Math.max(0.05, dur - 0.03));
       if (chip._syl) showAt(chip._syl, nt, Math.max(0.05, dur - 0.03));
+      if (chip._hold) {
+        let end = nt + dur;
+        for (let j = i + 1; j < notes.length && chips[j] && chips[j]._syl === chip._syl; j++) end += notes[j].dur * eighth;
+        showAt(chip._hold, nt, Math.max(0.05, end - nt - 0.03));
+      }
     }
     nt += dur;
   });
@@ -3718,11 +3732,11 @@ function renderWhole() {
 // A line with syllable marks, as in MuseScore: "-" between syllables of a
 // word, "_" holds the syllable before it over one more note, "\-" is a real
 // hyphen that stays visible (and also starts a new syllable). LilyPond's
-// " -- " and "__" mean the same. Returns the syllables in order, each with
+// " -- " works too. Each "_" is one more note. Returns the syllables in order, each with
 // how many notes it takes, or null if the line has nothing to read.
 function parseSyl(marked) {
   if (!marked) return null;
-  const text = marked.replace(/\s+--\s+/g, "-").replace(/__/g, "_").trim();
+  const text = marked.replace(/\s+--\s+/g, "-").trim();
   const syls = [];
   for (const word of text.split(/\s+/)) {
     if (/^_+$/.test(word)) {                       // "_" on its own: hold the last syllable
@@ -3771,13 +3785,18 @@ function fillSyllables(textEl, chips, marked, items) {
   syls.forEach((x, k) => {
     const first = notes[j];
     const cls = "syl" + (db[j] ? " db" : "") + (first.pk ? " pkl" : "");
-    html += `<span class="${cls}" data-k="${k}">${esc(x.t)}</span>${x.hy ? "-" : ""}${x.end ? " " : ""}`;
+    const hold = x.notes > 1 ? `<span class="hold" aria-hidden="true">${Array.from({ length: x.notes - 1 }, (_, r) => `<span class="hseg" data-g="hold${r + 1}"></span>`).join("")}</span>` : "";
+    html += `<span class="${cls}" data-k="${k}">${esc(x.t)}</span>${hold}${x.hy ? "-" : ""}${x.end ? " " : ""}`;
     j += x.notes;
   });
   textEl.innerHTML = html.trim();
   const spans = textEl.querySelectorAll(".syl");
   j = 0;
-  syls.forEach((x, k) => { for (let r = 0; r < x.notes; r++) chips[j++]._syl = spans[k]; });
+  syls.forEach((x, k) => {
+    const segs = spans[k].nextElementSibling && spans[k].nextElementSibling.classList.contains("hold")
+      ? spans[k].nextElementSibling.querySelectorAll(".hseg") : [];
+    for (let r = 0; r < x.notes; r++) { chips[j]._syl = spans[k]; chips[j]._hold = r ? segs[r - 1] || null : null; j++; }
+  });
   return true;
 }
 // Startup check of the built-in syllable marks: one syllable per note, and
@@ -3826,7 +3845,7 @@ function renderAlongLyrics() {
     if (!lyric) return;
     const textEl = box.querySelector(".al-text");
     const chips = [...line.querySelectorAll(".n")];
-    chips.forEach(c => { c._syl = null; });
+    chips.forEach(c => { c._syl = null; c._hold = null; });
     // with syllable marks, each syllable lights with its note; otherwise the plain line
     if (!(lyric.syl && fillSyllables(textEl, chips, lyric.syl, SEQ[i].items))) textEl.textContent = lyric.text;
     const mean = box.querySelector(".al-mean");
@@ -4633,7 +4652,39 @@ function parseMyLyrics(text, name) {
       verses.push(withMeaning ? { label, lines, meaning } : { label, lines });
     }
   }
+  markSyllables(verses, choruses, problems);
   return { name: name || T("lyrics.mySetName"), verses, choruses, problems };
+}
+// How many notes each phrase has: verse v's phrases, and the chorus's.
+let PHRASE_NOTES = null;
+function phraseNotes(kind, v) {
+  if (!PHRASE_NOTES) {
+    const count = list => withItems(list).map(p => p.items.filter(x => !x.bar).length);
+    PHRASE_NOTES = { verse: {}, chorus: HAS_CHORUS ? count(chorusAfter(1)) : [] };
+    for (const n of VERSE_NUMS) PHRASE_NOTES.verse[n] = count(verseOf(n));
+  }
+  return kind === "chorus" ? PHRASE_NOTES.chorus : PHRASE_NOTES.verse[v] || [];
+}
+// Syllable marks in my own lyrics. If any line in the set has a "-" or "_",
+// the whole set counts as marked: each line, as typed, becomes its syllable
+// line (syl), read as one note per word unless marks say otherwise. A line
+// whose syllables fit its notes shows without the marks; one that doesn't is
+// listed as a problem and shows as typed (and lights as a whole line).
+function markSyllables(verses, choruses, problems) {
+  const all = [...verses, ...choruses];
+  if (!all.some(g => g.lines.some(l => /[-_]/.test(l)))) return;
+  const fix = (g, notes) => {
+    g.syl = g.lines.slice();
+    g.lines = g.lines.map((typed, k) => {
+      const syls = parseSyl(typed);
+      if (!syls || notes[k] == null) return typed;
+      if (sylNotes(syls) === notes[k]) return sylPlain(syls);
+      problems.push(T("lyrics.problemSyl", { label: g.label, line: k + 1, syl: sylNotes(syls), notes: notes[k] }));
+      return typed;
+    });
+  };
+  verses.forEach((g, i) => fix(g, phraseNotes("verse", i + 1)));
+  choruses.forEach(g => fix(g, phraseNotes("chorus")));
 }
 
 // This song's built-in lyric sets (public-domain texts), then my sets.
@@ -5427,7 +5478,7 @@ $("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("u
 // Storage keys keep the old "phrase-parrot-" prefix on purpose (app renamed in v0.39),
 // so saved lyrics, sync and settings carry over from earlier versions.
 const PREFS = "phrase-parrot-prefs-v1";
-const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "transpose", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey"];
+const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "transpose", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds"];
 function savePrefs() {
   const p = {};
   prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
@@ -5444,6 +5495,9 @@ if (savedPrefs) prefIds.forEach(id => {
 renderTempo();
 applyTheme();
 applyShapes();
+const applyHolds = () => { document.documentElement.dataset.holds = $("showHolds").checked ? "on" : "off"; };
+applyHolds();
+$("showHolds").addEventListener("change", () => { applyHolds(); savePrefs(); });
 refreshChords();
 warmStart();
 renderBackup(true);
