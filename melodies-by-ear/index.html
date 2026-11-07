@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.75</title>
+<title>Melodies by Ear v0.77</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -674,7 +674,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.75</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.77</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -3409,10 +3409,13 @@ function schedulePass(phrase, t, opt) {
   const pickup = pickupEighths(phrase.items);
   const total = notes.reduce((s, n) => s + n.dur, 0);
 
-  // the count-in is opt.countBars measures; a loop without one gets a single silent lead-in measure
-  const leadBars = countIn ? (opt.countBars || 1) : loop ? 1 : 0;
+  // the count-in is opt.countBars measures; a loop without one gets a single
+  // lead-in measure, except on Play along's first pass, which follows the
+  // get-ready measures directly. Every lead-in measure clicks: a measure of
+  // silence right before the music starts never helps.
+  const leadBars = countIn ? (opt.countBars || 1) : loop && !opt.firstPass ? 1 : 0;
   const downbeat = leadBars ? t + leadBars * BEATS_PER_BAR * beat : t + pickup * eighth;
-  if (countIn) for (let b = 0; b < leadBars * BEATS_PER_BAR; b++) clickAt(t + b * beat, b % BEATS_PER_BAR === 0, b % BEATS_PER_BAR, beat);
+  for (let b = 0; b < leadBars * BEATS_PER_BAR; b++) clickAt(t + b * beat, b % BEATS_PER_BAR === 0, b % BEATS_PER_BAR, beat);
   if (opt.leadDots && leadBars) showLeadMeasure(t, beat, leadBars);
 
   const noteStart = downbeat - pickup * eighth;
@@ -3422,7 +3425,7 @@ function schedulePass(phrase, t, opt) {
   const clickUntil = loop ? barEnd : phraseEnd;
 
   if (clickAll) {
-    const firstBeat = countIn ? 0 : -Math.floor(pickup / METER.beatLen);
+    const firstBeat = leadBars ? 0 : -Math.floor(pickup / METER.beatLen);   // the lead-in already clicked the pickup's beats
     for (let k = firstBeat; downbeat + k * beat < clickUntil - 0.01; k++) {
       const pos = ((k % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR;
       clickAt(downbeat + k * beat, pos === 0, pos, beat);
@@ -3973,7 +3976,8 @@ function playWhole(from = 0, resuming = false) {
 
   // Each pass starts at phrase passFrom. The first pass starts wherever you
   // chose; when it loops, it goes back to the very beginning of the song.
-  const pass = (start, passFrom, passTo) => {
+  const pass = (start, passFrom, passTo, first) => {
+    opt.firstPass = !!first;
     timers = timers.slice(-200);
     activeNodes = activeNodes.slice(-400);
     const { lines, chips, part, items } = segment(passFrom, passTo);
@@ -4006,18 +4010,19 @@ function playWhole(from = 0, resuming = false) {
   // only, so you have time to get your hands on the uke after tapping.
   // With the count-in on, that's two full measures of clicks before beat 1,
   // and a pickup note comes in at the end of the second. Loops don't repeat it.
-  // With the count-in (or looping) on, the pass brings its own lead-in
+  // With the count-in on, the pass brings its own lead-in
   // measure. Without one, the pickup has to sit at the end of the "get ready"
   // measure, so that beat 1 lands right after it, on the clicks' grid.
   // If "Keep clicking" is on, the pass clicks the pickup's beats itself, so the
   // get-ready measure leaves those out rather than clicking them twice.
-  const pickup = opt.countIn || opt.loop ? 0 : pickupEighths(SEQ[from].items);
+  // (the first pass brings no lead-in of its own unless the count-in is on)
+  const pickup = opt.countIn ? 0 : pickupEighths(SEQ[from].items);
   const pickupBeats = opt.clickAll ? Math.floor(pickup / METER.beatLen + 1e-9) : 0;
   const ready = countBars();          // the get-ready lead-in: as many measures as the count-in
   for (let b = 0; b < ready * BEATS_PER_BAR - pickupBeats; b++) clickAt(t + b * beat, b % BEATS_PER_BAR === 0, b % BEATS_PER_BAR, beat);
   showLeadMeasure(t, beat, ready);    // every beat of it, the pickup's beats too
   t += ready * BEATS_PER_BAR * beat;
-  pass(t - pickup * opt.eighth, from, ab && from <= ab.b ? ab.b : lastI);
+  pass(t - pickup * opt.eighth, from, ab && from <= ab.b ? ab.b : lastI, true);
 }
 
 // Which phrase is sounding right now
