@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.80</title>
+<title>Melodies by Ear v0.90</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -189,6 +189,14 @@
   .n.pk.s16::after { border-color: var(--pk); }
   .n.do.s16::after { border-color: var(--gold-text); }
   /* the dot of a dotted note: bigger, and a little apart from the octave mark */
+  /* a tie: a small arc from the bottom of a chip toward the next one */
+  .n.tied::before {
+    content: ""; position: absolute; right: -15px; bottom: -7px; width: 26px; height: 7px;
+    border-bottom: 2px solid var(--teal); border-radius: 0 0 50% 50% / 0 0 100% 100%; opacity: .75;
+  }
+  .n.pk.tied::before { border-color: var(--pk); }
+  .n.do.tied::before { border-color: var(--gold-text); }
+  #allNotes.lyrics-only .n.tied::before { display: none; }
   .n.dotted::after { content: "•"; font-weight: 900; font-size: .8em; margin-left: 5px; vertical-align: .1em; }
   /* octave marks: high as an apostrophe, low as an apostrophe dropped below the line */
   .oh { margin-left: 1px; }
@@ -680,7 +688,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.80</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.90</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -1466,6 +1474,7 @@ const STRINGS = {
     "song": "Song data problem in {song}: {msg}",
     "songBar": "{label}: bar {i} has {sum} eighths, not {need}",
     "songSyllable": "{label}: unknown syllable \"{syl}\"",
+    "songTie": "{label}: \"{syl}\" is tied to a note that isn't the same pitch",
     "storageCorrupt": "Saved data was damaged and was ignored ({key}): {msg}",
     "storageRead": "Couldn’t read saved data ({key}): {msg}",
     "storageWrite": "Couldn’t save to this browser ({key}): {msg}. Private browsing or full storage can cause this. Use Save to a file or Copy to keep a copy of your lyrics.",
@@ -1551,9 +1560,9 @@ const STRINGS = {
     "interval7": "a perfect fifth",
     "interval8": "a minor sixth",
     "interval9": "a major sixth",
-    "keyAsWritten": "Key of {key} major, do = {do}.",
-    "keyDown": "Key of {key} major, do = {do}. That’s down {interval} from the sheet music.",
-    "keyUp": "Key of {key} major, do = {do}. That’s up {interval} from the sheet music.",
+    "keyAsWritten": "Key of {key}, do = {do}.",
+    "keyDown": "Key of {key}, do = {do}. That’s down {interval} from the sheet music.",
+    "keyUp": "Key of {key}, do = {do}. That’s up {interval} from the sheet music.",
     "listSep": ", ",
     "transposedDown1": "Transposed down 1 half step (do = {do})",
     "transposedDownN": "Transposed down {n} half steps (do = {do})",
@@ -1592,7 +1601,8 @@ const STRINGS = {
   },
   chips: {
     "dotted": "dotted",
-    "sixteenth": "16th note"
+    "sixteenth": "16th note",
+    "tied": "Tied to the next note: one note, held across the bar line"
   },
   talk: {
     "summary": "Talking metronome (advanced)",
@@ -1672,9 +1682,11 @@ const STRINGS = {
     "title": "Warm-up: find the note",
     "intro": "Before you play, find the notes of this key on your instrument. Play the note you see, then tap Check to hear the right one.",
     "introHear": "The app plays do, then a note of this key. Tap the syllable you hear.",
-    "keyTop": "Key: {key} major",
+    "keyTop": "Key: {key}",
+    "keyMajor": "{key} major",
+    "keyMinor": "{key} minor",
     "keySong": "{song} · do = {do}",
-    "keyTopFrom": "Transposed. As written: {orig} major.",
+    "keyTopFrom": "Transposed. As written: {orig}.",
     "mode": "Quiz",
     "modeAria": "Which quiz",
     "modeSee": "See it, play it",
@@ -1686,7 +1698,7 @@ const STRINGS = {
     "choicesAria": "Which note was it?",
     "hearStart": "Tap Play the note.",
     "wrong": "Not {syl}. Listen again.",
-    "right": "Yes! {syl} = {letter} in {key} major",
+    "right": "Yes! {syl} = {letter} in {key}",
     "show": "Show",
     "showAria": "What the quiz shows",
     "showSyl": "Syllable",
@@ -1704,7 +1716,7 @@ const STRINGS = {
     "markHintNum": "No dot: the octave from 1 (do) up to 7 (ti). A dot above is an octave higher; a dot below, an octave lower.",
     "check": "Check",
     "hearAgain": "Hear it again",
-    "answer": "{syl} = {letter} in {key} major",
+    "answer": "{syl} = {letter} in {key}",
     "octave": "This one: {name} (middle C is C4)",
     "restart": "Start again"
   },
@@ -2048,6 +2060,560 @@ const YANKEE_LYRICS = {
   }
 };
 
+// We Shall Not Be Moved, in F (do = F4), 4/4, from Songs of Work and Protest
+// (Fowke and Glazer, 1960; Dover 1973, public domain in the US), top melody
+// line only. Verse (bars 1–8) then chorus (bars 9–16); one phrase = one lyric
+// line. Rests at the ends of phrases are left as printed: the app holds the
+// note before through them when phrases are joined.
+const MOVED_VERSE = [
+  "(so,:2) | mi:1.5 mi:0.5 mi:1.5 mi:0.5 fa:2 mi:2 | mi:1.5 re:0.5 re:1.5 di:0.5 re:3",        // The union is behind us; we shall not be moved.
+  "(so,:1) | re:1.5 re:0.5 re:1.5 re:0.5 mi:2 re:2 | re:1.5 do:0.5 do:1.5 ti,:0.5 do:1",       // The union is behind us, we shall not be moved.
+  "(do:0.5 ti,:1.5 te,:0.5) | la,:3 ti,:1 do:1.5 ti,:0.5 do:1.5 la,:0.5 | so,:4 do:4",       // Just like a tree that's planted by the water,
+  "| mi:3 fa:1 mi:2 re:2 | do:6"                                                               // We shall not be moved.
+];
+const MOVED_CHORUS = [
+  "| mi:3 mi:1 fa:2 do:2 | mi:1.5 re:0.5 re:1.5 di:0.5 re:3",                                  // We shall not be, we shall not be moved.
+  "| re:3 re:1 mi:2 re:2 | re:1.5 do:0.5 do:1.5 ti,:0.5 do:1",                                 // We shall not be, we shall not be moved.
+  "(do:0.5 ti,:1.5 te,:0.5) | la,:3 ti,:1 do:1.5 ti,:0.5 do:1.5 la,:0.5 | so,:4 do:4",       // Just like a tree that's planted by the water,
+  "| mi:3 fa:1 mi:2 re:2 | do:6"                                                               // We shall not be moved.
+];
+const MOVED_LYRICS = {
+  book: {
+    name: "Songs of Work and Protest (1960)", tab: "Union",
+    verses: [
+      ["The union is behind us", "The u-nion is be-hind us"],
+      ["We're fighting for our freedom", "We're fight-ing for our free-dom"],
+      ["We're fighting for our children", "We're fight-ing for our chil-dren"],
+      ["We'll build a mighty union", "We'll build a might-y u-nion"]
+    ].map(([w, sy], i) => ({
+      label: "Verse " + (i + 1),
+      lines: [w + "; we shall not be moved.", w + ", we shall not be moved.", "Just like a tree that's planted by the water,", "We shall not be moved."],
+      syl: [sy + "; we shall not be moved.", sy + ", we shall not be moved.", "Just like a tree that's plant-ed by the wa-ter,", "We shall not be moved."]
+    })),
+    choruses: [{
+      label: "Chorus",
+      lines: ["We shall not be, we shall not be moved.", "We shall not be, we shall not be moved.", "Just like a tree that's planted by the water,", "We shall not be moved."],
+      syl: ["We shall not be, we shall not be moved.", "We shall not be, we shall not be moved.", "Just like a tree that's plant-ed by the wa-ter,", "We shall not be moved."]
+    }]
+  }
+};
+
+// Solidarity Forever, in B♭ (do = B♭4), 4/4, from the same book, top melody
+// line only. The tune is "John Brown's Body" (the "Battle Hymn of the
+// Republic"). Verse (bars 1–8) then chorus (bars 9–16); one phrase = one line.
+const SOLIDARITY_VERSE = [
+  "(so,:1.5 so,:0.5) | so,:1.5 so,:0.5 so,:1.5 fa,:0.5 mi,:1.5 so,:0.5 do:1.5 do:0.5 | mi:1.5 mi:0.5 mi:1.5 re:0.5 do:1",
+  "(do:1.5 ti,:0.5) | fa,:1.5 fa,:0.5 fa,:1.5 so,:0.5 la,:1.5 so,:0.5 la,:1.5 fa,:0.5 | so,:1.5 la,:0.5 so,:1.5 mi,:0.5 so,:1",
+  "(so,:1.5 so,:0.5) | so,:1.5 so,:0.5 so,:1.5 fa,:0.5 mi,:1.5 so,:0.5 do:1.5 re:0.5 | mi:1.5 mi:0.5 mi:1.5 re:0.5 do:1",
+  "(do:1.5 do:0.5) | re:2 re:2 do:2 ti,:2 | do:6"
+];
+const SOLIDARITY_CHORUS = [
+  "| so,:3 fa,:1 mi,:1.5 so,:0.5 do:1.5 do:0.5 | mi:4 do:3",
+  "| fa,:3 so,:1 la,:1.5 so,:0.5 la,:1.5 fa,:0.5 | so,:4 mi,:3",
+  "| so,:3 fa,:1 mi,:1.5 so,:0.5 do:1.5 do:0.5 | mi:4 do:1",
+  "(do:1.5 do:0.5) | re:2 re:2 do:2 ti,:2 | do:6"
+];
+const SOLIDARITY_LYRICS = {
+  chaplin: {
+    name: "Ralph Chaplin (1915)", tab: "Chaplin",
+    verses: [
+      [["When the union's inspiration through the workers' blood shall run,", "When the u-nion's in-spi-ra-tion through the work-ers' blood shall run,"],
+       ["There can be no power greater anywhere beneath the sun.", "There can be no pow-er great-er an-y-where be-neath the sun."],
+       ["Yet what force on earth is weaker than the feeble strength of one?", "Yet what force on earth is weak-er than the fee-ble strength of one?"],
+       ["But the union makes us strong.", "But the u-nion makes us strong."]],
+      [["They have taken untold millions that they never toiled to earn,", "They have tak-en un-told mil-lions that they nev-er toiled to earn,"],
+       ["But without our brain and muscle not a single wheel could turn.", "But with-out our brain and mus-cle not a sin-gle wheel could turn."],
+       ["We can break their haughty power, gain our freedom when we learn", "We can break their haugh-ty pow-er, gain our free-dom when we learn"],
+       ["That the union makes us strong.", "That the u-nion makes us strong."]],
+      [["In our hands is placed a power greater than their hoarded gold,", "In our hands is placed a pow-er great-er than their hoard-ed gold,"],
+       ["Greater than the might of armies magnified a thousand fold.", "Great-er than the might of ar-mies mag-ni-fied a thou-sand fold."],
+       ["We can bring to birth a new world from the ashes of the old,", "We can bring to birth a new world from the ash-es of the old,"],
+       ["For the union makes us strong.", "For the u-nion makes us strong."]]
+    ].map((pairs, i) => ({ label: "Verse " + (i + 1), lines: pairs.map(p => p[0]), syl: pairs.map(p => p[1]) })),
+    choruses: [{
+      label: "Chorus",
+      lines: ["Solidarity forever!", "Solidarity forever!", "Solidarity forever!", "For the union makes us strong."],
+      syl: ["Sol-i-dar-i-ty for-ev-er!", "Sol-i-dar-i-ty for-ev-er!", "Sol-i-dar-i-ty for-ev-er!", "For the u-nion makes us strong."]
+    }]
+  }
+};
+
+// We Will Overcome, in C (do = C4), 4/4, from Songs of Work and Protest
+// (Fowke and Glazer, 1960; Dover 1973, public domain in the US), top melody
+// line only. Eight bars a verse, no chorus; one phrase = one lyric line.
+// "come" and "day" slur over two notes, and so does "Oh".
+const OVERCOME_VERSE = [
+  "| so:1 so:1 la:1 so:1 so:1 mi:3 | so:1 so:1 la:1 so:1 so:1 mi:3",   // We will overcome, we will overcome,
+  "| so:1 so:1 la:1 ti:1 do':2 re':2 | ti:1 so:4",                      // We will overcome some day.
+  "(la:1 ti:1) | do':2 do':1 la:1 so:4 | la:2 so:1 fa:1 mi:3",           // Oh, down in my heart I do believe
+  "| so:1 so:1 do:1 fa:1 mi:2 re:2 | do:6"                               // We will overcome some day.
+];
+const OVERCOME_LYRICS = {
+  book: {
+    name: "Songs of Work and Protest (1960)", tab: "Union",
+    verses: [
+      // "o-ver-come" and "or-gan-ize" hold their last syllable over two notes;
+      // "We will build a new world" has a syllable for every note
+      { w: "We will overcome", sy: "We will o-ver-come_" },
+      { w: "We will organize", sy: "We will or-gan-ize_" },
+      { w: "We will build a new world", sy: "We will build a new world" },
+      { w: "We will overcome", sy: "We will o-ver-come_" }
+    ].map(({ w, sy }, i) => {
+      const plain = sy.replace(/_/g, "");
+      return {
+        label: "Verse " + (i + 1),
+        lines: [w + ", " + w.toLowerCase() + ",", w + " some day.", "Oh, down in my heart I do believe", w + " some day."],
+        syl: [sy + ", " + sy.toLowerCase() + ",",
+              (sy.endsWith("_") ? plain + " some day_." : plain + " some day."),
+              "Oh_, down in my heart I do be-lieve",
+              // the last line has one note fewer than "build a new world some day" needs: it lights as a whole line
+              sy.endsWith("_") ? plain + " some day." : ""]
+      };
+    })
+  }
+};
+
+// Amazing Grace, in G (do = G4), 3/4, top melody line as printed in
+// Benjamin Righetti's edition on IMSLP (there in F), with its triplets.
+// One phrase = one lyric line; "me" and "see" are tied over the bar line.
+const GRACE_VERSE = [
+  "(so,:2) | do:4 mi:2/3 re:2/3 do:2/3 | mi:4 re:2 | do:4 la,:2 | so,:4",          // A-ma-zing grace, how sweet the sound,
+  "(so,:2) | do:4 mi:2/3 re:2/3 do:2/3 | mi:4 re:1 mi:1 | so:6~ | so:4",          // That saved a wretch like me!
+  "(mi:2) | so:4 mi:2/3 re:2/3 do:2/3 | mi:4 re:2 | do:4 la,:2 | so,:4",           // I once was lost, but now I'm found,
+  "(so,:2) | do:4 mi:2/3 re:2/3 do:2/3 | mi:4 re:2 | do:6~ | do:4"                 // Was blind, but now I see.
+];
+const GRACE_LYRICS = {
+  newton: {
+    name: "John Newton (1779)", tab: "Newton",
+    // syllable marks: "zing__" is sung on the three triplet notes; the
+    // second-to-last syllable of lines 2 and 4 on two eighths ("like_"); the
+    // last on the tied note ("me!_")
+    verses: [
+      ["A-ma-zing__ grace, how sweet the sound,", "That saved a__ wretch like_ me!_", "I once was__ lost, but now I’m found,", "Was blind, but__ now I see._"],
+      ["’Twas grace that__ taught my heart to fear,", "And grace my__ fears re_-lieved;_", "How pre-cious__ did that grace ap-pear", "The hour I__ first be-lieved._"],
+      ["Through ma-ny__ dan-gers, toils and snares", "I have al__-rea-dy_ come;_", "’Tis grace that__ brought me safe thus far,", "And grace will__ lead me home._"],
+      ["The Lord has__ pro-mised good to me,", "His word my__ hope se_-cures;_", "He will my__ shield and por-tion be", "As long as__ life en-dures._"],
+      ["Yes, when this__ flesh and heart shall fail,", "And mor-tal__ life shall_ cease,_", "I shall pos__-sess, with-in the veil,", "A life of__ joy and peace._"],
+      ["The earth shall__ soon dis-solve like snow,", "The sun for__-bear to_ shine;_", "But God, who__ called me here be-low,", "Will be for__-ev-er mine._"],
+      ["When we’ve been__ there ten thou-sand years,", "Bright shi-ning__ as the_ sun,_", "We’ve no less__ days to sing God’s praise", "Than when we’d__ first be-gun._"]
+    ].map((syl, i) => ({ label: "Verse " + (i + 1), lines: syl.map(l => l.replace(/[-_]/g, "")), syl }))
+  }
+};
+
+// John Brown's Body, in B♭ (do = B♭4, as in Solidarity Forever), 4/4, top
+// melody line as printed in Songs of Work and Protest (Fowke and Glazer,
+// 1960; Dover 1973, public domain in the US). Eight bars of verse, eight of
+// chorus; one phrase = one lyric line. The rests at the ends of lines are
+// held through when phrases join.
+const BROWN_VERSE = [
+  "| so,:2 so,:2 mi,:1.5 so,:0.5 do:1.5 do:0.5 | mi:1.5 mi:0.5 mi:1.5 re:0.5 do:3",     // John Brown's body lies a-mould'ring in the grave,
+  "| fa,:2 fa,:2 la,:1.5 so,:0.5 la,:1.5 fa,:0.5 | so,:1.5 la,:0.5 so,:1.5 mi,:0.5 so,:3",
+  "| so,:2 so,:2 mi,:1.5 so,:0.5 do:1.5 do:0.5 | mi:1.5 mi:0.5 mi:1.5 re:0.5 do:2",
+  "(do:1.5 re:0.5) | re:2 re:2 do:2 ti,:2 | do:6"                                         // But his soul goes marching on.
+];
+const BROWN_CHORUS = [
+  "| so,:3 fa,:1 mi,:1.5 so,:0.5 do:1.5 do:0.5 | mi:4 do:3",                            // Glory, glory, hallelujah!
+  "| fa,:3 so,:1 la,:1.5 so,:0.5 la,:1.5 fa,:0.5 | so,:4 mi,:3",
+  "| so,:3 fa,:1 mi,:1.5 so,:0.5 do:1.5 do:0.5 | mi:4 mi:1",
+  "(do:2) | re:2 re:2 do:2 ti,:2 | do:6"                                                  // His soul goes marching on!
+];
+// The printed notes fit verse 1 and every verse's last line. The other verses'
+// lines have more or fewer syllables than the notes ("" = lit as a whole line).
+const BROWN_LINE = ["John Brown’s body lies a-mould’ring in the grave,", "John Brown’s bo-dy lies a\\-mould’-ring in the grave,"];
+const BROWN_LYRICS = {
+  book: {
+    name: "Songs of Work and Protest (1960)", tab: "Union",
+    verses: [
+      [BROWN_LINE, BROWN_LINE, BROWN_LINE, ["But his soul goes marching on.", "But his soul goes march-ing on."]],
+      [["John Brown died that the slaves might be free,", ""], ["John Brown died that the slaves might be free,", ""], ["John Brown died that the slaves might be free,", ""],
+       ["But his soul goes marching on.", "But his soul goes march-ing on."]],
+      [["He captured Harper’s Ferry with his nineteen men so true;", ""], ["He frightened Old Virginny till she trembled through and through;", ""],
+       ["They hung him for a traitor, themselves the traitor crew,", ""], ["But his soul is marching on.", "But his soul is march-ing on."]],
+      [["He’s gone to be a soldier in the army of the Lord,", ""], ["He’s gone to be a soldier in the army of the Lord,", ""], ["He’s gone to be a soldier in the army of the Lord,", ""],
+       ["His soul is marching on.", ""]],
+      [["The stars of Heaven now are looking kindly down,", ""], ["The stars of Heaven now are looking kindly down,", ""], ["The stars of Heaven now are looking kindly down,", ""],
+       ["On the grave of old John Brown.", "On the grave of old John Brown."]]
+    ].map((pairs, i) => ({ label: "Verse " + (i + 1), lines: pairs.map(p => p[0]), syl: pairs.map(p => p[1]) })),
+    choruses: [{
+      label: "Chorus",
+      lines: ["Glory, glory, hallelujah!", "Glory, glory, hallelujah!", "Glory, glory, hallelujah!", "His soul goes marching on!"],
+      syl: ["Glo-ry, glo-ry, hal-le-lu-jah!", "Glo-ry, glo-ry, hal-le-lu-jah!", "Glo-ry, glo-ry, hal-le-lu-jah!", "His soul goes march-ing on!"]
+    }]
+  }
+};
+
+// The Battle Hymn of the Republic: Julia Ward Howe's words as printed in
+// Songs of Work and Protest, which gives the words only. Sung here to the
+// book's music for Solidarity Forever, the same tune. The last line of each
+// verse and of the chorus has one syllable fewer than "For the union makes us
+// strong", so its first word takes both pickup notes (the same pitch); so does
+// "Mine" in the first line, which puts "eyes" on the downbeat, as it's sung.
+const BATTLE_LYRICS = {
+  howe: {
+    name: "Julia Ward Howe (1862)", tab: "Howe",
+    verses: [
+      [["Mine eyes have seen the glory of the coming of the Lord;", "Mine_ eyes have seen the glo-ry of the com-ing of the Lord;"],
+       ["He is trampling out the vintage where the grapes of wrath are stored;", "He is tram-pling out the vin-tage where the grapes of wrath are stored;"],
+       ["He hath loosed the fateful lightning of His terrible swift sword:", "He hath loosed the fate-ful light-ning of His ter-ri-ble swift sword:"],
+       ["His truth is marching on.", "His_ truth is march-ing on."]],
+      [["I have seen Him in the watch-fires of a hundred circling camps;", "I have seen Him in the watch\\-fires of a hun-dred cir-cling camps;"],
+       ["They have builded Him an altar in the evening dews and damps;", "They have build-ed Him an al-tar in the eve-ning dews and damps;"],
+       ["I can read His righteous sentence by the dim and flaring lamps;", "I can read His right-eous sen-tence by the dim and flar-ing lamps;"],
+       ["His day is marching on.", "His_ day is march-ing on."]],
+      [["I have read a fiery gospel, writ in burnished rows of steel;", "I have read a fier-y gos-pel, writ in bur-nished rows of steel;"],
+       ["“As ye deal with My contemners, so with you My grace shall deal;", "“As ye deal with My con-tem-ners, so with you My grace shall deal;"],
+       ["Let the Hero, born of woman, crush the serpent with his heel,", "Let the He-ro, born of wo-man, crush the ser-pent with his heel,"],
+       ["Since God is marching on.”", "Since_ God is march-ing on.”"]],
+      [["He has sounded forth the trumpet that shall never call retreat;", "He has sound-ed forth the trum-pet that shall nev-er call re-treat;"],
+       ["He is sifting out the hearts of men before His judgment-seat;", "He is sift-ing out the hearts of men be-fore His judg-ment\\-seat;"],
+       ["Oh, be swift, my soul, to answer Him! be jubilant, my feet!", "Oh, be swift, my soul, to an-swer Him! be ju-bi-lant, my feet!"],
+       ["Our God is marching on.", "Our_ God is march-ing on."]],
+      [["In the beauty of the lilies Christ was born across the sea,", "In the beau-ty of the lil-ies Christ was born a-cross the sea,"],
+       ["With a glory in His bosom that transfigures you and me:", "With a glo-ry in His bo-som that trans-fig-ures you and me:"],
+       ["As He died to make men holy, let us die to make men free,", "As He died to make men ho-ly, let us die to make men free,"],
+       ["While God is marching on.", "While_ God is march-ing on."]]
+    ].map((pairs, i) => ({ label: "Verse " + (i + 1), lines: pairs.map(p => p[0]), syl: pairs.map(p => p[1]) })),
+    choruses: [{
+      label: "Chorus",
+      lines: ["Glory, glory hallelujah", "Glory, glory hallelujah", "Glory, glory hallelujah", "His truth is marching on."],
+      syl: ["Glo-ry, glo-ry hal-le-lu-jah", "Glo-ry, glo-ry hal-le-lu-jah", "Glo-ry, glo-ry hal-le-lu-jah", "His_ truth is march-ing on."]
+    }]
+  }
+};
+
+// Solidarity Forever's chords, as printed; the Battle Hymn shares them
+const SOLIDARITY_CHORDS = {
+  verse: ["1", "57@2 1@4", "4", "1", "", "37@2 6-@4 17@6", "2- 1@4 57@6", "1"],
+  chorus: ["1", "", "4", "1", "", "37@4 6-@5 17@6", "2- 1@4 57@6", "1 57@6"]
+};
+
+// Skip to My Lou, in F (do = F4), cut time, top melody line as printed in
+// The American Song Treasury (Raph). Eight bars a verse; one phrase = one line.
+const SKIP_VERSE = [
+  "| mi:2 mi:2 do:2 do:2 | mi:1 mi:1 mi:2 so:4",        // Lost my partner, what'll I do
+  "| re:2 re:2 ti,:2 ti,:2 | re:1 re:1 re:2 fa:4",
+  "| mi:2 mi:2 do:2 do:2 | mi:1 mi:1 mi:2 so:4",
+  "| re:2 mi:1 re:1 do:2 re:2 | ti,:4 do:2"              // Skip to my Lou, my darling
+];
+// Lines of 9 or 10 syllables have more syllables than the 8 printed notes
+// (singers split a note): "" = lit as a whole line.
+const SKIP_LYRICS = {
+  trad: {
+    name: "Traditional (as sung today)", tab: "Traditional",
+    verses: [
+      ["Lost my partner, what’ll I do", "Lost my part-ner, what-’ll I do"],
+      ["I’ll get ’nother one, pretty one too", ""],
+      ["Can’t get a red bird, jay bird’ll do", ""],
+      ["Lou, Lou, skip to my Lou", "Lou_, Lou_, skip to my Lou"],
+      ["Flies in the buttermilk, shoo, shoo, shoo", ""],
+      ["Gone again, what’ll I do", "Gone a-gain_, what-’ll I do"],
+      ["I’ll get a partner better than you", ""],
+      ["Can’t get a blue bird, black bird’ll do", ""],
+      ["I got another one, skip to my Lou", ""],
+      ["Flies in the sugar bowl, shoo fly shoo", ""],
+      ["Cat’s in the cream jar, ooh ooh ooh", "Cat’s in the cream jar, ooh ooh ooh"],
+      ["Off to Texas, two by two", "Off to Tex-as, two_ by two"]
+    ].map(([w, sy], i) => ({ label: "Verse " + (i + 1), lines: [w, w, w, "Skip to my Lou, my darling"],
+      syl: [sy, sy, sy, "Skip to my Lou, my dar-ling"] }))
+  }
+};
+
+// When the Saints Go Marching In, in D (do = D4), cut time, top melody line as
+// printed in The American Song Treasury (Raph). Sixteen bars a verse; one
+// phrase = one line. "saints", "in", "ber" are held across bar lines (ties).
+const SAINTS_VERSE = [
+  "(do:2 mi:2 fa:2) | so:8~ | so:2 do:2 mi:2 fa:2 | so:8~ | so:2",   // Oh when the saints go marchin' in
+  "(do:2 mi:2 fa:2) | so:4 mi:4 | do:4 mi:4 | re:8~ | re:4",           // Oh when the saints go marchin' in
+  "(mi:2 re:2) | do:6 do:2 | mi:4 so:2 so:2 | so:2 fa:6~ | fa:4",      // Lord I want to be in that number
+  "(mi:2 fa:2) | so:4 mi:4 | do:4 re:4 | do:8~ | do:2"                 // When the saints go marchin' in
+];
+// Every line fits: the first line holds its 4th and last syllables, the
+// others their last.
+const SAINTS_LYRICS = {
+  trad: {
+    name: "Traditional (American Song Treasury)", tab: "Traditional",
+    verses: [
+      ["Oh when the saints go marchin’ in", "Oh when the saints_ go march-in’ in_", "Oh when the saints go march-in’ in_", "Lord", "When the saints go marchin’ in", "When the saints go march-in’ in_"],
+      ["Oh when they come on Judgment Day", "Oh when they come_ on Judg-ment Day_", "Oh when they come on Judg-ment Day_", "Lord", "When they come on Judgment Day", "When they come on Judg-ment Day_"],
+      ["When Gabriel blows that golden horn", "When Ga-briel blows_ that gold-en horn_", "When Ga-briel blows that gold-en horn_", "Lord", "When he blows that golden horn", "When he blows that gold-en horn_"],
+      ["When they go through them Pearly Gates", "When they go through_ them Pearl-y Gates_", "When they go through them Pearl-y Gates_", "Lord", "When they go through Pearly Gates", "When they go through Pearl-y Gates_"],
+      ["Oh when they ring them silver bells", "Oh when they ring_ them sil-ver bells_", "Oh when they ring them sil-ver bells_", "Lord", "When they ring them silver bells", "When they ring them sil-ver bells_"],
+      ["And when the angels gather ’round", "And when the an_-gels gath-er ’round_", "And when the an-gels gath-er ’round_", "Lord", "When the angels gather ’round", "When the an-gels gath-er ’round_"],
+      ["Oh into Heaven when they go", "Oh in-to Hea_-ven when they go_", "Oh in-to Hea-ven when they go_", "How", "Into Heaven when they go", "In-to Hea-ven when they go_"],
+      ["And when they’re singing hallelu", "And when they’re sing_-ing hal-le-lu_", "And when they’re sing-ing hal-le-lu_", "How", "When they’re singing hallelu", "When they’re sing-ing hal-le-lu_"],
+      ["And when the Lord is shakin’ hands", "And when the Lord_ is shak-in’ hands_", "And when the Lord is shak-in’ hands_", "How", "When the Lord is shakin’ hands", "When the Lord is shak-in’ hands_"]
+    ].map(([w, sy1, sy2, who, w4, sy4], i) => ({ label: "Verse " + (i + 1),
+      lines: [w, w, who + " I want to be in that number", w4],
+      syl: [sy1, sy2, who + " I want to be in that num-ber_", sy4] }))
+  }
+};
+
+// I've Been Working on the Railroad, in F (do = F4), 6/8, the sung melody as
+// printed in The American Song Treasury (Raph): the notes with words under
+// them, not the piano's harmony. One verse of 24 lines (80 bars), five parts:
+// the railroad, the whistle, "Dinah, won't you blow", the kitchen, and "fee,
+// fie". The book's D.C. al Fine (back to the start, ending at "Dinah, blow
+// your horn") isn't repeated here.
+const TWO = m => ({ m, bars: 2 });
+const RAILROAD_VERSE = [
+  "| do:3~ do:2 so,:1 | do:2 so,:1 do:2 re:1 | mi:6 | re:6",              // I've been working on the railroad,
+  "| fa:3~ fa:2 fa:1 | do:3 re:3 | mi:6~ | mi:6",                         // All the live-long day.
+  "| do:3~ do:2 so,:1 | do:2 so,:1 do:2 re:1 | mi:6 | do:3~ do:2",        // I've been working on the railroad
+  "(re:1) | re:3~ re:2 re:1 | re:3 mi:3 | re:6~ | re:6",                  // To pass the time away.
+  "| re:3~ re:2 re:1 | ri:2 re:1 mi:2 fa:1 | fi:6 | so:6",                // Don't you hear the whistle blowin',
+  "| fa:3 fa:2 fa:1 | do:2 do:1 re:2 re:1 | mi:6~ | mi:6",                // Rise up so early in the morn;
+  "| la,:3~ la,:2 ti,:1 | do:2 ti,:1 do:2 la,:1 | so,:6 | do:6",          // Don't you hear the captain shoutin',
+  "| mi:3~ mi:2 fa:1 | mi:3 re:3 | do:6~ | do:6",                         // Dinah, blow your horn!
+  TWO("| so,:2 so,:1 so,:2 so,:1 | do:6"),                                 // Dinah, won't you blow,
+  TWO("| la,:2 la,:1 la,:2 la,:1 | re:6"),
+  TWO("| ti,:2 ti,:1 ti,:2 ti,:1 | la,:3 ti,:3"),                          // Dinah, won't you blow your
+  TWO("| do:3 re:3 | mi:6"),                                               // hor-or-orn?
+  TWO("| so,:2 so,:1 so,:2 so,:1 | do:6"),
+  TWO("| la,:2 la,:1 la,:2 la,:1 | re:6"),
+  TWO("| ti,:2 ti,:1 ti,:2 ti,:1 | la,:3 ti,:3"),
+  TWO("| mi:6~ | mi:6"),                                                    // horn?
+  "| mi:2 mi:1 mi:2 mi:1 | do:2 do:1 do:3 | so,:6 | do:6",               // Someone's in the kitchen with Dinah,
+  "| mi:2 mi:1 mi:2 mi:1 | do:2 do:1 do:3 | re:3 ti,:3 | la,:3 so,:3",    // Someone's in the kitchen, I know-o-o-o,
+  "| mi:2 mi:1 mi:2 mi:1 | do:2 do:1 do:3 | fa:6 | la:6",
+  "| so:2 so:1 so:2 so:1 | fa:3 re:3 | do:6~ | do:6",                     // Strummin' on the old banjo.
+  "| mi:6 | do:6 | so,:1 so,:1 so,:1 so,:3 | do:6",                       // Fee, fie, fiddle-ee-i-o,
+  "| mi:3 mi:3 | do:1 do:1 do:1 do:3 | re:3 ti,:3 | la,:3 so,:3",         // Fee, fie, fiddle-ee-i-o-o-o-o,
+  "| mi:6 | do:6 | fa:1 fa:1 fa:1 fa:3 | la:6",
+  "| so:2 so:1 so:2 so:1 | fa:3 re:3 | do:6~ | do:6"
+];
+const RAILROAD_LYRICS = {
+  trad: {
+    name: "Traditional (American Song Treasury)", tab: "Traditional",
+    verses: [{
+      label: "Verse 1",
+      lines: [
+        "I’ve been working on the railroad,", "All the live-long day.", "I’ve been working on the railroad", "To pass the time away.",
+        "Don’t you hear the whistle blowin’,", "Rise up so early in the morn;", "Don’t you hear the captain shoutin’,", "Dinah, blow your horn!",
+        "Dinah, won’t you blow,", "Dinah, won’t you blow,", "Dinah, won’t you blow your", "Hor-or-orn?",
+        "Dinah, won’t you blow,", "Dinah, won’t you blow,", "Dinah, won’t you blow your", "horn?",
+        "Someone’s in the kitchen with Dinah,", "Someone’s in the kitchen, I know-o-o-o,", "Someone’s in the kitchen with Dinah,", "Strummin’ on the old banjo.",
+        "Fee, fie, fiddle-ee-i-o,", "Fee, fie, fiddle-ee-i-o-o-o-o,", "Fee, fie, fiddle-ee-i-o,", "Strummin’ on the old banjo."],
+      syl: [
+        "I’ve_ been work-ing on the rail-road,", "All_ the live\\-long day._", "I’ve_ been work-ing on the rail-road_", "To pass_ the time a-way._",
+        "Don’t_ you hear the whis-tle blow-in’,", "Rise up so ear-ly in the morn;_", "Don’t_ you hear the cap-tain shout-in’,", "Di_-nah, blow your horn!_",
+        "Di-nah, won’t you blow,", "Di-nah, won’t you blow,", "Di-nah, won’t you blow your", "Hor\\-or\\-orn?",
+        "Di-nah, won’t you blow,", "Di-nah, won’t you blow,", "Di-nah, won’t you blow your", "horn?_",
+        "Some-one’s in the kitch-en with Di-nah,", "Some-one’s in the kitch-en, I know\\-o\\-o\\-o,", "Some-one’s in the kitch-en with Di-nah,", "Strum-min’ on the old ban-jo._",
+        "Fee, fie, fid-dle\\-ee\\-i\\-o,", "Fee, fie, fid-dle\\-ee\\-i\\-o\\-o\\-o\\-o,", "Fee, fie, fid-dle\\-ee\\-i\\-o,", "Strum-min’ on the old ban-jo._"]
+    }]
+  }
+};
+
+// Buffalo Gals, in D (do = D4), cut time, the sung melody (top notes) as
+// printed in The American Song Treasury (Raph). Eight bars of verse, eight of
+// chorus; one phrase = one lyric line.
+const BUFFALO_VERSE = [
+  "(so,:2) | do:2 do:2 mi:2 so:2 | la:2 so:1 mi:1~ mi:4",          // As I was lumb'ring down the street,
+  "| so:2 fa:1 re:1~ re:4 | la:2 so:1 mi:1~ mi:2",                 // Down the street, down the street,
+  "(so:2) | do:2 do:2 mi:2 so:2 | la:2 so:1 mi:1~ mi:2",           // A handsome gal I chanced to meet,
+  "(mi:2) | so:2 so:2 fa:2 re:2 | do:8"                             // Oh, she was fair to view.
+];
+// Verse 4 has more syllables: the same tune, with notes split (and the held
+// notes re-struck) so every syllable gets its own note.
+const BUFFALO_VERSE_4 = [
+  "(so,:1 so,:1) | do:2 do:1 do:1 mi:2 so:1 so:1 | la:2 so:1 mi:1 mi:1 mi:1",   // Oh I danced with the gal with a hole in her stockin'
+  "(mi:1 mi:1) | so:2 fa:1 re:1 re:2 re:1 re:0.5 re:0.5 | la:2 so:1 mi:1 mi:1 mi:1",  // And her hip kept a-rockin' and her toe kept a-knockin'
+  "(so:2) | do:2 do:1 do:1 mi:2 so:1 so:1 | la:2 so:1 mi:1 mi:1 mi:1",         // I danced with the gal with a hole in her stockin'
+  "(mi:1 mi:1) | so:2 so:1 so:1 fa:2 re:1 re:1 | do:8"                         // And we danced by the light of the moon
+];
+const BUFFALO_CHORUS = [
+  "| do:1.5 do:0.5 mi:2 so:2 so:1.5 so:0.5 | la:1 so:2 so:1 mi:4",   // Buffalo gals, won'cha come out tonight,
+  "| so:1 fa:2 fa:1 re:4 | la:1 so:2 so:1 mi:4",                     // Come out tonight, come out tonight,
+  "| do:1.5 do:0.5 mi:2 so:2 so:1.5 so:0.5 | la:1 so:2 so:1 mi:3",
+  "(mi:1) | so:2 so:1.5 so:0.5 fa:1 re:2 re:1 | do:6"                // And dance by the light of the moon.
+];
+const BUFFALO_LYRICS = {
+  trad: {
+    name: "Traditional (American Song Treasury)", tab: "Traditional",
+    verses: [
+      [["As I was lumb’ring down the street,", "As I was lumb-’ring down the street_,"],
+       ["Down the street, down the street,", "Down the street_, down the street_,"],
+       ["A handsome gal I chanced to meet,", "A hand-some gal I chanced to meet_,"],
+       ["Oh, she was fair to view.", "Oh, she was fair to view."]],
+      [["I asked her if she’d have a talk,", "I asked her if she’d have a talk_,"],
+       ["Have a talk, have a talk,", "Have a talk_, have a talk_,"],
+       ["Her feet took up the whole sidewalk", "Her feet took up the whole side-walk_"],
+       ["As she stood close to me.", "As she stood close to me."]],
+      [["I asked her, “Would you want to dance,", "I asked her, “Would you want to dance_,"],
+       ["Want to dance, want to dance?”", "Want to dance_, want to dance_?”"],
+       ["I thought that I would have a chance", "I thought that I would have a chance_"],
+       ["To shake a foot with her.", "To shake a foot with her."]],
+      [["Oh, I danced with the gal with a hole in her stockin’,", "Oh, I danced with the gal with a hole in her stock-in’,"],
+       ["And her hip kept a-rockin’ and her toe kept a-knockin’,", "And her hip kept a\\-rock-in’ and her toe kept a\\-knock-in’,"],
+       ["I danced with the gal with a hole in her stockin’,", "I danced with the gal with a hole in her stock-in’,"],
+       ["And we danced by the light of the moon.", "And we danced by the light of the moon."]],
+      [["I wanna make that gal my wife,", "I wan-na make that gal my wife_,"],
+       ["Gal my wife, gal my wife,", "Gal my wife_, gal my wife_,"],
+       ["Then I’d be happy all my life", "Then I’d be hap-py all my life_"],
+       ["If I had her with me.", "If I had her with me."]]
+    ].map((pairs, i) => ({ label: "Verse " + (i + 1), lines: pairs.map(p => p[0]), syl: pairs.map(p => p[1]) })),
+    choruses: [{
+      label: "Chorus",
+      lines: ["Buffalo gals, won’cha come out tonight,", "Come out tonight, come out tonight,", "Buffalo gals, won’cha come out tonight,", "And dance by the light of the moon."],
+      syl: ["Buf-fa-lo gals, won’-cha come out to-night,", "Come out to-night, come out to-night,", "Buf-fa-lo gals, won’-cha come out to-night,", "And dance by the light of the moon."]
+    }]
+  }
+};
+
+// Oh! Susanna, in D (do = D4), cut time, the sung melody as printed in The
+// American Song Treasury (Raph). The book's repeat and first/second endings
+// are written out: four lines a verse (one phrase each), two of chorus.
+const SUSANNA_A = "(do:1 re:1) | mi:2 so:2 so:2 la:2 | so:2 mi:2 do:3 re:1 | mi:2 mi:2 re:2 do:2 | re:6";
+const SUSANNA_VERSE = [
+  SUSANNA_A,                                                                   // For I came from Alabama...
+  "(do:1 re:1) | mi:2 so:2 so:3 la:1 | so:2 mi:2 do:3 re:1 | mi:2 mi:2 re:2 re:2 | do:6",   // And I'm goin' to Louisiana...
+  SUSANNA_A,                                                                   // Now it rained all night...
+  "(do:1 re:1) | mi:2 so:2 so:3 la:1 | so:2 mi:2 do:3 re:1 | mi:2 mi:2 re:2 re:2 | do:8"    // ...Susanna, don't you cry.
+];
+const SUSANNA_CHORUS = [
+  "| fa:4 fa:4 | la:2 la:4 la:2 | so:2 so:2 mi:2 do:2 | re:6",                // Oh! Susanna, oh don't you cry for me,
+  "(do:1 re:1) | mi:2 so:2 so:2 la:2 | so:2 mi:2 do:3 re:1 | mi:2 mi:2 re:2 re:2 | do:6"    // For I come from Alabama...
+];
+const SUSANNA_LYRICS = {
+  foster: {
+    name: "Stephen Foster (1848)", tab: "Foster",
+    // the book's verses 1, 3 and 4 (its verse 2 is left out)
+    verses: [
+      [["For I came from Alabama with a banjo on my knee,", "For I came from Al-a-bam-a with a ban-jo on my knee,"],
+       ["And I’m goin’ to Lou’siana, there my true love for to see.", "And I’m goin’ to Lou’-si-an-a, there my true love for to see."],
+       ["Now it rained all night the day I left, the weather it was dry,", "Now it rained all night the day I left, the weath-er it was dry,"],
+       ["And the sun so hot I froze to death; Susanna, don’t you cry.", "And the sun so hot I froze to death; Su-san-na, don’t you cry."]],
+      [["Now I had a dream the other night, when ev’rything was still,", "Now I had a dream the oth-er night, when ev-’ry-thing was still,"],
+       ["And I thought I saw Susanna, she was comin’ down the hill.", "And I thought I saw Su-san-na, she was com-in’ down the hill."],
+       ["Now the buckwheat cake was in her mouth, the tear was in her eye,", "Now the buck-wheat cake was in her mouth, the tear was in her eye,"],
+       ["So I says, “I’m comin’ from the South, Susanna, don’t you cry.”", "So I says, “I’m com-in’ from the South, Su-san-na, don’t you cry.”"]],
+      [["Now I soon will be in New Orleans, and then I’ll look around,", "Now I soon will be in New Or-leans, and then I’ll look a-round,"],
+       ["When at last I find Susanna, I will fall upon the ground.", "When at last I find Su-san-na, I will fall up-on the ground."],
+       ["But if I can never find her, then I think I’d surely die,", "But if I can nev-er find her, then I think I’d sure-ly die,"],
+       ["When I’m dead and gone and buried deep, Susanna, don’t you cry.", "When I’m dead and gone and bur-ied deep, Su-san-na, don’t you cry."]]
+    ].map((pairs, i) => ({ label: "Verse " + (i + 1), lines: pairs.map(p => p[0]), syl: pairs.map(p => p[1]) })),
+    choruses: [{
+      label: "Chorus",
+      lines: ["Oh! Susanna, oh don’t you cry for me,", "For I come from Alabama with a banjo on my knee."],
+      syl: ["Oh! Su-san-na, oh don’t you cry for me,", "For I come from Al-a-bam-a with a ban-jo on my knee."]
+    }]
+  }
+};
+
+// Go Down Moses, in E minor (key signature of G: do = G4, so the tune runs
+// la to la), cut time, the sung melody as printed in The American Song
+// Treasury (Raph). Four lines a verse, the last two the refrain.
+const MOSES_VERSE = [
+  "(mi,:2) | do:2 do:2 ti,:2 ti,:2 | do:2 do:2 la,:4 | mi,:2 mi,:2 si,:1 si,:3 | la,:4 mi,:2",   // When Israel was in Egypt's land, let my people go
+  "(mi,:2) | do:2 do:2 ti,:2 ti,:2 | do:2 do:2 la,:4 | mi,:2 mi,:2 si,:1 si,:3 | la,:8",         // Oppressed so hard they could not stand, let my people go
+  "| la,:2 la,:6 | re:2 re:6 | mi:4 mi:3 re:1 | mi:2 mi:2 re:1 do:3",                          // Go down, Moses, way down in Egypt land
+  "| do:1 la,:1 la,:6 | do:1 la,:1 la,:4 so,:2 | mi,:2 mi,:2 si,:1 si,:3 | la,:6"              // Tell ol' Pharaoh, let my people go
+];
+const MOSES_LYRICS = {
+  trad: {
+    name: "Traditional (American Song Treasury)", tab: "Traditional",
+    verses: [
+      ["When Is-rael was in E-gypt’s land", "Op-pressed so hard they could not stand"],
+      ["Thus spoke the Lord, bold Mo-ses said", "If not, I’ll smite your first\\-born dead"],
+      ["No more shall they in bond-age toil", "Let them come out with E-gypt’s spoil"],
+      ["The Lord told Mo-ses what to do", "To lead his peo-ple right on through"],
+      ["’Twas on a dark and dis-mal night", "When Mo-ses led the Is-rael-ites"],
+      ["Oh Mo-ses, clouds will cleave the way", "A fire by night, a shade by day"],
+      ["When Is-rael reached the wa-ter side", "Com-mand-ed God, “It shall di-vide”"],
+      ["“Come Mo-ses, you will not get lost”", "“Stretch out your rod and come a-cross”"],
+      ["When they had reached the oth-er shore", "They sang a song of tri-umph o’er"],
+      ["Now Pha-raoh said he’d go a-cross", "But Pha-raoh and his host were lost"],
+      ["Oh take your shoes from off your feet", "And walk in-to the gold-en street"]
+    ].map(([a, b], i) => {
+      const syl = [a + ", let my peo-ple go_.", b + ", let my peo-ple go.",
+                   "Go down, Mo-ses, way down in E-gypt land_,", "Tell_ ol’ Pha_-raoh_, let my peo-ple go."];
+      return { label: "Verse " + (i + 1), lines: syl.map(l => l.replace(/\\-/g, "\u0000").replace(/[-_]/g, "").replace(/\u0000/g, "-")), syl };
+    })
+  }
+};
+
+// On the Banks of the Wabash, in G (do = G4), 4/4, the sung melody (the top
+// notes of the right hand) as printed in The American Song Treasury (Raph).
+// Sixteen bars of verse, eight of chorus; one phrase = one lyric line, each
+// with its own pickup.
+const WABASH_A = "| so,:1.5 so,:0.5 fi,:1.5 so,:0.5 la,:1.5 ti,:0.5 do:1.5 la,:0.5 | do:2 so,:4";
+const WABASH_B = "| mi:1.5 so:0.5 mi:1.5 do:0.5 re:1.5 di:0.5 re:1.5 mi:0.5 | do:6";
+const WABASH_CH = "| mi:1.5 ri:0.5 mi:1.5 do:0.5 re:1.5 di:0.5 re:1.5 ti,:0.5 | do:2 la,:4";
+const WABASH_VERSE = [
+  "(mi,:1.5 fa,:0.5) " + WABASH_A,                 // 'Round my Indiana homestead wave the cornfields,
+  "(do:1.5 re:0.5) " + WABASH_B,                   // In the distance loom the woodlands clear and cool.
+  "(mi,:1.5 fa,:0.5) " + WABASH_A,                 // Often times my thoughts revert to scenes of childhood,
+  "(do:1.5 re:0.5) " + WABASH_B,                   // Where I first received my lessons, nature's school.
+  "(do:1) | do:1.5 ti,:0.5 ti,:1.5 do:0.5 ti,:1.5 re:0.5 do:1.5 ti,:0.5 | do:2 la,:4",   // But one thing there is missing in the picture,
+  "(la,:1) | re:1.5 mi:0.5 la,:1.5 do:0.5 re:1.5 re:0.5 do:1.5 ti,:0.5 | fa:6",          // Without her face it seems so incomplete.
+  "(mi:1) " + WABASH_A,                            // I long to see my mother in the doorway,
+  "(do:1.5 re:0.5) " + WABASH_B                    // As she stood there years ago, her boy to greet.
+];
+const WABASH_CHORUS = [
+  "(do:1.5 re:0.5) " + WABASH_CH,                                                         // Oh, the moonlight's fair tonight along the Wabash,
+  "(si,:1.5 la,:0.5) | re:1.5 mi:0.5 re:1.5 do:0.5 ti,:1.5 do:0.5 ti,:1.5 la,:0.5 | so,:6",   // From the fields there comes the breath of new-mown hay.
+  "(do:1.5 re:0.5) " + WABASH_CH,                                                         // Through the sycamores the candle lights are gleaming,
+  "(la,:1.5 le,:0.5) | so,:2 ti,:1.5 do:0.5 re:0.5 la,:1.5 ti,:1.5 so,:0.5 | do:6"       // On the banks of the Wabash, far away.
+];
+const WABASH_LYRICS = {
+  dresser: {
+    name: "Paul Dresser (1897)", tab: "Dresser",
+    verses: [
+      ["’Round my In-di-an-a home-stead wave the corn-fields,", "In the dis-tance loom the wood-lands clear and cool.",
+       "Of-ten-times my thoughts re-vert to scenes of child-hood,", "Where I first re-ceived my les-sons, na-ture’s school.",
+       "But one thing there is miss-ing in the pic-ture,", "With-out her face it seems so in-com-plete.",
+       "I long to see my moth-er in the door-way,", "As she stood there years a-go, her boy to greet."],
+      ["Ma-ny years have passed since I strolled by the riv-er,", "Arm in arm with sweet-heart Ma-ry by my side,",
+       "It was there I tried to tell her that I loved her,", "It was there I begged of her to be my bride.",
+       "Long years have passed since I strolled through the church-yard,", "She’s sleep-ing there, my an-gel Ma-ry dear,",
+       "I loved her but she thought I did-n’t mean it,", "Still I’d give my fu-ture were she on-ly here."]
+    ].map((syl, i) => ({ label: "Verse " + (i + 1), lines: syl.map(l => l.replace(/[-_]/g, "")), syl })),
+    choruses: [{
+      label: "Chorus",
+      syl: ["Oh, the moon-light’s fair to-night a-long the Wa-bash,", "From the fields there comes the breath of new-mown hay.",
+            "Through the syc-a-mores the can-dle lights are gleam-ing,", "On the banks of the Wa-bash, far a-way."],
+      lines: ["Oh, the moonlight’s fair tonight along the Wabash,", "From the fields there comes the breath of new-mown hay.",
+              "Through the sycamores the candle lights are gleaming,", "On the banks of the Wabash, far away."]
+    }]
+  }
+};
+WABASH_LYRICS.dresser.choruses[0].syl[1] = "From the fields there comes the breath of new\\-mown hay.";
+
+// Down by the Riverside, in G (do = G4), cut time, the melody as printed in
+// Songs of Work and Protest (there titled "Going to Study War No More"). The
+// chorus's repeat and first/second endings are written out.
+const RIVER_VERSE = [
+  "(mi:1 ri:1) | mi:2 so,:4 la,:2 | do:2 do:2 re:4 | mi:4 mi:3 ri:1 | mi:1 re:3 do:4",   // Goin' to lay down my sword and shield, down by the riverside,
+  "| re:4 re:3 di:1 | re:1 do:3 ti,:4 | mi:4 mi:3 ri:1 | mi:1 re:3 do:2",                  // Down by the riverside, down by the riverside,
+  "(mi:1 ri:1) | mi:2 so,:4 la,:2 | do:2 do:2 re:4 | mi:4 mi:3 ri:1 | mi:1 re:3 do:2",   // Goin' to lay down my sword and shield, down by the riverside,
+  "(mi:2) | mi:2 re:4 fa:2 | mi:4 re:4 | do:8~ | do:2"                                    // And study war no more.
+];
+const RIVER_C1 = { m: "(do:2 re:2 mi:1 mi:1) | fa:1 fa:3 fa:2 fa:2 | fa:2", bars: 2 };   // I ain't goin' to study war no more,
+const RIVER_C2 = { m: "(do:2 re:2 mi:1 mi:1) | mi:1 mi:3 mi:2 mi:2 | mi:2", bars: 2 };
+const RIVER_CHORUS = [
+  RIVER_C1, RIVER_C2,
+  { m: "(do:2 re:2 mi:1 mi:1) | mi:2 re:6 | mi:4 re:4 | do:8~ | do:2", bars: 4 },        // (first ending)
+  RIVER_C1, RIVER_C2,
+  { m: "(do:2 re:2 mi:1 mi:1) | so:8~ | so:2 fa:2 mi:2 re:2 | do:8~ | do:4", bars: 4 }   // (second ending)
+];
+const RIVER_LYRICS = {
+  book: {
+    name: "Songs of Work and Protest (1960)", tab: "Union",
+    verses: ["lay down my sword and shield", "put on my long white robe", "talk with the Prince of Peace"].map((w, i) => {
+      const first = "Goin’ to " + w + ", down by the ri-ver-side,";
+      const syl = [first, "Down by the ri-ver-side, down by the ri-ver-side,", first, "And stu-dy_ war no more_."];
+      return { label: "Verse " + (i + 1), lines: syl.map(l => l.replace(/[-_]/g, "")), syl };
+    }),
+    choruses: [{
+      label: "Chorus",
+      syl: ["I ain’t goin’ to stu-dy war no more,", "I ain’t goin’ to stu-dy war no more,", "I ain’t goin’ to stu-dy war no more_.",
+            "I ain’t goin’ to stu-dy war no more,", "I ain’t goin’ to stu-dy war no more,", "I ain’t goin’ to stu_-dy war no more_."],
+      lines: ["I ain’t goin’ to study war no more,", "I ain’t goin’ to study war no more,", "I ain’t goin’ to study war no more.",
+              "I ain’t goin’ to study war no more,", "I ain’t goin’ to study war no more,", "I ain’t goin’ to study war no more."]
+    }]
+  }
+};
+
 const SONGS = {
   internationale: {
     id: "internationale",
@@ -2121,6 +2687,490 @@ const SONGS = {
     ],
     fileName: "yankeedoodle-my-lyrics.txt",
     lyrics: YANKEE_LYRICS
+  },
+  weshallnotbemoved: {
+    id: "weshallnotbemoved",
+    title: "We Shall Not Be Moved",
+    lede: "We Shall Not Be Moved, phrase by phrase: the union version, with its chorus. Every verse shares one tune.",
+    credits: [
+      "Tune and words: traditional. From the African-American spiritual \"I Shall Not Be Moved\"; the union version was first sung by West Virginia coal miners in 1931.",
+      "Melody (top line), chords and words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer, music arrangements by Kenneth Bray (Labor Education Division of Roosevelt University, 1960; Dover, 1973). Dover's note: every selection in the book is in the public domain in the United States.",
+      "Song history: from the same book's notes, and the sources listed in the app's change log."
+    ],
+    history: [
+      { h: "From a spiritual", p: [
+        "\"I Shall Not Be Moved\" began as an African-American spiritual, sung at camp meetings in the 1800s and printed in hymnals by the early 1900s. Its picture of a tree planted by the water comes from the Bible: Psalm 1 and Jeremiah 17, where a person who trusts in the Lord \"shall be as a tree planted by the waters.\""] },
+      { h: "A union song", p: [
+        "According to Fowke and Glazer, the union version was first sung in 1931 by members of the West Virginia Miners' Union, led by Frank Keeney, whose name was in the first verse: Frank Keeney was \"our captain.\" Changing \"I\" to \"we\" turned a song of personal faith into a song of standing together.",
+        "Helen Norton Starr, then on the staff of Brookwood Labor College, remembered the first time she heard it: Black and white miners and their wives singing on the steps of a run-down schoolhouse in a valley among green hills, with their families sitting on the slope in front.",
+        "Labor organizers working with Southern tenant farmers spread it through the 1930s. Woody Guthrie wrote of singing it with Cisco Houston on December 7, 1941."] },
+      { h: "Easy to add to", p: [
+        "Fowke and Glazer called it, next to \"Solidarity Forever,\" the best-known and most widely sung labor song in the United States and Canada. It's a picket-line favorite because anyone can make up a verse on the spot. At one strike meeting in Biddeford, Maine, in 1945, several thousand textile workers sang it for half an hour, adding new verses all the while. Union delegations singing it in convention hotels in the small hours, the book adds, sometimes found themselves \"moved\" after all, by the hotel police."] },
+      { h: "Civil rights and beyond", p: [
+        "In the 1960s it became a civil rights anthem, sung at sit-ins and marches; the Freedom Singers performed it at the 1963 March on Washington, and new verses were made up as the movement went. It has traveled far since: as \"No nos moverán\" it became a song of protest in Spanish, and a Swedish version was sung in the peace and anti-nuclear movements."] },
+      { h: "The words in this app", p: [
+        "Verses 1 to 4 and the chorus are as printed in Songs of Work and Protest. The book's fifth verse leaves a blank for the name of your own leader. Many more verses are sung; you can add your own with My lyrics."] }
+    ],
+    doMidi: 65,                                   // do = F4
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: Object.fromEntries([1, 2, 3, 4].map(v => [v, MOVED_VERSE])),
+    chorus: MOVED_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 9 + 16 * (v - 1),
+    chords: {
+      verse: ["1 4@4 1@6", "1 5@2", "57", "1", "4", "1", "57@6", "1"],
+      chorus: ["1 4@4 1@6", "1 5@2", "57", "1", "4 #4dim@4", "1", "4@3 1@4 57@6", "1"]
+    },
+    wholeLabel: "The whole song, all 4 verses",
+    fileName: "weshallnotbemoved-my-lyrics.txt",
+    lyrics: MOVED_LYRICS
+  },
+  solidarityforever: {
+    id: "solidarityforever",
+    title: "Solidarity Forever",
+    lede: "Solidarity Forever, phrase by phrase: Ralph Chaplin's words to the tune of \"John Brown's Body.\" Every verse shares one tune.",
+    credits: [
+      "Words: Ralph Chaplin, 1915. Public domain.",
+      "Tune: \"John Brown's Body\" (also the tune of \"The Battle Hymn of the Republic\"), traditional American, about 1856–61. Public domain.",
+      "Melody (top line), chords and words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer, music arrangements by Kenneth Bray (Labor Education Division of Roosevelt University, 1960; Dover, 1973). Dover's note: every selection in the book is in the public domain in the United States."
+    ],
+    history: [
+      { h: "Written in a day", p: [
+        "Ralph Chaplin, a poet, artist, writer and organizer for the Industrial Workers of the World (the IWW, or \"Wobblies\"), wrote \"Solidarity Forever\" on January 17, 1915, lying on the rug in his living room and scribbling stanza after stanza. The idea had come to him earlier, while he was in West Virginia helping the coal miners in the great Kanawha Valley strike of 1912–13."] },
+      { h: "The tune", p: [
+        "Chaplin wanted a song \"full of revolutionary fervor\" with a chorus that was \"singing and defiant,\" and he set his words to the stirring Civil War tune of \"John Brown's Body,\" the tune Julia Ward Howe also used for \"The Battle Hymn of the Republic\" in 1861. Everyone already knew it, so anyone could sing along."] },
+      { h: "The labor movement's anthem", p: [
+        "Fowke and Glazer called it the most popular union song on the North American continent: if a union member knows only one union song, it is almost sure to be this one. Chaplin wrote six verses; the three in this app are the ones usually sung, and the book notes that the others sound rather out of date to present-day members. Chaplin himself said he never dreamed it would live on after all his other work was forgotten."] },
+      { h: "The same tune in this app", p: [
+        "John Brown's Body, also in the song menu, is the older song on this tune, as printed in the same book. Its lines are shorter, so its rhythm is simpler, with fewer short notes; the chorus is almost the same. Try them one after the other.",
+        "The Battle Hymn of the Republic, also in the song menu, is sung here to this song's music: its lines are about the same length."] },
+      { h: "The words in this app", p: [
+        "Verses 1 to 3 and the chorus are as printed in Songs of Work and Protest. Many unions have added verses of their own; you can add yours with My lyrics."] }
+    ],
+    doMidi: 70,                                   // do = B♭4
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: Object.fromEntries([1, 2, 3].map(v => [v, SOLIDARITY_VERSE])),
+    chorus: SOLIDARITY_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 9 + 16 * (v - 1),
+    chords: SOLIDARITY_CHORDS,
+    wholeLabel: "The whole song, all 3 verses",
+    fileName: "solidarityforever-my-lyrics.txt",
+    lyrics: SOLIDARITY_LYRICS
+  },
+  wewillovercome: {
+    id: "wewillovercome",
+    title: "We Will Overcome",
+    lede: "We Will Overcome, phrase by phrase: the union version of the hymn, as sung at the Highlander Folk School in 1947. Every verse shares one tune.",
+    credits: [
+      "Tune and words: traditional, from African-American church singing. This union version was learned by Zilphia Horton at the Highlander Folk School from members of the Food and Tobacco Workers' Union in 1947. Later sung as \"We Shall Overcome\" (public domain, by court settlement in 2018).",
+      "Melody (top line), chords and words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer, music arrangements by Kenneth Bray (Labor Education Division of Roosevelt University, 1960; Dover, 1973). Dover's note: every selection in the book is in the public domain in the United States."
+    ],
+    history: [
+      { h: "From the church to the union hall", p: [
+        "As Fowke and Glazer put it, the line from the church to the union hall is very often short and direct. In the South, where the hymn-singing tradition and the spirituals were strong, workers carried their songs and feelings from church to the picket line: \"Jesus is my Captain\" became \"Frank Keeney is my Captain,\" and \"We Are Climbing Jacob's Ladder\" became \"We Are Building a Strong Union.\""] },
+      { h: "Highlander, 1947", p: [
+        "Zilphia Horton of the Highlander Folk School in Tennessee learned \"We Will Overcome\" in 1947 from members of the Food and Tobacco Workers' Union who were attending the school. She wrote that it was first sung in Charleston, South Carolina, and that one of the stanzas of the original hymn was \"We Will Overcome\"; at the school they naturally added other verses. \"Its strong emotional appeal and simple dignity,\" she wrote, \"never fail to hit people.\""] },
+      { h: "Its roots", p: [
+        "The song grew from African-American church singing, including Charles Albert Tindley's gospel hymn \"I'll Overcome Some Day\" (1901). The striking tobacco workers in Charleston sang it on the picket line in 1945–46."] },
+      { h: "We Shall Overcome", p: [
+        "From Highlander the song spread through singers including Pete Seeger, Guy Carawan and Frank Hamilton, and with \"shall\" in place of \"will\" it became the anthem of the civil rights movement in the 1960s. A copyright claimed on a 1960s arrangement was ended in 2018, when a federal court approved a settlement placing the song in the public domain."] },
+      { h: "The words in this app", p: [
+        "The four verses are as printed in Songs of Work and Protest, which calls the song \"We Will Overcome.\" You can add verses of your own with My lyrics."] }
+    ],
+    doMidi: 60,                                   // do = C4
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: Object.fromEntries([1, 2, 3, 4].map(v => [v, OVERCOME_VERSE])),
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 8 * (v - 1),
+    chorusFirstBar: v => 9 + 8 * (v - 1),
+    chords: {
+      verse: ["1 4@2 1@3", "1 4@2 1@3", "1 4@2 57@3 1@4 27@6", "5 4@6 57@7", "1 4@2 1@4", "2-7 5@2 57@3 1@4", "17 4@3 1@4 57@6", "1 4@4 1@6"]
+    },
+    wholeLabel: "The whole song, all 4 verses",
+    fileName: "wewillovercome-my-lyrics.txt",
+    lyrics: OVERCOME_LYRICS
+  },
+  amazinggrace: {
+    id: "amazinggrace",
+    title: "Amazing Grace",
+    lede: "Amazing Grace, phrase by phrase: John Newton's hymn, to the American tune \"New Britain\". Every verse shares one tune.",
+    credits: [
+      "Words: John Newton, published in Olney Hymns (1779): verses 1–6. Verse 7 (\"When we've been there ten thousand years\"): anonymous, 18th century, joined to the hymn by Edwin O. Excell in 1910. All public domain.",
+      "Tune: \"New Britain\", traditional American, first printed with these words in William Walker's Southern Harmony (1835). Melody (top line) and the words of verses 1–6 as printed in Benjamin Righetti's harmonization on IMSLP. Chords: the plain hymn chords."
+    ],
+    history: [
+      { h: "John Newton", p: [
+        "John Newton (1725–1807) went to sea as a boy and became a captain in the Atlantic slave trade. After a near-shipwreck in 1748 he turned to religion, and in time he left the sea, became a Church of England curate in Olney, Buckinghamshire, and later spoke out against the slave trade."] },
+      { h: "The hymn", p: [
+        "Newton wrote the words for his sermon on New Year's Day, 1773, and published them in Olney Hymns (1779), a book of hymns by him and the poet William Cowper, under the title \"Faith's Review and Expectation.\" He wrote six verses; the last three are often left out today."] },
+      { h: "The tune", p: [
+        "For decades the words were sung to many different tunes. In 1835 William Walker printed them with the tune he called \"New Britain\" in The Southern Harmony, a shape-note book, and that pairing is the one that lasted."] },
+      { h: "Ten thousand years", p: [
+        "The verse \"When we've been there ten thousand years\" isn't Newton's. It's an anonymous verse from the late 1700s that ended other hymns; Uncle Tom sings it after two verses of Amazing Grace in Harriet Beecher Stowe's Uncle Tom's Cabin (1852), and Edwin O. Excell made it the hymn's usual last verse in 1910."] },
+      { h: "The words in this app", p: [
+        "Verses 1–6 are Newton's, as printed with this melody; verse 7 is the added verse. With the song plan you can choose which verses to sing."] }
+    ],
+    doMidi: 67,                                   // do = G4
+    meter: { perBar: 6, beatLen: 2, label: "3/4", beatName: "quarter-note" },
+    verses: Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map(v => [v, GRACE_VERSE])),
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 17 + 16 * (v - 1),
+    chords: {
+      // a chord shows where it changes, and at the start of each line
+      verse: ["1", "", "4", "1", "1", "", "57", "", "1", "", "4", "1", "1", "57", "1", ""]
+    },
+    wholeLabel: "The whole song, all 7 verses",
+    fileName: "amazinggrace-my-lyrics.txt",
+    lyrics: GRACE_LYRICS
+  },
+  johnbrownsbody: {
+    id: "johnbrownsbody",
+    title: "John Brown's Body",
+    lede: "John Brown's Body, phrase by phrase: the Civil War marching song, with its \"Glory, hallelujah\" chorus. Every verse shares one tune.",
+    credits: [
+      "Tune: \"Say, Brothers, Will You Meet Us?\", an American camp-meeting hymn of the 1850s, usually credited to William Steffe. Words: traditional, sung by Union soldiers from 1861. Public domain.",
+      "Melody (top line), chords and words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer, music arrangements by Kenneth Bray (Labor Education Division of Roosevelt University, 1960; Dover, 1973). Dover's note: every selection in the book is in the public domain in the United States."
+    ],
+    history: [
+      { h: "A camp-meeting hymn", p: [
+        "As Fowke and Glazer tell it, the tune began life in the middle 1850s as a camp-meeting hymn, \"Say, Brothers, Will You Meet Us?\", with a \"Glory, hallelujah\" refrain. It's usually credited to William Steffe, a Southern composer, though who wrote it isn't certain."] },
+      { h: "Fort Warren, 1861", p: [
+        "Early in the Civil War the hymn was popular with Massachusetts soldiers stationed at Fort Warren in Boston Harbor, and the \"John Brown\" words are said to have started there, as a joke on a Sergeant John Brown in their battalion. The name fit another John Brown, the abolitionist who had led the raid on the federal armory at Harpers Ferry, Virginia, in October 1859 and was hanged that December, and the song spread through the Union army as a song about him."] },
+      { h: "Three songs, one tune", p: [
+        "In November 1861 Julia Ward Howe heard soldiers singing \"John Brown's Body\" and wrote new words to the tune: \"The Battle Hymn of the Republic.\" In 1915 Ralph Chaplin set \"Solidarity Forever\" to it as well. The book calls these three of America's most famous songs."] },
+      { h: "The same tune in this app", p: [
+        "Solidarity Forever, also in the song menu, uses this tune too, as printed in the same book. Its lines are longer, so its rhythm has more short notes and a pickup into each line; the chorus is almost the same. Try them one after the other.",
+        "The Battle Hymn of the Republic, also in the song menu, has lines as long as Solidarity Forever's, and is sung here to that song's music."] },
+      { h: "The words in this app", p: [
+        "The five verses and the chorus are as printed in Songs of Work and Protest. The printed notes fit the first verse and the last line of every verse; in verses 2 to 5 the other lines have more or fewer syllables than the notes, as singers fit them in, so they light as whole lines."] }
+    ],
+    doMidi: 70,                                   // do = B♭4
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: Object.fromEntries([1, 2, 3, 4, 5].map(v => [v, BROWN_VERSE])),
+    chorus: BROWN_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 9 + 16 * (v - 1),
+    chords: {
+      verse: ["1", "57@2 1@4", "4", "1", "", "37@2 6-@4 17@6", "2- 1@4 57@6", "1"],
+      chorus: ["1", "", "4", "1", "", "37@2 6-@4 17@6", "2- 1@4 57@6", "1"]
+    },
+    wholeLabel: "The whole song, all 5 verses",
+    fileName: "johnbrownsbody-my-lyrics.txt",
+    lyrics: BROWN_LYRICS
+  },
+  battlehymn: {
+    id: "battlehymn",
+    title: "The Battle Hymn of the Republic",
+    lede: "The Battle Hymn of the Republic, phrase by phrase: Julia Ward Howe's words to the tune of \"John Brown's Body.\" Every verse shares one tune.",
+    credits: [
+      "Words: Julia Ward Howe, 1861, first published in The Atlantic Monthly (February 1862). Public domain.",
+      "Tune: \"John Brown's Body\", traditional American, about 1856–61. Public domain.",
+      "Words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer (Labor Education Division of Roosevelt University, 1960; Dover, 1973), which prints the words only. Melody (top line) and chords: the book's music for Solidarity Forever, the same tune, arranged by Kenneth Bray. Dover's note: every selection in the book is in the public domain in the United States."
+    ],
+    history: [
+      { h: "A poem in the night", p: [
+        "Julia Ward Howe, a poet and abolitionist, was visiting Washington late in 1861 and heard the regiments singing \"John Brown's Body\" as they marched. A friend suggested she write better words for the tune. That night in her hotel room, as Fowke and Glazer tell it, she could see the camp fires of the Union Army from her window, and a poem began to form in her mind; she wrote it down on a scrap of paper. (The book says December; most accounts say November 1861.)"] },
+      { h: "The Atlantic Monthly", p: [
+        "A couple of months later, in February 1862, The Atlantic Monthly published it on its front page as \"The Battle Hymn of the Republic,\" and paid her five dollars. It became the great anthem of the Union cause, and has been sung ever since at moments of national grief and celebration, and by the civil rights movement."] },
+      { h: "The same tune in this app", p: [
+        "John Brown's Body is the song Howe heard, and Solidarity Forever, from 1915, uses the tune too; both are in the song menu. This song uses Solidarity Forever's music from the same book, since the book gives the Battle Hymn's words only, and the lines are about the same length."] },
+      { h: "The words in this app", p: [
+        "The five verses and the chorus are as printed in Songs of Work and Protest. Every line lights syllable by syllable. The last line of each verse and of the chorus has one syllable fewer than Solidarity Forever's, so its first word (\"His\", \"Since\", \"Our\", \"While\") takes both pickup notes, which are the same pitch. The first line starts the same way, with \"Mine\" on both pickup notes, so \"eyes\" lands on the first beat."] }
+    ],
+    doMidi: 70,                                   // do = B♭4
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: Object.fromEntries([1, 2, 3, 4, 5].map(v => [v, SOLIDARITY_VERSE])),
+    chorus: SOLIDARITY_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 9 + 16 * (v - 1),
+    chords: SOLIDARITY_CHORDS,
+    wholeLabel: "The whole song, all 5 verses",
+    fileName: "battlehymn-my-lyrics.txt",
+    lyrics: BATTLE_LYRICS
+  },
+  skiptomylou: {
+    id: "skiptomylou",
+    title: "Skip to My Lou",
+    lede: "Skip to My Lou, phrase by phrase: the American play-party song. Every verse shares one tune.",
+    credits: [
+      "Tune and words: traditional American, from the 1840s or earlier. Public domain.",
+      "Melody (top line) and chords as printed in The American Song Treasury: 100 Favorites, by Theodore Raph (Dover; first published in 1964 as The Songs We Sang). The book's note: the songs are in the public domain. The song history is our own. Words as printed there, except that \"skip, skip, skip\" is sung \"skip to my Lou\" (verses 4 and 9), as it usually is today."
+    ],
+    history: [
+      { h: "A play-party", p: [
+        "In parts of 19th-century America, many churchgoing families frowned on dancing to a fiddle, but singing games were all right. At a \"play-party\" young people skipped hand in hand around a ring, singing; the songs themselves kept the beat, with no instruments needed. \"Skip to My Lou\" was one of the most popular, from at least the 1840s."] },
+      { h: "Stealing a partner", p: [
+        "One boy stands alone in the middle of the ring, singing that he's lost his partner (\"what'll I do?\"). As the couples skip past, he picks a girl and takes her hand, and her old partner goes to the middle to look for another. The verses were made up and swapped freely, and there are hundreds of them."] },
+      { h: "Lincoln's Indiana", p: [
+        "Carl Sandburg, Abraham Lincoln's biographer, wrote that the game was popular in Lincoln's youth in southern Indiana in the 1820s."] },
+      { h: "\"Lou\"", p: [
+        "\"Lou\" is usually explained as the Scots word \"loo,\" meaning love, so \"skip to my Lou\" is \"skip to my sweetheart.\""] },
+      { h: "Later", p: [
+        "Judy Garland sang it in the film Meet Me in St. Louis (1944), and it's still a favorite with children and in music classes, where new verses keep being made up."] },
+      { h: "The words in this app", p: [
+        "The twelve verses are from The American Song Treasury, with \"skip to my Lou\" in place of \"skip, skip, skip.\" The verses with eight syllables light syllable by syllable; the ones with nine or ten (\"I'll get a partner better than you\") have more syllables than the printed notes, as singers fit them in, so they light as whole lines. You can add your own verses with My lyrics."] }
+    ],
+    doMidi: 65,                                   // do = F4
+    meter: { perBar: 8, beatLen: 4, label: "2/2", beatName: "half-note" },
+    verses: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [i + 1, SKIP_VERSE])),
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 8 * (v - 1),
+    chorusFirstBar: v => 9 + 8 * (v - 1),
+    chords: {
+      verse: ["1", "", "57", "", "1", "", "57", "1"]
+    },
+    wholeLabel: "The whole song, all 12 verses",
+    fileName: "skiptomylou-my-lyrics.txt",
+    lyrics: SKIP_LYRICS
+  },
+  saints: {
+    id: "saints",
+    title: "When the Saints Go Marching In",
+    lede: "When the Saints Go Marching In, phrase by phrase: the spiritual that became a New Orleans jazz standard. Every verse shares one tune.",
+    credits: [
+      "Tune and words: traditional African-American spiritual, early 1900s. Public domain.",
+      "Melody (top line) and chords as printed in The American Song Treasury: 100 Favorites, by Theodore Raph (Dover; first published in 1964 as The Songs We Sang). The book's note: the songs are in the public domain. The song history is our own. Words as printed there."
+    ],
+    history: [
+      { h: "A spiritual", p: [
+        "The song grew out of African-American church singing around the start of the 20th century; its roots are unclear, but it seems to have taken shape from earlier gospel songs with similar titles, such as \"When the Saints Are Marching In\" (1896). It looks forward to the saints marching into Heaven on Judgment Day, and the singer wants to be among them: \"Lord, I want to be in that number.\""] },
+      { h: "On record", p: [
+        "The first known recording was made in 1923 by the Paramount Jubilee Singers. Early versions were slow and solemn; by the 1930s gospel groups were singing it faster and with more swing."] },
+      { h: "New Orleans", p: [
+        "In New Orleans, brass bands played hymns slowly on the way to the cemetery at a funeral, and lively music on the way back, with a \"second line\" of dancers following the band. \"The Saints\" became a favorite of those bands and of New Orleans jazz."] },
+      { h: "Louis Armstrong", p: [
+        "Louis Armstrong recorded it with his orchestra in 1938, and it became his signature song, played around the world. That record is now in the Library of Congress's National Recording Registry."] },
+      { h: "The words in this app", p: [
+        "The nine verses are as printed in The American Song Treasury. In verses 7 to 9 the third line is \"How I want to be in that number.\" Every line lights syllable by syllable; the long notes on \"saints\" and \"in\" are held across the bar line. Many more verses are sung; you can add your own with My lyrics."] }
+    ],
+    doMidi: 62,                                   // do = D4
+    meter: { perBar: 8, beatLen: 4, label: "2/2", beatName: "half-note" },
+    verses: Object.fromEntries(Array.from({ length: 9 }, (_, i) => [i + 1, SAINTS_VERSE])),
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 17 + 16 * (v - 1),
+    chords: {
+      verse: ["1", "", "", "", "", "", "57", "", "1", "17", "4", "", "1", "2- 57@4", "1", ""]
+    },
+    wholeLabel: "The whole song, all 9 verses",
+    fileName: "saints-my-lyrics.txt",
+    lyrics: SAINTS_LYRICS
+  },
+  railroad: {
+    id: "railroad",
+    title: "I've Been Working on the Railroad",
+    lede: "I've Been Working on the Railroad, phrase by phrase: the whole song in one long verse, from the railroad to \"Fee, fie, fiddle-ee-i-o.\"",
+    credits: [
+      "Tune and words: traditional American, first printed in 1894. Public domain.",
+      "Melody (the sung notes) and chords as printed in The American Song Treasury: 100 Favorites, by Theodore Raph (Dover; first published in 1964 as The Songs We Sang). The book's note: the songs are in the public domain. The song history is our own. Words as printed there."
+    ],
+    history: [
+      { h: "The Levee Song", p: [
+        "The song was first printed in 1894, as \"Levee Song,\" in Carmina Princetonia, a songbook of Princeton University. Where it came from before that isn't known for sure; it's usually said to come from African-American work songs, sung by laborers building levees along the Mississippi and then railroads."] },
+      { h: "Dinah and her horn", p: [
+        "Dinah's horn is usually explained as the horn blown to call the workers in for a meal. The \"Dinah, won't you blow\" part is said to have been added later, by college singers."] },
+      { h: "Someone's in the kitchen", p: [
+        "\"Someone's in the kitchen with Dinah\" comes from an older song, \"Old Joe, or Somebody in the House with Dinah,\" printed in London in the 1830s or 1840s. Over time it was joined on, along with \"Fee, fie, fiddle-ee-i-o,\" and the whole medley became one of the best-known songs in America, sung at camps, in schools and in barbershop harmony."] },
+      { h: "The Eyes of Texas", p: [
+        "The same tune, with new words written in 1903, is \"The Eyes of Texas,\" the school song of the University of Texas."] },
+      { h: "The words in this app", p: [
+        "The words and the sung melody are as printed in The American Song Treasury, in one long verse. The book then goes back to the beginning and ends at \"Dinah, blow your horn\"; the app plays it through once. Every line lights syllable by syllable. Many people sing \"to pass the time away\" a little differently; you can change the words, but not yet the notes."] }
+    ],
+    doMidi: 65,                                   // do = F4
+    meter: { perBar: 6, beatLen: 3, label: "6/8", beatName: "dotted-quarter-note" },
+    verses: { 1: RAILROAD_VERSE },
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1,
+    chorusFirstBar: v => 81,
+    chords: {
+      verse: [
+        "1", "", "", "", "4", "", "1", "", "1", "", "", "6-", "27", "", "57", "",
+        "", "", "1", "", "4", "", "3", "", "4", "", "1", "27", "1", "57", "1", "",
+        "1", "", "4", "2", "57", "2-7 57@3", "1 57@3", "1", "1", "", "4", "2", "57", "2-7 57@3", "1", "",
+        "1", "", "", "", "", "", "57", "2- 57@3", "1", "", "4", "", "1", "57", "1", "",
+        "1", "", "", "", "", "", "57", "2-7 57@3", "1", "", "4", "", "1", "57", "1", ""]
+    },
+    wholeLabel: "The whole song",
+    fileName: "railroad-my-lyrics.txt",
+    lyrics: RAILROAD_LYRICS
+  },
+  buffalogals: {
+    id: "buffalogals",
+    title: "Buffalo Gals",
+    lede: "Buffalo Gals, phrase by phrase, with its \"won't you come out tonight\" chorus. One tune for every verse; verse 4 packs in extra words.",
+    credits: [
+      "Tune and words: American, first published in 1844 as \"Lubly Fan\" (credited to Cool White). Public domain.",
+      "Melody (the sung notes) and chords as printed in The American Song Treasury: 100 Favorites, by Theodore Raph (Dover; first published in 1964 as The Songs We Sang). The book's note: the songs are in the public domain. The song history is our own. Words as printed there. Verse 4's rhythm (extra notes on the same pitches, for its extra syllables) is ours."
+    ],
+    history: [
+      { h: "Lubly Fan", p: [
+        "The song was published in 1844 as \"Lubly Fan,\" credited to the blackface minstrel performer John Hodges, known as Cool White. It came from the minstrel shows, popular stage entertainment of the time that mocked Black Americans. Its tune and words may be older still."] },
+      { h: "Any town's gals", p: [
+        "Touring minstrel troupes changed the town in the title to wherever they were playing, so audiences heard \"Charleston Gals,\" \"Louisiana Gals\" and many more. \"Buffalo Gals,\" after Buffalo, New York, is the name that stuck."] },
+      { h: "Everyone's song", p: [
+        "It soon left the stage behind, and was sung, fiddled and danced to all over the country. Mark Twain mentions it in The Adventures of Tom Sawyer (1876), and in 1944 it was reworked into the hit \"Dance with a Dolly (with a Hole in Her Stocking).\""] },
+      { h: "The words in this app", p: [
+        "The five verses and the chorus are as printed in The American Song Treasury. Verse 4 has many more syllables than the others, which is a big part of the fun: you have to fit more words into the same tune. In the app it has its own rhythm, with notes split on the same pitches so every syllable gets a note, and its notes change when you go to that verse."] }
+    ],
+    doMidi: 62,                                   // do = D4
+    meter: { perBar: 8, beatLen: 4, label: "2/2", beatName: "half-note" },
+    verses: { 1: BUFFALO_VERSE, 2: BUFFALO_VERSE, 3: BUFFALO_VERSE, 4: BUFFALO_VERSE_4, 5: BUFFALO_VERSE },
+    chorus: BUFFALO_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 9 + 16 * (v - 1),
+    chords: {
+      verse: ["1", "4 1@2", "57", "4 1@2", "", "4 1@2", "57", "1"],
+      chorus: ["1", "", "57", "1", "", "", "57", "1"]
+    },
+    wholeLabel: "The whole song, all 5 verses",
+    fileName: "buffalogals-my-lyrics.txt",
+    lyrics: BUFFALO_LYRICS
+  },
+  ohsusanna: {
+    id: "ohsusanna",
+    title: "Oh! Susanna",
+    lede: "Oh! Susanna, phrase by phrase: Stephen Foster's banjo song, with its chorus. Every verse shares one tune.",
+    credits: [
+      "Words and music: Stephen Foster, published 1848. Public domain.",
+      "Melody (the sung notes) and chords as printed in The American Song Treasury: 100 Favorites, by Theodore Raph (Dover; first published in 1964 as The Songs We Sang). The book's note: the songs are in the public domain. The song history is our own. Words as printed there, except that its verse 2 is left out (it comes from a verse of Foster's original with a racial slur)."
+    ],
+    history: [
+      { h: "Stephen Foster", p: [
+        "Stephen Foster (1826–1864), born near Pittsburgh on July 4, 1826, the day of the nation's fiftieth birthday, became America's first great professional songwriter, with songs like \"Camptown Races,\" \"Old Folks at Home\" and \"Beautiful Dreamer.\""] },
+      { h: "An instant hit", p: [
+        "He wrote \"Oh! Susanna\" in his early twenties, and it was first sung in Pittsburgh in 1847. Published in 1848, it spread with astonishing speed, in many pirated editions; Foster himself earned little from it. It was written for the blackface minstrel stage, and Foster's original words include racist language; the verse with the worst of it is left out here."] },
+      { h: "The Forty-Niners", p: [
+        "When gold was found in California in 1848, the song went west with the gold seekers, who sang it with new words: \"Oh, California, that's the land for me!\" It became the theme song of the Gold Rush."] },
+      { h: "The words in this app", p: [
+        "Verses 1 to 3 here are the book's verses 1, 3 and 4. The book writes each verse with a repeat; here each one is written out in full. You can add other verses with My lyrics."] }
+    ],
+    doMidi: 62,                                   // do = D4
+    meter: { perBar: 8, beatLen: 4, label: "2/2", beatName: "half-note" },
+    verses: { 1: SUSANNA_VERSE, 2: SUSANNA_VERSE, 3: SUSANNA_VERSE },
+    chorus: SUSANNA_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1 + 24 * (v - 1),
+    chorusFirstBar: v => 17 + 24 * (v - 1),
+    chords: {
+      verse: ["1", "", "27@4", "57", "1", "", "57", "1", "1", "", "27@4", "57", "1", "", "57", "1"],
+      chorus: ["4", "1", "", "57", "1", "", "57", "1"]
+    },
+    wholeLabel: "The whole song, all 3 verses",
+    fileName: "ohsusanna-my-lyrics.txt",
+    lyrics: SUSANNA_LYRICS
+  },
+  godownmoses: {
+    id: "godownmoses",
+    title: "Go Down Moses (Let My People Go)",
+    lede: "Go Down Moses, phrase by phrase: the spiritual, in E minor. Every verse shares one tune and ends with the refrain.",
+    mode: "minor",
+    credits: [
+      "Tune and words: traditional African-American spiritual. Public domain.",
+      "Melody (the sung notes) and chords as printed in The American Song Treasury: 100 Favorites, by Theodore Raph (Dover; first published in 1964 as The Songs We Sang). The book's note: the songs are in the public domain. The song history is our own. Words as printed there."
+    ],
+    history: [
+      { h: "A spiritual of freedom", p: [
+        "\"Go Down Moses\" comes from enslaved African Americans in the American South. It tells the Bible story of Moses leading the Israelites out of slavery in Egypt, and the people who sang it heard their own longing for freedom in it."] },
+      { h: "Harriet Tubman", p: [
+        "Harriet Tubman, who escaped slavery and then went back again and again to guide others north on the Underground Railroad, was called \"Moses\" by the people she led. She is said to have used songs like this one as signals."] },
+      { h: "The Fisk Jubilee Singers", p: [
+        "The song was first written down and printed in 1861 or 1862, by a chaplain working with people freed from slavery in Virginia. From 1871 the Fisk Jubilee Singers, students at Fisk University in Nashville, toured America and Europe singing spirituals like this one, and brought them to audiences around the world. Later it became a favorite of concert singers such as Paul Robeson, and Louis Armstrong recorded it in 1958."] },
+      { h: "In a minor key", p: [
+        "It's in a minor key: the tune is built around la, not do, so it begins and ends on la. The app keeps do on the key signature's do, so in E minor, do is G and the home note is la (E)."] },
+      { h: "The words in this app", p: [
+        "The eleven verses are as printed in The American Song Treasury. Every line lights syllable by syllable."] }
+    ],
+    doMidi: 67,                                   // do = G4 (E minor: la = E4)
+    meter: { perBar: 8, beatLen: 4, label: "2/2", beatName: "half-note" },
+    verses: Object.fromEntries(Array.from({ length: 11 }, (_, i) => [i + 1, MOSES_VERSE])),
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1 + 16 * (v - 1),
+    chorusFirstBar: v => 17 + 16 * (v - 1),
+    chords: {
+      verse: ["6- 37@4", "6-", "37", "6-", "77@4", "6-", "37", "6-", "6-", "2-", "37", "6-", "4", "6-", "37", "6-"]
+    },
+    wholeLabel: "The whole song, all 11 verses",
+    fileName: "godownmoses-my-lyrics.txt",
+    lyrics: MOSES_LYRICS
+  },
+  wabash: {
+    id: "wabash",
+    title: "On the Banks of the Wabash",
+    lede: "On the Banks of the Wabash, phrase by phrase: Paul Dresser's song of home, Indiana's state song. Both verses share one tune.",
+    credits: [
+      "Words and music: Paul Dresser, published 1897. Public domain.",
+      "Melody (the sung notes) and chords as printed in The American Song Treasury: 100 Favorites, by Theodore Raph (Dover; first published in 1964 as The Songs We Sang). The book's note: the songs are in the public domain. The song history is our own. Words as printed there."
+    ],
+    history: [
+      { h: "Paul Dresser", p: [
+        "Paul Dresser (1857–1906) grew up in Terre Haute, Indiana, on the Wabash River. He became a traveling performer and comedian and one of the most popular songwriters of the 1890s, with his own music publishing company in New York."] },
+      { h: "A hit", p: [
+        "\"On the Banks of the Wabash, Far Away\" was published in 1897 and was one of the biggest hits of its time, selling hundreds of thousands of copies of sheet music in its first year. Dresser's brother, the novelist Theodore Dreiser, later said he had helped write it; how much, if anything, he contributed has never been settled."] },
+      { h: "Indiana's state song", p: [
+        "In 1913 the Indiana General Assembly made it the state song, the state's first official symbol. Its tune and words are quoted in \"Back Home Again in Indiana\" (1917), the song sung before the Indianapolis 500."] },
+      { h: "The words in this app", p: [
+        "Both verses and the chorus are as printed in The American Song Treasury. Every line lights syllable by syllable."] }
+    ],
+    doMidi: 67,                                   // do = G4
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: { 1: WABASH_VERSE, 2: WABASH_VERSE },
+    chorus: WABASH_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1 + 24 * (v - 1),
+    chorusFirstBar: v => 17 + 24 * (v - 1),
+    chords: {
+      verse: ["1 4@4", "1", "57@4", "1", "1 4@4", "1", "57@4", "1", "37+ 37@2", "6-", "27", "57", "1 4@4", "1", "57@4", "1"],
+      chorus: ["1 37@4", "6-", "27", "57", "1 37@4", "4 6dim@6", "1 27@4 57@6", "1"]
+    },
+    wholeLabel: "The whole song, both verses",
+    fileName: "wabash-my-lyrics.txt",
+    lyrics: WABASH_LYRICS
+  },
+  riverside: {
+    id: "riverside",
+    title: "Down by the Riverside (Study War No More)",
+    lede: "Down by the Riverside, phrase by phrase: the spiritual, with its \"ain't goin' to study war no more\" chorus. Every verse shares one tune.",
+    credits: [
+      "Tune and words: traditional African-American spiritual. Public domain.",
+      "Melody (top line), chords and words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer, music arrangements by Kenneth Bray (Labor Education Division of Roosevelt University, 1960; Dover, 1973), where it's titled \"Going to Study War No More.\" Dover's note: every selection in the book is in the public domain in the United States."
+    ],
+    history: [
+      { h: "A spiritual", p: [
+        "\"Down by the Riverside\" is an African-American spiritual whose roots go back before the Civil War. It was first printed in 1918, and the Fisk University jubilee quartet recorded it in 1920. It has gone by many names, among them \"Ain't Gonna Study War No More\" and \"Gonna Lay Down My Burden.\""] },
+      { h: "Swords into plowshares", p: [
+        "Its chorus echoes the Bible's prophets Isaiah and Micah: \"they shall beat their swords into plowshares, and their spears into pruning-hooks: nation shall not lift up sword against nation, neither shall they learn war any more.\" The river is the place of baptism and of crossing over."] },
+      { h: "Everyone's song", p: [
+        "It was sung and recorded by gospel and blues singers like Sister Rosetta Tharpe (1944) and Big Bill Broonzy, and by Mahalia Jackson, Lead Belly, Pete Seeger and many others. Because of its words about laying down the sword, it became a favorite peace song, sung at marches against the Vietnam War, and it's in many collections of labor and protest songs."] },
+      { h: "The words in this app", p: [
+        "The three verses and the chorus are as printed in Songs of Work and Protest. The chorus is printed with a repeat and two endings; here it's written out in full. You can add verses of your own with My lyrics."] }
+    ],
+    doMidi: 67,                                   // do = G4
+    meter: { perBar: 8, beatLen: 4, label: "2/2", beatName: "half-note" },
+    verses: { 1: RIVER_VERSE, 2: RIVER_VERSE, 3: RIVER_VERSE },
+    chorus: RIVER_CHORUS,
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1 + 32 * (v - 1),
+    chorusFirstBar: v => 17 + 32 * (v - 1),
+    chords: {
+      verse: ["1", "57@4", "1", "", "57", "", "1", "", "1", "2-", "1", "", "57", "1 57@4", "1 4@4", "1 17@2"],
+      chorus: ["4", "", "1", "", "57", "6- 57@4", "1", "17@2", "4", "", "1", "", "57", "", "1", ""]
+    },
+    wholeLabel: "The whole song, all 3 verses",
+    fileName: "riverside-my-lyrics.txt",
+    lyrics: RIVER_LYRICS
   }
 };
 // (a test page can add songs here before the app starts)
@@ -2206,9 +3256,13 @@ function parse(str) {
     if (tok.startsWith("(")) { open = true; tok = tok.slice(1); }
     if (tok.endsWith(")")) { close = true; tok = tok.slice(0, -1); }
     if (open) inPk = true;
+    // "~" after a note ties it to the next note (the same pitch, usually
+    // across a barline): the two play as one note
+    const tie = tok.endsWith("~");
+    if (tie) tok = tok.slice(0, -1);
     const [syl, dur] = tok.split(":");
     const d = dur.includes("/") ? dur.split("/").reduce((x, y) => +x / +y) : parseFloat(dur);
-    items.push({ syl, dur: d, pk: inPk });
+    items.push(tie ? { syl, dur: d, pk: inPk, tie: true } : { syl, dur: d, pk: inPk });
     if (close) inPk = false;
   }
   return items;
@@ -2351,6 +3405,8 @@ function validateSong() {
       if (edge ? sum > METER.perBar + 1e-6 : Math.abs(sum - METER.perBar) > 1e-6) say(T("err.songBar", { label, i, sum, need: METER.perBar }));
     });
     for (const it of items) if (!it.bar && pitchOf(it.syl) === null) say(T("err.songSyllable", { label, syl: it.syl }));
+    const ns = items.filter(x => !x.bar);
+    ns.forEach((n, i) => { if (n.tie && (!ns[i + 1] || pitchOf(ns[i + 1].syl) !== pitchOf(n.syl))) say(T("err.songTie", { label, syl: n.syl })); });
   };
   for (const [k, c] of Object.entries(SEQ_CHOICES)) check(c.label, joinFill(withItems(c.build())).flatMap(p => p.items));
   validateSyllables();
@@ -3449,9 +4505,13 @@ function schedulePass(phrase, t, opt) {
   const legatoRun = WINDS[timbreNow] && $("legato").checked ? [] : null;
   notes.forEach((n, i) => {
     const dur = n.dur * eighth;
-    if (opt.silent) { /* melody off: highlights only */ }
-    else if (legatoRun) legatoRun.push({ midi: doMidi + pitchOf(n.syl), t: nt, dur });
-    else pluckAt(doMidi + pitchOf(n.syl), nt, dur);
+    // a tied note sounds once, for the length of all the notes tied to it
+    let sound = dur;
+    for (let j = i; notes[j].tie && notes[j + 1]; j++) sound += notes[j + 1].dur * eighth;
+    const tiedOn = i > 0 && notes[i - 1].tie;
+    if (opt.silent || tiedOn) { /* melody off, or the second half of a tie: highlights only */ }
+    else if (legatoRun) legatoRun.push({ midi: doMidi + pitchOf(n.syl), t: nt, dur: sound });
+    else pluckAt(doMidi + pitchOf(n.syl), nt, sound);
     const chip = chips[i];
     if (chip) {
       showAt(chip, nt, Math.max(0.05, dur - 0.03));
@@ -3573,6 +4633,12 @@ function warmStart() {
 function warmNewNote() { warmChecked = false; warmWrong = new Set(); warmSolved = false; }
 const warmDoMidi = () => SONG_DO_MIDI + +$("transpose").value;
 const keyOf = m => KEY_NAMES[((m % 12) + 12) % 12];
+// The key's full name for a do: "G major", or for a minor song (mode:
+// "minor", la-based on the key signature) its relative minor, "E minor".
+// Solfège stays tied to the key signature (do = G), so E minor runs la to la.
+const keyFull = m => SONG.mode === "minor"
+  ? T("warm.keyMinor", { key: KEY_NAMES[(((m + 9) % 12) + 12) % 12] })
+  : T("warm.keyMajor", { key: keyOf(m) });
 const warmHearing = () => $("warmMode").value === "hear";
 // A note's face: its shape, sharp or flat, syllable and octave mark (CSS shows what Show asks for)
 function noteFace(n) {
@@ -3585,7 +4651,7 @@ const warmName = syl => $("warmShow").value === "num"
   ? `${numHTML(syl)} (${esc(sylBase(syl))}${markHTML(syl)})` : esc(sylBase(syl)) + markHTML(syl);
 function warmAnswerHTML(key, cur, doM) {
   const sp = spellNote(cur.base, doM + cur.step, doM);
-  return T(key, { syl: "\u0000", letter: esc(sp.letter), key: keyOf(doM) }).replace("\u0000", warmName(cur.syl))
+  return T(key, { syl: "\u0000", letter: esc(sp.letter), key: keyFull(doM) }).replace("\u0000", warmName(cur.syl))
     + `<span class="wq-oct">${esc(T("warm.octave", { name: sp.name }))}</span>`;
 }
 function renderWarm() {
@@ -3595,9 +4661,9 @@ function renderWarm() {
   document.querySelectorAll(".wo[data-wmode]").forEach(b => b.classList.toggle("on", b.dataset.wmode === mode));
   // the song and its key now, with Transpose
   const doM = warmDoMidi(), t = +$("transpose").value;
-  $("warmKeyTop").innerHTML = `<b>${esc(T("warm.keyTop", { key: keyOf(doM) }))}</b>`
+  $("warmKeyTop").innerHTML = `<b>${esc(T("warm.keyTop", { key: keyFull(doM) }))}</b>`
     + `<span>${esc(T("warm.keySong", { song: SONG.title, do: keyOf(doM) }))}</span>`
-    + (t ? `<span>${esc(T("warm.keyTopFrom", { orig: keyOf(SONG_DO_MIDI) }))}</span>` : "");
+    + (t ? `<span>${esc(T("warm.keyTopFrom", { orig: keyFull(SONG_DO_MIDI) }))}</span>` : "");
   $("warmIntro").textContent = T(hear ? "warm.introHear" : "warm.intro");
   $("warmDoFirstRow").hidden = !hear;
   const notes = warmNotes();
@@ -3700,8 +4766,8 @@ function chipsHTML(items) {
     const nextNote = notes[k + 1];
     const is16 = near(it.dur, SIXTEENTH);
     const dotted = DOTTED.some(d => near(it.dur, d)) && nextNote && near(nextNote.dur, SIXTEENTH);
-    const cls = ["n", it.pk ? "pk" : "", sylBase(it.syl) === "do" ? "do" : "", is16 ? "s16" : "", dotted ? "dotted" : ""].join(" ");
-    const label = is16 ? T("chips.sixteenth") : dotted ? T("chips.dotted") : "";
+    const cls = ["n", it.pk ? "pk" : "", sylBase(it.syl) === "do" ? "do" : "", is16 ? "s16" : "", dotted ? "dotted" : "", it.tie ? "tied" : ""].join(" ");
+    const label = it.tie ? T("chips.tied") : is16 ? T("chips.sixteenth") : dotted ? T("chips.dotted") : "";
     const bare = `<span class="${cls}"${label ? ` title="${label}"` : ""}>${chipInner(it.syl)}</span>`;
     const chip = it.ch ? `<span class="chw">${chordSpan(it.ch)}${bare}</span>` : bare;
     // a "/" for each chord that comes while this note is held; kept on the same line as the note
@@ -3749,8 +4815,8 @@ function parseSyl(marked) {
       let piece = parts[i];
       const sep = parts[i + 1];
       let held = 0;
-      const m = /_+$/.exec(piece);
-      if (m) { held = m[0].length; piece = piece.slice(0, -held); }
+      const m = /_+(?=[.,;:!?"'”’)]*$)/.exec(piece);
+      if (m) { held = m[0].length; piece = piece.slice(0, m.index) + piece.slice(m.index + held); }
       if (piece) syls.push({ t: piece, notes: 1 + held, hy: false, end: false });
       else if (held && syls.length) syls[syls.length - 1].notes += held;
       if (sep === "\\-" && syls.length) syls[syls.length - 1].hy = true;
@@ -4274,7 +5340,7 @@ function renderPitch() {
   const n = Math.abs(t);
   $("tVal").textContent = t === 0 ? T("pitch.asWritten") : TN(n, t < 0 ? "pitch.down1" : "pitch.up1", t < 0 ? "pitch.downN" : "pitch.upN");
   const doM = SONG_DO_MIDI + t;
-  const keyVars = { key: KEY_NAMES[((doM % 12) + 12) % 12], do: noteName(doM), interval: T(`pitch.interval${n}`) };
+  const keyVars = { key: keyFull(doM), do: noteName(doM), interval: T(`pitch.interval${n}`) };
   $("keyNote").textContent = t === 0 ? T("pitch.keyAsWritten", keyVars)
     : T(t < 0 ? "pitch.keyDown" : "pitch.keyUp", keyVars) + (t === -5 ? " " + T("pitch.guitarHint") : "");
   document.querySelectorAll(".presets .chipbtn").forEach(b => b.classList.toggle("on", +b.dataset.t === t));
