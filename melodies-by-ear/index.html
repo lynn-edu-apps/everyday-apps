@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.90</title>
+<title>Melodies by Ear v0.95</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -386,6 +386,9 @@
   #allNotes.lyrics-only .al-lyric { flex: 1 1 0; min-width: 0; padding-left: 4px; margin-top: 0; }
 
   .along-start label { font-size: .85rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  .along-key { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+  .along-key-val { flex: 1; font-weight: 650; }
+  .along-key-val small { font-weight: 400; color: var(--muted); }
   .along-btns { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .along-btns.two { grid-template-columns: 1fr 1fr; }
   .along-status { margin: 0; font-size: .92rem; color: var(--ink); line-height: 1.4; }
@@ -527,7 +530,7 @@
   .tstr.on small { color: #4A3608; }
 
   .song-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
-  .song-row label { font-size: .9rem; color: var(--muted); }
+  .song-row label { font-size: .9rem; color: var(--muted); min-width: 4.6em; }
   .song-row select { flex: 1; }
   .dv-btns { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
 
@@ -688,12 +691,16 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.90</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.95</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
     <button class="chipbtn" id="creditsBtn" data-s="info.credits"></button>
     <button class="chipbtn" id="helpBtn" data-s="info.help"></button>
+  </div>
+  <div class="song-row">
+    <label for="catSel" data-s="ui.category"></label>
+    <select id="catSel"></select>
   </div>
   <div class="song-row">
     <label for="songSel" data-s="ui.song"></label>
@@ -922,6 +929,11 @@
       </div>
       <div class="plan-row" id="planRow" role="group" data-s-aria-label="plan.rowAria"></div>
       <p class="hint" id="planHint"></p>
+    </div>
+    <div class="along-key" role="group" data-s-aria-label="along.keyAria">
+      <span class="along-key-val" id="alongKeyVal"></span>
+      <button class="chipbtn step" id="akDown" aria-label="Lower the key a half step" data-s-aria-label="along.keyDownAria">−</button>
+      <button class="chipbtn step" id="akUp" aria-label="Raise the key a half step" data-s-aria-label="along.keyUpAria">+</button>
     </div>
     <div class="along-start">
       <label for="startFrom" data-s="ui.startFrom"></label>
@@ -1308,6 +1320,18 @@ const STRINGS = {
     "showSolfege": "Show the solfège",
     "solfegeWhilePlays": "Show the solfège and lyrics while it plays",
     "song": "Song",
+    "category": "Category",
+    "catAll": "All songs ({n})",
+    "catN": "{name} ({n})",
+    "songOpenNow": "{title} (open now)",
+    "cat_spiritual": "Spirituals & hymns",
+    "cat_protest": "Work & protest",
+    "cat_folk": "Folk",
+    "cat_children": "Children's",
+    "cat_campfire": "Campfire & silly",
+    "cat_round": "Rounds",
+    "cat_patriotic": "Patriotic",
+    "cat_international": "International",
     "sound": "Sound",
     "startFrom": "Start from",
     "steadyTone": "Steady tone",
@@ -1358,6 +1382,9 @@ const STRINGS = {
     "whole": "The whole song"
   },
   along: {
+    "keyAria": "Key for this song",
+    "keyDownAria": "Lower the key a half step",
+    "keyUpAria": "Raise the key a half step",
     "abInactive": "A–B is set to {range}, but it only applies while “Loop until I tap Stop” is on. Turn that on to repeat these lines.",
     "abLooping": "Looping <strong>{range}</strong>, from {from} to {to}.",
     "abPickA": "Tap the bar number of the <strong>first</strong> line to repeat.",
@@ -1542,6 +1569,8 @@ const STRINGS = {
     "aShifted": "A4 sounds at {hz} Hz. 100 cents = one half step.",
     "aStandard": "A4 sounds at {hz} Hz (standard pitch).",
     "asWritten": "As written",
+    "alongKey": "Key: {key}",
+    "alongKeyShift": "({shift} from the sheet music)",
     "cents": "{c} cents",
     "down1": "Down 1 half step",
     "downN": "Down {n} half steps",
@@ -2614,6 +2643,129 @@ const RIVER_LYRICS = {
   }
 };
 
+// The Barnyard Song (I Had a Cat), a cumulative song: each verse adds a new
+// animal, then goes back through every animal before it, always ending with
+// the cat. In C (do = C4), 2/4, melody as printed in Campfire Songs (Maddox
+// and Cobb), p.65. The book gives the tune of the duck's and the hen's
+// lines; the other animals' lines fit their words to the same tune.
+const BARNYARD = (() => {
+  const four = "| do:2 do:2 | mi:2 so:2 | mi:2 so:2";          // quack, quack, quack, quack
+  const two = "| do:2 do:2 | mi:4 | so:4";                       // baa, baa
+  // [animal, its sound line (with syllable marks), its tune]; the cat's line ends every verse
+  const animals = [
+    ["cat", "Cat goes fid-dle\\-i\\-fee.", "| do:2 do:2 | mi:1 mi:1 re:2 | do:3"],
+    ["hen", "Hen goes chin-ny\\-chuck, chin-ny\\-chuck,", "| do:2 do:2 | mi:1 mi:1 so:2 | mi:1 mi:1 so:2"],
+    ["duck", "Duck goes quack, quack, quack, quack,", four],
+    ["goose", "Goose goes swish-y, swash-y,", four],
+    ["sheep", "Sheep goes baa, baa,", two],
+    ["pig", "Pig goes grif-fy, gruf-fy,", four],
+    ["cow", "Cow goes moo, moo,", two],
+    ["horse", "Horse goes neigh, neigh,", two]
+  ];
+  const open1 = { m: "(so:1) | do':2 do':2 | so:2 so:1 so:1 | do':2 do':2 | so:3", bars: 4 };   // I had a cat and the cat pleased me,
+  const open2 = { m: "(so:1) | do':2 so:2 | la:2 so:1 so:1 | mi:2 re:2 | do:4", bars: 4 };      // I fed my cat under yonder tree.
+  const order = v => Array.from({ length: v }, (_, k) => v - 1 - k);   // verse v: animal v-1 down to 0 (the cat)
+  const verses = {}, chords = {}, firstBar = {};
+  let bar = 1;
+  for (let v = 1; v <= animals.length; v++) {
+    verses[v] = [open1, open2, ...order(v).map(k => ({ m: animals[k][2], bars: 3 }))];
+    chords[v] = ["1", "5", "1", "5", "1", "4", "1 57@2", "1", ...order(v).flatMap(k => k === 0 ? ["1", "57@2", "1"] : ["", "", ""])];
+    firstBar[v] = bar;
+    bar += 8 + 3 * v;
+  }
+  const lyrics = {
+    trad: {
+      name: "Traditional (Kentucky mountains)", tab: "Traditional",
+      verses: Object.keys(verses).map(Number).map(v => {
+        const a = animals[v - 1][0];
+        const syl = ["I had a " + a + " and the " + a + " pleased me,", "I fed my " + a + " un-der yon-der tree.", ...order(v).map(k => animals[k][1])];
+        return { label: "Verse " + v, lines: syl.map(l => l.replace(/\\-/g, "\u0000").replace(/[-_]/g, "").replace(/\u0000/g, "-")), syl };
+      })
+    }
+  };
+  return { verses, chords, firstBar, lyrics, count: animals.length };
+})();
+
+// The Man Who Has Plenty of Good Peanuts, in G (do = G4), 6/8, melody as
+// printed in Campfire Songs (Maddox and Cobb). One verse (Lynn: the later
+// verses' long words can come later); the book's repeat is written out.
+const PEANUT_A = "(so,:1) | do:1 do:1 do:1 do:1 ti,:1 do:1 | mi:2 mi:1 do:2 do:1 | re:1 mi:1 re:1 so,:2 so,:1 | do:3~ do:2";
+const PEANUTS_VERSE = [
+  PEANUT_A,                                                                              // The man who has plenty of good peanuts, and giveth his neighbor none,
+  PEANUT_A,                                                                              // He shan't have any of my peanuts, when his peanuts are gone.
+  { m: "(do:1) | re:2 re:1 re:2 re:1 | re:2 mi:1 fa:1 mi:1 re:1", bars: 2 },            // When his peanuts are gone,
+  { m: "| fa:2 fa:1 fa:1 fa:1 fa:1 | so:3~ so:2", bars: 2 },                             // When his peanuts are gone,
+  "(mi:1) | fa:2 mi:1 re:1 re:1 fa:1 | mi:2 re:1 do:2 do:1 | re:2 re:1 ti,:2 ti,:1 | do:3~ do:2",   // He shan't have any of my peanuts when his peanuts are gone!
+  "| do:3 do:1 ti,:1 do:1 | mi:3 do:3 | re:3 so:3 | mi:3 do:3",                        // Oh, that will be joyful, joyful, joyful!
+  "| do:3 do:1 ti,:1 do:1 | mi:3 do:2 do:1 | re:2 re:1 ti,:2 ti,:1 | do:3~ do:2"        // Oh, that will be joyful, when his peanuts are gone!
+];
+const PEANUTS_LYRICS = {
+  trad: {
+    name: "Traditional (American folk song)", tab: "Traditional",
+    verses: [(() => {
+      const syl = [
+        "The man who has plen-ty of good pea-nuts, and giv-eth his neigh-bor none_,",
+        "He shan’t_ have an-y of my pea-nuts, when his_ pea-nuts are gone_.",
+        "When his pea-nuts are gone____,",
+        "When his pea-nuts are gone_,",
+        "He shan’t have an-y of my pea-nuts when his pea-nuts are gone_!",
+        "Oh, that will be joy-ful, joy-ful, joy-ful!",
+        "Oh, that will be joy-ful, when his pea-nuts are gone_!"];
+      return { label: "Verse 1", lines: syl.map(l => l.replace(/[-_]/g, "")), syl };
+    })()]
+  }
+};
+
+// I Love the Mountains, a 5-part round, in F (do = F4), 4/4, as printed in
+// Campfire Songs. Each line is one part of the round (2 bars).
+const BOOM = "| do:1.5 do:0.5 do:1.5 do:0.5 la,:1.5 la,:0.5 la,:1.5 la,:0.5 | re:1.5 re:0.5 re:1.5 re:0.5 so,:1.5 so,:0.5 so,:1.5 so,:0.5";
+const MOUNTAINS_VERSE = [
+  "| do:2 do:1.5 ti,:0.5 la,:2 la,:2 | re:2 re:1.5 do:0.5 ti,:1.5 la,:0.5 so,:2",    // I love the mountains, I love the rolling hills,
+  "| do:2 do:1.5 re:0.5 do:2 do:2 | fa:2 fa:1.5 mi:0.5 re:1.5 do:0.5 ti,:2",         // I love the flowers, I love the daffodils,
+  "| so:2 so:1.5 fa:0.5 mi:1.5 re:0.5 do:2 | la:2 la:1.5 so:0.5 re:1.5 do:0.5 ti,:2", // I love the fireside when all the lights are low,
+  BOOM, BOOM                                                                           // Boom-dee-ah-da...
+];
+const BOOMS = "Boom-dee-ah-da, boom-dee-ah-da, boom-dee-ah-da, boom-dee-ah-da,";
+const MOUNTAINS_LYRICS = {
+  trad: {
+    name: "Traditional (camp round)", tab: "Traditional",
+    verses: [(() => {
+      const syl = ["I love the moun-tains, I love the rol-ling hills,", "I love the flow-ers, I love the daf-fo-dils,",
+                   "I love the fire_-side when all the lights are low,", BOOMS, BOOMS];
+      return { label: "Verse 1", lines: syl.map(l => l.replace(/_/g, "").replace(/-/g, "")).map((l, k) => k >= 3 ? "Boom-dee-ah-da, boom-dee-ah-da, boom-dee-ah-da, boom-dee-ah-da," : l),
+               syl: syl.map((l, k) => k >= 3 ? "Boom\\-dee\\-ah\\-da, boom\\-dee\\-ah\\-da, boom\\-dee\\-ah\\-da, boom\\-dee\\-ah\\-da," : l) };
+    })()]
+  }
+};
+
+// The Ash Grove, Welsh tune (Llwyn Onn), in F (do = F4), 3/4, as printed in
+// Campfire Songs. The book's repeat of the first half is written out.
+const ASH_A1 = "(so,:2) | do:2 mi:2 so:1 fa:1 | mi:2 do:2 do:2 | re:2 fa:1 mi:1 re:1 do:1 | ti,:2 so,:2";
+const ASH_A2 = "(so,:2) | do:2 mi:1 re:1 do:1 ti,:1 | la,:2 so,:2 la,:2 | so,:2 do:2 ti,:2 | do:4";
+const ASH_VERSE = [
+  ASH_A1, ASH_A2, ASH_A1, ASH_A2,
+  "(mi:1 fa:1) | so:2 mi:1 fa:1 so:1 la:1 | so:2 fa:2 mi:2 | fa:2 re:1 mi:1 fa:1 so:1 | fa:2 mi:2",   // The friends of my childhood again are before me,
+  "(re:2) | mi:2 do:1 re:1 mi:1 fa:1 | mi:2 re:2 do:2 | ti,:2 la:2 fi:2 | so:4",                     // Each step brings a memory as freely I roam;
+  ASH_A1, ASH_A2
+];
+const ASH_LYRICS = {
+  oliphant: {
+    name: "Thomas Oliphant (1862)", tab: "Oliphant",
+    verses: [(() => {
+      const syl = [
+        "The ash grove, how_ grace-ful, how plain-ly_ ’tis_ speak-ing,",
+        "The harp through_ it_ play-ing has lan-guage for me;",
+        "Wher-ev-er the_ light through its bran-ches_ is_ break-ing,",
+        "I see the_ kind_ fa-ces of friends dear to me.",
+        "The_ friends of_ my_ child-hood a-gain are_ be_-fore me,",
+        "Each step brings_ a_ mem-ory as free-ly I roam;",
+        "With soft whis-pers_ speak-ing, its leaves rus_-tle_ near me.",
+        "The ash grove,_ the_ ash grove a-lone is my home."];
+      return { label: "Verse 1", lines: syl.map(l => l.replace(/[-_]/g, "")), syl };
+    })()]
+  }
+};
+
 const SONGS = {
   internationale: {
     id: "internationale",
@@ -3171,11 +3323,163 @@ const SONGS = {
     wholeLabel: "The whole song, all 3 verses",
     fileName: "riverside-my-lyrics.txt",
     lyrics: RIVER_LYRICS
+  },
+  barnyard: {
+    id: "barnyard",
+    title: "The Barnyard Song (I Had a Cat)",
+    lede: "The Barnyard Song, phrase by phrase: a cumulative song. Each verse adds a new animal, then goes back through all the animals before it, always ending with the cat.",
+    cumulative: true,
+    credits: [
+      "Tune and words: traditional, a Kentucky mountain folk song. Public domain.",
+      "Melody (the duck's and the hen's lines as printed), chords and words from Campfire Songs, third edition, edited by Irene Maddox and Rosalyn Cobb, p.65. The goose's, sheep's, pig's, cow's and horse's lines fit their words to the same tune, as they're usually sung. The song history is our own."
+    ],
+    history: [
+      { h: "A cumulative song", p: [
+        "In a cumulative song, each verse adds something new and then repeats everything that came before, so the verses get longer and longer. It's a test of memory and breath, and part of the fun. The Twelve Days of Christmas, There Was an Old Lady Who Swallowed a Fly and The Green Grass Grew All Around are other well-known ones."] },
+      { h: "From England to the mountains", p: [
+        "Songs like this one, with a farmyard of animals each making its own sound, were sung in England and Scotland and came to America with early settlers. Versions were collected in the Appalachian mountains under many names, such as \"I Had a Cat,\" \"Fiddle-I-Fee\" and \"Bought Me a Cat.\" Aaron Copland arranged one as \"I Bought Me a Cat\" in his Old American Songs (1950)."] },
+      { h: "Make up your own", p: [
+        "Every family and camp has its own animals and sounds. You can add verses of your own with My lyrics: each verse needs one line per line of the tune, so verse 9 would have eleven lines."] }
+    ],
+    doMidi: 60,                                   // do = C4
+    meter: { perBar: 4, beatLen: 2, label: "2/4", beatName: "quarter-note" },
+    verses: BARNYARD.verses,
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 3,
+    verseFirstBar: v => BARNYARD.firstBar[v],
+    chorusFirstBar: v => BARNYARD.firstBar[v],
+    chords: { verse: v => BARNYARD.chords[v] },
+    wholeLabel: "The whole song, all 8 verses",
+    fileName: "barnyard-my-lyrics.txt",
+    lyrics: BARNYARD.lyrics
+  },
+  peanuts: {
+    id: "peanuts",
+    title: "The Man Who Has Plenty of Good Peanuts",
+    lede: "The Man Who Has Plenty of Good Peanuts, phrase by phrase: a camp song in 6/8, with an \"Oh, that will be joyful!\" ending.",
+    credits: [
+      "Tune and words: traditional American folk song. Public domain.",
+      "Melody, chords and words of the first verse as printed in Campfire Songs, third edition, edited by Irene Maddox and Rosalyn Cobb. The book's repeat is written out. The song history is our own."
+    ],
+    history: [
+      { h: "A camp song", p: [
+        "This is a favorite at summer camps, scout campfires and in school music classes: a lilting tune in six-eight time, with old-fashioned, Bible-sounding words (\"and giveth his neighbor none\") for a very everyday complaint about a stingy neighbor."] },
+      { h: "Ohio State?", p: [
+        "The Ohio State University's School Songs page says the song was written by an unknown member of the Ohio State Men's Glee Club in the 1890s, and that it isn't known whether it was a glee club standard, a student drinking song, or both. We haven't found other evidence either way."] },
+      { h: "Tongue twisters", p: [
+        "In the later verses, \"good peanuts\" is replaced by longer and longer words, which have to be squeezed into the same quick notes. That's the joke, and the challenge. This app has the first verse for now."] }
+    ],
+    doMidi: 67,                                   // do = G4
+    meter: { perBar: 6, beatLen: 3, label: "6/8", beatName: "dotted-quarter-note" },
+    verses: { 1: PEANUTS_VERSE },
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1,
+    chorusFirstBar: v => 25,
+    chords: {
+      verse: ["1", "", "57", "1", "1", "", "57", "1", "57", "", "1", "57", "1", "", "57", "1", "", "", "57", "1", "1", "", "57", "1"]
+    },
+    wholeLabel: "The whole song",
+    fileName: "peanuts-my-lyrics.txt",
+    lyrics: PEANUTS_LYRICS
+  },
+  mountains: {
+    id: "mountains",
+    title: "I Love the Mountains",
+    lede: "I Love the Mountains, phrase by phrase: a five-part round. Each line is one part; learn them all, then sing it as a round.",
+    credits: [
+      "Tune and words: traditional American camp round, author unknown.",
+      "Melody, chords and words as printed in Campfire Songs, third edition, edited by Irene Maddox and Rosalyn Cobb. The song history is our own."
+    ],
+    history: [
+      { h: "A round", p: [
+        "In a round, everyone sings the same tune, but the groups start at different times. Here each of the five lines is one part. The first group sings line 1; when it reaches line 2, the second group starts at line 1; and so on, each group coming in one line (two bars) after the one before. Because the lines all fit the same chords (F, D minor, G minor, C7), any of them sound good together, and with all five going, the \"boom-dee-ah-da\" lines make a bass part under the others."] },
+      { h: "A camp favorite", p: [
+        "\"I Love the Mountains\" has been sung at summer camps and campfires across America for generations; who wrote it isn't known. The chord pattern under it, sometimes called the \"ice cream changes\" or the \"Heart and Soul\" progression, is the same one under many popular songs."] },
+      { h: "In this app", p: [
+        "The app plays one voice, straight through the five parts, so you can learn every line. To sing it as a round, have friends or family come in one line apart."] }
+    ],
+    doMidi: 65,                                   // do = F4
+    meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
+    verses: { 1: MOUNTAINS_VERSE },
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 2,
+    verseFirstBar: v => 1,
+    chorusFirstBar: v => 11,
+    chords: { verse: Array.from({ length: 5 }, () => ["1 6-@4", "2- 57@4"]).flat() },
+    wholeLabel: "The whole round, all 5 parts",
+    fileName: "mountains-my-lyrics.txt",
+    lyrics: MOUNTAINS_LYRICS
+  },
+  ashgrove: {
+    id: "ashgrove",
+    title: "The Ash Grove",
+    lede: "The Ash Grove, phrase by phrase: the Welsh folk tune, in 3/4.",
+    credits: [
+      "Tune: \"Llwyn Onn,\" traditional Welsh, first printed in 1802. English words: Thomas Oliphant (1862). Public domain.",
+      "Melody, chords and words as printed in Campfire Songs, third edition, edited by Irene Maddox and Rosalyn Cobb. The song history is our own. The book's repeat of the first half is written out."
+    ],
+    history: [
+      { h: "A Welsh harp tune", p: [
+        "\"Llwyn Onn\" (\"The Ash Grove\") is a Welsh harp melody. It was first printed in 1802 in Edward Jones's The Bardic Museum, a collection of Welsh music by the harpist to the Prince of Wales; it is surely older. Its many scale-like runs suit the harp, and they're fun on the ukulele too."] },
+      { h: "The words", p: [
+        "The English words sung here, about a grove of ash trees full of memories of old friends, were written by Thomas Oliphant and published in 1862. Other writers have set other words to the tune, in Welsh and English, and it's also sung as a hymn tune."] },
+      { h: "In this app", p: [
+        "The first half is printed with a repeat; here it's written out, with its two sets of words. Every line lights syllable by syllable."] }
+    ],
+    doMidi: 65,                                   // do = F4
+    meter: { perBar: 6, beatLen: 2, label: "3/4", beatName: "quarter-note" },
+    verses: { 1: ASH_VERSE },
+    chorus: [],
+    phrasesPerLine: 1, barsPerPhrase: 4,
+    verseFirstBar: v => 1,
+    chorusFirstBar: v => 33,
+    chords: {
+      verse: ["1", "", "2-", "57", "1", "4", "1 57@4", "1", "1", "", "2-", "57", "1", "4", "1 57@4", "1",
+              "1", "", "57", "", "6-", "", "5 27@4", "5", "1", "", "2-", "57", "1", "4", "1 57@4", "1"]
+    },
+    wholeLabel: "The whole song",
+    fileName: "ashgrove-my-lyrics.txt",
+    lyrics: ASH_LYRICS
   }
 };
+// Song categories, for the Category menu (a song can be in several). In menu order.
+const CATEGORIES = ["spiritual", "protest", "folk", "children", "campfire", "round", "patriotic", "international"];
+const SONG_CATEGORIES = {
+  internationale: ["protest", "international"],
+  yankeedoodle: ["patriotic", "children"],
+  weshallnotbemoved: ["protest", "spiritual"],
+  solidarityforever: ["protest"],
+  wewillovercome: ["protest", "spiritual"],
+  amazinggrace: ["spiritual"],
+  johnbrownsbody: ["patriotic", "folk"],
+  battlehymn: ["patriotic", "spiritual"],
+  skiptomylou: ["folk", "children"],
+  saints: ["spiritual"],
+  railroad: ["folk", "campfire"],
+  buffalogals: ["folk"],
+  ohsusanna: ["folk"],
+  godownmoses: ["spiritual"],
+  wabash: ["folk", "patriotic"],
+  riverside: ["spiritual", "protest"],
+  barnyard: ["children", "campfire"],
+  peanuts: ["campfire"],
+  mountains: ["round", "campfire"],
+  ashgrove: ["folk", "international"]
+};
+const songCats = id => (SONGS[id] && SONGS[id].categories) || SONG_CATEGORIES[id] || [];
 // (a test page can add songs here before the app starts)
 Object.assign(SONGS, window.EXTRA_SONGS || {});
 
+// The song menu shows the chosen category's songs, and always the open song.
+function fillSongMenu() {
+  const cat = document.getElementById("catSel").value;
+  const list = Object.values(SONGS).filter(sg => cat === "all" || songCats(sg.id).includes(cat) || sg.id === SONG_ID);
+  // the open song, if it isn't in this category, says so
+  const label = sg => cat !== "all" && sg.id === SONG_ID && !songCats(sg.id).includes(cat) ? T("ui.songOpenNow", { title: sg.title }) : sg.title;
+  document.getElementById("songSel").replaceChildren(...list.map(sg => new Option(label(sg), sg.id)));
+  document.getElementById("songSel").value = SONG_ID;
+}
 // Which song is open is saved with your settings; switching songs reloads.
 const SONG_ID = (() => {
   const p = storeGetJSON("phrase-parrot-prefs-v1") || {};
@@ -3230,8 +3534,15 @@ applyStrings(document);
 $("errClose").addEventListener("click", dismissErrors);
 (function fillSongMarkup() {
   const el = id => document.getElementById(id);
-  el("songSel").innerHTML = Object.values(SONGS).map(sg => `<option value="${sg.id}">${sg.title}</option>`).join("");
-  el("songSel").value = SONG_ID;
+  // the Category menu: all songs, then each category that has songs
+  const all = Object.values(SONGS);
+  // (Option objects: their text needs no escaping)
+  el("catSel").replaceChildren(new Option(T("ui.catAll", { n: all.length }), "all"),
+    ...CATEGORIES.map(c => [c, all.filter(sg => songCats(sg.id).includes(c)).length]).filter(([, n]) => n)
+      .map(([c, n]) => new Option(T("ui.catN", { name: T("ui.cat_" + c), n }), c)));
+  const savedCat = (storeGetJSON("phrase-parrot-prefs-v1") || {}).catSel;
+  el("catSel").value = [...el("catSel").options].some(o => o.value === savedCat) ? savedCat : "all";
+  fillSongMenu();
   // (the description, #lede, is filled in later at startup by renderLede(),
   // once the saved mode has been restored)
   el("dvBtns").innerHTML = Object.keys(VERSE_M).map(v => `<button class="dv" data-v="${v}">${v}</button>`).join("") +
@@ -3281,7 +3592,7 @@ function chordBars() {
   const c = SONG.chords;
   if (!c) return CHORD_BARS;
   for (const v of Object.keys(VERSE_M).map(Number)) {
-    (c.verse || []).forEach((str, i) => {
+    (typeof c.verse === "function" ? c.verse(v) : c.verse || []).forEach((str, i) => {
       const over = c.verseBars && c.verseBars[v] && c.verseBars[v][i + 1];
       CHORD_BARS[SONG.verseFirstBar(v) + i] = over != null ? over : str;
     });
@@ -5344,6 +5655,8 @@ function renderPitch() {
   $("keyNote").textContent = t === 0 ? T("pitch.keyAsWritten", keyVars)
     : T(t < 0 ? "pitch.keyDown" : "pitch.keyUp", keyVars) + (t === -5 ? " " + T("pitch.guitarHint") : "");
   document.querySelectorAll(".presets .chipbtn").forEach(b => b.classList.toggle("on", +b.dataset.t === t));
+  $("alongKeyVal").innerHTML = esc(T("pitch.alongKey", { key: keyFull(doM) }))
+    + (t === 0 ? "" : ` <small>${esc(T("pitch.alongKeyShift", { shift: $("tVal").textContent.toLowerCase() }))}</small>`);
   const signed_c = `${c > 0 ? "+" : ""}${c}`;
   $("fineVal").textContent = T("pitch.cents", { c: signed_c });
   $("aNote").textContent = T(c === 0 ? "pitch.aStandard" : "pitch.aShifted", { hz: (440 * Math.pow(2, c / 1200)).toFixed(1) });
@@ -5354,8 +5667,11 @@ function renderPitch() {
   $("pitchNote").hidden = parts.length === 0;
   $("pitchNote").textContent = parts.join(T("pitch.listSep"));
 }
+// The key is saved per song: lowering one song doesn't move the others.
+const TRANSPOSE_STORE = songKey("phrase-parrot-transpose-v1");
 function setTranspose(t) {
   $("transpose").value = Math.max(-12, Math.min(12, t));
+  storeSet(TRANSPOSE_STORE, $("transpose").value);
   renderPitch(); renderWarm(); refreshChords(); savePrefs();
 }
 
@@ -5714,7 +6030,9 @@ function parseMyLyrics(text, name) {
       choruses.push(withMeaning ? { label, lines, meaning } : { label, lines });
     } else {
       label = label || FILE_LABELS.verse(verses.length + 1);
-      if (lines.length !== VERSE_PHRASES) problems.push(T("lyrics.problemVerse", { label, lines: TN(lines.length, "lyrics.lines1", "lyrics.linesN"), need: VERSE_PHRASES }));
+      // a cumulative song's verses grow, so each verse needs its own number of lines
+      const need = (VERSE_M[verses.length + 1] || VERSE_M[VERSE_NUMS[0]]).length;
+      if (lines.length !== need) problems.push(T("lyrics.problemVerse", { label, lines: TN(lines.length, "lyrics.lines1", "lyrics.linesN"), need }));
       verses.push(withMeaning ? { label, lines, meaning } : { label, lines });
     }
   }
@@ -6187,6 +6505,8 @@ $("tuneVol").addEventListener("input", () => {
 $("refUp").addEventListener("click", () => setRef(refHz() + 1));
 $("syncOpen").addEventListener("click", openCalib);
 $("tDown").addEventListener("click", () => setTranspose(+$("transpose").value - 1));
+$("akDown").addEventListener("click", () => setTranspose(+$("transpose").value - 1));
+$("akUp").addEventListener("click", () => setTranspose(+$("transpose").value + 1));
 $("tUp").addEventListener("click", () => setTranspose(+$("transpose").value + 1));
 document.querySelectorAll(".presets .chipbtn").forEach(b => b.addEventListener("click", () => setTranspose(+b.dataset.t)));
 $("fineTune").addEventListener("input", () => { renderPitch(); savePrefs(); });
@@ -6544,7 +6864,7 @@ $("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("u
 // Storage keys keep the old "phrase-parrot-" prefix on purpose (app renamed in v0.39),
 // so saved lyrics, sync and settings carry over from earlier versions.
 const PREFS = "phrase-parrot-prefs-v1";
-const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "transpose", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds"];
+const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel"];
 function savePrefs() {
   const p = {};
   prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
@@ -6558,6 +6878,14 @@ if (savedPrefs) prefIds.forEach(id => {
   const el = $(id); if (!(id in savedPrefs)) return;
   if (el.type === "checkbox") el.checked = !!savedPrefs[id]; else el.value = savedPrefs[id];
 });
+// This song's key. Before v0.94 one setting was shared by every song: a song
+// with no key of its own yet starts from that old setting, once.
+{
+  const own = storeGet(TRANSPOSE_STORE);
+  const old = savedPrefs && savedPrefs.transpose != null ? +savedPrefs.transpose || 0 : 0;
+  $("transpose").value = own != null ? String(Math.max(-12, Math.min(12, +own || 0))) : String(old);
+  if (own == null && old !== 0) storeSet(TRANSPOSE_STORE, String(old));
+}
 renderTempo();
 applyTheme();
 applyShapes();
@@ -6616,6 +6944,8 @@ renderDrillVerse();
 renderChorusMode();
 renderModeRows();
 renderLede();       // with the restored mode
+// Choosing a category filters the song menu (the open song stays open)
+$("catSel").addEventListener("change", () => { fillSongMenu(); savePrefs(); });
 // Switching songs: start that song at verse 1, then reload with it
 $("songSel").addEventListener("change", () => {
   stopAll();
