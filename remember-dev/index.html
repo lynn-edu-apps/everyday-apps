@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1908 -->
+<!-- Remember App - Version 0.1910 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1908
+  Version 0.1910
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -12956,7 +12956,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1908';
+const APP_VERSION = '0.1910';
 
 // ===== HANG WATCHDOG MODULE START — v0.1895, per Lynn's explicit
 // request while hunting a real, serious hang bug. Fully self-contained:
@@ -17237,24 +17237,68 @@ function restoreFoldersFromBackupIfPossible() {
   }
 }
 
-function loadState() {
-  // v0.1887 NEW, Phase 3b-i of the IndexedDB migration
-  // (IndexedDB-Migration-Plan-v6.md): the REAL one-time migration now
-  // actually runs at real app startup, not just via the manual test
-  // button. Fire-and-forget deliberately -- loadState() itself stays
-  // synchronous (converting it to async would cascade into every one
-  // of its own many callers), and this is safe to not await: the
-  // migration is fast (confirmed ~10-20ms for Lynn's real 12 keys),
-  // idempotent (marker-guarded, safe to call every single startup),
-  // and non-destructive (never deletes the localStorage data it reads
-  // from). The one piece of code that depends on migration having
-  // completed -- logSys's syslog handling, converted below -- degrades
-  // gracefully even in the rare case it runs before migration finishes
-  // (starts from an empty array rather than erroring), so this doesn't
-  // need to block anything else in startup to be correct.
-  idbRunOneTimeMigrationIfNeeded().catch(function(e) {
-    logSys('IDB MIGRATION (real, startup) failed: ' + e);
+// ===== BOOT STORAGE (v0.1910) =====
+// ROOT-CAUSE FIX for the stale home list (see v0.1909's note and the
+// changelog): loadState() used to read the notes from the OLD
+// localStorage copy, left behind by the one-time migration and never
+// updated again once saveNotes() moved to IndexedDB in v0.1890. The home
+// list was therefore drawn from stale notes at every app start and only
+// corrected moments later. IndexedDB is asynchronous but loadState()
+// (and everything under init()) is synchronous, so instead of making
+// all of that async, the app now waits ONCE, before init() runs, for
+// the migration to finish and for the few startup keys to be read from
+// IndexedDB into _bootCache. loadState() then reads them through
+// bootGet() -- still synchronous, but from the REAL data.
+//
+// Failure handling (this project's fail-loudly rule): if IndexedDB can't
+// be opened or doesn't answer within BOOT_TIMEOUT_MS, the app still
+// starts (a blank screen forever would be worse) but falls back to the
+// old localStorage copy AND says so loudly with a persistent,
+// tap-to-copy error. _bootFailure holds the reason for that message.
+var BOOT_KEY_NAMES = ['remember_notes', 'remember_notes_gen', 'remember_note_census'];
+var BOOT_TIMEOUT_MS = 5000;
+var _bootCache = {};
+var _bootCacheOk = false;
+var _bootFailure = null;
+var _bootAnomalyMsg = null;
+function _bootStorageWork() {
+  return idbRunOneTimeMigrationIfNeeded().then(function() {
+    return Promise.all(BOOT_KEY_NAMES.map(function(name) {
+      var k = storeKey(name);
+      return idbGet(k).then(function(v) { _bootCache[k] = v; });
+    }));
   });
+}
+function bootStorage() {
+  var timeout = new Promise(function(resolve, reject) {
+    setTimeout(function() {
+      reject(new Error('timed out after ' + BOOT_TIMEOUT_MS + ' ms waiting for IndexedDB'));
+    }, BOOT_TIMEOUT_MS);
+  });
+  return Promise.race([_bootStorageWork(), timeout]).then(function() {
+    _bootCacheOk = true;
+  }).catch(function(e) {
+    _bootCacheOk = false;
+    _bootFailure = e;
+  });
+}
+// Synchronous read of a startup key from the preloaded IndexedDB data.
+// Only keys listed in BOOT_KEY_NAMES may be read this way -- anything
+// else is a programming error and fails loudly instead of silently
+// returning nothing. If the preload failed, falls back to localStorage
+// (the loud error is raised separately, from loadState()).
+function bootGet(key) {
+  if (!_bootCacheOk) return storageGet(key);
+  if (!Object.prototype.hasOwnProperty.call(_bootCache, key)) {
+    throw new Error('bootGet: "' + key + '" was not preloaded (add it to BOOT_KEY_NAMES)');
+  }
+  return _bootCache[key];
+}
+
+function loadState() {
+  // v0.1910 CHANGED: the one-time localStorage->IndexedDB migration no
+  // longer runs from here (fire-and-forget); bootStorage() now awaits it
+  // BEFORE init() runs, so the data loadState() reads is never stale.
   // v0.1798 FIX, per Lynn's live "storage may be full" report: proactively
   // clean up any ALREADY-accumulated conflict-backup keys from before this
   // fix existed -- her actual browser storage right now very likely has
@@ -17286,8 +17330,25 @@ function loadState() {
   var _notesRaw = null;
   var _hadNotesKey = false;  // true iff remember_notes existed when this load STARTED
   try {
-    _notesRaw = storageGet(storeKey('remember_notes'));
+    _notesRaw = bootGet(storeKey('remember_notes'));
+    // v0.1910 SAFETY CHECK (fail loudly): IndexedDB booted fine but holds
+    // NO notes while the legacy localStorage copy still does. That should
+    // be impossible after a successful migration; silently treating it as
+    // a brand-new install would install sample notes and could overwrite
+    // real data. Use the legacy copy instead, and say so.
+    if (_bootCacheOk && _notesRaw === null) {
+      var _legacyNotesRaw = storageGet(storeKey('remember_notes'));
+      if (_legacyNotesRaw) {
+        _notesRaw = _legacyNotesRaw;
+        _bootAnomalyMsg = 'BOOT STORAGE ANOMALY: IndexedDB has no notes but the legacy localStorage copy does (' + _legacyNotesRaw.length + ' chars). Using the legacy copy.';
+        setTimeout(function() {
+          if (typeof showToast === 'function') showToast('\u26a0\ufe0f Notes database was empty but an older copy exists \u2014 using the older copy. Please report this.', true);
+        }, 1200);
+      }
+    }
     if (_notesRaw) { _hadNotesKey = true; notes = JSON.parse(_notesRaw); }
+    _notesLoadedFromStorage = true;
+    if (_bootAnomalyMsg) { logSys(_bootAnomalyMsg); }
     // v0.1794 NEW, per Lynn's report (Chromebook, note completely gone
     // after switching between a Chrome tab and the installed PWA): the
     // classic multi-instance "stale write silently overwrites newer
@@ -17299,7 +17360,7 @@ function loadState() {
     // saveNotes() can detect a conflict at the moment it's about to
     // write, not just (uselessly, see that function's own comment)
     // after the fact at a later load.
-    _myNotesGen = parseInt(storageGet(storeKey('remember_notes_gen')) || '0', 10) || 0;
+    _myNotesGen = parseInt(bootGet(storeKey('remember_notes_gen')) || '0', 10) || 0;
   } catch(e) {
     // CRITICAL: never silently continue past a notes parse failure — the
     // app would boot with zero notes and the next saveNotes() would
@@ -17312,14 +17373,16 @@ function loadState() {
       if (typeof showToast === 'function') showToast('\u26a0\ufe0f Note data failed to load \u2014 a backup copy was preserved. Please report this.', true);
     }, 1200);
   }
-  // v0.1907 NEW: fire-and-forget, same pattern as the one-time migration
-  // call above -- corrects the baseline just read from localStorage
-  // against the real, current IndexedDB data shortly after, instead of
-  // letting it sit stale for the rest of the session (see
-  // _correctNotesBaselineFromIdb's own comment for the full history).
-  _correctNotesBaselineFromIdb().catch(function(e) {
-    logSys('STARTUP-BASELINE-CORRECTION failed: ' + e, true);
-  });
+  // v0.1910: loud notice if the IndexedDB preload failed (the app is
+  // running from the OLD localStorage copy, which may be missing recent
+  // notes) -- shown as a persistent, tap-to-copy error per this
+  // project's fail-loudly rule.
+  if (_bootFailure) {
+    var _bootMsg = 'BOOT STORAGE FAILED: ' + _describeStorageError(_bootFailure, 'loading notes from the IndexedDB database') +
+      ' Running from an OLDER localStorage copy that may be missing recent notes. Do not edit notes until this is resolved.';
+    logSys(_bootMsg, true);
+    setTimeout(function() { if (typeof showToast === 'function') showToast('\u26a0\ufe0f ' + _bootMsg, true); }, 1200);
+  }
   try {
     const f = storageGet(storeKey('remember_folders'));
     if (f) folders = JSON.parse(f);
@@ -17393,7 +17456,7 @@ function loadState() {
   // id+name). If notes present then are gone now, NAME them — converts
   // "some notes seem to be missing" into hard evidence.
   try {
-    var _censusRaw = storageGet(storeKey('remember_note_census'));
+    var _censusRaw = bootGet(storeKey('remember_note_census'));
     if (_censusRaw) {
       var _census = JSON.parse(_censusRaw);
       var _lost = (_census.entries || []).filter(function(en) { return !notes[en.id]; });
@@ -17892,59 +17955,10 @@ function _mergeNotesOnConflict(storedNotes, myNotes) {
   return merged;
 }
 
-// v0.1907 NEW, the other half of fixing Lynn's real, confirmed bug: the
-// merge fix above stops a stale baseline from doing collateral damage
-// WHEN a merge happens, but merges were only happening constantly
-// because loadState() still seeds `notes`/_myNotesGen from localStorage
-// -- stale ever since saveNotes() itself moved to IndexedDB in v0.1890,
-// confirmed consistent with Lynn's own observation that backgrounding
-// the app for a while and returning (without force-quitting) was
-// enough to reproduce this, matching how mobile WebKit can silently
-// reclaim and reload a backgrounded tab's JS, re-running loadState()
-// from that same stale snapshot each time.
-//
-// This corrects the baseline from the REAL, current IndexedDB data,
-// fire-and-forget, immediately after loadState()'s existing synchronous
-// localStorage-based load -- matching the exact same non-blocking
-// pattern already established for idbRunOneTimeMigrationIfNeeded(), not
-// a new architectural approach. Deliberately does NOT make loadState()
-// itself async (every one of its own callers would need to change);
-// instead the fast synchronous load still happens first exactly as
-// before, and this fixes up the in-memory state shortly after, using
-// the SAME field-level-safe merge above -- so even an edit the user
-// makes in the brief window before this resolves is preserved
-// correctly, not just a "last writer wins" race.
-async function _correctNotesBaselineFromIdb() {
-  var realNotesRaw, realGenRaw;
-  try {
-    realNotesRaw = await idbGet(storeKey('remember_notes'));
-    realGenRaw = await idbGet(storeKey('remember_notes_gen'));
-  } catch(e) {
-    logSys('STARTUP-BASELINE-CORRECTION: IndexedDB read failed, keeping the localStorage-sourced baseline for this session: ' + _describeStorageError(e), true);
-    return;
-  }
-  if (realNotesRaw === null) return; // nothing in IndexedDB yet (fresh install, or migration hasn't landed) -- the localStorage-sourced load is correct as-is, nothing to correct
-  var realGen = parseInt(realGenRaw || '0', 10) || 0;
-  if (_myNotesGen !== null && realGen === _myNotesGen) return; // baseline already matches reality -- the common case once this fix has run at least once this session
-  var realNotes;
-  try { realNotes = JSON.parse(realNotesRaw); } catch(eParse) {
-    logSys('STARTUP-BASELINE-CORRECTION: IndexedDB notes failed to parse, keeping the localStorage-sourced baseline for this session: ' + eParse, true);
-    return;
-  }
-  var _beforeCount = Object.keys(notes).length;
-  notes = _mergeNotesOnConflict(realNotes, notes);
-  _myNotesGen = realGen;
-  logSys('STARTUP-BASELINE-CORRECTION: corrected stale localStorage-sourced baseline (gen ' + _myNotesGen + ' -> ' + realGen +
-    ') from the real IndexedDB data (mine=' + _beforeCount + ', real=' + Object.keys(realNotes).length +
-    ', merged=' + Object.keys(notes).length + ').', true);
-  // Reflect the correction immediately if the home screen is currently
-  // showing, rather than waiting for the next unrelated render --
-  // exact same "are we on the home screen" check already used
-  // elsewhere in this file.
-  if (!document.body.classList.contains('note-screen-active') && typeof renderNotesList === 'function') {
-    try { renderNotesList(true); } catch(eRender) {}
-  }
-}
+// (v0.1910: _correctNotesBaselineFromIdb(), added in v0.1907, was REMOVED
+// here. It patched the stale startup baseline after the fact; bootStorage()
+// now makes the baseline correct from the start, so the patch is
+// redundant -- see BOOT STORAGE above.)
 
 // v0.1890 REDESIGNED, Phase 3b-ii of the IndexedDB migration
 // (IndexedDB-Migration-Plan-v6.md) -- the highest-stakes single change
@@ -17977,7 +17991,19 @@ async function _correctNotesBaselineFromIdb() {
 // here), but it makes the risk VISIBLE in the log rather than silent,
 // so a real loss would leave a diagnostic trail instead of no trace at
 // all.
+// v0.1910 SAVE GUARD (found by the Playwright upgrade test, which showed
+// real data loss in the first draft of boot storage): the one-time
+// migration's own completion message goes through logSys() -> the debug
+// log note -> saveNotes(). Now that the migration runs BEFORE loadState(),
+// `notes` is still the empty initial object at that moment, and saving it
+// OVERWROTE the freshly migrated notes in IndexedDB with an empty list.
+// Nothing may be saved until loadState() has actually read the notes.
+var _notesLoadedFromStorage = false;
 function saveNotes() {
+  if (!_notesLoadedFromStorage) {
+    try { console.warn('[Remember] saveNotes() ignored: notes not loaded from storage yet.'); } catch(eW) {}
+    return;
+  }
   if (_isBlockedByConcurrentInstance) {
     logSys('saveNotes() blocked -- another instance is active.', true);
     return;
@@ -18011,6 +18037,27 @@ function saveNotes() {
   }).then(function(result) {
     _myNotesGen = parseInt(result.gen, 10);
     if (_conflictInfo) {
+      // v0.1909 FIX, per Lynn's repeated, precisely-described bug (recent
+      // notes missing from the home list after the app sat in the
+      // background, until she changed the sort order): reproduced in a
+      // real browser. After iOS reloads the app, loadState() still reads
+      // the STALE localStorage copy of the notes (saveNotes() has written
+      // only to IndexedDB since v0.1890), and the home list is rendered
+      // from that. The real notes are pulled into memory a moment later
+      // by THIS merge (triggered by the very first incidental logSys() ->
+      // saveNotes() at startup) -- but nothing re-rendered the list
+      // afterward, so the stale list stayed on screen until some
+      // unrelated render (such as changing the sort) happened. The
+      // v0.1907 startup correction was supposed to render after
+      // correcting, but when THIS path wins the race the correction sees
+      // the generation already matches and returns silently, so it never
+      // rendered either. Fix at the source: any time a merge replaces the
+      // in-memory notes, refresh the home list if it is showing.
+      try {
+        if (!document.body.classList.contains('note-screen-active') && typeof renderNotesList === 'function') {
+          renderNotesList(true);
+        }
+      } catch(eMergeRender) {}
       // v0.1890 CHANGED: the conflict backup now lives entirely in
       // IndexedDB -- both the write AND its cleanup (idbListKeys/
       // idbRemove, not the Phase 1 localStorage-based
@@ -30607,7 +30654,7 @@ function makeImportFolderName(label) {
   })();
 
   // Show on first launch
-  if (!storageGet(storeKey('remember_tour_seen')) && !storageGet(storeKey('remember_notes'))) {
+  if (!storageGet(storeKey('remember_tour_seen')) && !bootGet(storeKey('remember_notes'))) {
     setTimeout(openTour, 800);
   }
 
@@ -48301,7 +48348,11 @@ window.addEventListener('unhandledrejection', function(e) {
   _showError(msg);
 });
 
-document.addEventListener('DOMContentLoaded', function() {
+// v0.1910: wait for bootStorage() (migration + startup keys from
+// IndexedDB) before init(), so loadState() reads real data. bootStorage()
+// never rejects -- on failure it records _bootFailure and the app still
+// starts, loudly (see BOOT STORAGE).
+function _startApp() {
   try {
     init();
   } catch(e) {
@@ -48331,6 +48382,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
   });
+}
+document.addEventListener('DOMContentLoaded', function() {
+  bootStorage().then(_startApp);
 });
 
 // PWA Service Worker + Update Banner
