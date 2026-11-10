@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1910 -->
+<!-- Remember App - Version 0.1911 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1910
+  Version 0.1911
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -8663,6 +8663,10 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
     <span>Note Name</span>
     <svg class="sort-option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>
   </div>
+  <div class="sort-option" data-sort="size" id="sort-opt-size">
+    <span>Note Size</span>
+    <svg class="sort-option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>
   <hr class="sort-divider">
   <div class="sort-toggle-row" id="sort-dir-row">
     <span id="sort-dir-label">Newest first</span>
@@ -12956,7 +12960,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1910';
+const APP_VERSION = '0.1911';
 
 // ===== HANG WATCHDOG MODULE START — v0.1895, per Lynn's explicit
 // request while hunting a real, serious hang bug. Fully self-contained:
@@ -17471,7 +17475,7 @@ function loadState() {
   } catch(eL) {}
 
   // Sanitize sortBy — legacy values like 'viewedAt-desc' don't match data-sort attrs
-  var _validSortKeys = ['viewedAt','editedAt','createdAt','name'];
+  var _validSortKeys = ['viewedAt','editedAt','createdAt','name','size'];
   if (_validSortKeys.indexOf(settings.sortBy) === -1) settings.sortBy = 'viewedAt';
   // Diagnostic for the intermittent "ghost folder" bug (reported: after
   // a network drop/reconnect on iOS, the home screen sometimes shows
@@ -21346,7 +21350,7 @@ function noteItemHTML(id, n, folderPath) {
         (folderPath ? '<div class="note-item-folder-path">'
           + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10" style="pointer-events:none;flex-shrink:0"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>'
           + escHtml(folderPath) + '</div>' : '') +
-        '<div class="note-item-date"><span>' + dateLabel + fmtDate(dateTs) + '</span>' +
+        '<div class="note-item-date"><span>' + (sortBy === 'size' ? formatByteSize(noteByteSize(n)) + ' \u00b7 ' : '') + dateLabel + fmtDate(dateTs) + '</span>' +
           '<div class="note-item-delete-hover" data-id="' + id + '" title="Delete note">' + trashSvg + '</div>' +
         '</div>' +
       '</div>' +
@@ -21357,14 +21361,46 @@ function noteItemHTML(id, n, folderPath) {
   '</div>';
 }
 
+// v0.1911 NEW, per Lynn's request: "Note Size" sort. Size = number of
+// UTF-8 BYTES in the note's text (n.content), the same bytes that are stored,
+// not the character count (an emoji or accented letter is several bytes).
+// TextEncoder is used when present; the fallback counts bytes by hand.
+var _noteSizeEncoder = (typeof TextEncoder !== 'undefined') ? new TextEncoder() : null;
+function noteByteSize(n) {
+  var s = (n && n.content) ? String(n.content) : '';
+  if (_noteSizeEncoder) return _noteSizeEncoder.encode(s).length;
+  var bytes = 0;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 0x80) bytes += 1;
+    else if (c < 0x800) bytes += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF) { bytes += 4; i++; }
+    else bytes += 3;
+  }
+  return bytes;
+}
+function formatByteSize(b) {
+  if (b < 1024) return b + ' bytes';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
 function sortedNoteIds() {
   var ids = Object.keys(notes).filter(function(id) { return !notes[id].isDebugLog; });
   var sortBy  = settings.sortBy  || 'viewedAt';
-  var desc    = settings.sortDesc !== false; // default true (newest/A-Z first)
+  var desc    = settings.sortDesc !== false; // default true (newest/A-Z/largest first)
   var isName  = sortBy === 'name';
+  var isSize  = sortBy === 'size';
+  var _sizes  = null;
+  if (isSize) { _sizes = {}; ids.forEach(function(id) { _sizes[id] = noteByteSize(notes[id]); }); }
 
   ids.sort(function(a, b) {
     var na = notes[a], nb = notes[b];
+    if (isSize) {
+      var d = _sizes[b] - _sizes[a]; // largest first
+      if (d === 0) return (nb.editedAt || 0) - (na.editedAt || 0); // stable, predictable ties
+      return desc ? d : -d;
+    }
     if (isName) {
       var cmp = naturalCompare(na.name || '', nb.name || '');
       return desc ? cmp : -cmp; // desc=true means A-Z for names
@@ -21493,7 +21529,7 @@ function renderNotesList(suppressActiveScreenWarning) {
   }
   var sortBy  = settings.sortBy  || 'viewedAt';
   // Disable date grouping during search for cleaner results
-  var useGroups = !_homeSearchTerm && settings.sortGroupByDate !== false && sortBy !== 'name';
+  var useGroups = !_homeSearchTerm && settings.sortGroupByDate !== false && sortBy !== 'name' && sortBy !== 'size';
   var pinSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" style="pointer-events:none"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V6h1a2 2 0 000-4H8a2 2 0 000 4h1v4.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V17z"/></svg>';
   var chevronSvg = '<svg class="notes-group-heading-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;width:22px;height:22px"><polyline points="6 9 12 15 18 9"/></svg>';
   var totalNonPinned = sorted.filter(function(id) { return !notes[id].pinned; }).length;
@@ -21509,6 +21545,7 @@ function renderNotesList(suppressActiveScreenWarning) {
       var sb = settings.sortBy || 'viewedAt';
       var desc2 = settings.sortDesc !== false;
       if (sb === 'name') { var c = naturalCompare(na.name||'', nb.name||''); return desc2 ? c : -c; }
+      if (sb === 'size') { var dz = noteByteSize(nb) - noteByteSize(na); return desc2 ? dz : -dz; }
       var ta = sb === 'createdAt' ? (na.createdAt||na.editedAt) : sb === 'editedAt' ? na.editedAt : (na.viewedAt||na.editedAt);
       var tb = sb === 'createdAt' ? (nb.createdAt||nb.editedAt) : sb === 'editedAt' ? nb.editedAt : (nb.viewedAt||nb.editedAt);
       return desc2 ? (tb - ta) : (ta - tb);
@@ -21911,6 +21948,7 @@ function updateSortSheet() {
   var sortBy  = settings.sortBy  || 'viewedAt';
   var desc    = settings.sortDesc !== false;
   var isName  = sortBy === 'name';
+  var isSize  = sortBy === 'size';
   // Highlight active sort option
   document.querySelectorAll('.sort-option').forEach(function(opt) {
     opt.classList.toggle('active', opt.dataset.sort === sortBy);
@@ -21920,13 +21958,13 @@ function updateSortSheet() {
   var dirLabel  = document.getElementById('sort-dir-label');
   var dirRow    = document.getElementById('sort-dir-row');
   if (dirToggle) dirToggle.checked = desc;
-  if (dirLabel)  dirLabel.textContent = isName ? (desc ? 'A → Z' : 'Z → A') : (desc ? 'Newest first' : 'Oldest first');
+  if (dirLabel)  dirLabel.textContent = isName ? (desc ? 'A → Z' : 'Z → A') : isSize ? (desc ? 'Largest first' : 'Smallest first') : (desc ? 'Newest first' : 'Oldest first');
   // Group by date toggle: muted when sorting by name
   var groupToggle = document.getElementById('sort-group-toggle');
   var groupRow    = document.getElementById('sort-group-row');
   if (groupToggle) groupToggle.checked = settings.sortGroupByDate !== false;
-  if (groupRow)    groupRow.classList.toggle('muted', isName);
-  if (groupToggle) groupToggle.disabled = isName;
+  if (groupRow)    groupRow.classList.toggle('muted', isName || isSize);
+  if (groupToggle) groupToggle.disabled = isName || isSize;
   // Sort button tint when not on default
   var btn = document.getElementById('sort-btn');
   if (btn) btn.classList.toggle('active', sortBy !== 'viewedAt' || !desc);
