@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.98</title>
+<title>Melodies by Ear v0.99</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -617,6 +617,8 @@
   .info-close { display: flex; justify-content: flex-end; margin-top: 8px; }
   .backup-note { color: var(--warn); }
   .backup-rows { flex: 1; display: grid; gap: 8px; }
+  .ms-copy-row { display: grid; gap: 4px; justify-items: start; }
+  .ms-copy-row .hint { margin: 0; }
   .backup-row { display: flex; align-items: center; gap: 10px; }
   /* Warm-up: find the note */
   .warm { margin: 0 0 16px; background: var(--card); border: 1px solid var(--line-soft); border-radius: 14px; padding: 6px 16px; }
@@ -709,7 +711,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.98</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.99</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -728,6 +730,10 @@
     <summary data-s="mysongs.title"></summary>
     <div class="mysongs-body">
       <p class="hint" data-s="mysongs.intro"></p>
+      <div class="ms-copy-row" id="msCopyRow" hidden>
+        <button class="chipbtn" id="msCopyBuiltIn"></button>
+        <p class="hint" data-s="mysongs.copyBuiltInHint"></p>
+      </div>
       <div class="mine-btns">
         <select id="msSel" data-s-aria-label="mysongs.pickAria"></select>
         <button class="chipbtn" id="msNew" data-s="mysongs.new"></button>
@@ -1565,6 +1571,7 @@ const STRINGS = {
     "saveFile": "Saving the file didn’t work ({how}): {msg}. Trying another way.",
     "mySongsBad": "Saved My songs data was damaged; {n} entries were skipped ({key}).",
     "song": "Song data problem in {song}: {msg}",
+    "copySong": "Copying {song} into My songs made a song with {n} mistakes. That’s a bug in the app; the mistakes are listed in the My songs box.",
     "songBar": "{label}: bar {i} has {sum} eighths, not {need}",
     "songSyllable": "{label}: unknown syllable \"{syl}\"",
     "songTie": "{label}: \"{syl}\" is tied to a note that isn't the same pitch",
@@ -1917,7 +1924,19 @@ const STRINGS = {
     "lede": "{title}, phrase by phrase: a song of your own, from My songs.",
     "credit": "Typed in by you in My songs, and saved in this browser only.",
     "wordsName": "My song’s words",
-    "wordsTab": "Words"
+    "wordsTab": "Words",
+    "copyBuiltIn": "Copy “{title}” into My songs",
+    "copyBuiltInHint": "Makes a copy of this song that you can change: the notes the way you learned them, or ornaments you like to sing. The built-in song stays as it is.",
+    "copyTitle": "{title} (my copy)",
+    "copyNote": "Copied from the built-in song {title} on {date} (app {version}).",
+    "copyNote2": "The bar numbers and chords below are the built-in song's, as written (before Transpose).",
+    "copyLyrics": "Words: {set}.",
+    "copyBar": "bar {a}",
+    "copyBars": "bars {a}–{b}",
+    "copyChords": "chords: {chords}",
+    "copyOnBeat": "{chord} on beat {beat}",
+    "copiedBuiltIn": "Copied {song} into My songs as “{title}”. Change it here, tap Check, then Open this song to hear it.",
+    "copiedBroken": "Copied, but the copy has mistakes (the app’s own; please report them):"
   },
   tempo: {
     "beat1": "eighth-note",
@@ -3637,6 +3656,13 @@ function myKey(text) {
 }
 // Reads one of my songs. Returns { title, song (null if there are mistakes),
 // problems: [message], verses, hasChorus }.
+// A words line starting with "[whole line]" lights as a whole line and isn't
+// counted against its notes (as some built-in lines do). Part of the file
+// format, so not translated.
+const WHOLE_LINE = "[whole line]";
+function wordsRow(line) {
+  return line.toLowerCase().startsWith(WHOLE_LINE) ? { words: line.slice(WHOLE_LINE.length).trim(), whole: true } : { words: line };
+}
 function readMySong(text, id) {
   const lines = normalizeBreaks(String(text)).split("\n");
   const problems = [];
@@ -3673,7 +3699,7 @@ function readMySong(text, id) {
     }
     ensure();
     if (pending) {
-      const row = { m: pending.m, n: pending.n, words: l, wn: n };
+      const row = { m: pending.m, n: pending.n, ...wordsRow(l), wn: n };
       cur.rows.push(row); lastRow = row; pending = null; return;
     }
     // a line standing alone, followed by notes (or ending in ":"), names a part of the verse
@@ -3682,7 +3708,7 @@ function readMySong(text, id) {
       cur.parts.push({ k: cur.rows.length, label: l.replace(/\s*:$/, "") });
       return;
     }
-    const row = { m: null, n: 0, words: l, wn: n };     // words only: borrows notes later
+    const row = { m: null, n: 0, ...wordsRow(l), wn: n };     // words only: borrows notes later
     cur.rows.push(row); lastRow = row;
   });
   if (cur) flush();
@@ -3697,7 +3723,7 @@ function readMySong(text, id) {
   else if (!MY_TIMES[head.time.v.replace(/\s+/g, "")]) say(head.time.n, "mysongs.badTime", { v: head.time.v });
   else { const [perBar, beatLen] = MY_TIMES[head.time.v.replace(/\s+/g, "")]; meter = { perBar, beatLen, label: head.time.v.replace(/\s+/g, ""), beatName: MY_BEAT_NAMES[beatLen] }; }
   if (!verses.length || !verses[0].rows.length) say(0, "mysongs.noNotes");
-  const hasWords = [...verses, ...choruses].some(sec => sec.rows.some(r => r.words));
+  const hasWords = [...verses, ...choruses].some(sec => sec.rows.some(r => r.words || r.whole));
   // each notes line: readable tokens, bars, syllables, ties
   const itemsOf = r => r._items || (r._items = parse(r.m));
   const readable = r => {
@@ -3741,6 +3767,7 @@ function readMySong(text, id) {
       if (!readable(r)) return;
       const notes = itemsOf(r).filter(x => !x.bar).length;
       if (r.words == null) { if (hasWords) say(r.n, "mysongs.noWords"); return; }
+      if (r.whole) return;
       const syls = parseSyl(r.words);
       const count = syls ? sylNotes(syls) : 0;
       if (count !== notes) say(r.wn, "mysongs.sylCount", { syl: count, notes });
@@ -3771,7 +3798,7 @@ function readMySong(text, id) {
   let bar = 1;
   verses.forEach((sec, i) => { firstBars[i + 1] = bar; bar += barsOf(sec); chorusBars[i + 1] = bar; if (choruses.length) bar += barsOf(choruses[0]); });
   const group = (sec, label) => {
-    const g = { label, lines: sec.rows.map(r => sylPlain(parseSyl(r.words))), syl: sec.rows.map(r => r.words) };
+    const g = { label, lines: sec.rows.map(r => r.whole ? r.words : sylPlain(parseSyl(r.words))), syl: sec.rows.map(r => r.whole ? "" : r.words) };
     if (sec.rows.some(r => r.meaning)) g.meaning = sec.rows.map(r => r.meaning || "");
     return g;
   };
@@ -7554,6 +7581,27 @@ async function exportAllSongs() {
   if (!readMySongsStore().length) { msSay(T("mysongs.noSongs")); return; }
   if (await saveTextFile(allSongsFileText(), T("mysongs.allFile", { date: fileDate() }), t => msSay(t))) songsBackup.note("saved", Date.now());
 }
+// Adds songs (their texts) to My songs, after the ones there. A title that's
+// taken gets "(2)" added, in its Title: line too. Returns [{ id, title, r }]
+// (r: what readMySong found), or null if saving failed (already reported).
+function addMySongs(texts) {
+  const songs = readMySongsStore();
+  const taken = songs.map(ms => readMySong(ms.text, ms.id).title);
+  const added = [];
+  for (let t of texts) {
+    const id = newMySongId(songs);
+    let r = readMySong(t, id);
+    if (r.title) {
+      const title = uniqueName(taken, r.title);
+      if (title !== r.title) { t = withTitle(t, title); r = readMySong(t, id); }
+      if (r.title !== title) throw new Error(`addMySongs: renaming to "${title}" gave "${r.title}"`);
+      taken.push(title);
+    }
+    songs.push({ id, text: t });
+    added.push({ id, title: r.title || T("mysongs.untitled"), r });
+  }
+  return writeMySongs(songs) ? added : null;
+}
 // Adds every song in the file (never replaces one). A file with "### Song:"
 // lines holds several; otherwise the file is one song. A song whose title is
 // taken gets "(2)" added. Songs with mistakes are added too, as Save does.
@@ -7567,29 +7615,99 @@ function importMySongs(file) {
     }
     const texts = (parts ? parts.map(p => p[1]) : [text]).map(t => t.replace(/^\s*\n/, "").replace(/\s+$/, "")).filter(t => t.trim());
     if (!texts.length) { msSay(T("mysongs.importedNone"), "warn"); return; }
-    const songs = readMySongsStore();
-    const taken = songs.map(ms => readMySong(ms.text, ms.id).title);
-    const added = [];
-    for (let t of texts) {
-      const id = newMySongId(songs);
-      let r = readMySong(t, id);
-      if (r.title) {
-        const title = uniqueName(taken, r.title);
-        if (title !== r.title) { t = withTitle(t, title); r = readMySong(t, id); }
-        if (r.title !== title) throw new Error(`importMySongs: renaming to "${title}" gave "${r.title}"`);
-        taken.push(title);
-      }
-      songs.push({ id, text: t + "\n" });
-      added.push({ id, title: r.title || T("mysongs.untitled"), ok: !!r.song });
-    }
-    if (!writeMySongs(songs)) return;                 // storeSet already showed the error
+    const added = addMySongs(texts.map(t => t + "\n"));
+    if (!added) return;                               // storeSet already showed the error
     showMySong(added[0].id);
     const titles = list => list.map(a => a.title).join(", ");
-    const broken = added.filter(a => !a.ok);
+    const broken = added.filter(a => !a.r.song);
     let msg = added.length === 1 ? T("mysongs.importedOne", { title: added[0].title }) : T("mysongs.importedMany", { n: added.length, titles: titles(added) });
     if (broken.length) msg += " " + T("mysongs.importedBroken", { titles: titles(broken) });
     msSay(msg, broken.length ? "warn" : "ok");
   });
+}
+// ---- Copy a built-in song into My songs ----
+// The open song in the My songs format: the words of the set chosen under
+// "Lyrics to show", and a # comment above each line with the song's own bar
+// numbers and chords (as written, before Transpose), so a fix can be told by
+// bar. Verse 2 on gives only words where its notes are verse 1's.
+function songAsText() {
+  if (SONG.mine) throw new Error("songAsText: the open song is already one of mine");
+  const set = SONG.instrumental ? null : (lyricSets()[0] || Object.values(builtInSets())[0] || null);
+  const minor = SONG.mode === "minor", tonic = minor ? SONG_DO_MIDI - 3 : SONG_DO_MIDI;
+  // without an octave number, do sits from C4 to B4
+  const octave = SONG_DO_MIDI >= 60 && SONG_DO_MIDI <= 71 ? "" : String(Math.floor(tonic / 12) - 1);
+  const key = KEY_NAMES[((tonic % 12) + 12) % 12] + octave + (minor ? " minor" : "");
+  const version = (document.querySelector("h1 .ver") || {}).textContent || "";
+  const L = ["Title: " + T("mysongs.copyTitle", { title: SONG.title }), "Key: " + key, "Time: " + METER.label, "",
+    "# " + T("mysongs.copyNote", { title: SONG.title, date: fileDate(), version }), "# " + T("mysongs.copyNote2")];
+  if (set) L.push("# " + T("mysongs.copyLyrics", { set: set.name }));
+  L.push("");
+  const plain = html => html.replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const chordsOf = p => {
+    if (!SONG.chords) return "";
+    const cells = [];
+    for (let bar = p.firstBarNum; bar <= p.lastBarNum; bar++) {
+      const cs = chordsInBar(bar).map(c => {
+        const name = plain(chordLabel(c.tok, "names", false, SONG_DO_MIDI));
+        return c.at ? T("mysongs.copyOnBeat", { chord: name, beat: Math.round((c.at / METER.beatLen + 1) * 100) / 100 }) : name;
+      });
+      cells.push(cs.length ? cs.join(", ") : "–");
+    }
+    return cells.some(c => c !== "–") ? cells.join(" | ") : "";
+  };
+  const comment = p => {
+    const bars = p.nBars > 1 ? T("mysongs.copyBars", { a: p.firstBarNum, b: p.lastBarNum }) : T("mysongs.copyBar", { a: p.firstBarNum });
+    const ch = chordsOf(p);
+    return "# " + bars + (ch ? " · " + T("mysongs.copyChords", { chords: ch }) : "");
+  };
+  // the words line (and meaning) for a phrase: its syllable marks if they fit
+  // its notes, otherwise the plain words, lit as a whole line
+  const words = p => {
+    if (!set) return [];
+    const ly = alongLyricFor(set, p) || { text: "", syl: "", meaning: "" };
+    const syls = ly.syl ? parseSyl(ly.syl) : null;
+    const fits = syls && sylNotes(syls) === parse(p.m).filter(x => !x.bar).length;
+    const out = [fits ? ly.syl : (WHOLE_LINE + " " + (ly.text || "")).trim()];
+    if (ly.meaning) out.push("= " + ly.meaning);
+    return out;
+  };
+  const notesOf = m => m.trim().replace(/\s+/g, " ");
+  const nums = Object.keys(VERSE_M).map(Number).sort((a, b) => a - b);
+  const first = verseOf(nums[0]).map(p => notesOf(p.m));
+  const choruses = set ? set.choruses || [] : [];
+  nums.forEach((v, i) => {
+    L.push(FILE_LABELS.verse(i + 1), "");
+    verseOf(v).forEach((p, k) => {
+      L.push(comment(p));
+      // (an instrumental song has no words lines to borrow notes with)
+      if (i === 0 || !set || first[k] !== notesOf(p.m)) L.push(notesOf(p.m));
+      L.push(...words(p), "");
+    });
+    // the first chorus has the notes; later chorus blocks only words, one per
+    // verse while the set has its own chorus words (after that, the first's)
+    if (HAS_CHORUS && (i === 0 || i < choruses.length)) {
+      L.push(FILE_LABELS.chorus, "");
+      chorusAfter(v).forEach(p => {
+        L.push(comment(p));
+        if (i === 0 || !set) L.push(notesOf(p.m));
+        L.push(...words(p), "");
+      });
+    }
+  });
+  return L.join("\n").replace(/\n+$/, "") + "\n";
+}
+function copyBuiltInSong() {
+  if (SONG.mine || !msOkToLeave()) return;
+  const added = addMySongs([songAsText()]);
+  if (!added) return;                               // storeSet already showed the error
+  const a = added[0];
+  showMySong(a.id);
+  if (a.r.problems.length) {        // the app's own copy should always read cleanly
+    reportError(T("err.copySong", { song: SONG.title, n: a.r.problems.length }));
+    showMySongCheck(a.r, "mysongs.copiedBroken");
+    return;
+  }
+  msSay(T("mysongs.copiedBuiltIn", { song: SONG.title, title: a.title }), "ok");
 }
 const songUndo = makeUndo($("msText"), $("msUndo"), $("msRedo"));
 $("msSel").addEventListener("change", () => {
@@ -7603,6 +7721,10 @@ $("msSave").addEventListener("click", saveMySong);
 $("msOpen").addEventListener("click", openMySong);
 $("msDelete").addEventListener("click", deleteMySong);
 $("msCopy").addEventListener("click", copyMySong);
+$("msCopyBuiltIn").addEventListener("click", copyBuiltInSong);
+// the copy button: built-in songs only
+$("msCopyRow").hidden = !!SONG.mine;
+$("msCopyBuiltIn").textContent = T("mysongs.copyBuiltIn", { title: SONG.title });
 $("msExport").addEventListener("click", exportMySong);
 $("msSaveAll").addEventListener("click", exportAllSongs);
 $("msImport").addEventListener("change", e => { if (e.target.files[0]) importMySongs(e.target.files[0]); e.target.value = ""; });
