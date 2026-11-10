@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.99</title>
+<title>Melodies by Ear v0.100</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -711,7 +711,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.99</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.100</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -1103,7 +1103,7 @@
     </div>
   </details>
 
-  <details>
+  <details id="settingsPanel">
     <summary data-s="ui.settings"></summary>
     <div class="settings">
       <div>
@@ -3919,8 +3919,8 @@ $("errClose").addEventListener("click", dismissErrors);
     ...CATEGORIES.map(c => [c, all.filter(sg => songCats(sg.id).includes(c)).length +
       (c === "mine" ? Object.values(MY_SONG_READS).filter(r => !r.song).length : 0)]).filter(([, n]) => n)
       .map(([c, n]) => new Option(T("ui.catN", { name: T("ui.cat_" + c), n }), c)));
-  const savedCat = (storeGetJSON("phrase-parrot-prefs-v1") || {}).catSel;
-  el("catSel").value = [...el("catSel").options].some(o => o.value === savedCat) ? savedCat : "all";
+  el("catSel").value = (storeGetJSON("phrase-parrot-prefs-v1") || {}).catSel;
+  ensureOption(el("catSel"), "all");
   fillSongMenu();
   // (the description, #lede, is filled in later at startup by renderLede(),
   // once the saved mode has been restored)
@@ -4774,7 +4774,6 @@ function stopAll() {
     catch (e) { if (e.name !== "InvalidStateError") reportError(T("err.audio", { where: "stop", msg: e.message })); }
   });
   activeNodes = [];
-  timers.forEach(clearTimeout); timers = [];
   clearTimeout(looping); looping = null;
   clearTimeout(endTimer); endTimer = null;
   visuals = [];
@@ -4951,7 +4950,6 @@ const songsBackup = makeBackupReminder({ store: () => "phrase-parrot-mysongsback
 const BACKUPS = [lyricsBackup, songsBackup];
 
 // ---------- Playback ----------
-let timers = [];
 function renderBeatDots(n) {
   const box = $("beats");
   if (box.children.length !== n) box.innerHTML = Array.from({ length: n }, (_, i) => `<span class="beat${i === 0 ? " one" : ""}"></span>`).join("");
@@ -5506,7 +5504,7 @@ function chipsHTML(items) {
 function renderWhole() {
   let html = "";
   SEQ.forEach((p, i) => {
-    if (i === 0 || SEQ[i - 1].section !== p.section) html += `<p class="all-section">${p.section}</p>`;
+    if (i === 0 || SEQ[i - 1].section !== p.section) html += `<p class="all-section">${esc(p.section)}</p>`;
     const bar = barNums(p)[0];
     html += `<div class="all-line" data-i="${i}"><button class="bn" data-start="${i}" aria-label="${T("seq.startFromBarAria", { bar })}">${bar}</button>`;
     html += chipsHTML(p.items);
@@ -5788,7 +5786,6 @@ function playWhole(from = 0, resuming = false) {
   // chose; when it loops, it goes back to the very beginning of the song.
   const pass = (start, passFrom, passTo, first) => {
     opt.firstPass = !!first;
-    timers = timers.slice(-200);
     activeNodes = activeNodes.slice(-400);
     const { lines, chips, part, items } = segment(passFrom, passTo);
     opt.chips = chips;
@@ -5940,8 +5937,7 @@ function playPhrase(phrase, slow) {
   setPlaying(true);
 
   const pass = start => {
-    // drop finished timers and audio nodes so a long loop stays light
-    timers = timers.slice(-200);
+    // drop finished audio nodes so a long loop stays light
     activeNodes = activeNodes.slice(-200);
     const end = schedulePass(phrase, start, opt);
     if (opt.loop) {
@@ -5967,7 +5963,7 @@ function playMetronome() {
   let t = ctx.currentTime + 0.12;
   const measure = () => {
     const beat = 60 / +$("tempo").value;
-    timers = timers.slice(-200); activeNodes = activeNodes.slice(-200);
+    activeNodes = activeNodes.slice(-200);
     for (let b = 0; b < beats; b++) clickAt(t + b * beat, b === 0, b, beat);
     t += beats * beat;
     looping = setTimeout(measure, Math.max(0, (t - ctx.currentTime - 0.35) * 1000));
@@ -7000,8 +6996,8 @@ $("tUp").addEventListener("click", () => setTranspose(+$("transpose").value + 1)
 document.querySelectorAll(".presets .chipbtn").forEach(b => b.addEventListener("click", () => setTranspose(+b.dataset.t)));
 $("fineTune").addEventListener("input", () => { renderPitch(); savePrefs(); });
 $("pitchNote").addEventListener("click", () => {
-  const d = document.querySelector("details:not(.along-notes)");
-  d.open = true; $("transpose").closest("div").scrollIntoView({ behavior: "smooth", block: "center" });
+  $("settingsPanel").open = true;
+  $("transpose").closest("div").scrollIntoView({ behavior: "smooth", block: "center" });
 });
 $("allBtn").addEventListener("click", () => {
   if ($("allBtn").classList.contains("stop")) { stopAll(); return; }
@@ -7034,7 +7030,7 @@ $("pauseBtn").addEventListener("click", () => {
 });
 function renderStartFrom() {
   const hasPickup = pickupEighths(SEQ[0].items) > 0;
-  $("startFrom").innerHTML = SEQ.map((p, i) => `<option value="${i}">${i === 0 ? (hasPickup ? T("seq.beginningPickup", { bar: +firstBar(0) - 1 }) : T("seq.beginning")) : phraseLabel(i)}</option>`).join("");
+  $("startFrom").innerHTML = SEQ.map((p, i) => `<option value="${i}">${i === 0 ? (hasPickup ? T("seq.beginningPickup", { bar: +firstBar(0) - 1 }) : T("seq.beginning")) : esc(phraseLabel(i))}</option>`).join("");
 }
 renderStartFrom();
 $("startFrom").addEventListener("change", () => {
@@ -7363,6 +7359,13 @@ function savePrefs() {
   prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
   storeSet(PREFS, JSON.stringify(p));
 }
+// A menu whose value isn't one of its choices (a saved choice that no longer
+// exists shows blank) falls back to the given one. A function declaration, so
+// it can be used above this line at startup. Use it for every menu in prefIds
+// whose choices can change.
+function ensureOption(sel, fallback) {
+  if (![...sel.options].some(o => o.value === sel.value)) sel.value = fallback;
+}
 // ---------- Startup: restore settings, then render everything once ----------
 fillMetroMeter();           // the menus' choices exist before the saved ones are restored
 fillTalkChoices();
@@ -7409,6 +7412,7 @@ if (savedPrefs && savedPrefs.doPitch && !("transpose" in savedPrefs)) { $("trans
 $("doPitch").value = SONG_DO_MIDI;
 renderPitch();
 // saved choices that don't exist in this song fall back to the first one
+ensureOption($("catSel"), "all");
 if (!SEQ_CHOICES[$("seqSel").value]) $("seqSel").value = Object.keys(SEQ_CHOICES)[0];
 if (!VERSE_M[$("drillVerse").value] && !($("drillVerse").value === "mix" && VERSE_COUNT > 1)) $("drillVerse").value = String(VERSE_NUMS[0]);
 // each song remembers its own lyric choice
@@ -7439,8 +7443,12 @@ renderModeRows();
 renderLede();       // with the restored mode
 // Choosing a category filters the song menu (the open song stays open)
 $("catSel").addEventListener("change", () => { fillSongMenu(); savePrefs(); });
-// Switching songs: start that song at verse 1, then reload with it
-function openSong(id) {
+// Switching songs: start that song at verse 1, then reload with it.
+// Unsaved edits in the My songs or My lyrics box are asked about first (the
+// reload would lose them); on Cancel the song menu goes back to the open song.
+// mySongGone: the song in the My songs box was just deleted, so its edits don't count.
+function openSong(id, mySongGone = false) {
+  if (!(mySongGone || msOkToLeave()) || !okToLeave()) { $("songSel").value = SONG_ID; return; }
   stopAll();
   const sel = $("songSel");
   if (![...sel.options].some(o => o.value === id)) sel.add(new Option(id, id));   // (a song outside the category shown)
@@ -7546,7 +7554,7 @@ function deleteMySong() {
   if (!confirm(T("mysongs.confirmDelete", { title: r.title || T("mysongs.untitled") }))) return;
   const gone = msCurrent;
   if (!writeMySongs(readMySongsStore().filter(x => x.id !== gone))) return;
-  if (gone === SONG_ID) { openSong("internationale"); return; }
+  if (gone === SONG_ID) { openSong("internationale", true); return; }
   const left = readMySongsStore();
   showMySong(left.length ? left[0].id : null);
 }
