@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.100</title>
+<title>Melodies by Ear v0.105</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -486,7 +486,7 @@
   .mysongs-body .mine-btns { margin-top: 0; }
   #msSel { flex: 1; min-width: 0; }
   #msText { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; white-space: pre; overflow-x: auto; }
-  #msStatus.warn { color: var(--warn); }
+  #msStatus.warn, #msOpenNote { color: var(--warn); }
   #msStatus.ok { color: var(--teal); }
   .ms-problems { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
   .ms-problems li { color: var(--warn); font-size: .9rem; cursor: pointer; }
@@ -603,6 +603,14 @@
     box-shadow: 0 6px 24px rgba(34,48,60,.2); font-size: .95rem;
   }
   .update-note span { flex: 1; }
+  /* "Updated to v0.N" (informational: no copy on tap; hides itself) */
+  .updated-note {
+    position: fixed; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 25;
+    display: flex; align-items: center; gap: 6px; max-width: calc(100% - 16px);
+    background: var(--card); border: 1.5px solid var(--teal); border-radius: 999px; padding: 4px 6px 4px 14px;
+    box-shadow: 0 4px 14px rgba(34,48,60,.18); font-size: .88rem;
+  }
+  .updated-note button { border: 0; background: none; color: inherit; font-size: .95rem; padding: 4px 8px; cursor: pointer; }
   .update-note .btn { padding: 9px 14px; font-size: .95rem; }
   .info-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
   .info-row .chipbtn { font-size: .82rem; padding: 5px 12px; }
@@ -711,7 +719,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.100</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.105</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -756,6 +764,7 @@
         <label class="chipbtn file-btn"><span data-s="ui.importFile"></span><input type="file" id="msImport" accept=".txt,text/plain"></label>
       </div>
       <p class="hint" id="msStatus"></p>
+      <p class="hint" id="msOpenNote" hidden></p>
       <ul class="ms-problems" id="msProblems" hidden></ul>
       <p class="hint backup-note" id="msBackupNote" hidden data-s="mysongs.backupNote"></p>
       <p class="hint" data-s="mysongs.savedHint"></p>
@@ -1235,9 +1244,13 @@
     <button class="btn secondary" id="backupLater" data-s="app.later"></button>
   </div>
   <div class="update-note" id="updateNote" role="status" hidden>
-    <span data-s="app.updateReady"></span>
+    <span id="updateText" data-s="app.updateReady"></span>
     <button class="btn primary" id="updateReload" data-s="app.reload"></button>
     <button class="btn secondary" id="updateLater" data-s="app.later"></button>
+  </div>
+  <div class="updated-note" id="updatedNote" role="status" hidden>
+    <span id="updatedText"></span>
+    <button id="updatedClose" data-s-aria-label="err.dismiss">✕</button>
   </div>
 
   <div class="errbox" id="errBox" role="alert" hidden>
@@ -1262,6 +1275,9 @@
 
 <script>
 // Build history: see melodies-by-ear-changelog-v<N>.md (not kept in this file).
+// The one way to find an element by id. It depends on nothing, so it comes
+// first and every part of the script can use it (review R19).
+const $ = id => document.getElementById(id);
 // ---------- Interface text ----------
 // Every word the app shows lives in STRINGS, so it can be translated one day.
 // Static markup names its text with data-s="group.key" (or data-s-html,
@@ -1478,6 +1494,7 @@ const STRINGS = {
     "chorusesN": "{n} choruses",
     "confirmDelete": "Delete the lyric set “{name}”? This can’t be undone. Save it to a file first if you might want it again.",
     "conflict": "The lyric set “{name}” was changed in another window after you opened it here.\n\nOK: save this window’s version (replacing the other one).\nCancel: don’t save; show the other window’s version instead.",
+    "deletedElsewhere": "The lyric set “{name}” was deleted in another window after you opened it here.\n\nOK: save it again from this window.\nCancel: don’t save; keep your changes in the box.",
     "copied": "Copied as plain text.",
     "copyFailed": "Couldn’t copy to the clipboard. Select the text in the box and copy it by hand.",
     "defaultFileSet": "{song}-{set}.txt",
@@ -1495,7 +1512,8 @@ const STRINGS = {
     "importedOne": "Imported as a new set: {name}.",
     "iosNoSave": "This viewer can’t save files, so nothing was saved. Tap Copy and paste into Notes or a text file instead, or open this app in Safari, where Save to a file can save to the Files app.",
     "iosShared": "If you chose Save to Files, it’s saved as a text file in the folder you picked.",
-    "loadedOther": "Showing the version saved in the other window. This window’s changes were not saved.",
+    "loadedOther": "Showing the version saved in the other window. This window’s changes were not saved (Undo brings them back).",
+    "notSavedKept": "Not saved. Your changes are still in the box.",
     "lines1": "1 line",
     "linesN": "{n} lines",
     "mySetName": "My lyrics",
@@ -1548,7 +1566,9 @@ const STRINGS = {
     "later": "Later",
     "name": "Melodies by Ear",
     "reload": "Reload",
-    "updateReady": "A new version of Melodies by Ear is ready."
+    "updateReady": "A new version of Melodies by Ear is ready.",
+    "updateReadyVersion": "Melodies by Ear {version} is ready.",
+    "updated": "Updated to {version}"
   },
   err: {
     "lyricSetBad": "A saved lyric set is damaged and was skipped ({key}, set {i}): {what}",
@@ -1588,6 +1608,7 @@ const STRINGS = {
     "title": "Something went wrong",
     "swRegister": "Offline use couldn’t be set up (service worker): {msg}",
     "swUpdate": "Checking for a newer version of the app failed, although the device says it is online: {msg}",
+    "swVersion": "A new version of the app took over, but the page couldn’t tell which version it is: {msg}",
     "uncaught": "Unexpected error: {msg}",
     "uncaughtWhere": "Where: {file}, line {line}, column {col}",
     "valueType": "Value ({type}): {value}"
@@ -1904,6 +1925,10 @@ const STRINGS = {
     "cantOpen": "Fix the mistakes first; a song with mistakes can’t open:",
     "saveAndOpen": "This song has changes that aren’t saved. Save them and open it?",
     "discard": "This song has changes that aren’t saved. Leave them?",
+    "conflict": "The song “{title}” was changed in another window after you opened it here.\n\nOK: save this window’s version (replacing the other one).\nCancel: don’t save; show the other window’s version instead.",
+    "deletedElsewhere": "The song “{title}” was deleted in another window after you opened it here.\n\nOK: save it again from this window.\nCancel: don’t save; keep your changes in the box.",
+    "openChanged": "The open song, “{title}”, was changed in another window. This window still plays the version it opened with: show it in the menu above and tap Open this song to load the new one.",
+    "openDeleted": "The open song, “{title}”, was deleted in another window. It stays open here until you pick another song.",
     "confirmDelete": "Delete “{title}”? This can’t be undone. Copy its text somewhere first if you might want it again.",
     "copied": "Copied that mistake. You can paste it now.",
     "savedHint": "Saved in this browser only (Main, Dev and Stable each keep their own, and on iPhone the home-screen app separately from Safari). Use Save all my songs now and then to keep a copy in a file. Import a file adds the songs in it (it never replaces any), here or on another device.",
@@ -2006,7 +2031,7 @@ function reportError(message, opts) {
   const dedupKey = message + "\n" + ((opts && opts.details) || "");
   if (shownErrors.has(dedupKey)) return;          // the same problem once is enough
   shownErrors.add(dedupKey);
-  const box = document.getElementById("errBox"), list = document.getElementById("errList");
+  const box = $("errBox"), list = $("errList");
   if (!box || !list) { alert(fullText); return; }
   const item = document.createElement("li");
   item.className = "err-item" + (copy ? " copyable" : "");
@@ -2027,11 +2052,11 @@ function reportError(message, opts) {
   setHint(copy ? T("err.hint") : T("err.hintNoCopy"));
   box.querySelector("strong").textContent = T("err.title");
   box.hidden = false;
-  function setHint(t) { document.getElementById("errHint").textContent = t; }
+  function setHint(t) { $("errHint").textContent = t; }
 }
 function dismissErrors() {
-  document.getElementById("errBox").hidden = true;
-  document.getElementById("errList").innerHTML = "";
+  $("errBox").hidden = true;
+  $("errList").innerHTML = "";
   shownErrors.clear();
 }
 // Describes any thrown value: an Error's name, message and stack, or the raw value.
@@ -2105,6 +2130,54 @@ function storeRemove(key) {
   try { localStorage.removeItem(storageKey(key)); return true; }
   catch (e) { reportError(T("err.storageWrite", { key, msg: e.message })); return false; }
 }
+// Remember settings between visits (same browser only)
+// Storage keys keep the old "phrase-parrot-" prefix on purpose (app renamed in v0.39),
+// so saved lyrics, sync and settings carry over from earlier versions.
+const PREFS = "phrase-parrot-prefs-v1";
+// The saved settings, read once (review R17): the song to open, the Category
+// menu and the settings restore at the end of startup all use this. (The theme
+// script in <head> reads the theme on its own, before the page is drawn.)
+const SAVED_PREFS = storeGetJSON(PREFS);
+
+// ---------- Small helpers ----------
+// Pure helpers that depend on nothing else. They sit here, above all the code
+// that runs while the page starts (reading My songs, filling the menus), so a
+// call made during startup can never reach one before its line (lesson 22,
+// review R16). Keep new helpers of this kind here.
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+// Apple Notes (and some other apps) mark line breaks with special characters
+// (Unicode "line separator" U+2028 or "paragraph separator" U+2029, or an old
+// Mac carriage return) instead of a normal newline. A text box shows those as
+// nothing, so pasted lines look run together. This turns them all into normal
+// newlines. If a normal newline was also typed right next to one, the pair
+// counts as a single line break, so lines don't end up double-spaced.
+function normalizeBreaks(text) {
+  return String(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/[\u2028\u2029\u0085\r][ \t]*\n|\n[ \t]*[\u2028\u2029\u0085\r]/g, "\n")
+    .replace(/[\u2028\u2029\u0085\r]/g, "\n");
+}
+
+// "Name", or "Name (2)", "Name (3)"… if that's taken
+function uniqueName(taken, name) {
+  let candidate = name, n = 2;
+  while (taken.includes(candidate)) candidate = `${name} (${n++})`;
+  return candidate;
+}
+// today's date for file names, as 2026-11-09 (local time)
+const fileDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const fileSlug = name => name.trim().toLowerCase().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-") || "lyrics";
+const near = (a, b) => Math.abs(a - b) < 1e-6;
+const isTrip = it => it && !it.bar && Math.abs(it.dur - 2 / 3) < 1e-6;
+// a copy of the list in random order
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 // ---------- Melody data ----------
 // Durations are in eighth notes. Notes in ( ) are pickups.
@@ -2125,6 +2198,29 @@ function markHTML(syl) {
   const mark = syl.slice(sylBase(syl).length);
   if (!mark) return "";
   return mark[0] === "," ? `<span class="ol">${"'".repeat(mark.length)}</span>` : `<span class="oh">${mark}</span>`;
+}
+
+// ---------- Pitch names ----------
+// The one set of pitch-name tables (review R12). Defined before the songs,
+// because reading My songs at startup already names keys.
+// A pitch's name when nothing else decides the spelling (keys, tuning notes):
+const KEY_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+function noteName(m) { return KEY_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
+// Spelling a note by its place in the key, so fi in G is C♯ (not D♭) and ti
+// in F♯ is E♯: the letter comes from the scale step, the sharp or flat from
+// how far the pitch is from that letter.
+const LETTERS = "CDEFGAB", LETTER_PC = [0, 2, 4, 5, 7, 9, 11];
+const STEP_OF = { do: 0, di: 0, ra: 1, re: 1, ri: 1, me: 2, mi: 2, fa: 3, fi: 3, se: 4, so: 4, si: 4, le: 5, la: 5, li: 5, te: 6, ti: 6 };
+const ACC = { "-2": "𝄫", "-1": "♭", "0": "", "1": "♯", "2": "𝄪" };
+// The core of spelling by key (review R13), shared by chord names (stepLetter)
+// and the warm-up (spellNote): step = scale step above do, 0 (do) to 6 (ti);
+// pc = the note's pitch class, 0 (C) to 11 (B). Gives the letter with its
+// sharp or flat, and diff, how many half steps the note is from the plain letter.
+function spellStep(step, pc, doMidi) {
+  const keyLetter = LETTERS.indexOf(KEY_NAMES[((doMidi % 12) + 12) % 12][0]);
+  const li = (keyLetter + step) % 7;
+  const diff = ((pc - LETTER_PC[li]) + 18) % 12 - 6;
+  return { letter: LETTERS[li] + (ACC[diff] ?? ""), diff };
 }
 
 // ---------- Songs ----------
@@ -3718,7 +3814,7 @@ function readMySong(text, id) {
   let key = null, meter = null;
   if (!head.key) say(0, "mysongs.needKey");
   else if (!(key = myKey(head.key.v))) say(head.key.n, "mysongs.badKey", { v: head.key.v });
-  else if (key.doMidi < 36 || key.doMidi > 95) { say(head.key.n, "mysongs.keyRange", { note: ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"][key.doMidi % 12] + (Math.floor(key.doMidi / 12) - 1) }); key = null; }
+  else if (key.doMidi < 36 || key.doMidi > 95) { say(head.key.n, "mysongs.keyRange", { note: noteName(key.doMidi) }); key = null; }
   if (!head.time) say(0, "mysongs.needTime");
   else if (!MY_TIMES[head.time.v.replace(/\s+/g, "")]) say(head.time.n, "mysongs.badTime", { v: head.time.v });
   else { const [perBar, beatLen] = MY_TIMES[head.time.v.replace(/\s+/g, "")]; meter = { perBar, beatLen, label: head.time.v.replace(/\s+/g, ""), beatName: MY_BEAT_NAMES[beatLen] }; }
@@ -3838,22 +3934,21 @@ for (const ms of readMySongsStore()) {
 
 // The song menu shows the chosen category's songs, and always the open song.
 function fillSongMenu() {
-  const cat = document.getElementById("catSel").value;
+  const cat = $("catSel").value;
   const list = Object.values(SONGS).filter(sg => cat === "all" || songCats(sg.id).includes(cat) || sg.id === SONG_ID);
   // the open song, if it isn't in this category, says so
   const label = sg => cat !== "all" && sg.id === SONG_ID && !songCats(sg.id).includes(cat) ? T("ui.songOpenNow", { title: sg.title }) : sg.title;
   const broken = cat === "all" || cat === "mine" ? Object.entries(MY_SONG_READS).filter(([, r]) => !r.song) : [];
   const brokenOpts = broken.map(([id, r]) => { const o = new Option(T("mysongs.brokenOption", { title: r.title || T("mysongs.untitled") }), "broken:" + id); o.disabled = true; return o; });
-  document.getElementById("songSel").replaceChildren(...list.map(sg => new Option(label(sg), sg.id)), ...brokenOpts);
-  document.getElementById("songSel").value = SONG_ID;
+  $("songSel").replaceChildren(...list.map(sg => new Option(label(sg), sg.id)), ...brokenOpts);
+  $("songSel").value = SONG_ID;
 }
 // Which song is open is saved with your settings; switching songs reloads.
 const SONG_ID = (() => {
-  const p = storeGetJSON("phrase-parrot-prefs-v1") || {};
+  const p = SAVED_PREFS || {};
   return SONGS[p.songSel] ? p.songSel : "internationale";
 })();
 const SONG = SONGS[SONG_ID];
-const $ = id => document.getElementById(id);
 const SONG_DO_MIDI = SONG.doMidi || 69;          // the song's do, as written (before Transpose)
 const METER = SONG.meter;
 const BEATS_PER_BAR = METER.perBar / METER.beatLen;
@@ -3911,27 +4006,26 @@ const verseOf = v => phraseRun("verse", v, SONG.verseFirstBar(v));
 applyStrings(document);
 $("errClose").addEventListener("click", dismissErrors);
 (function fillSongMarkup() {
-  const el = id => document.getElementById(id);
   // the Category menu: all songs, then each category that has songs
   const all = Object.values(SONGS);
   // (Option objects: their text needs no escaping)
-  el("catSel").replaceChildren(new Option(T("ui.catAll", { n: all.length }), "all"),
+  $("catSel").replaceChildren(new Option(T("ui.catAll", { n: all.length }), "all"),
     ...CATEGORIES.map(c => [c, all.filter(sg => songCats(sg.id).includes(c)).length +
       (c === "mine" ? Object.values(MY_SONG_READS).filter(r => !r.song).length : 0)]).filter(([, n]) => n)
       .map(([c, n]) => new Option(T("ui.catN", { name: T("ui.cat_" + c), n }), c)));
-  el("catSel").value = (storeGetJSON("phrase-parrot-prefs-v1") || {}).catSel;
-  ensureOption(el("catSel"), "all");
+  $("catSel").value = (SAVED_PREFS || {}).catSel;
+  ensureOption($("catSel"), "all");
   fillSongMenu();
   // (the description, #lede, is filled in later at startup by renderLede(),
   // once the saved mode has been restored)
-  el("dvBtns").innerHTML = Object.keys(VERSE_M).map(v => `<button class="dv" data-v="${v}">${v}</button>`).join("") +
+  $("dvBtns").innerHTML = Object.keys(VERSE_M).map(v => `<button class="dv" data-v="${v}">${v}</button>`).join("") +
     (VERSE_COUNT > 1 ? `<button class="dv" data-v="mix">${T("drill.mix")}</button>` : "");
-  el("dvBtns").closest(".drill-verse").hidden = VERSE_COUNT < 2;
-  el("chorusRow").hidden = !HAS_CHORUS;
+  $("dvBtns").closest(".drill-verse").hidden = VERSE_COUNT < 2;
+  $("chorusRow").hidden = !HAS_CHORUS;
   renderBeatDots(METER.perBar / METER.beatLen);
   // (the lead-in dots are drawn by renderLeadDots, once the count-in setting is known)
-  el("doPitch").value = SONG_DO_MIDI;
-  el("tempoLabel").textContent = METER.label
+  $("doPitch").value = SONG_DO_MIDI;
+  $("tempoLabel").textContent = METER.label
     ? T("tempo.label", { beat: T(`tempo.beat${METER.beatLen}`), meter: METER.label })
     : T("ui.tempoPlain");
   document.title = T("app.name");          // not the song: the installed app's name stays the same
@@ -4017,11 +4111,8 @@ function parseChord(tok) {
 const SIMPLE_Q = { "9": "7", "maj9": "", "maj7": "", "6": "", "sus4": "", "sus2": "", "7sus": "7", "7sus4": "7", "-7": "-", "-6": "-", "-9": "-", "add9": "" };
 // The letter name of a scale step in the key whose do is doMidi, spelled by its place in the key
 function stepLetter(deg, acc, doMidi) {
-  const keyLetter = LETTERS.indexOf(KEY_NAMES[((doMidi % 12) + 12) % 12][0]);
-  const li = (keyLetter + deg - 1) % 7;
   const pc = ((doMidi + MAJOR_STEPS[deg - 1] + (acc === "#" ? 1 : acc === "b" ? -1 : 0)) % 12 + 12) % 12;
-  const diff = ((pc - LETTER_PC[li]) + 18) % 12 - 6;
-  return LETTERS[li] + (ACC[diff] ?? "");
+  return spellStep(deg - 1, pc, doMidi).letter;
 }
 const ACC_SIGN = { "#": "♯", "b": "♭", "": "" };
 // How a chord shows: style "names" | "roman" | "nashville"; doMidi for letter names
@@ -4149,6 +4240,37 @@ function setUpDeployment() {
 // Claude app's viewer) there is no service-worker.js, which isn't an error.
 // When a newer version is installed while the app is open, a notice offers
 // to reload; coming back to the app checks for a newer version.
+// The version the controlling service worker serves, e.g. "v0.101": read from
+// its cache's name, "<folder>-v0.101-static" (its CACHE_VERSION, which
+// deploy.yml rewrites on every deploy, plus "-static"). The worker deletes its
+// folder's older caches while activating, so this waits for that to finish;
+// then exactly one cache of this folder must be left (anything else is an error).
+const DEPLOY_FOLDER = DEPLOYMENT === "main" ? "melodies-by-ear" : "melodies-by-ear-" + DEPLOYMENT;
+async function workerVersion() {
+  const sw = navigator.serviceWorker.controller;
+  if (!sw) throw new Error("no service worker controls the page");
+  if (sw.state !== "activated") await new Promise(done => {
+    const check = () => { if (sw.state === "activated" || sw.state === "redundant") { sw.removeEventListener("statechange", check); done(); } };
+    sw.addEventListener("statechange", check); check();
+  });
+  const re = new RegExp("^" + DEPLOY_FOLDER + "-(v\\d+\\.\\d+)-static$");
+  const names = await caches.keys();
+  const found = names.map(n => (n.match(re) || [])[1]).filter(Boolean);
+  if (found.length !== 1) throw new Error(`expected one ${DEPLOY_FOLDER}-v…-static cache, found ${found.length} (${names.join(", ") || "none"})`);
+  return found[0];
+}
+// When the app opens on a different version than last time: a small
+// "Updated to v0.N" note at the top that hides itself (not on the first open ever).
+const LAST_VERSION_STORE = "phrase-parrot-lastversion-v1";
+function noteVersionChange() {
+  const now = appVersion(), last = storeGet(LAST_VERSION_STORE);
+  if (last !== now) storeSet(LAST_VERSION_STORE, now);
+  if (!last || last === now) return;
+  $("updatedText").textContent = T("app.updated", { version: now });
+  $("updatedNote").hidden = false;
+  setTimeout(() => { $("updatedNote").hidden = true; }, 10000);
+}
+$("updatedClose").addEventListener("click", () => { $("updatedNote").hidden = true; });
 function setUpOfflineAndUpdates() {
   if (!("serviceWorker" in navigator) || !location.hostname.endsWith(".github.io")) return;
   const hadController = !!navigator.serviceWorker.controller;
@@ -4166,7 +4288,22 @@ function setUpOfflineAndUpdates() {
     });
   }).catch(e => reportError(T("err.swRegister", { msg: e.message })));
   // The first install also takes control of the page; that isn't an update.
-  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) $("updateNote").hidden = false; });
+  // A new service worker takes over after every deploy, but the page itself is
+  // fetched network-first, so it is usually that new version already: ask to
+  // reload only when the new worker serves a different version than this page
+  // (the app was left open while a deploy happened).
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) return;
+    workerVersion().then(v => {
+      if (v === appVersion()) return;
+      $("updateText").textContent = T("app.updateReadyVersion", { version: v });
+      $("updateNote").hidden = false;
+    }).catch(e => {
+      reportError(T("err.swVersion", { msg: e.message }));
+      $("updateText").textContent = T("app.updateReady");
+      $("updateNote").hidden = false;
+    });
+  });
   $("updateReload").addEventListener("click", () => location.reload());
   $("updateLater").addEventListener("click", () => { $("updateNote").hidden = true; });
 }
@@ -4224,7 +4361,7 @@ if (VERSE_COUNT > 1) SEQ_CHOICES.song = {
   play: T("seq.playWhole"),
   build: () => planVerses().flatMap(v => [...verseOf(v), ...(planChorusAfter(v) ? chorusAfter(v) : [])])
 };
-document.getElementById("seqSel").innerHTML = Object.entries(SEQ_CHOICES)
+$("seqSel").innerHTML = Object.entries(SEQ_CHOICES)
   .map(([k, c]) => `<option value="${k}">${c.label}</option>`).join("");
 let SEQ = joinFill(withItems(SEQ_CHOICES[Object.keys(SEQ_CHOICES)[0]].build()));
 
@@ -4299,8 +4436,8 @@ window.addEventListener("blur", () => { needsFresh = true; });
 // apply to the phrases, the whole melody and "Play do" alike.
 // transpose = whole half steps; fineTune = cents (hundredths of a half step).
 function pitchShift() {
-  const t = +(document.getElementById("transpose") || { value: 0 }).value;
-  const c = +(document.getElementById("fineTune") || { value: 0 }).value;
+  const t = +($("transpose") || { value: 0 }).value;
+  const c = +($("fineTune") || { value: 0 }).value;
   return t + c / 100;
 }
 const freqOf = m => 440 * Math.pow(2, (m + pitchShift() - 69) / 12);
@@ -4924,7 +5061,7 @@ function applyTheme() {
 // the notice has a row for each, and hides when every row is hidden.
 const BACKUP_DAYS = 2, SNOOZE_DAYS = 7, DAY = 24 * 3600 * 1000;
 function makeBackupReminder({ store, hasItems, note, row }) {
-  for (const id of [note, row]) if (!document.getElementById(id)) throw new Error("makeBackupReminder: no element #" + id);
+  for (const id of [note, row]) if (!$(id)) throw new Error("makeBackupReminder: no element #" + id);
   const read = () => storeGetJSON(store()) || { changed: 0, saved: 0, snooze: 0 };
   const self = {
     row, read,
@@ -5316,18 +5453,8 @@ function applyShapes() {
 }
 
 // ---------- Warm-up: find the note ----------
-// Spelling a note by its place in the key, so fi in G is C♯ (not D♭) and ti
-// in F♯ is E♯: the letter comes from the scale step, the sharp or flat from
-// how far the pitch is from that letter.
-const LETTERS = "CDEFGAB", LETTER_PC = [0, 2, 4, 5, 7, 9, 11];
-const STEP_OF = { do: 0, di: 0, ra: 1, re: 1, ri: 1, me: 2, mi: 2, fa: 3, fi: 3, se: 4, so: 4, si: 4, le: 5, la: 5, li: 5, te: 6, ti: 6 };
-const ACC = { "-2": "𝄫", "-1": "♭", "0": "", "1": "♯", "2": "𝄪" };
 function spellNote(base, midi, doMidi) {
-  const keyLetter = LETTERS.indexOf(KEY_NAMES[((doMidi % 12) + 12) % 12][0]);
-  const li = (keyLetter + STEP_OF[base]) % 7;
-  const pc = ((midi % 12) + 12) % 12;
-  const diff = ((pc - LETTER_PC[li]) + 18) % 12 - 6;
-  const letter = LETTERS[li] + (ACC[diff] ?? "");
+  const { letter, diff } = spellStep(STEP_OF[base], ((midi % 12) + 12) % 12, doMidi);
   return { letter, name: letter + (Math.floor((midi - diff) / 12) - 1) };
 }
 // The scale, do up to ti, half steps above do
@@ -5476,8 +5603,6 @@ function hooksHTML() {
 // after its name, as in sheet music. Works for any song's data.
 const SIXTEENTH = 0.5;
 const DOTTED = [0.75, 1.5, 3, 6];
-const near = (a, b) => Math.abs(a - b) < 1e-6;
-const isTrip = it => it && !it.bar && Math.abs(it.dur - 2 / 3) < 1e-6;
 function chipsHTML(items) {
   const notes = items.filter(x => !x.bar);
   let html = "", k = 0, tripLeft = 0;
@@ -5665,7 +5790,7 @@ const abActive = () => !!abRange && $("loop").checked;
 
 function playLabel() {
   if (abActive()) return T("seq.playAB", { a: firstBar(abRange.a), b: lastBar(abRange.b) });
-  const sf = document.getElementById("startFrom");
+  const sf = $("startFrom");
   const i = sf ? +sf.value : 0;
   const sv = $("seqSel").value;
   const what = SEQ_CHOICES[sv] ? SEQ_CHOICES[sv].play : T("seq.playGeneric");
@@ -6053,8 +6178,6 @@ function finishCalib() {
 }
 
 // ---------- Transpose ----------
-const KEY_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
-function noteName(m) { return KEY_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
 
 function renderPitch() {
   const t = +$("transpose").value, c = +$("fineTune").value;
@@ -6139,7 +6262,7 @@ function toneWaveFor(freq) {
 }
 // Louder for lower notes: about 1.5x at 110 Hz (low A), 1.9x at 65 Hz (cello C)
 const lowBoost = freq => Math.max(1, Math.min(2.2, Math.pow(330 / freq, 0.45)));
-const tuneVolume = () => +(document.getElementById("tuneVol") || { value: 80 }).value / 100;
+const tuneVolume = () => +($("tuneVol") || { value: 80 }).value / 100;
 
 function toneAt(freq, when, steady, gap = 1) {
   const osc = ctx.createOscillator();
@@ -6184,7 +6307,6 @@ function playTuning(midi) {
   tick();
 }
 
-function noteLabel(m) { return ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"][m % 12] + (Math.floor(m / 12) - 1); }
 function renderTuning() {
   const inst = $("tuneInst").value, sound = $("tuneSound").value;
   if (!TUNINGS[inst]) { $("tuneInst").value = "uke"; return renderTuning(); }
@@ -6193,8 +6315,8 @@ function renderTuning() {
   $("tuneInstNote").hidden = !tuningNote(inst);
   document.querySelectorAll(".tsound").forEach(b => b.classList.toggle("on", b.dataset.sound === sound));
   $("tStrings").innerHTML = TUNINGS[inst].map(([name, m]) =>
-    `<button class="tstr${playing && tuneMidi === m && $("tStrings").dataset.inst === inst ? " on" : ""}" data-midi="${m}" aria-label="${T("tuning.stringAria", { name, note: noteLabel(m), hz: tuneFreq(m).toFixed(2) })}">
-       <b>${name}</b><small>${noteLabel(m)}</small><small>${T("tuning.hz", { hz: tuneFreq(m).toFixed(1) })}</small></button>`).join("");
+    `<button class="tstr${playing && tuneMidi === m && $("tStrings").dataset.inst === inst ? " on" : ""}" data-midi="${m}" aria-label="${T("tuning.stringAria", { name, note: noteName(m), hz: tuneFreq(m).toFixed(2) })}">
+       <b>${name}</b><small>${noteName(m)}</small><small>${T("tuning.hz", { hz: tuneFreq(m).toFixed(1) })}</small></button>`).join("");
   $("tStrings").dataset.inst = inst;
   const r = refHz();
   $("refVal").textContent = T("tuning.refVal", { hz: r });
@@ -6220,14 +6342,6 @@ let order = [], pos = -1;
 // "after" shuffles the verse phrases, then the chorus phrases; "skip"
 // leaves the chorus out of the round.
 const chorusMode = () => ($("chorusMode") && $("chorusMode").value) || "mixed";
-function shuffled(list) {
-  const a = list.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
 function shuffle() {
   const all = PHRASES.map((_, i) => i);
   const verse = all.filter(i => PHRASES[i].kind === "verse");
@@ -6349,20 +6463,6 @@ const LEGACY_LYRICS_STORE = songKey("phrase-parrot-lyrics-v1");
 const VERSE_PHRASES = VERSE_M[VERSE_NUMS[0]].length, CHORUS_PHRASES = CHORUS_M.length;
 SONGS.internationale.lyrics = BUILT_IN_LYRICS;
 
-// Apple Notes (and some other apps) mark line breaks with special characters
-// (Unicode "line separator" U+2028 or "paragraph separator" U+2029, or an old
-// Mac carriage return) instead of a normal newline. A text box shows those as
-// nothing, so pasted lines look run together. This turns them all into normal
-// newlines. If a normal newline was also typed right next to one, the pair
-// counts as a single line break, so lines don't end up double-spaced.
-function normalizeBreaks(text) {
-  return String(text)
-    .replace(/\r\n/g, "\n")
-    .replace(/[\u2028\u2029\u0085\r][ \t]*\n|\n[ \t]*[\u2028\u2029\u0085\r]/g, "\n")
-    .replace(/[\u2028\u2029\u0085\r]/g, "\n");
-}
-
-const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // ---------- My lyric sets ----------
 // Each song keeps any number of named lyric sets the person types or imports,
@@ -6400,12 +6500,6 @@ const writeLyricSets = sets => {
   return ok;
 };
 const newSetId = sets => "u" + (Math.max(0, ...sets.map(st => parseInt(st.id.slice(1), 10) || 0)) + 1);
-// "Name", or "Name (2)", "Name (3)"… if that's taken
-function uniqueName(taken, name) {
-  let candidate = name, n = 2;
-  while (taken.includes(candidate)) candidate = `${name} (${n++})`;
-  return candidate;
-}
 const uniqueSetName = (sets, name, exceptId) => uniqueName(sets.filter(st => st.id !== exceptId).map(st => st.name), name);
 
 // Section headings written into lyric files. These are part of the file
@@ -6595,6 +6689,32 @@ function renderMySetMenu() {
   $("myDeleteSet").disabled = !currentSetId;
   if (currentSetId) $("mySetSel").value = currentSetId;
 }
+// ---------- Two windows of the same deployment ----------
+// A general component (used by the My lyrics and My songs boxes) for a box
+// that edits one item of a saved list, while another window of the same
+// deployment may save that list too. store: the list's storage name.
+// - Another window saved the list: follow() when this box has no unsaved
+//   edits; otherwise menusOnly(), and the box keeps its edits (Save asks).
+// - checkBeforeSave(saved, loaded, text, ask), just before saving: saved is
+//   the item as stored now (null: it's gone; undefined: the box's item was
+//   never saved), loaded the text this window last loaded or saved, text
+//   the box's text; ask = { changed, deleted } questions. Returns "save",
+//   "theirs" (show the other window's version; don't save) or "keep"
+//   (deleted elsewhere: keep the edits in the box; don't save).
+function makeOtherWindowGuard({ store, unsaved, follow, menusOnly }) {
+  window.addEventListener("storage", e => {
+    if (e.key !== storageKey(store)) return;
+    if (unsaved()) menusOnly(); else follow();
+  });
+  return {
+    checkBeforeSave(saved, loaded, text, ask) {
+      if (saved === undefined) return "save";
+      if (saved === null) return confirm(ask.deleted) ? "save" : "keep";
+      if (saved.text !== loaded && saved.text !== text) return confirm(ask.changed) ? "save" : "theirs";
+      return "save";
+    }
+  };
+}
 // ---------- Undo and Redo for a text box ----------
 // A general component (used by the My songs and My lyrics boxes). A step is
 // kept when you pause typing for a second, before Undo or Redo, and before
@@ -6651,21 +6771,31 @@ function afterSetsChanged() {
   refreshLyricChoices(); renderMySetMenu(); renderLyricsPanel(); onLyricsChanged();
 }
 
+// Another window of this deployment saved lyric sets: follow along, unless
+// this window has unsaved edits (then Save asks which version to keep).
+const lyricsGuard = makeOtherWindowGuard({
+  store: LYRIC_SETS_STORE, unsaved: hasUnsavedEdits,
+  menusOnly: () => { refreshLyricChoices(); renderMySetMenu(); },
+  follow: () => {
+    const stillThere = readLyricSets().some(x => x.id === currentSetId);
+    showSet(stillThere ? currentSetId : (readLyricSets()[0] || {}).id || null);
+    afterSetsChanged();
+    $("myStatus").textContent = T("lyrics.updatedElsewhere");
+  }
+});
 // Saves the box into the current set (or a new first set). Always starts from
 // what's saved now, so another window's changes to other sets are kept. If
-// another window changed THIS set since it was opened here, ask which to keep.
+// another window changed or deleted THIS set since it was opened here, ask.
 function saveMyLyrics() {
   const text = normalizeBreaks($("myLyrics").value);
   $("myLyrics").value = text;
   const sets = readLyricSets();
   let st = currentSetId && sets.find(x => x.id === currentSetId);
-  if (st && st.text !== loadedSetText && st.text !== text) {
-    if (!confirm(T("lyrics.conflict", { name: st.name }))) {
-      showSet(st.id);
-      $("myStatus").textContent = T("lyrics.loadedOther");
-      return;
-    }
-  }
+  const name = st ? st.name : loadedSetName;
+  const choice = lyricsGuard.checkBeforeSave(currentSetId ? st || null : undefined, loadedSetText, text,
+    { changed: T("lyrics.conflict", { name }), deleted: T("lyrics.deletedElsewhere", { name }) });
+  if (choice === "theirs") { lyricsUndo.set(st.text); showSet(st.id); $("myStatus").textContent = T("lyrics.loadedOther"); return; }
+  if (choice === "keep") { $("myStatus").textContent = T("lyrics.notSavedKept"); return; }
   if (!st) { st = { id: currentSetId || newSetId(sets), name: "", text: "" }; sets.push(st); }
   st.name = uniqueSetName(sets, $("mySetName").value.trim() || T("lyrics.mySetName"), st.id);
   st.text = text;
@@ -6689,16 +6819,6 @@ function deleteLyricSet() {
   if (!writeLyricSets(sets)) return;
   showSet(sets.length ? sets[0].id : null); afterSetsChanged();
 }
-// Another window of this deployment saved lyric sets: follow along, unless
-// this window has unsaved edits (then Save asks which version to keep).
-window.addEventListener("storage", e => {
-  if (e.key !== storageKey(LYRIC_SETS_STORE)) return;
-  if (hasUnsavedEdits()) { refreshLyricChoices(); renderMySetMenu(); return; }
-  const stillThere = readLyricSets().some(x => x.id === currentSetId);
-  showSet(stillThere ? currentSetId : (readLyricSets()[0] || {}).id || null);
-  afterSetsChanged();
-  $("myStatus").textContent = T("lyrics.updatedElsewhere");
-});
 
 // Export as a real plain-text file. On phones, the share sheet is the
 // reliable way: "Save to Files" there writes a true .txt file. (A plain
@@ -6730,9 +6850,6 @@ function setFileText(text) {
 }
 const allSetsFileText = () => readLyricSets().map(st => FILE_LABELS.setHeading + st.name + "\n\n" + setFileText(st.text)).join("\n");
 
-// today's date for file names, as 2026-11-09 (local time)
-const fileDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const fileSlug = name => name.trim().toLowerCase().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-") || "lyrics";
 const fileNameFor = setName => T("lyrics.defaultFileSet", { song: SONG_ID, set: fileSlug(setName) });
 function fileName() {
   let n = ($("myFileName").value || "").trim() || fileNameFor($("mySetName").value || T("lyrics.mySetName"));
@@ -7349,10 +7466,6 @@ $("metroMeter").addEventListener("change", () => {
 });
 $("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("units.pct", { n: e.target.value }));
 
-// Remember settings between visits (same browser only)
-// Storage keys keep the old "phrase-parrot-" prefix on purpose (app renamed in v0.39),
-// so saved lyrics, sync and settings carry over from earlier versions.
-const PREFS = "phrase-parrot-prefs-v1";
 const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel"];
 function savePrefs() {
   const p = {};
@@ -7369,16 +7482,15 @@ function ensureOption(sel, fallback) {
 // ---------- Startup: restore settings, then render everything once ----------
 fillMetroMeter();           // the menus' choices exist before the saved ones are restored
 fillTalkChoices();
-const savedPrefs = storeGetJSON(PREFS);
-if (savedPrefs) prefIds.forEach(id => {
-  const el = $(id); if (!(id in savedPrefs)) return;
-  if (el.type === "checkbox") el.checked = !!savedPrefs[id]; else el.value = savedPrefs[id];
+if (SAVED_PREFS) prefIds.forEach(id => {
+  const el = $(id); if (!(id in SAVED_PREFS)) return;
+  if (el.type === "checkbox") el.checked = !!SAVED_PREFS[id]; else el.value = SAVED_PREFS[id];
 });
 // This song's key. Before v0.94 one setting was shared by every song: a song
 // with no key of its own yet starts from that old setting, once.
 {
   const own = storeGet(TRANSPOSE_STORE);
-  const old = savedPrefs && savedPrefs.transpose != null ? +savedPrefs.transpose || 0 : 0;
+  const old = SAVED_PREFS && SAVED_PREFS.transpose != null ? +SAVED_PREFS.transpose || 0 : 0;
   $("transpose").value = own != null ? String(Math.max(-12, Math.min(12, +own || 0))) : String(old);
   if (own == null && old !== 0) storeSet(TRANSPOSE_STORE, String(old));
 }
@@ -7397,7 +7509,7 @@ $("tuneVolVal").textContent = T("units.pct", { n: $("tuneVol").value });
 prefIds.forEach(id => $(id).addEventListener("change", savePrefs));
 if (!$("metroMeter").value) $("metroMeter").value = "song";
 // talking metronome: the choices follow the restored Beats per measure; a saved choice it doesn't offer maps to the nearest
-fillTalkChoices(savedPrefs && savedPrefs.talkSay);
+fillTalkChoices(SAVED_PREFS && SAVED_PREFS.talkSay);
 const renderMelodyHint = () => { $("alongMelodyHint").hidden = $("alongMelody").checked; };
 renderMelodyHint();
 $("alongMelody").addEventListener("change", renderMelodyHint);
@@ -7408,7 +7520,7 @@ for (const id of ["talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "tal
 $("talkSwingReset").addEventListener("click", () => { $("talkSwing").value = TALK_DEFAULT_SWING; savePrefs(); talkSettingChanged(); });
 $("talkNudgeReset").addEventListener("click", () => { $("talkNudge").value = 0; savePrefs(); talkSettingChanged(); });
 // settings from before Transpose existed stored an absolute do (always the Internationale, in A)
-if (savedPrefs && savedPrefs.doPitch && !("transpose" in savedPrefs)) { $("transpose").value = +savedPrefs.doPitch - 69; savePrefs(); }
+if (SAVED_PREFS && SAVED_PREFS.doPitch && !("transpose" in SAVED_PREFS)) { $("transpose").value = +SAVED_PREFS.doPitch - 69; savePrefs(); }
 $("doPitch").value = SONG_DO_MIDI;
 renderPitch();
 // saved choices that don't exist in this song fall back to the first one
@@ -7419,7 +7531,7 @@ if (!VERSE_M[$("drillVerse").value] && !($("drillVerse").value === "mix" && VERS
 const LYRICSET_STORE = songKey("phrase-parrot-lyricset-v1");
 const savedLyricSet = storeGet(LYRICSET_STORE);
 refreshLyricChoices();
-normalizeLyricChoice(savedLyricSet || (savedPrefs && savedPrefs.lyricSet) || "");
+normalizeLyricChoice(savedLyricSet || (SAVED_PREFS && SAVED_PREFS.lyricSet) || "");
 const rememberLyricSet = () => storeSet(LYRICSET_STORE, $("lyricSet").value);
 $("lyricSet").addEventListener("change", rememberLyricSet);
 $("lyricBox").addEventListener("click", e => { if (e.target.closest(".ly-tab")) setTimeout(rememberLyricSet, 0); });
@@ -7463,6 +7575,30 @@ let msCurrent = null;            // the song in the box: its id, or null for a n
 let msLoaded = "";               // its text as last loaded or saved
 const msUnsaved = () => normalizeBreaks($("msText").value) !== msLoaded;
 const msOkToLeave = () => !msUnsaved() || confirm(T("mysongs.discard"));
+// Another window of this deployment saved My songs: follow along, unless this
+// box has unsaved edits (then Save asks which version to keep).
+const msGuard = makeOtherWindowGuard({
+  store: MY_SONGS_STORE, unsaved: msUnsaved,
+  menusOnly: () => { renderMySongMenu(); noteOpenSongElsewhere(); },
+  follow: () => {
+    const songs = readMySongsStore();
+    showMySong(songs.some(x => x.id === msCurrent) ? msCurrent : (songs[0] || {}).id || null);
+    msSay(T("lyrics.updatedElsewhere"));
+    noteOpenSongElsewhere();
+  }
+});
+// The open song's text as this window knows it (opened with, or saved here
+// since); null when the open song is a built-in one.
+let openSongKnownText = SONG.mine ? (readMySongsStore().find(x => x.id === SONG_ID) || {}).text : null;
+// The open song is one of mine and another window changed or deleted it:
+// this window still plays the version it opened with, so the box says so.
+function noteOpenSongElsewhere() {
+  const note = $("msOpenNote");
+  if (!SONG.mine) { note.hidden = true; return; }
+  const ms = readMySongsStore().find(x => x.id === SONG_ID);
+  note.hidden = !!ms && ms.text === openSongKnownText;
+  note.textContent = note.hidden ? "" : T(ms ? "mysongs.openChanged" : "mysongs.openDeleted", { title: SONG.title });
+}
 const writeMySongs = songs => {
   const ok = storeSet(MY_SONGS_STORE, JSON.stringify({ songs }));    // callers check that it was saved
   if (ok) songsBackup.note("changed", Date.now());
@@ -7525,12 +7661,19 @@ function saveMySong() {
   if (text !== $("msText").value) songUndo.set(text);
   const songs = readMySongsStore();
   let ms = msCurrent && songs.find(x => x.id === msCurrent);
+  // another window changed or deleted this song since it was opened here: ask
+  const title = mySongTitle(msLoaded || text, msCurrent);
+  const choice = msGuard.checkBeforeSave(msCurrent ? ms || null : undefined, msLoaded, text,
+    { changed: T("mysongs.conflict", { title }), deleted: T("mysongs.deletedElsewhere", { title }) });
+  if (choice === "theirs") { songUndo.set(ms.text); showMySong(ms.id); msSay(T("lyrics.loadedOther")); return null; }
+  if (choice === "keep") { msSay(T("lyrics.notSavedKept")); return null; }
   if (!ms) {
     ms = { id: newMySongId(songs), text: "" };
     songs.push(ms);
   }
   ms.text = text;
   if (!writeMySongs(songs)) return null;              // storeSet already showed the error
+  if (ms.id === SONG_ID) { openSongKnownText = text; noteOpenSongElsewhere(); }
   const wasNew = msCurrent !== ms.id;
   msCurrent = ms.id; msLoaded = text;
   if (wasNew) songUndo.switchTo(ms.id, text);
@@ -7766,6 +7909,7 @@ renderLegatoRow();
 validateSong();
 setUpDeployment();
 setUpOfflineAndUpdates();
+noteVersionChange();
 </script>
 </body>
 </html>
