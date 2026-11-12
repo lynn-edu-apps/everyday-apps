@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.108</title>
+<title>Melodies by Ear v0.110</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -63,6 +63,7 @@
     --muted: #6B7A86;
     --teal: #1D6E7A;
     --teal-soft: #DCEBED;
+    --teal-near: #B0CCD1;   /* the phrase map's "nearly the same": 35% teal on the card */
     --gold: #D49A12;
     --koa: #6E4527;
     --card: #fff;
@@ -70,6 +71,7 @@
     --line-soft: #DDE3E7;
     --idle: #D5DCE0;
     --gold-soft: #FBF0D4;
+    --gold-near: #F0DCAC;   /* 35% gold on the card */
     --gold-line: #EED9A2;
     --gold-text: #8A5F00;
     --gold-done: #B88A12;
@@ -90,6 +92,7 @@
     --muted: #9AA8B2;
     --teal: #4FA8B5;
     --teal-soft: #1E363C;
+    --teal-near: #356670;   /* 50% teal on the card */
     --gold: #D9A22A;
     --koa: #C89A72;
     --card: #1B242A;
@@ -97,6 +100,7 @@
     --line-soft: #2C373F;
     --idle: #3A4650;
     --gold-soft: #3A3018;
+    --gold-near: #7A632A;   /* 50% gold on the card */
     --gold-line: #5C4A1E;
     --gold-text: #E8BC55;
     --gold-done: #B88A12;
@@ -116,6 +120,7 @@
     --muted: #9AA8B2;
     --teal: #4FA8B5;
     --teal-soft: #1E363C;
+    --teal-near: #356670;   /* 50% teal on the card */
     --gold: #D9A22A;
     --koa: #C89A72;
     --card: #1B242A;
@@ -123,6 +128,7 @@
     --line-soft: #2C373F;
     --idle: #3A4650;
     --gold-soft: #3A3018;
+    --gold-near: #7A632A;   /* 50% gold on the card */
     --gold-line: #5C4A1E;
     --gold-text: #E8BC55;
     --gold-done: #B88A12;
@@ -193,6 +199,8 @@
   .sm-ch .sm-ph { border-color: var(--gold); }
   .sm-ph.sm-now { background: var(--teal); }
   .sm-ch .sm-ph.sm-now { background: var(--gold); }
+  .sm-ph.sm-near { background: var(--teal-near); }
+  .sm-ch .sm-ph.sm-near { background: var(--gold-near); }
   .sm-ph.sm-tapped { outline: 2px dashed var(--ink); outline-offset: 1px; }
   .sm-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; align-items: center; }
   .sm-legend .sm-ph { display: inline-block; width: 22px; height: 12px; cursor: default; vertical-align: middle; margin-right: 4px; }
@@ -739,7 +747,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.108</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.110</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -873,7 +881,7 @@
     <input type="checkbox" id="mapOpen" hidden>
     <div class="song-map-box" id="phraseMap" role="group" data-s-aria-label="map.aria" hidden>
       <div id="phraseMapDraw"></div>
-      <div class="sm-legend"><span><span class="sm-ph sm-now"></span><span data-s="map.legendNow"></span></span><span><span class="sm-ph"></span><span data-s="map.legendOther"></span></span></div>
+      <div class="sm-legend"><span><span class="sm-ph sm-now"></span><span data-s="map.legendNow"></span></span><span><span class="sm-ph sm-near"></span><span data-s="map.legendNear"></span></span><span><span class="sm-ph"></span><span data-s="map.legendOther"></span></span></div>
       <p class="sm-info" id="phraseMapInfo" aria-live="polite"></p>
     </div>
     <div class="notes" id="notes" hidden></div>
@@ -1698,8 +1706,10 @@ const STRINGS = {
     "hide": "Hide where",
     "info": "{name} · {bars}",
     "infoPickup": "{name} · {bars} · pickup of {beats}",
+    "legendNear": "nearly the same (small changes for the words)",
     "legendNow": "this phrase, and any with the same melody",
     "legendOther": "other phrases",
+    "relNear": "{info} — nearly the same melody as this phrase",
     "relNow": "{info} — this phrase",
     "relSame": "{info} — same melody as this phrase",
     "tapHint": "Tap any rectangle to see its name.",
@@ -4285,6 +4295,21 @@ function pickupEighths(items) {
 // same places between the bar lines. The one test for it (the phrase map
 // shades by it; a no-repeats drill option would use it too).
 const melodyKey = p => JSON.stringify(parse(p.m).map(it => it.bar ? "|" : [it.syl, it.dur, !!it.pk, !!it.tie]));
+// A looser key (v0.109): the tune from the first bar line on, moment by moment.
+// The pickup is left out, and repeated notes of the same pitch are merged, so a
+// note split in two for an extra syllable (or a tie) doesn't count as a change.
+// null when the phrase has no bar line (nothing to compare).
+function tuneKey(p) {
+  const runs = [];
+  let started = false;
+  for (const it of parse(p.m)) {
+    if (it.bar) { started = true; continue; }
+    if (!started) continue;
+    const last = runs[runs.length - 1];
+    if (last && last[0] === it.syl) last[1] += it.dur; else runs.push([it.syl, it.dur]);
+  }
+  return runs.length ? JSON.stringify(runs.map(([syl, dur]) => [syl, +dur.toFixed(6)])) : null;
+}
 function joinFill(list) {
   const near8 = 1e-6;
   for (let i = 0; i < list.length - 1; i++) {
@@ -7282,7 +7307,8 @@ function importMyLyrics(file) {
 // a last bar cut short doesn't make equal phrases look unequal), one row per
 // line, each verse or chorus a block with its label at the left. The caller
 // says which sections to show and which phrases are filled or tapped:
-//   sections: [{ label, chorus, lines: [[{ id, bars, name, filled, tapped }]] }]
+//   sections: [{ label, chorus, lines: [[{ id, bars, name, filled, near, tapped }]] }]
+// (filled: the full color; near: the lighter shade; neither: outlined only)
 // Each rectangle is a button with data-map-id (the caller's id) and its name
 // as aria-label. Returns "" (and reports loudly) if the data can't be drawn.
 function songMapHTML(sections) {
@@ -7294,7 +7320,7 @@ function songMapHTML(sections) {
   }
   const widest = Math.max(...sections.flatMap(sec => sec.lines.map(l => l.reduce((n, ph) => n + ph.bars, 0))));
   const rect = ph => `<span class="sm-cell" style="width:${(ph.bars / widest * 100).toFixed(4)}%">` +
-    `<button type="button" class="sm-ph${ph.filled ? " sm-now" : ""}${ph.tapped ? " sm-tapped" : ""}" ` +
+    `<button type="button" class="sm-ph${ph.filled ? " sm-now" : ph.near ? " sm-near" : ""}${ph.tapped ? " sm-tapped" : ""}" ` +
     `data-map-id="${esc(ph.id)}" aria-label="${esc(ph.name)}"></button></span>`;
   return sections.map(sec => `<div class="sm-sec${sec.chorus ? " sm-ch" : ""}"><div class="sm-name">${esc(sec.label)}</div>` +
     `<div class="sm-lines">${sec.lines.map(l => `<div class="sm-line">${l.map(rect).join("")}</div>`).join("")}</div></div>`).join("");
@@ -7303,11 +7329,32 @@ function songMapHTML(sections) {
 // ---- The phrase map in Phrase Parrot: "Where is it?" under the phrase name ----
 // It shows only what the drill uses (the pool: this verse or every verse in
 // Mix, and the chorus once, unless Chorus is Skip). The current phrase and
-// every phrase with the same melody are filled; no ring. Open or closed is
+// every phrase with the same melody are filled, nearly the same ones lightly
+// shaded (mapRelation); no ring. Open or closed is
 // saved with the settings (#mapOpen), and stays for each new phrase.
 let mapTapped = -1;                       // the tapped phrase's index in PHRASES, or -1
+// How phrase i relates to the current phrase cur (both indexes into PHRASES):
+//   "now"  — it is the current phrase;
+//   "same" — exactly the same notes (melodyKey);
+//   "near" — nearly the same (v0.109): either the same place (line and half) in
+//            another verse of the same length, which is what Show the lyrics
+//            lists for this phrase (the verse-length condition keeps out the
+//            growing verses of a cumulative song, where the same line number is
+//            a different animal), or the same tune apart from the pickup and
+//            notes split for the words (tuneKey). Covers ornaments that differ
+//            from verse to verse;
+//   ""     — anything else.
+function mapRelation(i, cur) {
+  if (i === cur) return "now";
+  const p = PHRASES[i], c = PHRASES[cur];
+  if (melodyKey(p) === melodyKey(c)) return "same";
+  const count = q => PHRASES.filter(x => x.kind === q.kind && x.verse === q.verse).length;
+  if (p.kind === c.kind && p.k === c.k && p.verse !== c.verse && count(p) === count(c)) return "near";
+  const t = tuneKey(c);
+  return t !== null && tuneKey(p) === t ? "near" : "";
+}
 function drillMapSections(cur) {
-  const per = SONG.phrasesPerLine || 1, key = melodyKey(PHRASES[cur]), secs = [];
+  const per = SONG.phrasesPerLine || 1, secs = [];
   PHRASES.forEach((p, i) => {
     if (p.kind === "chorus" && chorusMode() === "skip") return;
     let sec = secs[secs.length - 1];
@@ -7316,7 +7363,8 @@ function drillMapSections(cur) {
       label: p.kind === "chorus" ? T("map.chorus") : VERSE_COUNT > 1 ? T("map.verseN", { v: p.verse }) : T("map.verse")
     });
     const line = Math.floor(p.k / per);
-    (sec.lines[line] = sec.lines[line] || []).push({ id: i, bars: p.nBars, name: p.id, filled: melodyKey(p) === key, tapped: i === mapTapped });
+    const rel = mapRelation(i, cur);
+    (sec.lines[line] = sec.lines[line] || []).push({ id: i, bars: p.nBars, name: p.id, filled: rel === "now" || rel === "same", near: rel === "near", tapped: i === mapTapped });
   });
   return secs.map(sec => ({ ...sec, lines: sec.lines.filter(Boolean) }));
 }
@@ -7328,8 +7376,9 @@ function mapInfo(cur) {
   const beats = pickupEighths(p.items) / METER.beatLen;
   const info = beats > 0 ? T("map.infoPickup", { name: p.id, bars, beats: TN(beats, "map.beat", "map.beats", { n: +beats.toFixed(2) }) })
     : T("map.info", { name: p.id, bars });
-  return mapTapped === cur ? T("map.relNow", { info })
-    : melodyKey(p) === melodyKey(PHRASES[cur]) ? T("map.relSame", { info }) : info;
+  const rel = mapRelation(mapTapped, cur);
+  return rel === "now" ? T("map.relNow", { info }) : rel === "same" ? T("map.relSame", { info })
+    : rel === "near" ? T("map.relNear", { info }) : info;
 }
 // Shows the Where is it? button whenever the phrase name shows, and the map with it when open.
 function renderWhere() {
