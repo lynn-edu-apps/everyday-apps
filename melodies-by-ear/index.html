@@ -55,7 +55,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.110</title>
+<title>Melodies by Ear v0.111</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -493,6 +493,12 @@
   .ly-text { font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif; font-size: 1.08rem; line-height: 1.35; }
   .ly-mean { display: block; font-family: system-ui, -apple-system, sans-serif; font-size: .85rem; color: var(--muted); margin-top: 1px; }
   .ly-empty { margin: 0; font-size: .92rem; color: var(--muted); }
+  /* v0.111: one row per set of words, with the phrase map's swatch and the places it's sung */
+  .ly-row.ly-rel { grid-template-columns: 18px 1fr; }
+  .ly-sw { padding-top: 6px; }
+  .ly-sw .sm-ph { display: inline-block; width: 16px; height: 10px; cursor: default; vertical-align: top; }
+  .ly-places { display: block; font-family: system-ui, -apple-system, sans-serif; font-size: .75rem; font-weight: 400; color: var(--muted); margin-top: 1px; }
+  .sm-legend-note { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
   .lyrics-panel h3 { font-size: 1rem; margin: 6px 0 4px; }
   textarea {
     width: 100%; font: inherit; font-size: .95rem; line-height: 1.4;
@@ -747,7 +753,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.110</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.111</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -882,6 +888,7 @@
     <div class="song-map-box" id="phraseMap" role="group" data-s-aria-label="map.aria" hidden>
       <div id="phraseMapDraw"></div>
       <div class="sm-legend"><span><span class="sm-ph sm-now"></span><span data-s="map.legendNow"></span></span><span><span class="sm-ph sm-near"></span><span data-s="map.legendNear"></span></span><span><span class="sm-ph"></span><span data-s="map.legendOther"></span></span></div>
+      <p class="sm-legend-note" id="mapLegendChorus" data-s="map.legendChorus" hidden></p>
       <p class="sm-info" id="phraseMapInfo" aria-live="polite"></p>
     </div>
     <div class="notes" id="notes" hidden></div>
@@ -1570,7 +1577,9 @@ const STRINGS = {
     "newSet": "New set",
     "newSetName": "New lyrics {n}",
     "noSets": "No lyric sets yet. Type lyrics below and tap Save, or Import a file.",
+    "morePlaces": "and {n} more places",
     "noLine": "(no line)",
+    "thisPhrase": "{place} (this phrase)",
     "nothingSaved": "Nothing saved yet.",
     "placeholder": "Verse 1\nwords for phrase 1\nwords for phrase 2\n…\nwords for phrase {v}\n\nVerse 2\n…",
     "placeholderChorus": "Verse 1\nwords for phrase 1\nwords for phrase 2\n…\nwords for phrase {v}\n\nVerse 2\n…\n\nChorus\nwords for chorus phrase 1\n…",
@@ -1706,7 +1715,8 @@ const STRINGS = {
     "hide": "Hide where",
     "info": "{name} · {bars}",
     "infoPickup": "{name} · {bars} · pickup of {beats}",
-    "legendNear": "nearly the same (small changes for the words)",
+    "legendChorus": "Gold: the chorus.",
+    "legendNear": "nearly the same",
     "legendNow": "this phrase, and any with the same melody",
     "legendOther": "other phrases",
     "relNear": "{info} — nearly the same melody as this phrase",
@@ -4096,10 +4106,10 @@ function sectionName(kind, verse) {
   return kind === "verse" ? (VERSE_COUNT > 1 ? T("phrase.verseN", { v: verse }) : T("phrase.verse")) : T("phrase.chorus");
 }
 // "Verse 2 line 3, first half"; short = "1st half" (used in tighter places)
-function phraseName(kind, verse, k, short) {
+function phraseName(kind, verse, k, short, label) {
   const per = SONG.phrasesPerLine || 1;
   const line = Math.floor(k / per) + 1;
-  const section = sectionName(kind, verse);
+  const section = label || sectionName(kind, verse);
   const part = per === 2 ? T(`phrase.half${(k % 2) + 1}${short ? "Short" : ""}`) : per > 2 ? T("phrase.partN", { n: (k % per) + 1 }) : "";
   return part ? T("phrase.namePart", { section, line, part }) : T("phrase.name", { section, line });
 }
@@ -4463,8 +4473,38 @@ function setUpOfflineAndUpdates() {
 // ---- The phrase drill's pool: verse 1, 2, 3 (each with the chorus) or a mix
 let drillVerse = "1";
 const VERSE_NUMS = Object.keys(VERSE_M).map(Number);
+// Every phrase of the song once: each verse, then the chorus once.
+const songPhrases = () => [...VERSE_NUMS.flatMap(n => verseOf(n)), ...chorusAfter(1)];
+// THE test for how two phrases relate (v0.111: the phrase map and Show the
+// lyrics both ask here, and nowhere else). Only the notes count, never the words:
+//   "now"  — the same phrase (same section, verse and place);
+//   "same" — exactly the same notes (melodyKey);
+//   "near" — nearly the same: the same place (line and half) in another verse
+//            with the same number of phrases (that condition keeps out the
+//            growing verses of a cumulative song, where the same line number is
+//            a different animal), or the same tune apart from the pickup and
+//            notes split in two or tied (tuneKey). Covers ornaments that differ
+//            from verse to verse;
+//   ""     — anything else.
+const VERSE_LENGTHS = {};
+const verseLength = v => VERSE_LENGTHS[v] ?? (VERSE_LENGTHS[v] = verseOf(v).length);
+function phraseRelation(p, c) {
+  if (p.kind === c.kind && p.verse === c.verse && p.k === c.k) return "now";
+  if (melodyKey(p) === melodyKey(c)) return "same";
+  if (p.kind === c.kind && p.k === c.k && p.verse !== c.verse && (p.kind === "chorus" || verseLength(p.verse) === verseLength(c.verse))) return "near";
+  const t = tuneKey(c);
+  return t !== null && tuneKey(p) === t ? "near" : "";
+}
+// Every phrase of the song related to p, in the order Show the lyrics lists
+// them: p itself, then the same place in the other verses, then the rest in
+// song order.
+function relatedPhrases(p) {
+  const all = songPhrases().map(q => ({ q, rel: phraseRelation(q, p) })).filter(x => x.rel);
+  const order = x => x.rel === "now" ? 0 : x.q.kind === p.kind && x.q.k === p.k ? 1 : 2;
+  return all.map((x, i) => [x, i]).sort((a, b) => order(a[0]) - order(b[0]) || a[1] - b[1]).map(([x]) => x);
+}
 function buildPool(v) {
-  if (v === "mix") return withItems([...VERSE_NUMS.flatMap(n => verseOf(n)), ...chorusAfter(1)]);
+  if (v === "mix") return withItems(songPhrases());
   return withItems([...verseOf(+v || 1), ...chorusAfter(1)]);
 }
 let PHRASES = buildPool("1");
@@ -6930,33 +6970,46 @@ function normalizeLyricChoice(wanted) {
   sel.value = wanted === "mine" && firstMine ? firstMine : options[0];
 }
 
-// The lyric lines for one phrase (0–7 are verse phrases, 8–15 chorus)
-// For a verse phrase, the line for the verse you're hearing comes first and
-// is highlighted (French couplets 1, 2 and 6 stand in for verses 1, 2, 3).
+// The lyric lines for one phrase (v0.111): the words of every phrase the
+// phrase map fills or shades (relatedPhrases, so the two always agree), over
+// the whole song. This phrase's words come first and are highlighted; each
+// set of words is shown once, with every place it is sung (identical words
+// are folded together; that's the only time words are compared). Lyric-set
+// headings name the places (French couplets 1, 2 and 6 stand in for verses
+// 1, 2, 3); a lyric set's verses beyond the song's own are shown at the same
+// place, as before.
+const MAX_PLACES = 6;
+const REL_RANK = { "": 0, near: 1, same: 2, now: 3 };
 function lyricsHTML(p) {
   const sets = lyricSets();
-  const chorus = p.kind === "chorus";
-  const k = p.k;
   const showMeaning = $("showMeaning").checked;
   const many = sets.length > 1;
+  const related = relatedPhrases(p);
   let html = "";
   for (const set of sets) {
-    let groups = chorus ? set.choruses : set.verses;
-    if (!groups.length) continue;
-    const cur = chorus ? -1 : p.verse - 1;
-    if (cur > 0 && cur < groups.length) groups = [groups[cur], ...groups.filter((_, gi) => gi !== cur)];
-    const curGroup = cur >= 0 && cur < (chorus ? set.choruses : set.verses).length ? (chorus ? set.choruses : set.verses)[cur] : null;
-    // Choruses that are identical only need showing once
-    const seen = new Set();
-    let rows = "";
-    for (const g of groups) {
-      const line = g.lines[k];
-      if (chorus && seen.has(line)) continue;
-      seen.add(line);
-      const meaning = showMeaning && g.meaning ? `<span class="ly-mean">${esc(g.meaning[k] || "")}</span>` : "";
-      rows += `<div class="ly-row${g === curGroup && !chorus ? " ly-current" : ""}"><span class="ly-label">${esc(g.label)}</span><span class="ly-text">${line ? esc(line) : `<em>${T("lyrics.noLine")}</em>`}${meaning}</span></div>`;
+    if (!(p.kind === "chorus" ? set.choruses : set.verses).length) continue;
+    const rows = [];
+    const add = (g, q, rel) => {
+      const words = g.lines[q.k];
+      const place = partAt(q.verse, q.k) ? phraseName(q.kind, q.verse, q.k, true) : phraseName(q.kind, q.verse, q.k, true, g.label);
+      let row = words ? rows.find(r => r.words === words) : null;
+      if (!row) rows.push(row = { words, chorus: q.kind === "chorus", rel, places: [],
+        meaning: showMeaning && g.meaning ? g.meaning[q.k] || "" : "" });
+      if (REL_RANK[rel] > REL_RANK[row.rel]) row.rel = rel;
+      row.places.push(rel === "now" ? T("lyrics.thisPhrase", { place }) : place);
+    };
+    for (const { q, rel } of related) {
+      const groups = q.kind === "chorus" ? set.choruses : set.verses[q.verse - 1] ? [set.verses[q.verse - 1]] : [];
+      // a lyric set's later choruses: the same phrase with other words
+      groups.forEach((g, gi) => add(g, q, rel === "now" && gi > 0 ? "same" : rel));
     }
-    html += `<div class="ly-set">${many ? `<p class="ly-set-name">${esc(set.name)}</p>` : ""}${rows}</div>`;
+    if (p.kind === "verse") set.verses.slice(VERSE_COUNT).forEach((g, i) => add(g, { kind: "verse", verse: VERSE_COUNT + i + 1, k: p.k }, ""));
+    const placesText = list => (list.length > MAX_PLACES ? [...list.slice(0, MAX_PLACES - 1), T("lyrics.morePlaces", { n: list.length - MAX_PLACES + 1 })] : list).join(", ");
+    const rowsHTML = rows.map(r => `<div class="ly-row ly-rel${r.rel === "now" ? " ly-current" : ""}">` +
+      `<span class="ly-sw${r.chorus ? " sm-ch" : ""}"><span class="sm-ph${r.rel === "now" || r.rel === "same" ? " sm-now" : r.rel === "near" ? " sm-near" : ""}"></span></span>` +
+      `<span class="ly-text">${r.words ? esc(r.words) : `<em>${T("lyrics.noLine")}</em>`}` +
+      `${r.meaning ? `<span class="ly-mean">${esc(r.meaning)}</span>` : ""}<span class="ly-places">${esc(placesText(r.places))}</span></span></div>`).join("");
+    html += `<div class="ly-set">${many ? `<p class="ly-set-name">${esc(set.name)}</p>` : ""}${rowsHTML}</div>`;
   }
   if (!html) {
     html = `<p class="ly-empty">${T("lyrics.empty")}</p>`;
@@ -7333,26 +7386,8 @@ function songMapHTML(sections) {
 // shaded (mapRelation); no ring. Open or closed is
 // saved with the settings (#mapOpen), and stays for each new phrase.
 let mapTapped = -1;                       // the tapped phrase's index in PHRASES, or -1
-// How phrase i relates to the current phrase cur (both indexes into PHRASES):
-//   "now"  — it is the current phrase;
-//   "same" — exactly the same notes (melodyKey);
-//   "near" — nearly the same (v0.109): either the same place (line and half) in
-//            another verse of the same length, which is what Show the lyrics
-//            lists for this phrase (the verse-length condition keeps out the
-//            growing verses of a cumulative song, where the same line number is
-//            a different animal), or the same tune apart from the pickup and
-//            notes split for the words (tuneKey). Covers ornaments that differ
-//            from verse to verse;
-//   ""     — anything else.
-function mapRelation(i, cur) {
-  if (i === cur) return "now";
-  const p = PHRASES[i], c = PHRASES[cur];
-  if (melodyKey(p) === melodyKey(c)) return "same";
-  const count = q => PHRASES.filter(x => x.kind === q.kind && x.verse === q.verse).length;
-  if (p.kind === c.kind && p.k === c.k && p.verse !== c.verse && count(p) === count(c)) return "near";
-  const t = tuneKey(c);
-  return t !== null && tuneKey(p) === t ? "near" : "";
-}
+// How phrase i relates to the current phrase cur (indexes into PHRASES): see phraseRelation.
+const mapRelation = (i, cur) => phraseRelation(PHRASES[i], PHRASES[cur]);
 function drillMapSections(cur) {
   const per = SONG.phrasesPerLine || 1, secs = [];
   PHRASES.forEach((p, i) => {
@@ -7388,7 +7423,9 @@ function renderWhere() {
   $("whereBtn").setAttribute("aria-expanded", String(open));
   $("phraseMap").hidden = !(named && open);
   if ($("phraseMap").hidden) return;
-  $("phraseMapDraw").innerHTML = songMapHTML(drillMapSections(order[pos]));
+  const secs = drillMapSections(order[pos]);
+  $("phraseMapDraw").innerHTML = songMapHTML(secs);
+  $("mapLegendChorus").hidden = !secs.some(sec => sec.chorus);
   $("phraseMapInfo").textContent = mapInfo(order[pos]);
 }
 
