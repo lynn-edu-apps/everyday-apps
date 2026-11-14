@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.116</title>
+<title>Melodies by Ear v0.117</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -670,8 +670,8 @@
   .update-note .btn { padding: 9px 14px; font-size: .95rem; }
   .info-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
   .info-row .chipbtn { font-size: .82rem; padding: 5px 12px; }
-  .info-modal { position: fixed; inset: 0; z-index: 40; background: rgba(10,16,20,.45); display: flex; align-items: flex-end; justify-content: center; padding: 12px; }
-  .info-card { background: var(--card); color: var(--ink); width: 100%; max-width: 560px; max-height: 86vh; overflow-y: auto;
+  .info-modal { position: fixed; inset: 0; z-index: 40; background: rgba(10,16,20,.45); display: flex; align-items: flex-end; justify-content: center; padding: 12px; overscroll-behavior: contain; }
+  .info-card { background: var(--card); color: var(--ink); width: 100%; max-width: 560px; max-height: 86vh; max-height: 86dvh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
     border-radius: 16px; padding: 16px 18px calc(14px + env(safe-area-inset-bottom)); box-shadow: 0 10px 40px rgba(0,0,0,.3); }
   .info-card h2 { font-family: "Iowan Old Style", Palatino, Georgia, serif; font-size: 1.25rem; margin: 0 0 8px; }
   .info-card h3 { font-size: 1rem; margin: 14px 0 4px; }
@@ -679,6 +679,9 @@
   .info-card ul { padding-left: 20px; margin: 0 0 8px; }
   .info-card .fine { color: var(--muted); font-size: .85rem; }
   .info-close { display: flex; justify-content: flex-end; margin-top: 8px; }
+  /* lockPageScroll: while a dialog is open the page behind it is pinned where it was */
+  html.page-locked { overflow: hidden; }
+  html.page-locked body { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
   .backup-note { color: var(--warn); }
   .backup-rows { flex: 1; display: grid; gap: 8px; }
   .ms-copy-row { display: grid; gap: 4px; justify-items: start; }
@@ -775,7 +778,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.116</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.117</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -1661,6 +1664,9 @@ const STRINGS = {
     "noPitch": "No pitch for the syllable \"{syl}\".",
     "songMap": "The phrase map can’t be drawn: {what}",
     "songMapEmpty": "there are no phrases to show",
+    "pageLock": "The page behind a dialog was {what}. Please copy this message and send it to Lynn.",
+    "pageLockTwice": "locked twice",
+    "pageLockNotLocked": "unlocked but wasn’t locked",
     "badChord": "Can't read the chord \"{chord}\" in bar {bar}.",
     "sylCount": "Lyric syllables, {set}, {label} line {line}: {syl} syllables for {notes} notes.",
     "sylText": "Lyric syllables, {set}, {label} line {line}: \"{marked}\" doesn't read the same as \"{plain}\".",
@@ -1879,7 +1885,7 @@ const STRINGS = {
     "close": "Close",
     "aboutTitle": "About Melodies by Ear",
     "version": "Version {version}",
-    "tagline": "Learn song melodies by ear, phrase by phrase, in movable-do solfège.",
+    "tagline": "Learn song melodies by ear, phrase by phrase. When you want help, the notes can show as movable-do solfège (do re mi), as scale-degree numbers (1 2 3, as in jianpu, Chinese numbered notation) or as seven-shape notes.",
     "copyright": "© 2026 Lynn Robinson. Melodies by Ear™ is made with help from Claude AI (Anthropic).",
     "voice": "Metronome personality: Ioni Robinson",
     "privacy": "Your lyrics and settings stay in this browser on this device. Nothing is sent anywhere.",
@@ -5229,15 +5235,41 @@ function drawVisuals() {
   else document.querySelectorAll(".n.on, .beat.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
 }
 
+// ---------- Page scroll lock (for dialogs) ----------
+// While a dialog is open, the page behind it must not scroll: on a phone a swipe
+// that reached the end of the dialog (or started on the dimmed backdrop) moved the
+// page instead, and both could scroll at once (Lynn, v0.116). iPhone Safari
+// doesn't reliably honor overflow: hidden on its own, so the page is pinned with
+// position: fixed at its current scroll position (CSS html.page-locked) and put
+// back exactly there, instantly, when the dialog closes. Pinch-to-zoom still works.
+let pageLockY = null;   // the page's scroll_offset_y when locked, or null
+function lockPageScroll(on) {
+  const root = document.documentElement, body = document.body;
+  if (on) {
+    if (pageLockY !== null) { reportError(T("err.pageLock", { what: T("err.pageLockTwice") })); return; }
+    pageLockY = window.scrollY;
+    body.style.top = `-${pageLockY}px`;
+    root.classList.add("page-locked");
+  } else {
+    if (pageLockY === null) { reportError(T("err.pageLock", { what: T("err.pageLockNotLocked") })); return; }
+    const scroll_offset_y = pageLockY;
+    pageLockY = null;
+    root.classList.remove("page-locked");
+    body.style.top = "";
+    window.scrollTo({ top: scroll_offset_y, left: 0, behavior: "instant" });
+  }
+}
+
 // ---------- About, Song credits, Help ----------
 function openInfo(title, html) {
   $("infoTitle").textContent = title;
   $("infoBody").innerHTML = html;
+  if ($("infoModal").hidden) lockPageScroll(true);   // a second openInfo while open just changes the text
   $("infoModal").hidden = false;
   $("infoClose").focus({ preventScroll: true });   // focus for the keyboard, but start reading at the top
   $("infoModal").querySelector(".info-card").scrollTop = 0;
 }
-const closeInfo = () => { $("infoModal").hidden = true; };
+const closeInfo = () => { if ($("infoModal").hidden) return; $("infoModal").hidden = true; lockPageScroll(false); };
 const para = (key, cls) => `<p${cls ? ` class="${cls}"` : ""}>${esc(T(key))}</p>`;
 function aboutHTML() {
   const tag = DEPLOYMENT === "main" ? appVersion() : `${appVersion()} (${$("deployTag").textContent})`;
