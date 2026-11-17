@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.117</title>
+<title>Melodies by Ear v0.126</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -294,6 +294,14 @@
   .n.do { background: var(--gold-soft); color: var(--gold-text); }
   .n.on { background: var(--teal); color: var(--on-teal); }
   .n.do.on { background: var(--gold); color: #2B2005; }
+  /* a rest (v0.119): a grey chip, "–" with syllables or shapes, "0" in the Numbers views (as in jianpu) */
+  .n.rest { background: var(--idle); color: var(--muted); }
+  .n.rest.pk { background: transparent; box-shadow: inset 0 0 0 1.5px var(--faint); }
+  .n.rest.on { background: var(--muted); color: var(--card); }
+  .n.rest.s16::after { border-color: var(--muted); }
+  .n.rest .rs-zero { display: none; }
+  html[data-shapes="numbers"] .n.rest .rs-zero, html[data-shapes="numsyl"] .n.rest .rs-zero { display: inline; }
+  html[data-shapes="numbers"] .n.rest .rs-dash, html[data-shapes="numsyl"] .n.rest .rs-dash { display: none; }
   .bar { color: var(--faint); padding: 0 2px; }
   .reveal {
     align-self: flex-start;
@@ -748,15 +756,17 @@
   /* Lyric syllables in Play along: the one being sung lights up; a syllable on
      a bar's first beat is bold, a pickup syllable lighter */
   .syl { border-radius: 4px; transition: background .08s; }
-  .syl.db { font-weight: 700; }
-  .syl.pkl { opacity: .72; }
+  .syl.db, .sylp.db { font-weight: 700; }
+  .syl.pkl, .sylp.pkl { opacity: .72; }
+  /* a held syllable's trailing punctuation sits after its extender line (v0.118) */
+  .sylp { border-radius: 4px; transition: background .08s; }
   /* a held syllable's extender line: about half an em for each extra note */
   .hold { display: inline-flex; gap: 2px; margin: 0 2px; vertical-align: .05em; }
   .hseg { display: inline-block; width: .5em; height: 0; border-bottom: 2px solid var(--muted); opacity: .7; }
   /* each segment lights as its note starts, and stays lit to the end of the syllable */
   .hseg.on { border-bottom: 3px solid var(--teal); opacity: 1; }
   html[data-holds="off"] .hold { display: none; }
-  .syl.on { background: var(--teal); color: var(--on-teal); opacity: 1; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .syl.on, .sylp.on { background: var(--teal); color: var(--on-teal); opacity: 1; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   /* The song plan: verse buttons, each followed by its chorus toggle */
   .plan { margin: 4px 0 10px; }
   .plan[hidden], .plan-chorus[hidden] { display: none; }
@@ -778,7 +788,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.117</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.126</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -820,7 +830,7 @@
         <button class="chipbtn" id="msCopy" data-s="ui.copy"></button>
         <button class="chipbtn" id="msExport" data-s="ui.saveToFile"></button>
         <button class="chipbtn" id="msSaveAll" data-s="mysongs.saveAll"></button>
-        <label class="chipbtn file-btn"><span data-s="ui.importFile"></span><input type="file" id="msImport" accept=".txt,text/plain"></label>
+        <label class="chipbtn file-btn"><span data-s="ui.importFile"></span><input type="file" id="msImport" accept=".txt,text/plain,.musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/xml,text/xml"></label>
       </div>
       <p class="hint" id="msStatus"></p>
       <p class="hint" id="msOpenNote" hidden></p>
@@ -1261,6 +1271,14 @@
           <option value="sound" data-s="ui.chordKeySound"></option>
           <option value="written" data-s="ui.chordKeyWritten"></option>
         </select>
+        <div id="chordSetRow" hidden>
+          <label for="chordSet" data-s="ui.chordSet"></label>
+          <select id="chordSet">
+            <option value="traditional" data-s="ui.chordSetTrad"></option>
+            <option value="modern" data-s="ui.chordSetModern"></option>
+          </select>
+          <p class="hint" data-s="ui.chordSetHint"></p>
+        </div>
         <p class="hint" data-s="ui.chordsHint"></p>
       </div>
       <div>
@@ -1424,6 +1442,10 @@ const STRINGS = {
     "chordKey": "Chord names when transposed",
     "chordKeySound": "As they sound (follow Transpose)",
     "chordKeyWritten": "As written (the song's own key)",
+    "chordSet": "Which chords",
+    "chordSetTrad": "Traditional",
+    "chordSetModern": "Modern",
+    "chordSetHint": "This song’s book gives two sets of chords: traditional ones and a modern harmonization. The choice is kept for each song.",
     "chordsHint": "Chords show above the note where they start. A \"/\" between notes marks a chord that changes while a note is held. Numerals and Nashville numbers are the same in any key.",
     "noteShapes": "Show notes as",
     "noteShapesOff": "Syllables",
@@ -1487,6 +1509,7 @@ const STRINGS = {
     "catAll": "All songs ({n})",
     "catN": "{name} ({n})",
     "songOpenNow": "{title} (open now)",
+    "cat_holiday": "Holiday",
     "cat_spiritual": "Spirituals & hymns",
     "cat_protest": "Work & protest",
     "cat_folk": "Folk",
@@ -1681,6 +1704,8 @@ const STRINGS = {
     "missingValue": "Interface text {key} needs a value for {name}",
     "saveFile": "Saving the file didn’t work ({how}): {msg}. Trying another way.",
     "mySongsBad": "Saved My songs data was damaged; {n} entries were skipped ({key}).",
+    "songbookBad": "The built-in song {title} has {n} mistakes in its song text, so it can’t open (please report this): {problems}",
+    "songbookTitle": "The built-in song {id}’s text is titled “{text}”, not “{title}”.",
     "song": "Song data problem in {song}: {msg}",
     "copySong": "Copying {song} into My songs made a song with {n} mistakes. That’s a bug in the app; the mistakes are listed in the My songs box.",
     "songBar": "{label}: bar {i} has {sum} eighths, not {need}",
@@ -1838,6 +1863,7 @@ const STRINGS = {
   chips: {
     "dotted": "dotted",
     "sixteenth": "16th note",
+    "rest": "Rest",
     "tied": "Tied to the next note: one note, held across the bar line"
   },
   talk: {
@@ -1914,7 +1940,11 @@ const STRINGS = {
     "help5Title": "If the dots lag behind the sound",
     "help5": "Bluetooth speakers and hearing aids delay the sound. Tap “Dots out of step? Sync them” in Tempo and metronome.",
     "help6Title": "Installing",
-    "help6": "iPhone: in Safari, Share → Add to Home Screen. Android: in Chrome, ⋮ → Install app. It then works offline."
+    "help6": "iPhone: in Safari, Share → Add to Home Screen. Android: in Chrome, ⋮ → Install app. It then works offline.",
+    "help7Title": "My songs",
+    "help7": "My songs, just under the song menu, is where you add songs of your own: type one (a notes line, then its words, with chords if you like), import one from a file, or tap Copy into My songs to change a copy of a built-in song. Check lists any mistakes; Save keeps the song in this browser only; Open this song plays it like any other. Use Save all my songs now and then to keep a copy in a file.",
+    "help8Title": "Importing files",
+    "help8": "Each Import button takes its own kind of file. In My songs, Import a file takes a song as plain text (.txt), such as one saved with Save to a file, or many from Save all my songs; or a MusicXML file (.musicxml or .xml), the format music programs such as MuseScore, Sibelius and Finale export and many songbooks share: the app turns it into a song, with its words and chords, and opens it in the box to check. Compressed MusicXML (.mxl) can’t be opened yet: export uncompressed MusicXML instead. In Lyrics, My lyrics’ Import a file takes lyric sets saved with Save all my sets. Both always add, never replacing what you have. In Settings, Restore everything takes a file from Save everything, and replaces what’s here (it asks first). A file of the wrong kind is refused, with a message saying where it goes."
   },
   warm: {
     "title": "Warm-up: find the note",
@@ -2045,6 +2075,13 @@ const STRINGS = {
     "barLong": "bar {i} has {sum} eighths, more than a bar of {need}.",
     "badSyl": "“{syl}” isn’t a syllable the app knows (do re mi fa so la ti; raised di ri fi si li; lowered ra me se le te).",
     "badTie": "“{syl}” is tied (~) to a note that isn’t the same pitch.",
+    "chordsWhere": "a Chords line must come right under a notes line (before its words).",
+    "chordsTwice": "this notes line already has a line like that one.",
+    "chordBars": "the chords line has {n} bars, but its notes line has {need}. Use | between bars, the same as in the notes.",
+    "chordNoPickup": "the chords line has chords before the first |, but its notes have no pickup.",
+    "badChord": "can’t read the chord “{chord}”. Write a letter name (F, B♭m7, C7/G), a Nashville number (1, 6-, 5-7) or a Roman numeral (I, vi, V7).",
+    "chordBeat": "“{chord}”: a bar here has beats 1 to {beats}, and @ gives the beat (@3 is beat 3).",
+    "chordBeatPickup": "“{chord}”: a chord in the pickup goes on a beat of the pickup, counted in the bar it ends (in 4/4, a quarter-note pickup is @4).",
     "sylCount": "the words have {syl} syllables for {notes} notes. Use - to split a word into syllables, and _ to hold a syllable over another note.",
     "noWords": "these notes have no words line under them.",
     "wordsNoNotes": "this words line has no notes line above it.",
@@ -2072,7 +2109,7 @@ const STRINGS = {
     "openDeleted": "The open song, “{title}”, was deleted in another window. It stays open here until you pick another song.",
     "confirmDelete": "Delete “{title}”? This can’t be undone. Copy its text somewhere first if you might want it again.",
     "copied": "Copied that mistake. You can paste it now.",
-    "savedHint": "Saved in this browser only (Main, Dev and Stable each keep their own, and on iPhone the home-screen app separately from Safari). Use Save all my songs now and then to keep a copy in a file. Import a file adds the songs in it (it never replaces any), here or on another device.",
+    "savedHint": "Saved in this browser only (Main, Dev and Stable each keep their own, and on iPhone the home-screen app separately from Safari). Use Save all my songs now and then to keep a copy in a file. Import a file adds the songs in it (it never replaces any), here or on another device. It takes song text (.txt) or MusicXML (.musicxml, .xml); see Help.",
     "saveAll": "Save all my songs",
     "fileName": "my-song-{name}.txt",
     "allFile": "melodies-my-songs-{date}.txt",
@@ -2096,14 +2133,59 @@ const STRINGS = {
     "copyBuiltInHint": "Makes a copy of this song that you can change: the notes the way you learned them, or ornaments you like to sing. The built-in song stays as it is.",
     "copyTitle": "{title} (my copy)",
     "copyNote": "Copied from the built-in song {title} on {date} (app {version}).",
-    "copyNote2": "The bar numbers and chords below are the built-in song's, as written (before Transpose).",
+    "copyNote2": "The bar numbers below are the built-in song's; the chords are in its key as written (before Transpose).",
     "copyLyrics": "Words: {set}.",
     "copyBar": "bar {a}",
     "copyBars": "bars {a}–{b}",
-    "copyChords": "chords: {chords}",
-    "copyOnBeat": "{chord} on beat {beat}",
     "copiedBuiltIn": "Copied {song} into My songs as “{title}”. Change it here, tap Check, then Open this song to hear it.",
     "copiedBroken": "Copied, but the copy has mistakes (the app’s own; please report them):"
+  },
+  // the MusicXML converter and its import (v0.121)
+  xml: {
+    "notXml": "This file isn’t XML that the app can read.",
+    "notMusicXml": "This XML file isn’t MusicXML (the app reads <score-partwise> files).",
+    "timewise": "This MusicXML is in the “timewise” layout. Save it from your music program as ordinary (partwise) MusicXML.",
+    "parts": "The file has {n} parts; the app can read a file with one melody part.",
+    "keyChange": "bar {bar}: the key changes; the app needs one key for the whole song.",
+    "timeChange": "bar {bar}: the time signature changes; the app needs one time for the whole song.",
+    "staves": "The music is on more than one staff; the app reads a single melody line.",
+    "transpose": "The part is written for a transposing instrument; save it at concert pitch.",
+    "grace": "bar {bar}: a grace note; the app has none yet.",
+    "cue": "bar {bar}: a cue note; the app reads only the melody.",
+    "chordNotes": "bar {bar}: several notes at once; the app reads a single melody line.",
+    "voices": "bar {bar}: a second voice; the app reads a single melody line.",
+    "noDuration": "bar {bar}: a note with no length.",
+    "microtone": "bar {bar}: a note between the half steps.",
+    "unpitched": "bar {bar}: a note without a pitch (a drum or a tap); the app has none yet.",
+    "badKind": "bar {bar}: can’t read the chord type “{kind}”.",
+    "jumps": "bar {bar}: a jump (D.C., D.S., segno, coda or fine); the app needs the song written out in order.",
+    "repeats": "bar {bar}: a repeat sign; the app needs the song written out in order (it has no repeats yet).",
+    "endings": "bar {bar}: a first or second ending; the app needs the song written out in order.",
+    "noNotes": "The file has no notes.",
+    "noKey": "The file has no key signature the app can read.",
+    "noTime": "The file has no time signature.",
+    "badTime": "The time {time} isn’t one the app knows (2/4, 3/4, 4/4, 5/4, 2/2, 6/8, 9/8 or 12/8).",
+    "barLength": "bar {bar} has {sum} eighths, needs {need}.",
+    "badLength": "bar {bar}: a note length the app can’t write.",
+    "badChord": "bar {bar}: can’t read the chord “{chord}”.",
+    "wordsStart": "a line’s words start with “{text}”, which means something else at the start of a words line.",
+    "refused": "Can’t convert {name}, so nothing was added:",
+    "zipped": "{name} is compressed MusicXML (.mxl), which the app can’t open yet. In your music program, save or export it as uncompressed MusicXML (.musicxml or .xml).",
+    "imported": "Converted {name} and added it to My songs as “{title}”. Lines end where its phrases do: change anything you like, then Check, Save and Open this song.",
+    "importedBroken": "Converted and added, but the song has mistakes to fix before it can open:",
+    "crashed": "The MusicXML converter stopped with an error, so nothing was added (please report this): {msg}",
+    "noteConverted": "Converted from the MusicXML file {file} on {date} (app {version}).",
+    "noteRights": "Rights: {text}",
+    "noteLines": "Lines end after words that end a phrase. Move the breaks, and mark the Chorus, as you like.",
+    "noteTwoChords": "Chords: the file’s chord symbols. Modern chords: chord names written as text above them. Settings chooses which show.",
+    "noteText": "bar {bar}: the words “{text}” in the music are left out.",
+    "noteShortEnd": "The last note is {n} eighths shorter than written, so the next verse’s pickup fits in its bar (as sheet music does).",
+    "lastTooShort": "bar {bar}: the last bar is full and its last note is too short to make room for the next verse’s pickup.",
+    "noteLead": "The next line’s first notes have no words in verse {verse}, so its words light as a whole line."
+  },
+  songbook: {
+    "wordsName": "English",
+    "wordsTab": "English"
   },
   tempo: {
     "beat1": "eighth-note",
@@ -2341,7 +2423,20 @@ function uniqueName(taken, name) {
 const fileDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fileSlug = name => name.trim().toLowerCase().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-") || "lyrics";
 const near = (a, b) => Math.abs(a - b) < 1e-6;
-const isTrip = it => it && !it.bar && Math.abs(it.dur - 2 / 3) < 1e-6;
+// Splits a word's trailing punctuation off: "come," -> ["come", ","], "see." ->
+// ["see", "."], "di-vide”" -> ["di-vide", "”"]. The tail starts with . , ; : ! ?
+// or a closing double quote or bracket (not ’, which also ends words like
+// "goin’"), then may add closing quotes. A word that is all punctuation, or has
+// none, comes back whole with an empty tail.
+function splitTrailingPunct(word) {
+  const m = /[.,;:!?”")\]][.,;:!?”"’')\]]*$/.exec(word);
+  return m && m.index > 0 ? [word.slice(0, m.index), m[0]] : [word, ""];
+}
+// a note that is sung or played: not a bar line, not a rest (v0.119). Syllables,
+// pitches and the warm-up count only these; rests still take their time.
+const isSung = it => !it.bar && !it.rest;
+// a triplet note: a third of a quarter note (2/3 of an eighth) or of a half note (4/3)
+const isTrip = it => it && !it.bar && (near(it.dur, 2 / 3) || near(it.dur, 4 / 3));
 // a copy of the list in random order
 function shuffled(list) {
   const a = list.slice();
@@ -2357,6 +2452,10 @@ function shuffled(list) {
 // Octave marks, the usual way: no mark is the octave from do up to ti; each
 // ' after a syllable is an octave higher (do', do''); each , an octave lower
 // (so, la,, ). On screen a low mark shows as a lowered apostrophe.
+// A rest is written "r" with its length, like a note: "r:2" is a quarter rest.
+// It counts toward its bar, takes no syllable and plays as silence (v0.119).
+// Defined here, above the songs, since My songs are read at startup (lesson 22).
+const REST_SYL = "r";
 const STEP = { do: 0, di: 1, ra: 1, re: 2, ri: 3, me: 3, mi: 4, fa: 5, fi: 6, se: 6,
                so: 7, si: 8, le: 8, la: 9, li: 10, te: 10, ti: 11 };
 // Half steps from do, or null for a syllable the app doesn't know.
@@ -2389,11 +2488,89 @@ const ACC = { "-2": "𝄫", "-1": "♭", "0": "", "1": "♯", "2": "𝄪" };
 // and the warm-up (spellNote): step = scale step above do, 0 (do) to 6 (ti);
 // pc = the note's pitch class, 0 (C) to 11 (B). Gives the letter with its
 // sharp or flat, and diff, how many half steps the note is from the plain letter.
+// How many half steps the pitch (or pitch class) pc is above ref, folded into
+// -6 to 5: 1 = a sharp, -1 = a flat, 0 = the same note. Shared by spellStep,
+// chord names typed as letters and the MusicXML converter (v0.122).
+const pcDiff = (pc, ref) => ((pc - ref) % 12 + 18) % 12 - 6;
+// A letter's scale step above do (0 = do ... 6 = ti), from both letters' places
+// in LETTERS (0 = C ... 6 = B), so a note is placed by how it's spelled.
+const letterStep = (li, doLetter) => (li - doLetter + 7) % 7;
 function spellStep(step, pc, doMidi) {
   const keyLetter = LETTERS.indexOf(KEY_NAMES[((doMidi % 12) + 12) % 12][0]);
   const li = (keyLetter + step) % 7;
-  const diff = ((pc - LETTER_PC[li]) + 18) % 12 - 6;
+  const diff = pcDiff(pc, LETTER_PC[li]);
   return { letter: LETTERS[li] + (ACC[diff] ?? ""), diff };
+}
+
+// ---------- Chord names typed in a song (v0.121) ----------
+// A song's Chords lines can name chords three ways, chord by chord:
+//   letter names, read in the song's key: "F", "B♭m7", "C7sus4/B♭", "F♯°";
+//   Nashville numbers: "1", "6-" or "6m", "5-7", "b7", "4/1";
+//   Roman numerals: "I", "vi", "V7", "♭VII", "vii°", "IV/1" (lowercase = minor).
+// Each becomes the app's own chord token (see "Chords" below the songs): the
+// scale step from do, with b or # in front for a chromatic root, then the
+// quality ("" major, "-" minor, "7", "maj7", "dim", "+", "-7♭5", ...), then
+// "/" and the bass note's step. Defined here, above the songs, because My
+// songs are read at startup (lesson 22).
+const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
+const CHORD_ACC = { "": "", "b": "b", "♭": "b", "#": "#", "♯": "#" };
+const ROMAN_DEG = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7 };
+const ROMAN_RE = "VII|VI|IV|V|III|II|I|vii|vi|iv|v|iii|ii|i";
+const CHORD_LETTER_RE = /^([A-G])([#♯b♭]?)([^/]*)(?:\/([A-G])([#♯b♭]?))?$/;
+const CHORD_NASHVILLE_RE = /^([#♯b♭]?)([1-7])([^/]*)(?:\/([#♯b♭]?)([1-7]))?$/;
+const CHORD_ROMAN_RE = new RegExp(`^([#♯b♭]?)(${ROMAN_RE})([^/]*)(?:\\/([#♯b♭]?)([1-7]|${ROMAN_RE}))?$`);
+// A chord's quality, as typed after its root, in the app's own spelling, or
+// null if it can't be read. minor: the root already says minor (a lowercase
+// Roman numeral). Kept close to how songbooks print it ("7+5", "7♭9").
+function chordQuality(raw, minor) {
+  let q = raw.replace(/\s+/g, ""), isMinor = !!minor;
+  const maj = /^(maj|Maj|MAJ|M|Δ)/.exec(q);
+  if (maj) { q = q.slice(maj[0].length); q = maj[0] === "M" && !q ? "" : "maj" + (q || (maj[0] === "Δ" ? "7" : "")); if (q === "maj") q = "maj7"; }
+  else {
+    const mi = /^(min|mi|m|-)/.exec(q);
+    if (mi) { if (isMinor) return null; isMinor = true; q = q.slice(mi[0].length); }
+  }
+  // diminished, half-diminished, augmented
+  if (/^(°|o|dim)$/.test(q)) { if (isMinor && !minor) return null; return "dim"; }
+  if (/^(°|o|dim)7$/.test(q)) { if (isMinor && !minor) return null; return "dim7"; }
+  if (/^ø7?$/.test(q)) return "-7♭5";
+  if (/^(\+|aug)$/.test(q)) return isMinor ? null : "+";
+  if (/^(\+|aug)7$/.test(q)) return isMinor ? null : "7+5";
+  // a flat or sharp on a number: ♭ and ♯ (so "7-5" and "7b5" are both 7♭5)
+  q = q.replace(/[b♭](?=\d)/g, "♭").replace(/[#♯](?=\d)/g, "♯").replace(/(\d)-(?=\d)/g, "$1♭");
+  if (!/^(maj|sus|add|dim|alt|[0-9]|[♭♯+()])*$/.test(q)) return null;
+  return (isMinor ? "-" : "") + q;
+}
+// The app's token for a chord name, or null if it can't be read. doMidi is
+// do's pitch; doLetter is do's letter (0 = C ... 6 = B), from the Key line, so
+// letter names are placed by their spelling (in F, B is #4 and B♭ is 4).
+function chordToken(name, doMidi, doLetter) {
+  const s = String(name).trim();
+  const fromLetter = (letter, a) => {
+    const li = LETTERS.indexOf(letter), d = letterStep(li, doLetter);
+    const diff = pcDiff(LETTER_PC[li] + (CHORD_ACC[a] === "b" ? -1 : CHORD_ACC[a] === "#" ? 1 : 0), doMidi + MAJOR_STEPS[d]);
+    return diff === 0 ? "" + (d + 1) : diff === -1 ? "b" + (d + 1) : diff === 1 ? "#" + (d + 1) : null;
+  };
+  const romanDeg = r => ROMAN_DEG[r.toLowerCase()];
+  let m, root, q, bass = "";
+  if ((m = CHORD_LETTER_RE.exec(s))) {
+    root = fromLetter(m[1], m[2]);
+    q = chordQuality(m[3], false);
+    if (m[4]) { bass = fromLetter(m[4], m[5]); if (bass === null) return null; }
+  } else if ((m = CHORD_NASHVILLE_RE.exec(s))) {
+    root = CHORD_ACC[m[1]] + m[2];
+    q = chordQuality(m[3], false);
+    if (m[5]) bass = CHORD_ACC[m[4]] + m[5];
+  } else if ((m = CHORD_ROMAN_RE.exec(s))) {
+    root = CHORD_ACC[m[1]] + romanDeg(m[2]);
+    const lower = m[2] === m[2].toLowerCase();
+    // vii° and viiø: the circle says diminished, not the lowercase
+    const dimish = /^(°|o|dim|ø)/.test(m[3]);
+    q = chordQuality(m[3], lower && !dimish);
+    if (m[5]) bass = CHORD_ACC[m[4]] + (/^[1-7]$/.test(m[5]) ? m[5] : romanDeg(m[5]));
+  } else return null;
+  if (root === null || q === null) return null;
+  return root + q + (bass ? "/" + bass : "");
 }
 
 // ---------- Songs ----------
@@ -2453,12 +2630,13 @@ const INTERNATIONALE_CHORUS = [
 // Lynn's songbook (top melody line only). 16 bars a verse: verse (bars 1–8)
 // then chorus (bars 9–16). One phrase = 2 bars = one lyric line; a word that
 // starts a line on the last beat of the bar before ("A-long", "And", "As") is
-// that line's pickup. Bar 2 ends on ti (F♯), as printed; many versions have a
-// low so there.
+// that line's pickup. Bar 2 ends on low so, the pickup into line 2 ("A-long",
+// "A-riding"): the songbook prints ti (F♯) there, but so is how Lynn and most
+// people sing it (v0.118).
 // Verses 2–9, "The Yankee's Return from Camp":
 const YANKEE_VERSE = [
   "| do:2 do:2 re:2 mi:2 | do:2 mi:2 re:2",              // Father'n I went down to camp
-  "(ti,:2) | do:2 do:2 re:2 mi:2 | do:4 ti,:2",             // A-long with Captain Gooding
+  "(so,:2) | do:2 do:2 re:2 mi:2 | do:4 ti,:2",             // A-long with Captain Gooding
   "(so,:2) | do:2 do:2 re:2 mi:2 | fa:2 mi:2 re:2",      // And there we saw the men and boys
   "(do:2) | ti,:2 so,:2 la,:2 ti,:2 | do:4 do:4"               // As thick as hasty pudding
 ];
@@ -2466,7 +2644,7 @@ const YANKEE_VERSE = [
 // pickup into "Stuck a feather"), so lines 2 and 3 differ a little.
 const YANKEE_VERSE_TOWN = [
   "| do:2 do:2 re:2 mi:2 | do:2 mi:2 re:2",              // Yankee Doodle went to town
-  "(ti,:2) | do:2 do:2 re:2 mi:2 | do:4 ti,:4",             // A-riding on a pony
+  "(so,:2) | do:2 do:2 re:2 mi:2 | do:4 ti,:4",             // A-riding on a pony
   "| do:2 do:2 re:2 mi:2 | fa:2 mi:2 re:2",             // Stuck a feather in his cap
   "(do:2) | ti,:2 so,:2 la,:2 ti,:2 | do:4 do:4"               // And called it macaroni
 ];
@@ -2590,36 +2768,41 @@ const SOLIDARITY_LYRICS = {
   }
 };
 
-// We Will Overcome, in C (do = C4), 4/4, from Songs of Work and Protest
-// (Fowke and Glazer, 1960; Dover 1973, public domain in the US), top melody
-// line only. Eight bars a verse, no chorus; one phrase = one lyric line.
-// "come" and "day" slur over two notes, and so does "Oh".
+// We Will Overcome, in C (do = C4), 4/4. The words are the union version as
+// printed in Songs of Work and Protest (Fowke and Glazer, 1960; Dover 1973,
+// public domain in the US). The melody is the tune sung today as "We Shall
+// Overcome" (public domain since the 2018 court settlement), the way Lynn
+// knows it: v0.118 replaced the book's melody as scanned, which was very
+// different. Fifteen bars a verse, no chorus; one phrase = one lyric line, so
+// the lines take 4, 3, 5 and 3 bars. "come" holds over three notes, "Oh" over
+// three, and "day" in line 2 over four (a half note, then a quarter-note triplet).
 const OVERCOME_VERSE = [
-  "| so:1 so:1 la:1 so:1 so:1 mi:3 | so:1 so:1 la:1 so:1 so:1 mi:3",   // We will overcome, we will overcome,
-  "| so:1 so:1 la:1 ti:1 do':2 re':2 | ti:1 so:4",                      // We will overcome some day.
-  "(la:1 ti:1) | do':2 do':1 la:1 so:4 | la:2 so:1 fa:1 mi:3",           // Oh, down in my heart I do believe
-  "| so:1 so:1 do:1 fa:1 mi:2 re:2 | do:6"                               // We will overcome some day.
+  { m: "| so:2 so:2 la:2 la:2 | so:3 fa:1 mi:4 | so:2 so:2 la:2 la:2 | so:2 fa:2 mi:4", bars: 4 },   // We will overcome, we will overcome,
+  { m: "| so:2 so:2 la:2 ti:2 | do':4 re':4 | ti:4 la:4/3 ti:4/3 la:4/3", bars: 3 },                 // We will overcome some day.
+  { m: "| so:4 la:2 ti:2 | do':4 ti:2 la:2 | so:8 | la:4 so:2 fa:2 | mi:8", bars: 5 },                // Oh, down in my heart I do believe
+  { m: "| so:2 so:2 do:2 fa:2 | mi:4 re:4 | do:8", bars: 3 }                                          // We will overcome some day.
 ];
 const OVERCOME_LYRICS = {
   book: {
     name: "Songs of Work and Protest (1960)", tab: "Union",
     verses: [
-      // "o-ver-come" and "or-gan-ize" hold their last syllable over two notes;
-      // "We will build a new world" has a syllable for every note
-      { w: "We will overcome", sy: "We will o-ver-come_" },
-      { w: "We will organize", sy: "We will or-gan-ize_" },
-      { w: "We will build a new world", sy: "We will build a new world" },
-      { w: "We will overcome", sy: "We will o-ver-come_" }
-    ].map(({ w, sy }, i) => {
+      // "o-ver-come" and "or-gan-ize" (5 syllables) hold their last syllable
+      // over three notes; "We will build a new world" (6) holds "world" over two
+      { w: "We will overcome", sy: "We will o-ver-come__", five: true },
+      { w: "We will organize", sy: "We will or-gan-ize__", five: true },
+      { w: "We will build a new world", sy: "We will build a new world_", five: false },
+      { w: "We will overcome", sy: "We will o-ver-come__", five: true }
+    ].map(({ w, sy, five }, i) => {
       const plain = sy.replace(/_/g, "");
       return {
         label: "Verse " + (i + 1),
         lines: [w + ", " + w.toLowerCase() + ",", w + " some day.", "Oh, down in my heart I do believe", w + " some day."],
         syl: [sy + ", " + sy.toLowerCase() + ",",
-              (sy.endsWith("_") ? plain + " some day_." : plain + " some day."),
-              "Oh_, down in my heart I do be-lieve",
+              // "day" on the half note and the triplet; with "build a new world", "some" takes the half note
+              five ? plain + " some day___." : plain + " some day__.",
+              "Oh__, down in my heart I do be-lieve",
               // the last line has one note fewer than "build a new world some day" needs: it lights as a whole line
-              sy.endsWith("_") ? plain + " some day." : ""]
+              five ? plain + " some day." : ""]
       };
     })
   }
@@ -2956,7 +3139,7 @@ const SUSANNA_LYRICS = {
 // la to la), cut time, the sung melody as printed in The American Song
 // Treasury (Raph). Four lines a verse, the last two the refrain.
 const MOSES_VERSE = [
-  "(mi,:2) | do:2 do:2 ti,:2 ti,:2 | do:2 do:2 la,:4 | mi,:2 mi,:2 si,:1 si,:3 | la,:4 mi,:2",   // When Israel was in Egypt's land, let my people go
+  "(mi,:2) | do:2 do:2 ti,:2 ti,:2 | do:2 do:2 la,:4 | mi,:2 mi,:2 si,:1 si,:3 | la,:6",         // When Israel was in Egypt's land, let my people go
   "(mi,:2) | do:2 do:2 ti,:2 ti,:2 | do:2 do:2 la,:4 | mi,:2 mi,:2 si,:1 si,:3 | la,:8",         // Oppressed so hard they could not stand, let my people go
   "| la,:2 la,:6 | re:2 re:6 | mi:4 mi:3 re:1 | mi:2 mi:2 re:1 do:3",                          // Go down, Moses, way down in Egypt land
   "| do:1 la,:1 la,:6 | do:1 la,:1 la,:4 so,:2 | mi,:2 mi,:2 si,:1 si,:3 | la,:6"              // Tell ol' Pharaoh, let my people go
@@ -2977,7 +3160,7 @@ const MOSES_LYRICS = {
       ["Now Pha-raoh said he’d go a-cross", "But Pha-raoh and his host were lost"],
       ["Oh take your shoes from off your feet", "And walk in-to the gold-en street"]
     ].map(([a, b], i) => {
-      const syl = [a + ", let my peo-ple go_.", b + ", let my peo-ple go.",
+      const syl = [a + ", let my peo-ple go.", b + ", let my peo-ple go.",
                    "Go down, Mo-ses, way down in E-gypt land_,", "Tell_ ol’ Pha_-raoh_, let my peo-ple go."];
       return { label: "Verse " + (i + 1), lines: syl.map(l => l.replace(/\\-/g, "\u0000").replace(/[-_]/g, "").replace(/\u0000/g, "-")), syl };
     })
@@ -3338,10 +3521,11 @@ const SONGS = {
   wewillovercome: {
     id: "wewillovercome",
     title: "We Will Overcome",
-    lede: "We Will Overcome, phrase by phrase: the union version of the hymn, as sung at the Highlander Folk School in 1947. Every verse shares one tune.",
+    lede: "We Will Overcome, phrase by phrase: the union words, as sung at the Highlander Folk School in 1947, to the tune known today as \"We Shall Overcome.\" Every verse shares one tune.",
     credits: [
       "Tune and words: traditional, from African-American church singing. This union version was learned by Zilphia Horton at the Highlander Folk School from members of the Food and Tobacco Workers' Union in 1947. Later sung as \"We Shall Overcome\" (public domain, by court settlement in 2018).",
-      "Melody (top line), chords and words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer, music arrangements by Kenneth Bray (Labor Education Division of Roosevelt University, 1960; Dover, 1973). Dover's note: every selection in the book is in the public domain in the United States."
+      "Words as printed in Songs of Work and Protest, by Edith Fowke and Joe Glazer (Labor Education Division of Roosevelt University, 1960; Dover, 1973). Dover's note: every selection in the book is in the public domain in the United States.",
+      "Melody: the tune as it is sung today, as \"We Shall Overcome\" (public domain, by court settlement in 2018). Chords: plain chords written for this app."
     ],
     history: [
       { h: "From the church to the union hall", p: [
@@ -3353,17 +3537,18 @@ const SONGS = {
       { h: "We Shall Overcome", p: [
         "From Highlander the song spread through singers including Pete Seeger, Guy Carawan and Frank Hamilton, and with \"shall\" in place of \"will\" it became the anthem of the civil rights movement in the 1960s. A copyright claimed on a 1960s arrangement was ended in 2018, when a federal court approved a settlement placing the song in the public domain."] },
       { h: "The words in this app", p: [
-        "The four verses are as printed in Songs of Work and Protest, which calls the song \"We Will Overcome.\" You can add verses of your own with My lyrics."] }
+        "The four verses are as printed in Songs of Work and Protest, which calls the song \"We Will Overcome.\" They are sung here to the tune most people know today, from the civil rights movement. You can add verses of your own with My lyrics."] }
     ],
     doMidi: 60,                                   // do = C4
     meter: { perBar: 8, beatLen: 2, label: "4/4", beatName: "quarter-note" },
     verses: Object.fromEntries([1, 2, 3, 4].map(v => [v, OVERCOME_VERSE])),
     chorus: [],
     phrasesPerLine: 1, barsPerPhrase: 2,
-    verseFirstBar: v => 1 + 8 * (v - 1),
-    chorusFirstBar: v => 9 + 8 * (v - 1),
+    verseFirstBar: v => 1 + 15 * (v - 1),
+    chorusFirstBar: v => 16 + 15 * (v - 1),
+    // plain chords for the tune as sung today (v0.118), one string per bar
     chords: {
-      verse: ["1 4@2 1@3", "1 4@2 1@3", "1 4@2 57@3 1@4 27@6", "5 4@6 57@7", "1 4@2 1@4", "2-7 5@2 57@3 1@4", "17 4@3 1@4 57@6", "1 4@4 1@6"]
+      verse: ["1 4@4", "1", "1 4@4", "1", "1 4@4 5@6", "1 5@4", "5", "1", "4", "1", "4 57@4", "1", "1 4@6", "1 57@4", "1"]
     },
     wholeLabel: "The whole song, all 4 verses",
     fileName: "wewillovercome-my-lyrics.txt",
@@ -3867,7 +4052,7 @@ const SONGS = {
   }
 };
 // Song categories, for the Category menu (a song can be in several). In menu order.
-const CATEGORIES = ["mine", "spiritual", "protest", "folk", "children", "campfire", "round", "patriotic", "international"];
+const CATEGORIES = ["mine", "holiday", "spiritual", "protest", "folk", "children", "campfire", "round", "patriotic", "international"];
 const SONG_CATEGORIES = {
   internationale: ["protest", "international"],
   yankeedoodle: ["patriotic", "children"],
@@ -3893,6 +4078,142 @@ const SONG_CATEGORIES = {
 const songCats = id => (SONGS[id] && SONGS[id].categories) || SONG_CATEGORIES[id] || [];
 // (a test page can add songs here before the app starts)
 Object.assign(SONGS, window.EXTRA_SONGS || {});
+// The song text of Angels We Have Heard on High (see "Songbook songs" just below)
+const SONGBOOK_ANGELS_TEXT = `Title: Angels We Have Heard on High
+Key: F
+Time: 4/4
+
+# Converted from the MusicXML file ANGELS_WE_HAVE_HEARD_ON_HIGH.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-16 (app v0.121), then arranged by hand: the Gloria marked as the chorus, and verses 2–4 typed from the printed book.
+# Two fixes to the file's words: "Sweet-ly" (the file has "Sweet" and "y") and "joy-ous" (printed with a capital J).
+# Verses 2 and 4: "heav'n-ly" and "heav'n", as hymnals print them, so the words fit the tune.
+# Chords: the book's traditional harmonization. Modern chords: its modern harmonization. Settings chooses which show.
+
+Verse 1
+
+| mi:2 mi:2 mi:2 so:2 | so:3 fa:1 mi:4
+Chords: | F | C
+Modern chords: | Bm7♭5@2 B♭m@3 Am7@4 | Dm7 Dm7/G@2.5 E♭7@3
+An-gels we have heard on high,
+
+| mi:2 re:2 mi:2 so:2 | mi:3 re:1 do:4
+Chords: | F C@2 F@3 | F/C C@2 F@3
+Modern chords: | F/C B♭@2 Am7@3 Dm7@4 | Gm7♭5 C7♭9@2 F@3
+Sweet-ly sing-ing o'er the plains,
+
+| mi:2 mi:2 mi:2 so:2 | so:3 fa:1 mi:4
+Chords: | F | C
+Modern chords: | Bm7♭5@2 B♭m@3 Am7@4 | Dm7 Dm7/G@2.5 E♭7@3
+And the moun-tains in re-ply,
+
+| mi:2 re:2 mi:2 so:2 | mi:3 re:1 do:4
+Chords: | F C@2 F@3 | F/C C@2 F@3
+Modern chords: | F/C B♭@2 Am7@3 Dm7@4 | Gm7♭5 C7♭9@2 F@3
+E-cho-ing their joy-ous strains.
+
+Chorus
+
+| so:4 la:1 so:1 fa:1 mi:1 | fa:4 so:1 fa:1 mi:1 re:1 | mi:4 fa:1 mi:1 re:1 do:1 | re:3 so,:1 so,:4
+Chords: | F Dm@3 | Gm7 C7@3 | F B♭@3 | C C/B♭@4
+Modern chords: | F A7/E@2 Dm7@3 F♯°@4.5 | Gm7 D♭7@2 C7sus4@3 Em7♭5@4 | F A7@2 B♭@3 B°@4 | C7sus4 C7sus4/B♭@4
+Glo_______________-ri-a.
+
+| do:2 re:2 mi:2 fa:2 | mi:4 re:4
+Chords: | F/A C@2 F@3 B♭@4 | F C@3
+Modern chords: | Am7♭5 E7@2 E♭7@3 D7+5@4 | G7 C7@3
+in ex-cel-sis De-o!
+
+| so:4 la:1 so:1 fa:1 mi:1 | fa:4 so:1 fa:1 mi:1 re:1 | mi:4 fa:1 mi:1 re:1 do:1 | re:3 so,:1 so,:4
+Chords: | F Dm@3 | Gm7 C7@3 | F B♭@3 | C C/B♭@4
+Modern chords: | F A7/E@2 Dm7@3 F♯°@4.5 | Gm7 D♭7@2 C7sus4@3 Em7♭5@4 | F A7@2 B♭@3 B°@4 | C7sus4 C7sus4/B♭@4
+Glo_______________-ri-a.
+
+| do:2 re:2 mi:2 fa:2 | mi:4 re:4 | do:8
+Chords: | F/A C@2 F@3 B♭@4 | F C7@3 | F
+Modern chords: | Am7♭5 E7@2 E♭7@3 D7+5@4 | G7 C7@3 | D♭maj7 F@3
+in ex-cel-sis De_-o!
+
+Verse 2
+
+Shep-herds, why this ju-bi-lee?
+Why your joy-ous strains pro-long?
+What the glad-some tid-ings be?
+Which in-spire your heav'n-ly songs?
+
+Verse 3
+
+Come to Beth-le-hem and see
+Him whose birth the an-gels sing;
+Come, a-dore on bend-ed knee,
+Christ the Lord, the new-born King.
+
+Verse 4
+
+See Him in a man-ger laid,
+Je-sus, Lord of heav'n and earth;
+Ma-ry, Jo-seph, lend your aid,
+With us sing our Sav-iour's birth.
+`;
+// ---------- Songbook songs, kept as song text (v0.121) ----------
+// Built-in songs can be kept in the My songs text format ("How to type a
+// song"), as songs from Berger and Israels' Public Domain Song Anthology are:
+// converted from the book's MusicXML by musicXmlToSongText, then arranged by
+// hand (line breaks, the chorus, later verses). Only the open song's text is
+// read (by readMySong, at startup), so hundreds of these cost almost nothing;
+// the song menu, categories and Song credits use the facts kept beside the
+// text. The regression suite reads and checks every one.
+const SONGBOOK = {
+  angels: {
+    title: "Angels We Have Heard on High",
+    categories: ["holiday", "spiritual"],
+    lede: "Angels We Have Heard on High, phrase by phrase: four verses and the Gloria chorus. The book gives two sets of chords; choose Traditional or Modern in Settings.",
+    credits: [
+      "Tune: traditional French carol (\"Les Anges dans nos campagnes\"), first known in print in 1842. Public domain.",
+      "English words: James Chadwick, 1862, a free paraphrase of the French. Public domain.",
+      "Melody, words and both sets of chords (the traditional and the modern harmonization): The Public Domain Song Anthology, by David Berger and Chuck Israels (Aperio Press, 2020), whose editors waived all their rights (CC0). Converted from the book's MusicXML file.",
+      "Verses 2 and 4: \"heav'nly\" and \"heav'n\" sung as two and one syllables, as hymnals print them, to fit the tune.",
+      "Song history: written for this app."
+    ],
+    history: [
+      { h: "A French carol", p: [
+        "The carol began in France as \"Les Anges dans nos campagnes\" (\"The angels in our countryside\"). Nobody knows who wrote the words or the tune; it was sung long before anyone printed it, and the earliest known printing with words and music is from 1842. Dozens of slightly different French versions followed in the 1800s.",
+        "Its story is the shepherds' night in the Gospel of Luke: angels appear over the fields near Bethlehem, and the shepherds go to see the newborn child. The refrain is the angels' song in Latin, \"Gloria in excelsis Deo\": glory to God in the highest."
+      ] },
+      { h: "Into English", p: [
+        "The English words were written by James Chadwick (1813–1882), an Irish-born Catholic priest who later became Bishop of Hexham and Newcastle in the north of England. They appeared in 1862 in Crown of Jesus Music, a Catholic collection edited by Henri Hemy. Chadwick didn't translate the French line by line: he kept its scene and its refrain and wrote his own verses, so the English and French verses say different things.",
+        "Hymnals still change a word here and there, and some print a 1937 rewrite of the first verse (\"singing sweetly through the night\"). The words in this app are Chadwick's as the Anthology prints them."
+      ] },
+      { h: "The Gloria", p: [
+        "The tune most English speakers know is called \"Gloria\". Its famous moment is the refrain: the \"Glo-\" of Gloria is held across a long, rising and falling run of quick notes before the word finishes. In France the carol is sung to a similar tune known as \"Iris\".",
+        "The arrangement printed in most American hymnals was made by the American church musician Edward Shippen Barnes for a 1937 hymnal; it grew from an 1891 arrangement by Charles Hutchins that had only one Gloria in the refrain. This app has only the melody, which is traditional, with chords from the Anthology."
+      ] }
+    ],
+    text: SONGBOOK_ANGELS_TEXT
+  }
+};
+const SONGBOOK_FIELDS = ["title", "categories", "lede", "credits", "history", "text"];
+for (const [id, sb] of Object.entries(SONGBOOK)) {
+  if (SONGS[id]) throw new Error("SONGBOOK: the song id " + id + " is taken");
+  const missing = SONGBOOK_FIELDS.filter(f => !sb[f]);
+  if (missing.length) throw new Error("SONGBOOK: " + id + " has no " + missing.join(", "));
+  // a stand-in until the song is opened: enough for the menu, categories and credits
+  SONGS[id] = { id, title: sb.title, categories: sb.categories, credits: sb.credits, songbook: true };
+}
+// Reads a songbook song's text into a full song (the open song only). Returns
+// the song, or null with the mistakes reported (loudly: the app's own song).
+function loadSongbookSong(id) {
+  const sb = SONGBOOK[id];
+  const r = readMySong(sb.text, id);
+  if (!r.song) {
+    reportError(T("err.songbookBad", { title: sb.title, n: r.problems.length, problems: r.problems.join(" ") }));
+    return null;
+  }
+  if (r.title !== sb.title) reportError(T("err.songbookTitle", { id, text: r.title, title: sb.title }));
+  const sg = r.song;
+  Object.assign(sg, { mine: false, songbook: true, categories: sb.categories, lede: sb.lede, credits: sb.credits, history: sb.history,
+    fileName: `${id}-my-lyrics.txt` });
+  if (sg.lyrics) { sg.lyrics.words.name = T("songbook.wordsName"); sg.lyrics.words.tab = T("songbook.wordsTab"); }
+  return sg;
+}
 
 // ---------- My songs ----------
 // Songs the person types in the app's song format (see railroad-song-text-v1.txt):
@@ -3921,7 +4242,9 @@ function myKey(text) {
   const minor = !!m[4] && /^m(in(or)?)?$/i.test(m[4]);
   const shift = minor ? 3 : 0;
   const doMidi = m[3] != null ? 12 * (+m[3] + 1) + pc + shift : 60 + ((pc + shift) % 12 + 12) % 12;
-  return { doMidi, mode: minor ? "minor" : "major" };
+  // do's letter (0 = C ... 6 = B), which places chords written as letter names
+  const doLetter = (LETTERS.indexOf(m[1].toUpperCase()) + (minor ? 2 : 0)) % 7;
+  return { doMidi, mode: minor ? "minor" : "major", doLetter };
 }
 // Reads one of my songs. Returns { title, song (null if there are mistakes),
 // problems: [message], verses, hasChorus }.
@@ -3929,6 +4252,11 @@ function myKey(text) {
 // counted against its notes (as some built-in lines do). Part of the file
 // format, so not translated.
 const WHOLE_LINE = "[whole line]";
+// Under a notes line, before its words: "Chords: | F | C7@3" and, for a song
+// with a second set (a book's modern harmonization), "Modern chords: | ...".
+// Part of the file format, so not translated (v0.121).
+const CHORDS_LABEL = "Chords:", MODERN_CHORDS_LABEL = "Modern chords:";
+const CHORDS_LINE_RE = /^(modern\s+)?chords\s*:(.*)$/i;
 function wordsRow(line) {
   return line.toLowerCase().startsWith(WHOLE_LINE) ? { words: line.slice(WHOLE_LINE.length).trim(), whole: true } : { words: line };
 }
@@ -3948,13 +4276,21 @@ function readMySong(text, id) {
   };
   const ensure = () => { if (!cur) startSection(false, T("phrase.verseN", { v: 1 })); };
   const flush = () => {        // a notes line with no words line under it
-    if (pending) { cur.rows.push({ m: pending.m, n: pending.n, words: null, wn: 0 }); lastRow = null; pending = null; }
+    if (pending) { cur.rows.push({ m: pending.m, n: pending.n, chords: pending.chords, words: null, wn: 0 }); lastRow = null; pending = null; }
   };
   lines.forEach((raw, i) => {
     const n = i + 1, l = raw.trim();
     if (!l || l.startsWith("#")) return;
     const hm = /^(title|key|time)\s*:\s*(.*)$/i.exec(l);
     if (hm && !cur && !pending) { head[hm[1].toLowerCase()] = { v: hm[2].trim(), n }; return; }
+    const cm = CHORDS_LINE_RE.exec(l);
+    if (cm) {               // a Chords line: goes with the notes line just above it
+      const which = cm[1] ? "modern" : "trad";
+      if (!pending) say(n, "mysongs.chordsWhere");
+      else if ((pending.chords = pending.chords || {})[which]) say(n, "mysongs.chordsTwice");
+      else pending.chords[which] = { text: cm[2], n };
+      return;
+    }
     const h = lyricHeading(l);
     if (h) {
       if (cur) flush();
@@ -3968,7 +4304,7 @@ function readMySong(text, id) {
     }
     ensure();
     if (pending) {
-      const row = { m: pending.m, n: pending.n, ...wordsRow(l), wn: n };
+      const row = { m: pending.m, n: pending.n, chords: pending.chords, ...wordsRow(l), wn: n };
       cur.rows.push(row); lastRow = row; pending = null; return;
     }
     // a line standing alone, followed by notes (or ending in ":"), names a part of the verse
@@ -4034,13 +4370,49 @@ function readMySong(text, id) {
       if (!r.m) return;
       if (!r.borrowed) checkRow(r, firstNote(sec.rows[k + 1]));
       if (!readable(r)) return;
-      const notes = itemsOf(r).filter(x => !x.bar).length;
+      const notes = itemsOf(r).filter(isSung).length;
       if (r.words == null) { if (hasWords) say(r.n, "mysongs.noWords"); return; }
       if (r.whole) return;
       const syls = parseSyl(r.words);
       const count = syls ? sylNotes(syls) : 0;
       if (count !== notes) say(r.wn, "mysongs.sylCount", { syl: count, notes });
     });
+  }
+  // each Chords line: its bars line up with its notes line's; what comes
+  // before the first "|" goes with the pickup. "@3" puts a chord on beat 3 (no
+  // "@": the bar's first beat, or the pickup's first note). Gives
+  // { pre, bars: [tokens] } in the app's own chord tokens, or null.
+  const chordCells = (r, ch) => {
+    const items = itemsOf(r), nBars = items.filter(x => x.bar).length, pick = pickupEighths(items), per = meter.perBar;
+    const cells = ch.text.split("|").map(c => c.trim());
+    const pre = cells.shift();
+    if (cells.length === nBars + 1 && !cells[nBars]) cells.pop();          // a "|" at the end
+    if (cells.length !== nBars) { say(ch.n, "mysongs.chordBars", { n: cells.length, need: nBars }); return null; }
+    if (pre && !pick) { say(ch.n, "mysongs.chordNoPickup"); return null; }
+    let ok = true;
+    const cell = (text, inPick) => text.split(/\s+/).filter(Boolean).map(t => {
+      const k = t.lastIndexOf("@"), name = k >= 0 ? t.slice(0, k) : t, beat = k >= 0 ? t.slice(k + 1) : null;
+      const tok = chordToken(name, key.doMidi, key.doLetter);
+      if (!tok) { say(ch.n, "mysongs.badChord", { chord: name }); ok = false; return ""; }
+      const lo = inPick ? per - pick : 0;
+      let at = lo;
+      if (beat !== null) {
+        const b = beat.trim() ? Number(beat) : NaN;
+        at = Math.round((b - 1) * meter.beatLen * 6) / 6;       // eighths into the bar (to a sixth of an eighth)
+        if (!isFinite(b) || at < lo - 1e-6 || at >= per - 1e-6) {
+          say(ch.n, inPick ? "mysongs.chordBeatPickup" : "mysongs.chordBeat", { chord: t, beats: per / meter.beatLen });
+          ok = false; return "";
+        }
+      }
+      return at ? `${tok}@${at}` : tok;
+    }).join(" ");
+    const out = { pre: cell(pre, true), bars: cells.map(c => cell(c, false)) };
+    return ok ? out : null;
+  };
+  if (meter && key) for (const sec of [...verses, ...choruses]) for (const r of sec.rows) {
+    if (!r.chords || !r.m || r.borrowed || !readable(r)) continue;
+    r.cc = {};
+    for (const which of Object.keys(r.chords)) r.cc[which] = chordCells(r, r.chords[which]);
   }
   // where one line joins the next, in the order the song is played (each
   // verse, then its chorus): the last bar's notes plus the next line's pickup
@@ -4083,6 +4455,34 @@ function readMySong(text, id) {
     parts: Object.fromEntries(verses.map((sec, i) => [i + 1, sec.parts.length ? sec.parts : (verses[0].parts)])),
     fileName: `${id}-my-lyrics.txt`
   };
+  // the chords, per bar of the whole song as played (each verse, then its
+  // chorus): { bars: { bar number: "tok tok@4" } }. A line with no Chords line
+  // uses verse 1's (or the first chorus's) line in the same place when it has
+  // as many bars. A song with both kinds of Chords lines keeps the second
+  // set as modernChords; Settings chooses which show (v0.121).
+  const chordMap = which => {
+    const map = {};
+    let any = false;
+    const put = (bar, str) => { if (!str) return; any = true; map[bar] = map[bar] ? map[bar] + " " + str : str; };
+    const lay = (rows, start, model) => {
+      let bar = start;
+      rows.forEach((r, k) => {
+        const m = model && model.rows[k];
+        const from = r.cc && r.cc[which] ? r.cc[which]
+          : m && m.cc && m.cc[which] && phrase(m).bars === phrase(r).bars ? m.cc[which] : null;
+        if (from) { put(bar - 1, from.pre); from.bars.forEach((str, j) => put(bar + j, str)); }
+        bar += phrase(r).bars;
+      });
+    };
+    verses.forEach((sec, i) => {
+      lay(sec.rows, firstBars[i + 1], i ? verses[0] : null);
+      if (choruses.length) lay(choruses[0].rows, chorusBars[i + 1], null);
+    });
+    return any ? { bars: map } : null;
+  };
+  const trad = chordMap("trad"), modern = chordMap("modern");
+  if (trad || modern) song.chords = trad || modern;
+  if (trad && modern) song.modernChords = modern;
   if (hasWords) song.lyrics = { words: { name: T("mysongs.wordsName"), tab: T("mysongs.wordsTab"),
     verses: verses.map((sec, i) => group(sec, T("phrase.verseN", { v: i + 1 }))),
     choruses: choruses.map(sec => group(sec, sec.label)) } };
@@ -4119,7 +4519,14 @@ function fillSongMenu() {
 // Which song is open is saved with your settings; switching songs reloads.
 const SONG_ID = (() => {
   const p = SAVED_PREFS || {};
-  return SONGS[p.songSel] ? p.songSel : "internationale";
+  const id = SONGS[p.songSel] ? p.songSel : "internationale";
+  if (!SONGS[id].songbook) return id;
+  // a songbook song: read its text now (only the open one); if it can't be
+  // read, say so loudly and open the Internationale instead
+  const sg = loadSongbookSong(id);
+  if (!sg) return "internationale";
+  SONGS[id] = sg;
+  return id;
 })();
 const SONG = SONGS[SONG_ID];
 const SONG_DO_MIDI = SONG.doMidi || 69;          // the song's do, as written (before Transpose)
@@ -4132,6 +4539,10 @@ const HAS_CHORUS = CHORUS_M.length > 0;
 // Storage keys: the Internationale keeps its original keys, so nothing
 // you've saved is lost; other songs get their own.
 const songKey = base => SONG_ID === "internationale" ? base : `${base}-${SONG_ID}`;
+// Which chords show: a song with two sets (SONG.modernChords, a book's modern
+// harmonization) keeps the choice per song, in Settings (v0.121)
+const CHORD_SET_STORE = "phrase-parrot-chordset-v1";
+const ACTIVE_CHORDS = SONG.chords && SONG.modernChords && storeGet(songKey(CHORD_SET_STORE)) === "modern" ? SONG.modernChords : SONG.chords || null;
 
 function sectionName(kind, verse) {
   return kind === "verse" ? (VERSE_COUNT > 1 ? T("phrase.verseN", { v: verse }) : T("phrase.verse")) : T("phrase.chorus");
@@ -4219,7 +4630,10 @@ function parse(str) {
     if (tie) tok = tok.slice(0, -1);
     const [syl, dur] = tok.split(":");
     const d = dur.includes("/") ? dur.split("/").reduce((x, y) => +x / +y) : parseFloat(dur);
-    items.push(tie ? { syl, dur: d, pk: inPk, tie: true } : { syl, dur: d, pk: inPk });
+    const it = { syl, dur: d, pk: inPk };
+    if (tie) it.tie = true;
+    if (syl === REST_SYL) it.rest = true;     // "r:2": a rest, a quarter note long (v0.119)
+    items.push(it);
     if (close) inPk = false;
   }
   return items;
@@ -4231,31 +4645,37 @@ function parse(str) {
 // then "/3" for a bass note other than the root. "@4" puts a chord 4 eighths
 // into the bar (no "@": the start of the bar). A bar with no chord keeps the
 // one before it. Kept as numbers so any key and any display style work.
-let CHORD_BARS = null;        // global bar number -> its chord tokens
-function chordBars() {
-  if (CHORD_BARS) return CHORD_BARS;
-  CHORD_BARS = {};
-  const c = SONG.chords;
-  if (!c) return CHORD_BARS;
-  for (const v of Object.keys(VERSE_M).map(Number)) {
+// A set of chords is given either by verse and chorus (verse: [one string
+// per bar], chorus: [...], verseBars: { verse: { bar: "..." } }) or, for songs
+// typed in the song format, per bar of the whole song (bars: { 12: "1 4@4" }).
+// A song may have a second set, SONG.modernChords; ACTIVE_CHORDS is the one shown.
+const CHORD_MAPS = new WeakMap();       // a set of chords -> { global bar number: its chord tokens }
+function chordBarsOf(c) {
+  if (!c) return {};
+  if (CHORD_MAPS.has(c)) return CHORD_MAPS.get(c);
+  const map = {};
+  if (c.bars) Object.assign(map, c.bars);
+  else for (const v of Object.keys(VERSE_M).map(Number)) {
     (typeof c.verse === "function" ? c.verse(v) : c.verse || []).forEach((str, i) => {
       const over = c.verseBars && c.verseBars[v] && c.verseBars[v][i + 1];
-      CHORD_BARS[SONG.verseFirstBar(v) + i] = over != null ? over : str;
+      map[SONG.verseFirstBar(v) + i] = over != null ? over : str;
     });
-    if (HAS_CHORUS && c.chorus) c.chorus.forEach((str, i) => { CHORD_BARS[SONG.chorusFirstBar(v) + i] = str; });
+    if (HAS_CHORUS && c.chorus) c.chorus.forEach((str, i) => { map[SONG.chorusFirstBar(v) + i] = str; });
   }
-  return CHORD_BARS;
+  CHORD_MAPS.set(c, map);
+  return map;
 }
-// The chords of one bar: [{ at: eighths into the bar, tok }]
-function chordsInBar(bar) {
-  const str = chordBars()[bar];
+// The chords of one bar: [{ at: eighths into the bar, tok }], from the chords
+// shown, or from another set
+function chordsInBar(bar, c = ACTIVE_CHORDS) {
+  const str = chordBarsOf(c)[bar];
   if (!str) return [];
   return str.trim().split(/\s+/).map(t => { const [tok, at] = t.split("@"); return { tok, at: at ? +at : 0 }; });
 }
 // Mark a phrase's notes with the chords that start on them (it.ch), and with
 // chords that change while they're held (it.chAfter, shown on a "/" marker).
 function withChords(items, p) {
-  if (!SONG.chords || p.firstBarNum == null) return items;
+  if (!ACTIVE_CHORDS || p.firstBarNum == null) return items;
   const notes = items.filter(x => !x.bar);
   let t = 0;
   for (const n of notes) { n.t0 = t; t += n.dur; }
@@ -4272,7 +4692,6 @@ function withChords(items, p) {
   }
   return items;
 }
-const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII"];
 // A chord token's parts, or null if it can't be read
 function parseChord(tok) {
@@ -4281,7 +4700,9 @@ function parseChord(tok) {
   return { acc: m[1], deg: +m[2], q: m[3], bassAcc: m[4] || "", bass: m[5] ? +m[5] : 0 };
 }
 // Simple chords, for ukulele: drop the extensions and the slash bass
-const SIMPLE_Q = { "9": "7", "maj9": "", "maj7": "", "6": "", "sus4": "", "sus2": "", "7sus": "7", "7sus4": "7", "-7": "-", "-6": "-", "-9": "-", "add9": "" };
+const SIMPLE_Q = { "9": "7", "maj9": "", "maj7": "", "6": "", "sus4": "", "sus2": "", "7sus": "7", "7sus4": "7", "-7": "-", "-6": "-", "-9": "-", "add9": "",
+  // (v0.121, for the Anthology's modern harmonization)
+  "7♭9": "7", "7♯9": "7", "7♭5": "7", "7+5": "7", "7♯5": "7", "-7♭5": "dim", "dim7": "dim", "13": "7", "11": "7", "-maj7": "-", "-(maj7)": "-" };
 // The letter name of a scale step in the key whose do is doMidi, spelled by its place in the key
 function stepLetter(deg, acc, doMidi) {
   const pc = ((doMidi + MAJOR_STEPS[deg - 1] + (acc === "#" ? 1 : acc === "b" ? -1 : 0)) % 12 + 12) % 12;
@@ -4381,11 +4802,11 @@ function noteProblems(items, perBar, after) {
     const edge = i === 0 || i === segs.length - 1;     // pickup and final bar may be short
     if (edge ? sum > perBar + 1e-6 : Math.abs(sum - perBar) > 1e-6) out.push({ kind: "bar", i, sum, edge, first: i === 0 });
   });
-  for (const it of items) if (!it.bar && pitchOf(it.syl) === null) out.push({ kind: "syl", syl: it.syl });
+  for (const it of items) if (isSung(it) && pitchOf(it.syl) === null) out.push({ kind: "syl", syl: it.syl });
   const ns = items.filter(x => !x.bar);
   ns.forEach((n, i) => {
     const next = ns[i + 1] || after;
-    if (n.tie && (!next || pitchOf(next.syl) !== pitchOf(n.syl))) out.push({ kind: "tie", syl: n.syl });
+    if (n.tie && (n.rest || !next || next.rest || pitchOf(next.syl) !== pitchOf(n.syl))) out.push({ kind: "tie", syl: n.syl });
   });
   return out;
 }
@@ -4402,7 +4823,8 @@ function validateSong() {
   };
   for (const [k, c] of Object.entries(SEQ_CHOICES)) check(c.label, joinFill(withItems(c.build())).flatMap(p => p.items));
   validateSyllables();
-  for (const [bar, str] of Object.entries(chordBars()))
+  // both sets of chords, when a song has two (v0.121)
+  for (const set of [SONG.chords, SONG.modernChords].filter(Boolean)) for (const [bar, str] of Object.entries(chordBarsOf(set)))
     for (const t of (str || "").trim().split(/\s+/).filter(Boolean)) {
       const [tok, at] = t.split("@");
       if (!parseChord(tok) || (at != null && !(+at >= 0 && +at < METER.perBar))) say(T("err.badChord", { chord: t, bar }));
@@ -5156,7 +5578,7 @@ function stopAll() {
   clearTimeout(looping); looping = null;
   clearTimeout(endTimer); endTimer = null;
   visuals = [];
-  document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
+  document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on, .sylp.on, .hseg.on").forEach(el => el.classList.remove("on"));
   if (typeof endWhole === "function" && (wholeRun || wholePaused !== null)) endWhole();
   if (calibrating) {           // stopped partway through a sync: reset it
     calibrating = false; calib = null;
@@ -5215,7 +5637,7 @@ function drawVisuals() {
   const now = heardTime() - (+$("visDelay").value) / 1000;
   const wall = performance.now();
   const keep = [];
-  for (const group of ["beat", "lead", "note", "line", "syl", ...new Set(visuals.map(v => v.group).filter(g => g.startsWith("hold")))]) {
+  for (const group of ["beat", "lead", "note", "line", "syl", "sylp", ...new Set(visuals.map(v => v.group).filter(g => g.startsWith("hold")))]) {
     const items = visuals.filter(v => v.group === group);
     // the latest event that has started
     let current = null;
@@ -5232,7 +5654,7 @@ function drawVisuals() {
   }
   visuals = keep;
   if (visuals.length) rafId = requestAnimationFrame(drawVisuals);
-  else document.querySelectorAll(".n.on, .beat.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
+  else document.querySelectorAll(".n.on, .beat.on, .syl.on, .sylp.on, .hseg.on").forEach(el => el.classList.remove("on"));
 }
 
 // ---------- Page scroll lock (for dialogs) ----------
@@ -5287,7 +5709,7 @@ function creditsHTML() {
 const historyHTML = () => Array.isArray(SONG.history) && SONG.history.length
   ? SONG.history.map(sec => `<h3>${esc(sec.h)}</h3>` + sec.p.map(t => `<p class="song-history">${esc(t)}</p>`).join("")).join("")
   : para("info.noHistory", "fine");
-const helpHTML = () => [1, 2, 3, 4, 5, 6].map(i => `<h3>${esc(T(`info.help${i}Title`))}</h3>` + para(`info.help${i}`)).join("");
+const helpHTML = () => [1, 2, 3, 4, 5, 6, 7, 8].map(i => `<h3>${esc(T(`info.help${i}Title`))}</h3>` + para(`info.help${i}`)).join("");
 
 // ---------- Keep the screen on while playing ----------
 // The phone may sleep in the middle of a song while you're playing your own
@@ -5373,6 +5795,7 @@ const SAVED_KEYS = [
   { base: "phrase-parrot-transpose-v1",    perSong: true,  backup: true,  json: false },
   { base: "phrase-parrot-songplan-v1",     perSong: true,  backup: true,  json: true },
   { base: "phrase-parrot-countbars-v1",    perSong: true,  backup: true,  json: false },
+  { base: CHORD_SET_STORE,                 perSong: true,  backup: true,  json: false },   // Traditional or Modern chords (v0.121)
   { base: "phrase-parrot-ab-v1",           perSong: true,  backup: true,  json: true },
   { base: "phrase-parrot-v1",              perSong: true,  backup: false },   // the drill's place in its shuffle
   { base: "phrase-parrot-lyrics-v1",       perSong: true,  backup: false },   // before lyric sets, read once to move it
@@ -5789,20 +6212,22 @@ function schedulePass(phrase, t, opt) {
   opt.noteStart = noteStart;
   let nt = noteStart;
   const timbreNow = $("timbre").value;
-  const legatoRun = WINDS[timbreNow] && $("legato").checked ? [] : null;
+  let legatoRun = WINDS[timbreNow] && $("legato").checked ? [] : null;
   notes.forEach((n, i) => {
     const dur = n.dur * eighth;
     // a tied note sounds once, for the length of all the notes tied to it
     let sound = dur;
     for (let j = i; notes[j].tie && notes[j + 1]; j++) sound += notes[j + 1].dur * eighth;
     const tiedOn = i > 0 && notes[i - 1].tie;
-    if (opt.silent || tiedOn) { /* melody off, or the second half of a tie: highlights only */ }
+    if (n.rest) { if (legatoRun && legatoRun.length) { legatoVoice(legatoRun, timbreNow); legatoRun = []; } }   // silence; a legato voice stops for it
+    else if (opt.silent || tiedOn) { /* melody off, or the second half of a tie: highlights only */ }
     else if (legatoRun) legatoRun.push({ midi: doMidi + pitchOf(n.syl), t: nt, dur: sound });
     else pluckAt(doMidi + pitchOf(n.syl), nt, sound);
     const chip = chips[i];
     if (chip) {
       showAt(chip, nt, Math.max(0.05, dur - 0.03));
       if (chip._syl) showAt(chip._syl, nt, Math.max(0.05, dur - 0.03));
+      if (chip._sylP) showAt(chip._sylP, nt, Math.max(0.05, dur - 0.03));
       if (chip._hold) {
         let end = nt + dur;
         for (let j = i + 1; j < notes.length && chips[j] && chips[j]._syl === chip._syl; j++) end += notes[j].dur * eighth;
@@ -5891,7 +6316,7 @@ function warmNotes() {
   if ($("warmSet").value === "scale") return WARM_SCALE.map(([syl, step]) => ({ syl, base: syl, step }));
   const seen = new Map();
   for (const p of buildPool("mix")) for (const it of p.items) {
-    if (it.bar || seen.has(it.syl)) continue;
+    if (!isSung(it) || seen.has(it.syl)) continue;
     if (pitchOf(it.syl) === null) { reportError(T("err.noPitch", { syl: it.syl })); continue; }
     seen.set(it.syl, { syl: it.syl, base: sylBase(it.syl), step: pitchOf(it.syl) });
   }
@@ -6036,14 +6461,16 @@ function chipsHTML(items) {
   for (let ii = 0; ii < items.length; ii++) {
     const it = items[ii];
     if (it.bar) { html += `<span class="bar">|</span>`; continue; }
-    // three triplet eighths get a small "3" bracket over them, as in sheet music
-    if (!tripLeft && isTrip(it) && isTrip(items[ii + 1]) && isTrip(items[ii + 2])) { html += `<span class="trip">`; tripLeft = 3; }
+    // three triplet eighths (or quarters) get a small "3" bracket over them, as in sheet music
+    if (!tripLeft && isTrip(it) && isTrip(items[ii + 1]) && isTrip(items[ii + 2]) &&
+        near(items[ii + 1].dur, it.dur) && near(items[ii + 2].dur, it.dur)) { html += `<span class="trip">`; tripLeft = 3; }
     const nextNote = notes[k + 1];
     const is16 = near(it.dur, SIXTEENTH);
     const dotted = DOTTED.some(d => near(it.dur, d)) && nextNote && near(nextNote.dur, SIXTEENTH);
     const cls = ["n", it.pk ? "pk" : "", sylBase(it.syl) === "do" ? "do" : "", is16 ? "s16" : "", dotted ? "dotted" : "", it.tie ? "tied" : ""].join(" ");
     const label = it.tie ? T("chips.tied") : is16 ? T("chips.sixteenth") : dotted ? T("chips.dotted") : "";
-    const bare = `<span class="${cls}"${label ? ` title="${label}"` : ""}>${chipInner(it.syl)}</span>`;
+    const bare = it.rest ? `<span class="${cls} rest" title="${T("chips.rest")}" aria-label="${T("chips.rest")}"><span class="rs-dash">–</span><span class="rs-zero">0</span></span>`
+      : `<span class="${cls}"${label ? ` title="${label}"` : ""}>${chipInner(it.syl)}</span>`;
     const chip = it.ch ? `<span class="chw">${chordSpan(it.ch)}${bare}</span>` : bare;
     // a "/" for each chord that comes while this note is held; kept on the same line as the note
     html += it.chAfter ? `<span class="ngrp">${chip}${it.chAfter.map(tok => `<span class="chs" aria-hidden="true">${chordSpan(tok)}/</span>`).join("")}</span>` : chip;
@@ -6120,23 +6547,30 @@ function downbeats(items) {
 function fillSyllables(textEl, chips, marked, items) {
   const syls = parseSyl(marked);
   const notes = items.filter(x => !x.bar);
-  if (!syls || sylNotes(syls) !== notes.length || chips.length !== notes.length) return false;
+  // the places, among the notes and their chips, of the sung ones (rests take no syllable)
+  const sung = notes.map((n, i) => n.rest ? -1 : i).filter(i => i >= 0);
+  if (!syls || sylNotes(syls) !== sung.length || chips.length !== notes.length) return false;
   const db = downbeats(items);
   let html = "", j = 0;
   syls.forEach((x, k) => {
-    const first = notes[j];
-    const cls = "syl" + (db[j] ? " db" : "") + (first.pk ? " pkl" : "");
+    const first = notes[sung[j]];
+    const cls = "syl" + (db[sung[j]] ? " db" : "") + (first.pk ? " pkl" : "");
     const hold = x.notes > 1 ? `<span class="hold" aria-hidden="true">${Array.from({ length: x.notes - 1 }, (_, r) => `<span class="hseg" data-g="hold${r + 1}"></span>`).join("")}</span>` : "";
-    html += `<span class="${cls}" data-k="${k}">${esc(x.t)}</span>${hold}${x.hy ? "-" : ""}${x.end ? " " : ""}`;
+    // a held syllable's line goes between the word and its punctuation ("come───,"),
+    // and the punctuation lights with its word
+    const [word, tail] = hold ? splitTrailingPunct(x.t) : [x.t, ""];
+    const punct = tail ? `<span class="${cls.replace(/^syl/, "sylp")}" data-g="sylp">${esc(tail)}</span>` : "";
+    html += `<span class="${cls}" data-k="${k}">${esc(word)}</span>${hold}${punct}${x.hy ? "-" : ""}${x.end ? " " : ""}`;
     j += x.notes;
   });
   textEl.innerHTML = html.trim();
   const spans = textEl.querySelectorAll(".syl");
   j = 0;
   syls.forEach((x, k) => {
-    const segs = spans[k].nextElementSibling && spans[k].nextElementSibling.classList.contains("hold")
-      ? spans[k].nextElementSibling.querySelectorAll(".hseg") : [];
-    for (let r = 0; r < x.notes; r++) { chips[j]._syl = spans[k]; chips[j]._hold = r ? segs[r - 1] || null : null; j++; }
+    const holdEl = spans[k].nextElementSibling && spans[k].nextElementSibling.classList.contains("hold") ? spans[k].nextElementSibling : null;
+    const segs = holdEl ? holdEl.querySelectorAll(".hseg") : [];
+    const punctEl = holdEl && holdEl.nextElementSibling && holdEl.nextElementSibling.classList.contains("sylp") ? holdEl.nextElementSibling : null;
+    for (let r = 0; r < x.notes; r++) { const c = chips[sung[j]]; c._syl = spans[k]; c._sylP = punctEl; c._hold = r ? segs[r - 1] || null : null; j++; }
   });
   return true;
 }
@@ -6151,7 +6585,7 @@ function validateSyllables() {
         const syls = parseSyl(marked), p = phrases[k];
         const vars = { set: set.name, label: group.label, line: k + 1 };
         if (!syls || !p) return;
-        const notes = p.items.filter(x => !x.bar).length;
+        const notes = p.items.filter(isSung).length;
         if (sylNotes(syls) !== notes) say(T("err.sylCount", { ...vars, syl: sylNotes(syls), notes }));
         if (sylPlain(syls) !== (group.lines[k] || "")) say(T("err.sylText", { ...vars, marked, plain: group.lines[k] || "" }));
       });
@@ -6186,7 +6620,7 @@ function renderAlongLyrics() {
     if (!lyric) return;
     const textEl = box.querySelector(".al-text");
     const chips = [...line.querySelectorAll(".n")];
-    chips.forEach(c => { c._syl = null; c._hold = null; });
+    chips.forEach(c => { c._syl = null; c._sylP = null; c._hold = null; });
     // with syllable marks, each syllable lights with its note; otherwise the plain line
     if (!(lyric.syl && fillSyllables(textEl, chips, lyric.syl, SEQ[i].items))) textEl.textContent = lyric.text;
     const mean = box.querySelector(".al-mean");
@@ -6990,7 +7424,7 @@ function parseMyLyrics(text, name) {
 let PHRASE_NOTES = null;
 function phraseNotes(kind, v) {
   if (!PHRASE_NOTES) {
-    const count = list => withItems(list).map(p => p.items.filter(x => !x.bar).length);
+    const count = list => withItems(list).map(p => p.items.filter(isSung).length);
     PHRASE_NOTES = { verse: {}, chorus: HAS_CHORUS ? count(chorusAfter(1)) : [] };
     for (const n of VERSE_NUMS) PHRASE_NOTES.verse[n] = count(verseOf(n));
   }
@@ -7908,6 +8342,17 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("infoMo
 $("wakeOn").addEventListener("change", updateWakeLock);
 $("noteShapes").addEventListener("change", applyShapes);
 for (const id of ["chordStyle", "chordSimple", "chordKey"]) $(id).addEventListener("change", () => { refreshChords(); savePrefs(); });
+// Traditional or Modern chords, for a song with both sets: kept per song; the
+// page reloads to show them (as when switching songs), so unsaved edits are asked about first
+const chordSetNow = () => ACTIVE_CHORDS && ACTIVE_CHORDS === SONG.modernChords ? "modern" : "traditional";
+$("chordSetRow").hidden = !(SONG.chords && SONG.modernChords);
+$("chordSet").value = chordSetNow();
+$("chordSet").addEventListener("change", () => {
+  if (!msOkToLeave() || !okToLeave()) { $("chordSet").value = chordSetNow(); return; }
+  if (!storeSet(songKey(CHORD_SET_STORE), $("chordSet").value)) { $("chordSet").value = chordSetNow(); return; }
+  stopAll();
+  location.reload();
+});
 $("warmCheck").addEventListener("click", warmCheck);
 $("warmGot").addEventListener("click", () => warmScore(true));
 $("warmNotYet").addEventListener("click", () => warmScore(false));
@@ -8332,8 +8777,32 @@ function addMySongs(texts) {
 // Adds every song in the file (never replaces one). A file with "### Song:"
 // lines holds several; otherwise the file is one song. A song whose title is
 // taken gets "(2)" added. Songs with mistakes are added too, as Save does.
+// Import a file: a MusicXML file is converted to a song first (v0.121)
+const XML_FILE_RE = /\.(musicxml|xml)$/i;
+const isMusicXmlText = text => /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<score-(partwise|timewise)\b/.test(text.slice(0, 4000));
+function importMusicXml(name, text) {
+  if (!msOkToLeave()) return;
+  let r;
+  try { r = musicXmlToSongText(text, name); }
+  catch (e) { reportError(T("xml.crashed", { msg: e.message })); return; }
+  if (r.problems.length) {
+    const list = $("msProblems");
+    list.replaceChildren(...r.problems.map(p => { const li = document.createElement("li"); li.textContent = p; return li; }));
+    list.hidden = false;
+    msSay(T("xml.refused", { name }), "warn");
+    return;
+  }
+  const added = addMySongs([r.text]);
+  if (!added) return;                               // storeSet already showed the error
+  const a = added[0];
+  showMySong(a.id);
+  if (a.r.problems.length) showMySongCheck(a.r, "xml.importedBroken");
+  else msSay(T("xml.imported", { name, title: a.title }), "ok");
+}
 function importMySongs(file) {
+  if (/\.mxl$/i.test(file.name)) { msSay(T("xml.zipped", { name: file.name }), "warn"); return; }
   readTextFile(file, text => {
+    if (XML_FILE_RE.test(file.name) || isMusicXmlText(text)) { importMusicXml(file.name, text); return; }
     if (isFullBackupText(text)) { msSay(T("mysongs.notSongBackup"), "warn"); return; }
     if (!msOkToLeave()) return;
     const parts = splitFileByHeading(text, FILE_LABELS.songHeading);
@@ -8353,6 +8822,355 @@ function importMySongs(file) {
     msSay(msg, broken.length ? "warn" : "ok");
   });
 }
+
+// ---------- MusicXML to song text (v0.121) ----------
+// Turns a MusicXML file (one melody line, as songbooks and notation programs
+// export it) into the My songs text format; readMySong then checks it like
+// any typed song. Import a file uses it, and Claude uses the same function
+// (in the test browser) to bring songbook songs into the app.
+// Returns { text, title, problems }: problems lists everything it can't read,
+// and then text is "" (it refuses rather than guess).
+// It reads: the title, key (fifths and mode) and time; each note's syllable
+// (raised or lowered from how it's written), length in eighths, ties,
+// triplets and rests; verse 1's syllables, with notes that have none holding
+// the syllable before, and later verses as words-only verses; chords from
+// <harmony> ("Chords:") and chord names written as text ("Modern chords:", as
+// Berger and Israels' Public Domain Song Anthology gives its modern
+// harmonization; its chord font writes ♭ as "€" or "¨", + as "&", ° as "º").
+// It refuses: more than one part, staff or voice; several notes at once;
+// grace notes; repeats, endings and jumps; a key or time change; a time the
+// app lacks; a bar that doesn't add up; a chord it can't read.
+// Lines end after a word ending in , . ; : ! or ? once the line has 2 bars
+// (with the notes that hold its syllable); a line without such a word ends
+// after XML_MAX_BARS bars' worth (4 bars of 4/4); a song without words breaks
+// where the file's own systems (staff lines) do.
+const XML_CHORD_FONT = { "€": "♭", "¨": "♭", "º": "°", "&": "+", "#": "♯" };
+const XML_KINDS = { "major": "", "minor": "m", "augmented": "+", "diminished": "dim", "dominant": "7", "major-seventh": "maj7",
+  "minor-seventh": "m7", "diminished-seventh": "dim7", "augmented-seventh": "7+5", "half-diminished": "m7♭5",
+  "major-minor": "m(maj7)", "major-sixth": "6", "minor-sixth": "m6", "dominant-ninth": "9", "major-ninth": "maj9",
+  "minor-ninth": "m9", "dominant-11th": "11", "major-11th": "maj11", "minor-11th": "m11", "dominant-13th": "13",
+  "major-13th": "maj13", "minor-13th": "m13", "suspended-second": "sus2", "suspended-fourth": "sus4", "power": "5" };
+const XML_MAJOR_KEYS = ["C♭", "G♭", "D♭", "A♭", "E♭", "B♭", "F", "C", "G", "D", "A", "E", "B", "F♯", "C♯"];   // by fifths, -7 to 7
+const XML_MINOR_KEYS = ["A♭", "E♭", "B♭", "F", "C", "G", "D", "A", "E", "B", "F♯", "C♯", "G♯", "D♯", "A♯"];
+const XML_EIGHTHS_PER_LINE = 32;         // a line with no phrase end breaks after this many eighths' worth of bars
+const XML_SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "o'er", "of", "on", "or", "the", "to", "with"]);
+const SOLFEGE = ["do", "re", "mi", "fa", "so", "la", "ti"];
+const RAISED_SYL = { do: "di", re: "ri", fa: "fi", so: "si", la: "li" };
+const LOWERED_SYL = { re: "ra", mi: "me", so: "se", la: "le", ti: "te" };
+// "ANGELS WE HAVE HEARD ON HIGH" -> "Angels We Have Heard on High" (only an all-capitals title is changed)
+function xmlTitleCase(t) {
+  if (t !== t.toUpperCase()) return t;
+  return t.toLowerCase().split(/(\s+)/).map((w, i) => /^\s+$/.test(w) || (i > 0 && XML_SMALL_WORDS.has(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join("");
+}
+function musicXmlToSongText(xml, fileName = "") {
+  const problems = [];
+  const seen = new Set();
+  const fail = (key, vars) => { const t = T("xml." + key, vars); if (!seen.has(t)) { seen.add(t); problems.push(t); } };
+  const refuse = () => ({ text: "", title: "", problems });
+  let doc;
+  try { doc = new DOMParser().parseFromString(String(xml), "application/xml"); } catch (e) { doc = null; }
+  if (!doc || doc.getElementsByTagName("parsererror").length) { fail("notXml"); return refuse(); }
+  const root = doc.documentElement;
+  if (root.nodeName === "score-timewise") { fail("timewise"); return refuse(); }
+  if (root.nodeName !== "score-partwise") { fail("notMusicXml"); return refuse(); }
+  const kids = (el, name) => [...el.children].filter(c => c.nodeName === name);
+  const kid = (el, name) => kids(el, name)[0] || null;
+  const txt = (el, path) => { let e = el; for (const n of path.split(">")) { e = e && kid(e, n.trim()); } return e ? e.textContent.trim() : ""; };
+  const parts = kids(root, "part");
+  if (parts.length !== 1) { fail("parts", { n: parts.length }); return refuse(); }
+
+  // ---- read every bar: notes, chords, words written as text ----
+  let divisions = 0, fifths = null, mode = "major", timeLabel = null;
+  let firstVoice = null;
+  const notes = [], chords = [], others = [], measures = [];
+  let pos = 0;                                       // eighths from the start of the song
+  kids(parts[0], "measure").forEach((meas, mi) => {
+    const bar = meas.getAttribute("number") || String(mi + 1);
+    const start = pos;
+    let cursor = 0, sum = 0;                         // eighths into this bar
+    const at = el => { const o = kid(el, "offset"); return cursor + (o && divisions ? +o.textContent * 2 / divisions : 0); };
+    const newSystem = kids(meas, "print").some(p => p.getAttribute("new-system") === "yes" || p.getAttribute("new-page") === "yes");
+    for (const el of meas.children) {
+      switch (el.nodeName) {
+        case "attributes": {
+          if (kid(el, "divisions")) divisions = +txt(el, "divisions");
+          const key = kid(el, "key");
+          if (key && kid(key, "fifths")) {
+            const f = +txt(key, "fifths"), md = (txt(key, "mode") || "major").toLowerCase();
+            if (fifths !== null && (f !== fifths || md !== mode)) fail("keyChange", { bar });
+            else { fifths = f; mode = md; }
+          }
+          const time = kid(el, "time");
+          if (time) {
+            const label = txt(time, "beats") + "/" + txt(time, "beat-type");
+            if (timeLabel !== null && label !== timeLabel) fail("timeChange", { bar });
+            else timeLabel = label;
+          }
+          if (+txt(el, "staves") > 1) fail("staves");
+          if (kid(el, "transpose")) fail("transpose");
+          break;
+        }
+        case "note": {
+          if (kid(el, "grace")) { fail("grace", { bar }); break; }
+          if (kid(el, "cue")) { fail("cue", { bar }); break; }
+          if (kid(el, "chord")) { fail("chordNotes", { bar }); break; }
+          const voice = txt(el, "voice") || "1";
+          if (firstVoice === null) firstVoice = voice;
+          if (voice !== firstVoice) { fail("voices", { bar }); break; }
+          if (+txt(el, "staff") > 1) { fail("staves"); break; }
+          if (!divisions || !kid(el, "duration")) { fail("noDuration", { bar }); break; }
+          const dur = +txt(el, "duration") * 2 / divisions;
+          const n = { bar, mi, pos: start + cursor, dur, lyr: {} };
+          if (kid(el, "rest")) n.rest = true;
+          else if (kid(el, "pitch")) {
+            const alter = +(txt(el, "pitch>alter") || 0);
+            if (!Number.isInteger(alter)) fail("microtone", { bar });
+            n.step = txt(el, "pitch>step"); n.alter = alter;
+            n.midi = 12 * (+txt(el, "pitch>octave") + 1) + LETTER_PC[LETTERS.indexOf(n.step)] + alter;
+          } else { fail("unpitched", { bar }); break; }
+          if (kids(el, "tie").some(t => t.getAttribute("type") === "start") ||
+              [...el.getElementsByTagName("tied")].some(t => t.getAttribute("type") === "start")) n.tie = true;
+          for (const ly of kids(el, "lyric")) {
+            const words = kids(ly, "text").map(t => t.textContent.trim()).filter(Boolean);
+            if (!words.length) continue;                       // an <extend> alone: the syllable goes on
+            n.lyr[ly.getAttribute("number") || ly.getAttribute("name") || "1"] = { text: words.join("‿"), syl: txt(ly, "syllabic") || "single" };
+          }
+          notes.push(n);
+          cursor += dur; sum += dur;
+          break;
+        }
+        case "backup": cursor -= +txt(el, "duration") * 2 / divisions; break;
+        case "forward": cursor += +txt(el, "duration") * 2 / divisions; break;
+        case "harmony": {
+          const name = xmlHarmonyName(el);
+          if (name === null) fail("badKind", { bar, kind: txt(el, "kind") });
+          else if (name) chords.push({ row: "harmony", pos: start + at(el), name, bar });
+          break;
+        }
+        case "direction": {
+          if ([...el.getElementsByTagName("segno"), ...el.getElementsByTagName("coda")].length ||
+              [...el.getElementsByTagName("sound")].some(s => ["dacapo", "dalsegno", "segno", "coda", "fine", "tocoda"].some(a => s.hasAttribute(a)))) { fail("jumps", { bar }); break; }
+          for (const w of el.getElementsByTagName("words")) {
+            const raw = w.textContent.trim();
+            if (!raw) continue;
+            const name = [...raw].map(ch => XML_CHORD_FONT[ch] ?? ch).join("");
+            const chordFont = /chord/i.test(w.getAttribute("font-family") || "");
+            if (chordFont || chordToken(name, 60, 0)) chords.push({ row: "text", pos: start + at(el), name, raw, bar, chordFont });
+            else others.push({ bar, text: raw });
+          }
+          break;
+        }
+        case "barline":
+          if (kid(el, "repeat")) fail("repeats", { bar });
+          if (kid(el, "ending")) fail("endings", { bar });
+          break;
+      }
+    }
+    measures.push({ bar, start, len: sum, newSystem });
+    pos = start + sum;
+  });
+  if (!notes.length && !problems.length) fail("noNotes");
+  if (fifths === null) fail("noKey");
+  if (!timeLabel) fail("noTime");
+  else if (!MY_TIMES[timeLabel]) fail("badTime", { time: timeLabel });
+  if (problems.length) return refuse();
+
+  // ---- key and time ----
+  const [perBar, beatLen] = MY_TIMES[timeLabel];
+  const minor = mode === "minor";
+  if (fifths < -7 || fifths > 7) { fail("noKey"); return refuse(); }
+  const keyName = (minor ? XML_MINOR_KEYS : XML_MAJOR_KEYS)[fifths + 7];
+  const baseKey = myKey(keyName + (minor ? " minor" : ""));
+  // do from C4 up to B4, unless the melody sits more than an octave away
+  const pitched = notes.filter(n => !n.rest);
+  const mean = pitched.reduce((a, n) => a + n.midi, 0) / (pitched.length || 1);
+  let doMidi = baseKey.doMidi;
+  while (mean - doMidi > 14) doMidi += 12;
+  while (mean - doMidi < -7) doMidi -= 12;
+  let keyText = keyName + (minor ? " minor" : "");
+  if (doMidi !== baseKey.doMidi) {
+    const oct = [0, 1, 2, 3, 4, 5, 6, 7, 8].find(o => { const k = myKey(keyName + o + (minor ? " minor" : "")); return k && k.doMidi === doMidi; });
+    if (oct === undefined) throw new Error("musicXmlToSongText: no octave number gives do = " + doMidi);
+    keyText = keyName + oct + (minor ? " minor" : "");
+  }
+  const doLetter = baseKey.doLetter;
+  // ---- each bar adds up (a short first bar is a pickup; the last may be short too) ----
+  measures.forEach((m, mi) => {
+    const short = m.len < perBar - 1e-6 && (mi === 0 || mi === measures.length - 1);
+    if (Math.abs(m.len - perBar) > 1e-6 && !short) fail("barLength", { bar: m.bar, sum: Math.round(m.len * 1000) / 1000, need: perBar });
+  });
+  // a note's syllable, from its letter (so a written F♯ in C is fi, a G♭ se)
+  const sylOf = n => {
+    const deg = letterStep(LETTERS.indexOf(n.step), doLetter);
+    const rel = n.midi - doMidi;
+    const diff = pcDiff(rel, MAJOR_STEPS[deg]);
+    let oct = (rel - MAJOR_STEPS[deg] - diff) / 12;
+    let name = SOLFEGE[deg];
+    if (diff === 1 && RAISED_SYL[name]) name = RAISED_SYL[name];
+    else if (diff === -1 && LOWERED_SYL[name]) name = LOWERED_SYL[name];
+    else if (diff !== 0) {             // mi♯, ti♯, do♭, fa♭ or a double sharp/flat: named by its pitch
+      const pc = ((rel % 12) + 12) % 12, k = MAJOR_STEPS.indexOf(pc);
+      name = k >= 0 ? SOLFEGE[k] : RAISED_SYL[SOLFEGE[MAJOR_STEPS.indexOf(pc - 1)]];
+      oct = Math.floor(rel / 12);
+    }
+    return name + (oct > 0 ? "'".repeat(oct) : ",".repeat(-oct));
+  };
+  const fmtLen = e => near(e * 4, Math.round(e * 4)) ? String(Math.round(e * 4) / 4)
+    : near(e * 3, Math.round(e * 3)) ? Math.round(e * 3) + "/3" : null;
+  for (const n of notes) if (fmtLen(n.dur) === null) fail("badLength", { bar: n.bar });
+  // ---- chords: each set read now, so a bad one is reported ----
+  const sets = { harmony: chords.filter(c => c.row === "harmony"), text: chords.filter(c => c.row === "text") };
+  for (const c of chords) {
+    c.tok = chordToken(c.name, doMidi, doLetter);
+    if (!c.tok) fail("badChord", { bar: c.bar, chord: c.raw || c.name });
+  }
+  if (problems.length) return refuse();
+
+  // ---- verses: lyric numbers, in the order they first appear ----
+  const verseKeys = [];
+  for (const n of notes) for (const k of Object.keys(n.lyr)) if (!verseKeys.includes(k)) verseKeys.push(k);
+  const hasWords = verseKeys.length > 0, v1 = verseKeys[0];
+  const pickup = measures.length && measures[0].len < perBar - 1e-6 ? measures[0].len : 0;
+  const barStart = n => near(n.pos, measures[n.mi].start) && !(n.mi === 0 && pickup);
+  const hasSyl = (n, k = v1) => !!(n && n.lyr[k]);
+  // With a pickup and more than one verse, the next verse's pickup must fit in
+  // the last bar: when that bar is full, its last note is shortened by the
+  // pickup's length, as sheet music does (the app checks this where lines join).
+  let shortEnd = 0;
+  const lastBar = measures[measures.length - 1], lastNote = notes[notes.length - 1];
+  if (pickup && verseKeys.length > 1 && measures.length > 1 && near(lastBar.len, perBar)) {
+    if (lastNote.dur > pickup + 1e-6) { lastNote.dur -= pickup; shortEnd = pickup; }
+    else fail("lastTooShort", { bar: lastBar.bar });
+  }
+  if (problems.length) return refuse();
+  // ---- where lines end ----
+  const ends = new Set();                    // indexes of notes a line ends after
+  if (hasWords) notes.forEach((n, i) => {
+    const ly = n.lyr[v1];
+    if (!ly || !(ly.syl === "end" || ly.syl === "single") || !/[,.;:!?][”’"')\]]*$/.test(ly.text)) return;
+    let j = i;
+    while (notes[j + 1] && !notes[j + 1].rest && !hasSyl(notes[j + 1])) j++;               // the notes holding it
+    while (notes[j + 1] && notes[j + 1].rest && !barStart(notes[j + 1])) j++;              // rests to the end of its bar
+    ends.add(j);
+  });
+  const maxBars = Math.max(4, Math.round(XML_EIGHTHS_PER_LINE / perBar));
+  const lines = [];
+  let cur = [];
+  notes.forEach((n, i) => {
+    cur.push(n);
+    const next = notes[i + 1];
+    if (!next) { lines.push(cur); return; }
+    const bars = cur.filter(barStart).length;
+    let brk;
+    if (hasWords) brk = (ends.has(i) && bars >= 2) || (bars >= maxBars && barStart(next) && (hasSyl(next) || next.rest));
+    else brk = barStart(next) && bars >= 2 && (measures[next.mi].newSystem || bars >= maxBars * 2);
+    if (brk) { lines.push(cur); cur = []; }
+  });
+  // ---- the text ----
+  const beat = (p, m) => Math.round(((p - m.start + (m === measures[0] && pickup ? perBar - pickup : 0)) / beatLen + 1) * 1000) / 1000;
+  const measureAt = p => { let k = 0; while (k + 1 < measures.length && measures[k + 1].start <= p + 1e-6) k++; return measures[k]; };
+  const notesLine = line => {
+    const out = [];
+    let inPick = !barStart(line[0]);
+    line.forEach((n, k) => {
+      if (barStart(n)) { if (inPick) { out[out.length - 1] += ")"; inPick = false; } out.push("|"); }
+      out.push((k === 0 && inPick ? "(" : "") + (n.rest ? REST_SYL : sylOf(n)) + ":" + fmtLen(n.dur) + (n.tie ? "~" : ""));
+    });
+    if (inPick) out[out.length - 1] += ")";
+    return out.join(" ");
+  };
+  const chordsLine = (line, li, set) => {
+    const from = li === 0 ? -Infinity : line[0].pos, last = line[line.length - 1];
+    const to = li === lines.length - 1 ? Infinity : last.pos + last.dur;
+    const inLine = set.filter(c => c.pos >= from - 1e-6 && c.pos < to - 1e-6);
+    if (!inLine.length) return "";
+    const firstBar = line.find(barStart);
+    const barList = [];
+    line.forEach(n => { if (barStart(n)) barList.push(measures[n.mi]); });
+    const name = (c, always) => { const b = beat(c.pos, measureAt(c.pos)); return c.name + (always || !near(b, 1) ? "@" + b : ""); };
+    const pre = inLine.filter(c => !firstBar || c.pos < firstBar.pos - 1e-6).map(c => name(c, true)).join(" ");
+    const cells = barList.map((m, k) => inLine.filter(c => c.pos >= m.start - 1e-6 && (k === barList.length - 1 || c.pos < barList[k + 1].start - 1e-6)).map(c => name(c, false)).join(" "));
+    return ((pre ? pre + " " : "") + "| " + cells.join(" | ")).replace(/\s+$/, "");
+  };
+  const wordsLine = (line, k) => {
+    const parts = [];
+    let lead = 0;
+    for (const n of line) {
+      if (n.rest) continue;
+      const ly = n.lyr[k];
+      if (ly) parts.push({ t: ly.text.replace(/\\/g, "").replace(/_/g, "").replace(/-/g, "\\-"), syl: ly.syl, holds: 0 });
+      else if (parts.length) parts[parts.length - 1].holds++;
+      else lead++;
+    }
+    if (!parts.length) return { text: WHOLE_LINE };
+    // a words line can't start with a character that means something else at the start of a line
+    if (/^[#=|(\[]/.test(parts[0].t)) fail("wordsStart", { text: parts[0].t });
+    const join = (p, i) => i === parts.length - 1 ? "" : p.syl === "begin" || p.syl === "middle" ? "-" : " ";
+    if (lead) return { text: WHOLE_LINE + " " + parts.map((p, i) => p.t + (join(p, i) === "-" ? "" : join(p, i))).join(""), lead };
+    return { text: parts.map((p, i) => p.t + "_".repeat(p.holds) + join(p, i)).join("") };
+  };
+  const title = xmlTitleCase(txt(root, "work>work-title") || txt(root, "movement-title") || fileName.replace(/\.[^.]*$/, "") || T("mysongs.untitled"));
+  const version = (document.querySelector("h1 .ver") || {}).textContent || "";
+  const L = ["Title: " + title, "Key: " + keyText, "Time: " + timeLabel, "",
+    "# " + T("xml.noteConverted", { file: fileName || "MusicXML", date: fileDate(), version })];
+  for (const c of kids(kid(root, "identification") || root, "creator")) if (c.textContent.trim()) L.push("# " + (c.getAttribute("type") || "creator") + ": " + c.textContent.trim());
+  for (const r of kids(kid(root, "identification") || root, "rights")) if (r.textContent.trim()) L.push("# " + T("xml.noteRights", { text: r.textContent.trim() }));
+  for (const c of kids(root, "credit")) for (const w of kids(c, "credit-words")) {
+    const t = w.textContent.trim();
+    if (t && xmlTitleCase(t) !== title && !kids(kid(root, "identification") || root, "creator").some(x => x.textContent.trim() === t)) L.push("# " + t);
+  }
+  L.push("# " + T("xml.noteLines"));
+  const both = sets.harmony.length && sets.text.length;
+  const rows = [[sets.harmony.length ? sets.harmony : sets.text, CHORDS_LABEL]];
+  if (both) { rows.push([sets.text, MODERN_CHORDS_LABEL]); L.push("# " + T("xml.noteTwoChords")); }
+  for (const o of others) L.push("# " + T("xml.noteText", { bar: o.bar, text: o.text }));
+  if (shortEnd) L.push("# " + T("xml.noteShortEnd", { n: shortEnd }));
+  L.push("");
+  if (verseKeys.length > 1) L.push(FILE_LABELS.verse(1), "");
+  lines.forEach((line, li) => {
+    L.push(notesLine(line));
+    for (const [set, label] of rows) { const c = chordsLine(line, li, set); if (c) L.push(label + " " + c); }
+    if (hasWords) {
+      const w = wordsLine(line, v1);
+      if (w.lead) L.push("# " + T("xml.noteLead", { verse: 1 }));
+      L.push(w.text);
+    }
+    L.push("");
+  });
+  verseKeys.slice(1).forEach((k, i) => {
+    L.push(FILE_LABELS.verse(i + 2), "");
+    lines.forEach(line => L.push(wordsLine(line, k).text));
+    L.push("");
+  });
+  if (problems.length) return refuse();
+  return { text: L.join("\n").replace(/\n+$/, "") + "\n", title, problems };
+}
+// A <harmony>'s chord name in letters ("B♭m7", "F/C"); "" for no chord (N.C.),
+// null if it can't be read.
+function xmlHarmonyName(h) {
+  const k = [...h.children].find(c => c.nodeName === "kind");
+  const kind = k ? k.textContent.trim() : "";
+  if (kind === "none") return "";
+  if (!(kind in XML_KINDS)) return null;
+  const acc = a => ({ "-1": "♭", "0": "", "1": "♯", "": "" })[String(a || "").trim()];
+  const one = (el, n) => { const c = el && [...el.children].find(x => x.nodeName === n); return c ? c.textContent.trim() : ""; };
+  const root = [...h.children].find(c => c.nodeName === "root");
+  if (!root || !one(root, "root-step")) return null;
+  const ra = acc(one(root, "root-alter"));
+  if (ra === undefined) return null;
+  let q = XML_KINDS[kind];
+  for (const d of [...h.children].filter(c => c.nodeName === "degree")) {
+    const v = one(d, "degree-value"), a = acc(one(d, "degree-alter")), t = one(d, "degree-type");
+    if (a === undefined || !v) return null;
+    if (t === "add") q += "add" + a + v;
+    else if (t === "alter") q += a + v;
+    else return null;                       // a note left out of the chord: not something the app can write
+  }
+  const bass = [...h.children].find(c => c.nodeName === "bass");
+  let b = "";
+  if (bass) { const ba = acc(one(bass, "bass-alter")); if (ba === undefined || !one(bass, "bass-step")) return null; b = "/" + one(bass, "bass-step") + ba; }
+  return one(root, "root-step") + ra + q + b;
+}
 // ---- Copy a built-in song into My songs ----
 // The open song in the My songs format: the words of the set chosen under
 // "Lyrics to show", and a # comment above each line with the song's own bar
@@ -8371,44 +9189,62 @@ function songAsText() {
   if (set) L.push("# " + T("mysongs.copyLyrics", { set: set.name }));
   L.push("");
   const plain = html => html.replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-  const chordsOf = p => {
-    if (!SONG.chords) return "";
-    const cells = [];
-    for (let bar = p.firstBarNum; bar <= p.lastBarNum; bar++) {
-      const cs = chordsInBar(bar).map(c => {
-        const name = plain(chordLabel(c.tok, "names", false, SONG_DO_MIDI));
-        return c.at ? T("mysongs.copyOnBeat", { chord: name, beat: Math.round((c.at / METER.beatLen + 1) * 100) / 100 }) : name;
-      });
-      cells.push(cs.length ? cs.join(", ") : "–");
-    }
-    return cells.some(c => c !== "–") ? cells.join(" | ") : "";
+  const comment = p => "# " + (p.nBars > 1 ? T("mysongs.copyBars", { a: p.firstBarNum, b: p.lastBarNum }) : T("mysongs.copyBar", { a: p.firstBarNum }));
+  const nums = Object.keys(VERSE_M).map(Number).sort((a, b) => a - b);
+  // Chords lines (and Modern chords, for a song with both sets): each bar's
+  // chords as letter names in the song's key as written, "@beat" when a chord
+  // starts after the bar's first beat. Each line keeps all of its own last
+  // bar's chords, even those under the next line's pickup: the same line
+  // (verse 1's, or the chorus) is played again before different lines, and
+  // after the last one nothing follows (v0.124). Only a line with no line
+  // ending just before it (the song's first) gives its pickup's chords before
+  // its first "|".
+  const endsAt = new Set();     // the last bar number of every line
+  nums.forEach(v => [...verseOf(v), ...(HAS_CHORUS ? chorusAfter(v) : [])].forEach(p => endsAt.add(p.lastBarNum)));
+  const beatOf = at => Math.round((at / METER.beatLen + 1) * 1000) / 1000;
+  const chordLine = (p, set) => {
+    const per = METER.perBar, own = endsAt.has(p.firstBarNum - 1) ? 0 : pickupEighths(parse(p.m));
+    const cell = (bar, from) => chordsInBar(bar, set).filter(c => c.at > from - 1e-6)
+      .map(c => plain(chordLabel(c.tok, "names", false, SONG_DO_MIDI)) + (c.at ? "@" + beatOf(c.at) : "")).join(" ");
+    const pre = own ? cell(p.firstBarNum - 1, per - own) : "";
+    const bars = [];
+    for (let bar = p.firstBarNum; bar <= p.lastBarNum; bar++) bars.push(cell(bar, 0));
+    if (!pre && bars.every(b => !b)) return "";
+    return ((pre ? pre + " " : "") + "| " + bars.join(" | ")).replace(/\s+$/, "");
   };
-  const comment = p => {
-    const bars = p.nBars > 1 ? T("mysongs.copyBars", { a: p.firstBarNum, b: p.lastBarNum }) : T("mysongs.copyBar", { a: p.firstBarNum });
-    const ch = chordsOf(p);
-    return "# " + bars + (ch ? " · " + T("mysongs.copyChords", { chords: ch }) : "");
-  };
+  // model: verse 1's line in the same place, for a later verse's line. A line
+  // with no chords where that line has some gets an empty Chords line
+  // ("Chords: |  |"), or it would borrow them when read (v0.125).
+  const chordLines = (p, model) => [[SONG.chords, CHORDS_LABEL], [SONG.modernChords, MODERN_CHORDS_LABEL]]
+    .filter(([set]) => set).map(([set, label]) => {
+      const c = chordLine(p, set);
+      if (c) return label + " " + c;
+      if (model && model.nBars === p.nBars && chordLine(model, set)) return label + " " + ("| " + Array(p.nBars).fill("").join(" | ")).trim();
+      return "";
+    }).filter(Boolean);
   // the words line (and meaning) for a phrase: its syllable marks if they fit
   // its notes, otherwise the plain words, lit as a whole line
   const words = p => {
     if (!set) return [];
     const ly = alongLyricFor(set, p) || { text: "", syl: "", meaning: "" };
     const syls = ly.syl ? parseSyl(ly.syl) : null;
-    const fits = syls && sylNotes(syls) === parse(p.m).filter(x => !x.bar).length;
+    const fits = syls && sylNotes(syls) === parse(p.m).filter(isSung).length;
     const out = [fits ? ly.syl : (WHOLE_LINE + " " + (ly.text || "")).trim()];
     if (ly.meaning) out.push("= " + ly.meaning);
     return out;
   };
   const notesOf = m => m.trim().replace(/\s+/g, " ");
-  const nums = Object.keys(VERSE_M).map(Number).sort((a, b) => a - b);
   const first = verseOf(nums[0]).map(p => notesOf(p.m));
+  const firstChords = verseOf(nums[0]).map(p => chordLines(p).join("\n"));
   const choruses = set ? set.choruses || [] : [];
   nums.forEach((v, i) => {
     L.push(FILE_LABELS.verse(i + 1), "");
     verseOf(v).forEach((p, k) => {
       L.push(comment(p));
-      // (an instrumental song has no words lines to borrow notes with)
-      if (i === 0 || !set || first[k] !== notesOf(p.m)) L.push(notesOf(p.m));
+      // (an instrumental song has no words lines to borrow notes with; a line
+      // whose chords differ from verse 1's gives its notes, to carry its chords)
+      const ch = chordLines(p, i ? verseOf(nums[0])[k] : null);
+      if (i === 0 || !set || first[k] !== notesOf(p.m) || firstChords[k] !== ch.join("\n")) L.push(notesOf(p.m), ...ch);
       L.push(...words(p), "");
     });
     // the first chorus has the notes; later chorus blocks only words, one per
@@ -8417,7 +9253,7 @@ function songAsText() {
       L.push(FILE_LABELS.chorus, "");
       chorusAfter(v).forEach(p => {
         L.push(comment(p));
-        if (i === 0 || !set) L.push(notesOf(p.m));
+        if (i === 0 || !set) L.push(notesOf(p.m), ...chordLines(p));
         L.push(...words(p), "");
       });
     }
