@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.127</title>
+<title>Melodies by Ear v0.129</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -790,7 +790,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.127</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.129</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -4544,10 +4544,24 @@ for (const ms of readMySongsStore()) {
   if (r.song) SONGS[ms.id] = r.song;
 }
 
+// Natural order for titles (v0.128): letters ignoring case and accents, and runs of
+// digits compared as numbers, so "Song 19" comes before "Song 20" and "Song 190".
+// Library style (v0.129): a leading "The", "A" or "An" is skipped, so "The Battle
+// Hymn" files under B; two titles that differ only by it fall back to the full title.
+const TITLE_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const LEADING_ARTICLE_RE = /^(the|a|an)\s+(?=\S)/i;
+const titleSortKey = title => title.replace(LEADING_ARTICLE_RE, "");
+const compareTitles = (a, b) => TITLE_COLLATOR.compare(titleSortKey(a), titleSortKey(b)) || TITLE_COLLATOR.compare(a, b);
+// Songs as every song list shows them (v0.128): the open song first, then by title
+// (ties by id, so the order never depends on how SONGS happened to be filled).
+function songsInListOrder(songs) {
+  return [...songs].sort((a, b) => (b.id === SONG_ID) - (a.id === SONG_ID) || compareTitles(a.title, b.title) || compareTitles(a.id, b.id));
+}
+
 // The song menu shows the chosen category's songs, and always the open song.
 function fillSongMenu() {
   const cat = $("catSel").value;
-  const list = Object.values(SONGS).filter(sg => cat === "all" || songCats(sg.id).includes(cat) || sg.id === SONG_ID);
+  const list = songsInListOrder(Object.values(SONGS).filter(sg => cat === "all" || songCats(sg.id).includes(cat) || sg.id === SONG_ID));
   // the open song, if it isn't in this category, says so
   const label = sg => cat !== "all" && sg.id === SONG_ID && !songCats(sg.id).includes(cat) ? T("ui.songOpenNow", { title: sg.title }) : sg.title;
   const broken = cat === "all" || cat === "mine" ? Object.entries(MY_SONG_READS).filter(([, r]) => !r.song) : [];
@@ -5739,8 +5753,8 @@ function aboutHTML() {
     ["info.license0", "info.license1", "info.license2", "info.license3", "info.license4", "info.license5", "info.warranty", "info.contact"].map(k => para(k, "fine")).join("");
 }
 function creditsHTML() {
-  // every built-in song, the one you're on first
-  const songs = Object.values(SONGS).sort((a, b) => (b.id === SONG_ID) - (a.id === SONG_ID));
+  // every song, the one you're on first, then by title (as in the song menu)
+  const songs = songsInListOrder(Object.values(SONGS));
   return para("info.creditsIntro", "fine") + songs.map(sg => `<h3>${esc(sg.title)}</h3>` +
     (Array.isArray(sg.credits) && sg.credits.length ? `<ul>${sg.credits.map(c => `<li class="song-credit">${esc(c)}</li>`).join("")}</ul>` : para("info.noCredits", "fine"))).join("");
 }
