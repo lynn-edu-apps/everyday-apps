@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.126</title>
+<title>Melodies by Ear v0.127</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -467,6 +467,8 @@
   .tempo-block { display: grid; gap: 6px; margin: 10px 0 12px; }
   .tempo-block label { font-size: .85rem; color: var(--muted); }
   .tempo-row input[type=range] { min-width: 0; }
+  .tempo-song { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .tempo-song .hint { margin: 0; }
   .metro-start { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
   .metro-start select { flex: 1; min-width: 150px; font: inherit; font-size: .9rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
   /* while the melody plays, extra room below the page lets even the last
@@ -758,15 +760,15 @@
   .syl { border-radius: 4px; transition: background .08s; }
   .syl.db, .sylp.db { font-weight: 700; }
   .syl.pkl, .sylp.pkl { opacity: .72; }
-  /* a held syllable's trailing punctuation sits after its extender line (v0.118) */
-  .sylp { border-radius: 4px; transition: background .08s; }
+  /* a held syllable's trailing punctuation sits after its extender line (v0.118);
+     it is bold or light like its word, but never lights up (v0.127) */
   /* a held syllable's extender line: about half an em for each extra note */
   .hold { display: inline-flex; gap: 2px; margin: 0 2px; vertical-align: .05em; }
   .hseg { display: inline-block; width: .5em; height: 0; border-bottom: 2px solid var(--muted); opacity: .7; }
   /* each segment lights as its note starts, and stays lit to the end of the syllable */
   .hseg.on { border-bottom: 3px solid var(--teal); opacity: 1; }
   html[data-holds="off"] .hold { display: none; }
-  .syl.on, .sylp.on { background: var(--teal); color: var(--on-teal); opacity: 1; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .syl.on { background: var(--teal); color: var(--on-teal); opacity: 1; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   /* The song plan: verse buttons, each followed by its chorus toggle */
   .plan { margin: 4px 0 10px; }
   .plan[hidden], .plan-chorus[hidden] { display: none; }
@@ -788,7 +790,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.126</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.127</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -964,6 +966,10 @@
         <input type="range" id="tempo" min="40" max="200" step="2" value="84">
         <button class="step-btn" id="tempoUp" data-s-aria-label="ui.tempoFaster">+</button>
         <span class="tempo-val" id="tempoVal"></span>
+      </div>
+      <div class="tempo-song">
+        <span class="hint" data-s="ui.tempoSongNote"></span>
+        <button class="chipbtn" id="tempoSong" hidden></button>
       </div>
       <div class="metro-start">
         <button class="chipbtn" id="metroBtn" data-s="ui.metroStart"></button>
@@ -1467,6 +1473,8 @@ const STRINGS = {
     "tempoSlower": "Slower",
     "tempoFaster": "Faster",
     "tapTempo": "Tap tempo",
+    "tempoSongNote": "Each song keeps its own tempo.",
+    "tempoBack": "Back to {n}, this song’s tempo",
     "tapAgain": "Tap again…",
     "metroMeter": "Beats per measure",
     "metroMeterSong": "Same as the song ({meter})",
@@ -1679,6 +1687,7 @@ const STRINGS = {
     "updated": "Updated to {version}"
   },
   err: {
+    "songTempo": "{song}: its suggested tempo {tempo} isn’t an even number from 40 to 200.",
     "storageFull": "Saved data is getting full: about {all} of the about 5 MB that all the apps on this website share ({pct}%). When it’s full, saving fails. Use Save everything (in Settings) to keep a copy, and delete songs or lyric sets you no longer need, here or in this website’s other apps.",
     "lyricSetBad": "A saved lyric set is damaged and was skipped ({key}, set {i}): {what}",
     "alongLines": "Play along lyrics can’t be placed: {lines} lines on screen for {phrases} phrases.",
@@ -1934,7 +1943,7 @@ const STRINGS = {
     "help2Title": "Play along",
     "help2": "Plays a whole verse and chorus (or the whole song) while the lines and notes light up. Turn off Play the melody to play or sing it yourself while the metronome keeps time. Tap a bar number to start there, or set an A–B loop.",
     "help3Title": "Tempo and metronome",
-    "help3": "Tempo is shared by everything. Use − and +, the slider, or Tap tempo. Start metronome plays on its own, in the Beats per measure you pick. The Talking metronome section can count out loud instead of clicking.",
+    "help3": "Each song keeps its own tempo, starting at one suggested for it. Use − and +, the slider, or Tap tempo. Start metronome plays on its own, in the Beats per measure you pick. The Talking metronome section can count out loud instead of clicking.",
     "help4Title": "Lyrics",
     "help4": "Open Lyrics to add your own lyric sets. Use Save all my sets now and then: your sets live only in this browser.",
     "help5Title": "If the dots lag behind the sound",
@@ -2051,7 +2060,7 @@ const STRINGS = {
   },
   mysongs: {
     "title": "My songs",
-    "intro": "Type a song of your own: a header (Title, Key, Time), then each line’s notes with its words right under them. Your songs are saved in this browser only, and appear in the song menu under My songs.",
+    "intro": "Type a song of your own: a header (Title, Key, Time, and Tempo if you like), then each line’s notes with its words right under them. Your songs are saved in this browser only, and appear in the song menu under My songs.",
     "pickAria": "Which of my songs to edit",
     "new": "New song",
     "check": "Check",
@@ -2060,7 +2069,7 @@ const STRINGS = {
     "unsavedOption": "New song (not saved yet)",
     "untitled": "Untitled song",
     "brokenOption": "{title} (has mistakes)",
-    "template": "Title: My song\nKey: C\nTime: 4/4\n\n# Lines starting with # are notes to yourself.\n# Notes: syllable:length, the length in eighth notes (2 = a quarter note).\n# Words: one syllable per note; - splits a word, _ holds a syllable.\n\nVerse 1\n| do:2 re:2 mi:2 do:2 | mi:2 fa:2 so:4\nHere are the words for it now,\n\n| so:1 la:1 so:1 fa:1 mi:2 do:2 | re:2 ti,:2 do:4\nAnd a sec-ond line to sing a-long.\n",
+    "template": "Title: My song\nKey: C\nTime: 4/4\nTempo: 100\n\n# Lines starting with # are notes to yourself.\n# Notes: syllable:length, the length in eighth notes (2 = a quarter note).\n# Words: one syllable per note; - splits a word, _ holds a syllable.\n\nVerse 1\n| do:2 re:2 mi:2 do:2 | mi:2 fa:2 so:4\nHere are the words for it now,\n\n| so:1 la:1 so:1 fa:1 mi:2 do:2 | re:2 ti,:2 do:4\nAnd a sec-ond line to sing a-long.\n",
     "line": "Line {n}: {msg}",
     "needTitle": "the song needs a Title: line at the top.",
     "needKey": "the song needs a Key: line (for example Key: F, or Key: E minor).",
@@ -2068,6 +2077,7 @@ const STRINGS = {
     "keyRange": "the key puts do at {note}, too low or too high; use an octave from 2 to 6.",
     "needTime": "the song needs a Time: line (for example Time: 3/4).",
     "badTime": "can’t read the time “{v}”. Use 2/4, 3/4, 4/4, 5/4, 2/2, 6/8, 9/8 or 12/8.",
+    "badTempo": "can’t read the tempo “{v}”. Write the beats per minute, from 40 to 200 (for example Tempo: 100).",
     "badToken": "can’t read “{tok}”. Write each note as syllable:length (for example do:2), with | for bar lines.",
     "noBars": "a notes line needs at least one bar line (|).",
     "pickupLong": "the pickup (before the first |) is {sum} eighths, longer than a bar of {need}.",
@@ -3375,6 +3385,7 @@ const ASH_LYRICS = {
 const SONGS = {
   internationale: {
     id: "internationale",
+    tempo: 100,     // suggested listening tempo, in the song's beat (v0.127)
     title: "The Internationale",
     lede: "The Internationale, phrase by phrase: each verse and the chorus split into half lines.",
     credits: [
@@ -3406,6 +3417,7 @@ const SONGS = {
   },
   yankeedoodle: {
     id: "yankeedoodle",
+    tempo: 66,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Yankee Doodle",
     lede: "Yankee Doodle, phrase by phrase: every verse and the chorus split into two-bar lines. All nine verses share one tune.",
     credits: [
@@ -3448,6 +3460,7 @@ const SONGS = {
   },
   weshallnotbemoved: {
     id: "weshallnotbemoved",
+    tempo: 96,     // suggested listening tempo, in the song's beat (v0.127)
     title: "We Shall Not Be Moved",
     lede: "We Shall Not Be Moved, phrase by phrase: the union version, with its chorus. Every verse shares one tune.",
     credits: [
@@ -3486,6 +3499,7 @@ const SONGS = {
   },
   solidarityforever: {
     id: "solidarityforever",
+    tempo: 104,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Solidarity Forever",
     lede: "Solidarity Forever, phrase by phrase: Ralph Chaplin's words to the tune of \"John Brown's Body.\" Every verse shares one tune.",
     credits: [
@@ -3520,6 +3534,7 @@ const SONGS = {
   },
   wewillovercome: {
     id: "wewillovercome",
+    tempo: 72,     // suggested listening tempo, in the song's beat (v0.127)
     title: "We Will Overcome",
     lede: "We Will Overcome, phrase by phrase: the union words, as sung at the Highlander Folk School in 1947, to the tune known today as \"We Shall Overcome.\" Every verse shares one tune.",
     credits: [
@@ -3556,6 +3571,7 @@ const SONGS = {
   },
   amazinggrace: {
     id: "amazinggrace",
+    tempo: 88,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Amazing Grace",
     lede: "Amazing Grace, phrase by phrase: John Newton's hymn, to the American tune \"New Britain\". Every verse shares one tune.",
     credits: [
@@ -3591,6 +3607,7 @@ const SONGS = {
   },
   johnbrownsbody: {
     id: "johnbrownsbody",
+    tempo: 112,     // suggested listening tempo, in the song's beat (v0.127)
     title: "John Brown's Body",
     lede: "John Brown's Body, phrase by phrase: the Civil War marching song, with its \"Glory, hallelujah\" chorus. Every verse shares one tune.",
     credits: [
@@ -3627,6 +3644,7 @@ const SONGS = {
   },
   battlehymn: {
     id: "battlehymn",
+    tempo: 100,     // suggested listening tempo, in the song's beat (v0.127)
     title: "The Battle Hymn of the Republic",
     lede: "The Battle Hymn of the Republic, phrase by phrase: Julia Ward Howe's words to the tune of \"John Brown's Body.\" Every verse shares one tune.",
     credits: [
@@ -3658,6 +3676,7 @@ const SONGS = {
   },
   skiptomylou: {
     id: "skiptomylou",
+    tempo: 76,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Skip to My Lou",
     lede: "Skip to My Lou, phrase by phrase: the American play-party song. Every verse shares one tune.",
     credits: [
@@ -3694,6 +3713,7 @@ const SONGS = {
   },
   saints: {
     id: "saints",
+    tempo: 88,     // suggested listening tempo, in the song's beat (v0.127)
     title: "When the Saints Go Marching In",
     lede: "When the Saints Go Marching In, phrase by phrase: the spiritual that became a New Orleans jazz standard. Every verse shares one tune.",
     credits: [
@@ -3728,6 +3748,7 @@ const SONGS = {
   },
   railroad: {
     id: "railroad",
+    tempo: 100,     // suggested listening tempo, in the song's beat (v0.127)
     title: "I've Been Working on the Railroad",
     lede: "I've Been Working on the Railroad, phrase by phrase: the whole song in one long verse, from the railroad to \"Fee, fie, fiddle-ee-i-o.\"",
     credits: [
@@ -3767,6 +3788,7 @@ const SONGS = {
   },
   buffalogals: {
     id: "buffalogals",
+    tempo: 80,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Buffalo Gals",
     lede: "Buffalo Gals, phrase by phrase, with its \"won't you come out tonight\" chorus. One tune for every verse; verse 4 packs in extra words.",
     credits: [
@@ -3800,6 +3822,7 @@ const SONGS = {
   },
   ohsusanna: {
     id: "ohsusanna",
+    tempo: 88,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Oh! Susanna",
     lede: "Oh! Susanna, phrase by phrase: Stephen Foster's banjo song, with its chorus. Every verse shares one tune.",
     credits: [
@@ -3833,6 +3856,7 @@ const SONGS = {
   },
   godownmoses: {
     id: "godownmoses",
+    tempo: 56,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Go Down Moses (Let My People Go)",
     lede: "Go Down Moses, phrase by phrase: the spiritual, in E minor. Every verse shares one tune and ends with the refrain.",
     mode: "minor",
@@ -3868,6 +3892,7 @@ const SONGS = {
   },
   wabash: {
     id: "wabash",
+    tempo: 92,     // suggested listening tempo, in the song's beat (v0.127)
     title: "On the Banks of the Wabash",
     lede: "On the Banks of the Wabash, phrase by phrase: Paul Dresser's song of home, Indiana's state song. Both verses share one tune.",
     credits: [
@@ -3901,6 +3926,7 @@ const SONGS = {
   },
   riverside: {
     id: "riverside",
+    tempo: 92,     // suggested listening tempo, in the song's beat (v0.127)
     title: "Down by the Riverside (Study War No More)",
     lede: "Down by the Riverside, phrase by phrase: the spiritual, with its \"ain't goin' to study war no more\" chorus. Every verse shares one tune.",
     credits: [
@@ -3934,6 +3960,7 @@ const SONGS = {
   },
   barnyard: {
     id: "barnyard",
+    tempo: 120,     // suggested listening tempo, in the song's beat (v0.127)
     title: "The Barnyard Song (I Had a Cat)",
     lede: "The Barnyard Song, phrase by phrase: a cumulative song. Each verse adds a new animal, then goes back through all the animals before it, always ending with the cat.",
     cumulative: true,
@@ -3963,6 +3990,7 @@ const SONGS = {
   },
   peanuts: {
     id: "peanuts",
+    tempo: 100,     // suggested listening tempo, in the song's beat (v0.127)
     title: "The Man Who Has Plenty of Good Peanuts",
     lede: "The Man Who Has Plenty of Good Peanuts, phrase by phrase: a camp song in 6/8, with an \"Oh, that will be joyful!\" ending.",
     credits: [
@@ -3993,6 +4021,7 @@ const SONGS = {
   },
   mountains: {
     id: "mountains",
+    tempo: 108,     // suggested listening tempo, in the song's beat (v0.127)
     title: "I Love the Mountains",
     lede: "I Love the Mountains, phrase by phrase: a five-part round. Each line is one part; learn them all, then sing it as a round.",
     credits: [
@@ -4021,6 +4050,7 @@ const SONGS = {
   },
   ashgrove: {
     id: "ashgrove",
+    tempo: 104,     // suggested listening tempo, in the song's beat (v0.127)
     title: "The Ash Grove",
     lede: "The Ash Grove, phrase by phrase: the Welsh folk tune, in 3/4.",
     credits: [
@@ -4082,6 +4112,7 @@ Object.assign(SONGS, window.EXTRA_SONGS || {});
 const SONGBOOK_ANGELS_TEXT = `Title: Angels We Have Heard on High
 Key: F
 Time: 4/4
+Tempo: 100
 
 # Converted from the MusicXML file ANGELS_WE_HAVE_HEARD_ON_HIGH.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-16 (app v0.121), then arranged by hand: the Gloria marked as the chorus, and verses 2–4 typed from the printed book.
 # Two fixes to the file's words: "Sweet-ly" (the file has "Sweet" and "y") and "joy-ous" (printed with a capital J).
@@ -4281,7 +4312,7 @@ function readMySong(text, id) {
   lines.forEach((raw, i) => {
     const n = i + 1, l = raw.trim();
     if (!l || l.startsWith("#")) return;
-    const hm = /^(title|key|time)\s*:\s*(.*)$/i.exec(l);
+    const hm = /^(title|key|time|tempo)\s*:\s*(.*)$/i.exec(l);
     if (hm && !cur && !pending) { head[hm[1].toLowerCase()] = { v: hm[2].trim(), n }; return; }
     const cm = CHORDS_LINE_RE.exec(l);
     if (cm) {               // a Chords line: goes with the notes line just above it
@@ -4327,6 +4358,14 @@ function readMySong(text, id) {
   if (!head.time) say(0, "mysongs.needTime");
   else if (!MY_TIMES[head.time.v.replace(/\s+/g, "")]) say(head.time.n, "mysongs.badTime", { v: head.time.v });
   else { const [perBar, beatLen] = MY_TIMES[head.time.v.replace(/\s+/g, "")]; meter = { perBar, beatLen, label: head.time.v.replace(/\s+/g, ""), beatName: MY_BEAT_NAMES[beatLen] }; }
+  // Tempo (optional, v0.127): beats per minute in the song's beat, 40 to 200
+  // ("100" or "100 bpm"), rounded to the slider's even steps
+  let tempo = null;
+  if (head.tempo) {
+    const t = /^\d+(\.\d+)?(\s*bpm)?$/i.test(head.tempo.v) ? parseFloat(head.tempo.v) : NaN;
+    if (!(t >= 40 && t <= 200)) say(head.tempo.n, "mysongs.badTempo", { v: head.tempo.v });
+    else tempo = Math.min(200, Math.max(40, Math.round(t / 2) * 2));
+  }
   if (!verses.length || !verses[0].rows.length) say(0, "mysongs.noNotes");
   const hasWords = [...verses, ...choruses].some(sec => sec.rows.some(r => r.words || r.whole));
   // each notes line: readable tokens, bars, syllables, ties
@@ -4447,7 +4486,7 @@ function readMySong(text, id) {
     id, title, mine: true, categories: ["mine"],
     lede: T("mysongs.lede", { title }),
     credits: [T("mysongs.credit")],
-    doMidi: key.doMidi, mode: key.mode, meter,
+    doMidi: key.doMidi, mode: key.mode, meter, tempo,
     verses: Object.fromEntries(verses.map((sec, i) => [i + 1, sec.rows.map(phrase)])),
     chorus: choruses.length ? choruses[0].rows.map(phrase) : [],
     phrasesPerLine: 1, barsPerPhrase: 2,
@@ -5578,7 +5617,7 @@ function stopAll() {
   clearTimeout(looping); looping = null;
   clearTimeout(endTimer); endTimer = null;
   visuals = [];
-  document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on, .sylp.on, .hseg.on").forEach(el => el.classList.remove("on"));
+  document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
   if (typeof endWhole === "function" && (wholeRun || wholePaused !== null)) endWhole();
   if (calibrating) {           // stopped partway through a sync: reset it
     calibrating = false; calib = null;
@@ -5637,7 +5676,7 @@ function drawVisuals() {
   const now = heardTime() - (+$("visDelay").value) / 1000;
   const wall = performance.now();
   const keep = [];
-  for (const group of ["beat", "lead", "note", "line", "syl", "sylp", ...new Set(visuals.map(v => v.group).filter(g => g.startsWith("hold")))]) {
+  for (const group of ["beat", "lead", "note", "line", "syl", ...new Set(visuals.map(v => v.group).filter(g => g.startsWith("hold")))]) {
     const items = visuals.filter(v => v.group === group);
     // the latest event that has started
     let current = null;
@@ -5654,7 +5693,7 @@ function drawVisuals() {
   }
   visuals = keep;
   if (visuals.length) rafId = requestAnimationFrame(drawVisuals);
-  else document.querySelectorAll(".n.on, .beat.on, .syl.on, .sylp.on, .hseg.on").forEach(el => el.classList.remove("on"));
+  else document.querySelectorAll(".n.on, .beat.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
 }
 
 // ---------- Page scroll lock (for dialogs) ----------
@@ -5795,6 +5834,7 @@ const SAVED_KEYS = [
   { base: "phrase-parrot-transpose-v1",    perSong: true,  backup: true,  json: false },
   { base: "phrase-parrot-songplan-v1",     perSong: true,  backup: true,  json: true },
   { base: "phrase-parrot-countbars-v1",    perSong: true,  backup: true,  json: false },
+  { base: "phrase-parrot-tempo-v1",        perSong: true,  backup: true,  json: false },   // this song's tempo (v0.127)
   { base: CHORD_SET_STORE,                 perSong: true,  backup: true,  json: false },   // Traditional or Modern chords (v0.121)
   { base: "phrase-parrot-ab-v1",           perSong: true,  backup: true,  json: true },
   { base: "phrase-parrot-v1",              perSong: true,  backup: false },   // the drill's place in its shuffle
@@ -6227,7 +6267,6 @@ function schedulePass(phrase, t, opt) {
     if (chip) {
       showAt(chip, nt, Math.max(0.05, dur - 0.03));
       if (chip._syl) showAt(chip._syl, nt, Math.max(0.05, dur - 0.03));
-      if (chip._sylP) showAt(chip._sylP, nt, Math.max(0.05, dur - 0.03));
       if (chip._hold) {
         let end = nt + dur;
         for (let j = i + 1; j < notes.length && chips[j] && chips[j]._syl === chip._syl; j++) end += notes[j].dur * eighth;
@@ -6556,10 +6595,11 @@ function fillSyllables(textEl, chips, marked, items) {
     const first = notes[sung[j]];
     const cls = "syl" + (db[sung[j]] ? " db" : "") + (first.pk ? " pkl" : "");
     const hold = x.notes > 1 ? `<span class="hold" aria-hidden="true">${Array.from({ length: x.notes - 1 }, (_, r) => `<span class="hseg" data-g="hold${r + 1}"></span>`).join("")}</span>` : "";
-    // a held syllable's line goes between the word and its punctuation ("come───,"),
-    // and the punctuation lights with its word
+    // a held syllable's line goes between the word and its punctuation ("come───,");
+    // the punctuation is bold or light like its word but never lights (Lynn, v0.127:
+    // a lit comma after the line looked odd)
     const [word, tail] = hold ? splitTrailingPunct(x.t) : [x.t, ""];
-    const punct = tail ? `<span class="${cls.replace(/^syl/, "sylp")}" data-g="sylp">${esc(tail)}</span>` : "";
+    const punct = tail ? `<span class="${cls.replace(/^syl/, "sylp")}">${esc(tail)}</span>` : "";
     html += `<span class="${cls}" data-k="${k}">${esc(word)}</span>${hold}${punct}${x.hy ? "-" : ""}${x.end ? " " : ""}`;
     j += x.notes;
   });
@@ -6569,8 +6609,7 @@ function fillSyllables(textEl, chips, marked, items) {
   syls.forEach((x, k) => {
     const holdEl = spans[k].nextElementSibling && spans[k].nextElementSibling.classList.contains("hold") ? spans[k].nextElementSibling : null;
     const segs = holdEl ? holdEl.querySelectorAll(".hseg") : [];
-    const punctEl = holdEl && holdEl.nextElementSibling && holdEl.nextElementSibling.classList.contains("sylp") ? holdEl.nextElementSibling : null;
-    for (let r = 0; r < x.notes; r++) { const c = chips[sung[j]]; c._syl = spans[k]; c._sylP = punctEl; c._hold = r ? segs[r - 1] || null : null; j++; }
+    for (let r = 0; r < x.notes; r++) { const c = chips[sung[j]]; c._syl = spans[k]; c._hold = r ? segs[r - 1] || null : null; j++; }
   });
   return true;
 }
@@ -6620,7 +6659,7 @@ function renderAlongLyrics() {
     if (!lyric) return;
     const textEl = box.querySelector(".al-text");
     const chips = [...line.querySelectorAll(".n")];
-    chips.forEach(c => { c._syl = null; c._sylP = null; c._hold = null; });
+    chips.forEach(c => { c._syl = null; c._hold = null; });
     // with syllable marks, each syllable lights with its note; otherwise the plain line
     if (!(lyric.syl && fillSyllables(textEl, chips, lyric.syl, SEQ[i].items))) textEl.textContent = lyric.text;
     const mean = box.querySelector(".al-mean");
@@ -8436,11 +8475,29 @@ $("phraseMapDraw").addEventListener("click", e => {
 $("autoReveal").addEventListener("change", renderStage);
 $("autoPhraseName").addEventListener("change", renderStage);
 // ---------- Tempo: slider, − and +, Tap tempo, and the bottom bar ----------
+// Each song keeps its own tempo (v0.127): a change is saved for the open song;
+// a song never changed starts at its suggested tempo (song data, or a My song's
+// Tempo: line), else at DEFAULT_TEMPO. A tempo equal to the suggested one isn't
+// stored, so the song follows its suggestion.
+const TEMPO_STORE = songKey("phrase-parrot-tempo-v1");
+const DEFAULT_TEMPO = 84;
+const SONG_TEMPO = SONG.tempo == null ? null : SONG.tempo;
+if (SONG_TEMPO != null && !(Number.isInteger(SONG_TEMPO) && SONG_TEMPO % 2 === 0 && SONG_TEMPO >= 40 && SONG_TEMPO <= 200))
+  reportError(T("err.songTempo", { song: SONG.title, tempo: String(SONG_TEMPO) }));
 function renderTempo() {
   const n = $("tempo").value;
   $("tempoVal").textContent = T("units.bpm", { n });
   $("dockTempo").textContent = n;
+  const back = $("tempoSong");
+  back.hidden = SONG_TEMPO == null || +n === SONG_TEMPO;
+  if (!back.hidden) back.textContent = T("ui.tempoBack", { n: SONG_TEMPO });
 }
+function saveTempo() {
+  if (+$("tempo").value === (SONG_TEMPO == null ? DEFAULT_TEMPO : SONG_TEMPO)) storeRemove(TEMPO_STORE);
+  else storeSet(TEMPO_STORE, $("tempo").value);
+}
+$("tempo").addEventListener("change", saveTempo);
+$("tempoSong").addEventListener("click", () => setTempo(SONG_TEMPO));
 // Sets the tempo as if the slider had been moved (saved, and Play along picks it up).
 function setTempo(bpm) {
   const el = $("tempo"), step = +el.step || 1;
@@ -8487,7 +8544,7 @@ $("metroMeter").addEventListener("change", () => {
 });
 $("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("units.pct", { n: e.target.value }));
 
-const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "tempo", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel", "mapOpen"];
+const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel", "mapOpen"];
 function savePrefs() {
   const p = {};
   prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
@@ -8514,6 +8571,12 @@ if (SAVED_PREFS) prefIds.forEach(id => {
   const old = SAVED_PREFS && SAVED_PREFS.transpose != null ? +SAVED_PREFS.transpose || 0 : 0;
   $("transpose").value = own != null ? String(Math.max(-12, Math.min(12, +own || 0))) : String(old);
   if (own == null && old !== 0) storeSet(TRANSPOSE_STORE, String(old));
+}
+// This song's tempo (v0.127; before, one tempo was saved with the settings for every song)
+{
+  const own = storeGet(TEMPO_STORE);
+  const t = own != null && +own >= 40 && +own <= 200 ? +own : SONG_TEMPO == null ? DEFAULT_TEMPO : SONG_TEMPO;
+  $("tempo").value = String(t);
 }
 renderTempo();
 applyTheme();
@@ -9111,7 +9174,10 @@ function musicXmlToSongText(xml, fileName = "") {
   };
   const title = xmlTitleCase(txt(root, "work>work-title") || txt(root, "movement-title") || fileName.replace(/\.[^.]*$/, "") || T("mysongs.untitled"));
   const version = (document.querySelector("h1 .ver") || {}).textContent || "";
-  const L = ["Title: " + title, "Key: " + keyText, "Time: " + timeLabel, "",
+  // the tempo, if the file has one: <sound tempo> counts quarter notes a minute
+  const soundTempo = [...root.getElementsByTagName("sound")].map(x => parseFloat(x.getAttribute("tempo"))).find(x => x > 0);
+  const tempoBpm = soundTempo ? Math.min(200, Math.max(40, Math.round(soundTempo * 2 / beatLen / 2) * 2)) : 0;
+  const L = ["Title: " + title, "Key: " + keyText, "Time: " + timeLabel, ...(tempoBpm ? ["Tempo: " + tempoBpm] : []), "",
     "# " + T("xml.noteConverted", { file: fileName || "MusicXML", date: fileDate(), version })];
   for (const c of kids(kid(root, "identification") || root, "creator")) if (c.textContent.trim()) L.push("# " + (c.getAttribute("type") || "creator") + ": " + c.textContent.trim());
   for (const r of kids(kid(root, "identification") || root, "rights")) if (r.textContent.trim()) L.push("# " + T("xml.noteRights", { text: r.textContent.trim() }));
@@ -9184,7 +9250,8 @@ function songAsText() {
   const octave = SONG_DO_MIDI >= 60 && SONG_DO_MIDI <= 71 ? "" : String(Math.floor(tonic / 12) - 1);
   const key = KEY_NAMES[((tonic % 12) + 12) % 12] + octave + (minor ? " minor" : "");
   const version = (document.querySelector("h1 .ver") || {}).textContent || "";
-  const L = ["Title: " + T("mysongs.copyTitle", { title: SONG.title }), "Key: " + key, "Time: " + METER.label, "",
+  const L = ["Title: " + T("mysongs.copyTitle", { title: SONG.title }), "Key: " + key, "Time: " + METER.label,
+    ...(SONG.tempo ? ["Tempo: " + SONG.tempo] : []), "",
     "# " + T("mysongs.copyNote", { title: SONG.title, date: fileDate(), version }), "# " + T("mysongs.copyNote2")];
   if (set) L.push("# " + T("mysongs.copyLyrics", { set: set.name }));
   L.push("");
