@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!-- Remember App - Version 0.1911 -->
+<!-- Remember App - Version 0.1922 -->
 <!--
   Remember — A note-taking app for everyone
-  Version 0.1911
+  Version 0.1922
   Copyright (c) 2026 Lynn Robinson. All rights reserved.
 
   Developed by Lynn Robinson with help from Claude AI (Anthropic).
@@ -12960,7 +12960,7 @@ body.dark #dismissible-notice { background: #545454; border: 1px solid rgba(255,
 // Capture URL params immediately at script load — before any navigation or rewriting
 var _earlyParams = window.location.search;
 
-const APP_VERSION = '0.1911';
+const APP_VERSION = '0.1922';
 
 // ===== HANG WATCHDOG MODULE START — v0.1895, per Lynn's explicit
 // request while hunting a real, serious hang bug. Fully self-contained:
@@ -17222,16 +17222,18 @@ function backupFolderStructureIfGood(currentFolders, currentNotes) {
       return currentNotes[id].folderId && !currentFolders[currentNotes[id].folderId];
     });
     if (hasOrphans) return; // never overwrite a known-good backup with data we already suspect
-    storageSet(FOLDER_BACKUP_KEY, JSON.stringify({
+    bootSet(FOLDER_BACKUP_KEY, JSON.stringify({
       folders: currentFolders,
       savedAt: Date.now()
-    }));
+    })).catch(function(eB) {
+      try { logSys('Folder backup write FAILED: ' + _describeStorageError(eB, 'backupFolderStructureIfGood'), true); } catch(eL) {}
+    });
   } catch (e) { /* best-effort only — never block normal operation on this */ }
 }
 
 function restoreFoldersFromBackupIfPossible() {
   try {
-    var raw = storageGet(FOLDER_BACKUP_KEY);
+    var raw = bootGet(FOLDER_BACKUP_KEY);
     if (!raw) return null;
     var parsed = JSON.parse(raw);
     if (!parsed || !parsed.folders || typeof parsed.folders !== 'object') return null;
@@ -17259,7 +17261,55 @@ function restoreFoldersFromBackupIfPossible() {
 // starts (a blank screen forever would be worse) but falls back to the
 // old localStorage copy AND says so loudly with a persistent,
 // tap-to-copy error. _bootFailure holds the reason for that message.
-var BOOT_KEY_NAMES = ['remember_notes', 'remember_notes_gen', 'remember_note_census'];
+// v0.1912: also preloaded -- every small startup key that moved from
+// localStorage to IndexedDB (see "LOCALSTORAGE POLICY" below).
+var BOOT_KEY_NAMES = ['remember_notes', 'remember_notes_gen', 'remember_note_census',
+  'remember_folders', 'remember_folders_backup', 'remember_themes',
+  'remember_tour_seen', 'remember_migr_tag_sort_sampler', 'remember_notes_backup_meta'];
+// ===== LOCALSTORAGE POLICY (v0.1912) =====
+// Lynn's rule: localStorage may only be used where there is a stated,
+// really good reason. Everything that holds USER DATA lives in IndexedDB.
+// The ONLY keys still in localStorage, and why:
+//   remember_settings     -- must be readable synchronously before the first
+//                            paint (theme, font size, layout); tiny; has its
+//                            own 3-way merge; a stale/absent value is harmless.
+//   remember_current      -- the id of the open note, written at the moments
+//                            the page may be killed (async IndexedDB writes
+//                            can be lost then); ~20 bytes; not user data.
+//   remember_active_instance (heartbeat) -- two-tab detection; the OTHER tab
+//                            must see it instantly and synchronously.
+//   (fallback only)       -- if IndexedDB cannot be opened at all, the app
+//                            writes to localStorage rather than lose edits,
+//                            and says so loudly (BOOT STORAGE FAILED).
+// Any NEW use of localStorage must be added to this list WITH a reason, and
+// to the approved list in the storage tests (remember-test-cases-storage).
+var IDB_MIGRATION2_MARKER_NAME = 'remember_idb_migration2_done';
+// Keys whose authoritative copy was localStorage until v0.1911 (their saves
+// never went to IndexedDB). Migration 2 copies them over UNCONDITIONALLY
+// (localStorage wins -- IndexedDB only holds a frozen copy from migration 1).
+var MIGRATION2_KEY_NAMES = ['remember_folders', 'remember_folders_backup', 'remember_themes',
+  'remember_tour_seen', 'remember_migr_tag_sort_sampler', 'remember_notes_backup', 'remember_notes_corrupt'];
+async function idbRunMigration2IfNeeded() {
+  var markerKey = storeKey(IDB_MIGRATION2_MARKER_NAME);
+  if (await idbGet(markerKey)) return { ran: false };
+  var copied = [];
+  for (var i = 0; i < MIGRATION2_KEY_NAMES.length; i++) {
+    var k = storeKey(MIGRATION2_KEY_NAMES[i]);
+    var v = storageGet(k);
+    if (v !== null && v !== undefined) {
+      await idbSet(k, v);
+      copied.push(MIGRATION2_KEY_NAMES[i]);
+      if (MIGRATION2_KEY_NAMES[i] === 'remember_notes_backup') {
+        var at = 0; try { at = JSON.parse(v).at || 0; } catch(eM) {}
+        await idbSet(storeKey('remember_notes_backup_meta'), JSON.stringify({ at: at }));
+      }
+    }
+  }
+  await idbSet(markerKey, { at: Date.now(), copied: copied });
+  logSys('IDB MIGRATION 2 (v0.1912): copied ' + copied.length + ' key(s) [' + copied.join(', ') +
+    '] from localStorage into IndexedDB (localStorage copy was authoritative).');
+  return { ran: true, copied: copied };
+}
 var BOOT_TIMEOUT_MS = 5000;
 var _bootCache = {};
 var _bootCacheOk = false;
@@ -17267,6 +17317,8 @@ var _bootFailure = null;
 var _bootAnomalyMsg = null;
 function _bootStorageWork() {
   return idbRunOneTimeMigrationIfNeeded().then(function() {
+    return idbRunMigration2IfNeeded();
+  }).then(function() {
     return Promise.all(BOOT_KEY_NAMES.map(function(name) {
       var k = storeKey(name);
       return idbGet(k).then(function(v) { _bootCache[k] = v; });
@@ -17297,6 +17349,24 @@ function bootGet(key) {
     throw new Error('bootGet: "' + key + '" was not preloaded (add it to BOOT_KEY_NAMES)');
   }
   return _bootCache[key];
+}
+// v0.1912 NEW: the write side of bootGet(). Keeps the preloaded cache
+// coherent (so a later bootGet() sees what was just written) and writes
+// to IndexedDB. Returns a promise that REJECTS on failure so every caller
+// can report the failure loudly in its own words. If IndexedDB never came
+// up at boot (_bootCacheOk false) it writes to localStorage instead of
+// losing the data. cacheIt=false is for large values nobody reads at boot.
+function bootSet(key, value, cacheIt) {
+  if (cacheIt !== false && _bootCacheOk) _bootCache[key] = value;
+  if (!_bootCacheOk) {
+    try { storageSet(key, value); return Promise.resolve(); } catch(e) { return Promise.reject(e); }
+  }
+  return idbSet(key, value);
+}
+function bootRemove(key) {
+  if (_bootCacheOk) _bootCache[key] = null;
+  if (!_bootCacheOk) { try { storageRemove(key); return Promise.resolve(); } catch(e) { return Promise.reject(e); } }
+  return idbRemove(key);
 }
 
 function loadState() {
@@ -17370,7 +17440,7 @@ function loadState() {
     // app would boot with zero notes and the next saveNotes() would
     // permanently overwrite damaged-but-recoverable data. Preserve the
     // raw string FIRST, then log loudly and warn the user.
-    try { storageSet(storeKey('remember_notes_corrupt'), _notesRaw || ''); } catch(e2) {}
+    try { bootSet(storeKey('remember_notes_corrupt'), _notesRaw || '', false).catch(function(e3) { logSys('Could not preserve corrupt notes copy: ' + e3, true); }); } catch(e2) {}
     logSys('CRITICAL: remember_notes failed to parse (' + e + '). Raw data (' +
       (_notesRaw ? _notesRaw.length : 0) + ' chars) preserved to key remember_notes_corrupt.');
     setTimeout(function() {
@@ -17388,7 +17458,7 @@ function loadState() {
     setTimeout(function() { if (typeof showToast === 'function') showToast('\u26a0\ufe0f ' + _bootMsg, true); }, 1200);
   }
   try {
-    const f = storageGet(storeKey('remember_folders'));
+    const f = bootGet(storeKey('remember_folders'));
     if (f) folders = JSON.parse(f);
   } catch(e) {}
   try {
@@ -17649,15 +17719,22 @@ function loadState() {
   try {
     var _bkKey = storeKey('remember_notes_backup');
     var _bkAt = 0;
-    var _bkRaw = storageGet(_bkKey);
+    // v0.1912: only the tiny {at} marker is read at boot (the 2 MB backup
+    // itself is never preloaded).
+    var _bkRaw = bootGet(storeKey('remember_notes_backup_meta'));
     if (_bkRaw) { try { _bkAt = (JSON.parse(_bkRaw).at || 0); } catch(eB1) {} }
     if (!_noteLossDetectedThisLoad && Object.keys(notes).length > 0 &&
         Date.now() - _bkAt > 20 * 3600 * 1000) {
       var _bkPayload = JSON.stringify({ at: Date.now(), v: APP_VERSION, notes: notes, folders: folders });
       if (_bkPayload.length < 2000000) {
-        storageSet(_bkKey, _bkPayload);
-        logSys('Daily backup written: ' + Object.keys(notes).length + ' notes, ' +
-          Object.keys(folders).length + ' folders, ' + _bkPayload.length + ' chars');
+        // v0.1912: built from the notes loaded from IndexedDB at boot (the
+        // real data) and written to IndexedDB, not localStorage.
+        var _bkNoteCount = Object.keys(notes).length, _bkFolderCount = Object.keys(folders).length;
+        bootSet(_bkKey, _bkPayload, false).then(function() {
+          return bootSet(storeKey('remember_notes_backup_meta'), JSON.stringify({ at: Date.now() }));
+        }).then(function() {
+          logSys('Daily backup written: ' + _bkNoteCount + ' notes, ' + _bkFolderCount + ' folders, ' + _bkPayload.length + ' chars');
+        }).catch(function(eBW) { logSys('Daily backup FAILED: ' + _describeStorageError(eBW, 'daily backup'), true); });
       } else {
         logSys('Daily backup SKIPPED: payload ' + _bkPayload.length + ' chars exceeds 2MB safety cap');
       }
@@ -17679,7 +17756,15 @@ function loadState() {
   // notes key at load start as a fresh install regardless of anything
   // diagnostics created since.
   var _realNoteCount = Object.keys(notes).filter(function(id) { return !notes[id].isDebugLog; }).length;
-  if (!_hadNotesKey || _realNoteCount === 0) {
+  var _noDataMode = !!(_bootFailure && !_hadNotesKey);
+  if (_noDataMode) {
+    // v0.1913: IndexedDB is unavailable AND there is no older localStorage
+    // copy (it was retired after clean startups). This is NOT a fresh
+    // install -- the notes are in the database we can't reach. Installing
+    // sample notes here would hide that. Say so instead; nothing is lost.
+    logSys('BOOT STORAGE FAILED and no localStorage copy exists: NOT installing sample notes. Your notes are in the IndexedDB database, which could not be opened.', true);
+    setTimeout(function() { if (typeof showToast === 'function') showToast('\u26a0\ufe0f Your notes could not be loaded: the notes database could not be opened. Nothing has been deleted. Close and reopen the app; if this repeats, please report it.', true); }, 1500);
+  } else if (!_hadNotesKey || _realNoteCount === 0) {
     logSys('Installing sample notes (hadNotesKey=' + _hadNotesKey + ', realNotes=' + _realNoteCount + ')');
     createInitialNotes();
   }
@@ -17689,7 +17774,7 @@ function loadState() {
   var featuresAlreadyExists = Object.values(notes).some(function(n) {
     return (n.name || '').indexOf('Features Guide') !== -1;
   });
-  if (!featuresAlreadyExists) {
+  if (!featuresAlreadyExists && !_noDataMode) {
     var fId = makeId();
     var fNow = Date.now();
     var fContent = [
@@ -17760,7 +17845,7 @@ function loadState() {
   // (known-quirks registry rule). Name check is only a belt-and-braces
   // duplicate guard for the first run.
   try {
-    if (!storageGet(storeKey('remember_migr_tag_sort_sampler'))) {
+    if (!_noDataMode && !bootGet(storeKey('remember_migr_tag_sort_sampler'))) {
       var _tssExists = Object.values(notes).some(function(n) {
         return (n.name || '').indexOf('Tag Sort Sampler') !== -1;
       });
@@ -17775,7 +17860,7 @@ function loadState() {
         saveNotes();
         logSys('MIGRATION: added Tag Sort Sampler note (v0.1628)');
       }
-      storageSet(storeKey('remember_migr_tag_sort_sampler'), '1');
+      bootSet(storeKey('remember_migr_tag_sort_sampler'), '1').catch(function(eF) { logSys('MIGRATION flag write FAILED: ' + eF, true); });
     }
   } catch (eTssMigr) { logSys('MIGRATION: Tag Sort Sampler failed: ' + eTssMigr); }
 }
@@ -17892,7 +17977,11 @@ function saveSettings() {
 }
 function saveThemes() {
   try {
-    storageSet(storeKey('remember_themes'), JSON.stringify(themes));
+    bootSet(storeKey('remember_themes'), JSON.stringify(themes)).catch(function(e) {
+      var _d = _describeStorageError(e, 'saveThemes');
+      logSys('saveThemes FAILED: ' + _d, true);
+      try { if (typeof showToast === 'function') showToast('\u26a0\ufe0f Theme save failed \u2014 ' + _d, true); } catch(eT) {}
+    });
   } catch(e) {
     // v0.1905 CHANGED: same accuracy fix as saveNotes/saveSettings.
     var _desc = _describeStorageError(e, 'saveThemes');
@@ -17901,7 +17990,7 @@ function saveThemes() {
   }
 }
 function loadThemes() {
-  try { var t = storageGet(storeKey('remember_themes')); if (t) themes = JSON.parse(t); } catch(e) { themes = {}; }
+  try { var t = bootGet(storeKey('remember_themes')); if (t) themes = JSON.parse(t); } catch(e) { themes = {}; }
 }
 function genThemeId() { return 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
@@ -18128,7 +18217,11 @@ function saveFolders() {
   // failing with zero trace is worse than an imprecise message; now
   // consistent with saveNotes/saveSettings/saveThemes.
   try {
-    storageSet(storeKey('remember_folders'), JSON.stringify(folders));
+    bootSet(storeKey('remember_folders'), JSON.stringify(folders)).catch(function(e) {
+      var _desc = _describeStorageError(e, 'saveFolders');
+      logSys('saveFolders FAILED: ' + _desc, true);
+      try { if (typeof showToast === 'function' && _shouldShowSaveFailedToast()) showToast('\u26a0\ufe0f Folder save failed \u2014 ' + _desc, true); } catch(eT) {}
+    });
   } catch(e) {
     var _desc = _describeStorageError(e, 'saveFolders');
     logSys('saveFolders FAILED: ' + _desc, true);
@@ -19848,6 +19941,10 @@ function playCheckSound() {
 }
 
 function applySettings() {
+  // v0.1915: any setting can change how the note's text wraps (font,
+  // size, line height, spacing) -- re-measure the note text box once the
+  // new styles are in place. No-op when no note is on screen.
+  if (typeof refreshEditorHeightSoon === 'function') refreshEditorHeightSoon('settings applied', 0);
   applyBoldCursorSetting(); // v0.1595: safe pre-init() -- assigned stub is a no-op until init() runs
   // v0.1663: reactive body class for the scratch-pad edge tab's CSS
   // visibility (applySettings() runs on load AND after every settings
@@ -23332,6 +23429,7 @@ function setViewMode(on, suppressFocus, isFreshOpen) {
     }
   } else {
     if (currentNoteId && notes[currentNoteId]) {
+      flushPendingSave('reloading the text box (switch to Typing mode)'); // v0.1916: never overwrite unsaved typing with the saved text
       editor.value = notes[currentNoteId].content || '';
       editor._lastLength = editor.value.length;
       // Setting .value resets the cursor — browsers commonly default it
@@ -23463,6 +23561,7 @@ function openNote(id, speakDelay) {
     showToast('Remember is open in another window \u2014 close it first to open notes here.', false);
     return;
   }
+  flushPendingSave('opening another note'); // v0.1916: currentNoteId still points at the note being left
   if (notes[id] && !notes[id].isDebugLog) {
     logDebugAction('Opened note: "' + (notes[id].name || '(untitled)') + '"');
   }
@@ -24181,7 +24280,53 @@ function nameFromContent(content) {
   return '';
 }
 
+// ===== FLUSH A PENDING SAVE (v0.1916) =====
+// Fixes three confirmed ways of LOSING THE LAST MOMENT OF TYPING (code
+// review items SAVE-01, SAVE-02, SAVE-08), reproduced in a real browser.
+// Typing is saved 600 ms after the last keystroke (scheduleSave()). Until
+// then the new text exists ONLY in the text box. Several actions replaced
+// the text box's contents, or switched to another note, without saving
+// first:
+//   - Back (goHome): setViewMode(false) reloaded the text box from the
+//     last SAVED text, and the timer then saved that old text;
+//   - opening another note directly (links, search, share);
+//   - undo/redo, which worked from the saved text and silently dropped
+//     the unsaved typing.
+// Also: the "You deleted a lot of text" check kept running after a switch
+// to a different note, comparing one note's length with another's -- and
+// its "Undo deletion" button would then have written the FIRST note's
+// text into the SECOND.
+// _savePending is true only between a real edit and its save, so calling
+// this at any time is safe: it does nothing unless there is unsaved
+// typing in the text box.
+var _savePending = false;
+function flushPendingSave(reason) {
+  if (_deleteGuardTimer) { clearTimeout(_deleteGuardTimer); _deleteGuardTimer = null; }
+  if (!_savePending) return false;
+  if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+  // The "You deleted a lot of text" dialog cannot be shown while the
+  // note is being left, so if this unsaved edit REMOVED a lot of text,
+  // keep a recoverable copy of the note as it was (the same snapshot
+  // ring every other destructive operation uses) before saving.
+  try {
+    var _flEd = document.getElementById('note-editor');
+    var _flThreshold = settings.deleteGuardChars !== undefined ? settings.deleteGuardChars : 30;
+    if (_flEd && currentNoteId && notes[currentNoteId] && _flThreshold > 0) {
+      var _flLost = (notes[currentNoteId].content || '').length - _flEd.value.length;
+      if (_flLost >= _flThreshold) {
+        snapshotNoteBeforeOp(currentNoteId, 'Large deletion saved while leaving the note');
+        logSys('flushPendingSave: ' + _flLost + ' characters were deleted from "' + (notes[currentNoteId].name || '?') +
+          '" and saved without the delete-guard dialog (' + reason + '). A snapshot of the earlier text was kept.');
+      }
+    }
+  } catch (eFl) {}
+  saveCurrentNote();
+  logDebugAction('Flushed unsaved typing before: ' + reason);
+  return true;
+}
+
 function saveCurrentNote() {
+  _savePending = false;
   if (!currentNoteId || !notes[currentNoteId]) return;
   const n = notes[currentNoteId];
   var newName    = document.getElementById('note-title').textContent.trim() || 'Untitled note';
@@ -24974,6 +25119,109 @@ function insertDateTimeAtCursor() {
   scheduleSave();
 }
 
+// ===== KEEP THE NOTE TEXT BOX HEIGHT CURRENT (v0.1915) =====
+// Second insertion-point fix from the v1 code review (item CUR-02),
+// reproduced in a real browser. #note-editor has overflow:hidden and its
+// height is set ONLY by resizeEditor(), which until now ran almost only
+// when the text was edited. Anything that re-wraps the text WITHOUT an
+// edit left the box at its old height: a different screen width
+// (rotation, split view), a font-size or line-height change in Settings
+// while the note is open, a font that finishes loading after the note was
+// measured. The error grows with every wrapped line, so it is largest at
+// the END of a long note:
+//   - box too SHORT: the last lines are clipped (measured: 11,700 px of a
+//     400-line note hidden after the screen got narrower);
+//   - box too TALL: blank space inside the box after the last line; a tap
+//     there puts the insertion point at the real end of the text, which
+//     can be thousands of pixels away (measured: the view jumped 5,000 px).
+// This module re-measures the box whenever the layout can have changed.
+// It only fixes the HEIGHT and keeps the scroll position; it never moves
+// the insertion point and never changes the text.
+var _edHeightRefreshTimer = null;
+var _edHeightLastAreaWidth = -1;
+function refreshEditorHeight(reason) {
+  var ed = document.getElementById('note-editor');
+  var area = document.getElementById('note-content-area');
+  if (!ed || !area) return false;
+  if (typeof isViewMode !== 'undefined' && isViewMode) return false;   // hidden in Read & Revise mode
+  if (ed.offsetParent === null) return false;                          // not on screen (home screen, a dialog page)
+  var savedScrollTop = area.scrollTop;
+  var oldHeight = ed.offsetHeight;
+  ed.style.height = '1px';
+  ed.style.height = ed.scrollHeight + 'px';
+  var newHeight = ed.offsetHeight;
+  // The 1px collapse can clamp the container's scroll position; put it
+  // back (the browser clamps it to the new maximum if the box got shorter).
+  if (area.scrollTop !== savedScrollTop) area.scrollTop = savedScrollTop;
+  if (newHeight !== oldHeight) {
+    try { updateRuledLinesOverlayHeight(); } catch (eRl) {}
+    try { if (typeof window._updateNoteScrollShadow === 'function') window._updateNoteScrollShadow('height-refresh'); } catch (eSh) {}
+    logDebugAction('Note text box height corrected (' + reason + '): ' + oldHeight + 'px -> ' + newHeight + 'px');
+    return true;
+  }
+  return false;
+}
+function refreshEditorHeightSoon(reason, delayMs) {
+  clearTimeout(_edHeightRefreshTimer);
+  _edHeightRefreshTimer = setTimeout(function() { refreshEditorHeight(reason); }, delayMs === undefined ? 80 : delayMs);
+}
+function installEditorHeightUpkeep() {
+  var ed = document.getElementById('note-editor');
+  var area = document.getElementById('note-content-area');
+  if (!ed || !area) return;
+  // 1. The width available to the text changed (rotation, split view,
+  //    window resize). Only WIDTH matters for wrapping -- the keyboard
+  //    opening changes the height, which is ignored here.
+  if (window.ResizeObserver) {
+    new ResizeObserver(function(entries) {
+      var w = Math.round(entries[0].contentRect.width);
+      if (w === _edHeightLastAreaWidth) return;
+      var first = _edHeightLastAreaWidth === -1;
+      _edHeightLastAreaWidth = w;
+      if (!first) refreshEditorHeightSoon('width changed to ' + w + 'px');
+    }).observe(area);
+  }
+  window.addEventListener('orientationchange', function() { refreshEditorHeightSoon('orientation change', 350); });
+  // 2. A font finished loading after the note was measured.
+  try {
+    if (document.fonts && document.fonts.addEventListener) {
+      document.fonts.addEventListener('loadingdone', function() { refreshEditorHeightSoon('font finished loading'); });
+    }
+  } catch (eFonts) {}
+  // 3. Safety net while reading: shortly after scrolling stops, fix a
+  //    box that is too SHORT (a cheap check, no re-measure needed), and
+  //    re-measure when the view is within two screens of the end of the
+  //    note (the only place a too-TALL box can be noticed).
+  //    Re-measuring briefly collapses the box, which itself produces a
+  //    scroll event -- so scroll events are ignored for a moment after a
+  //    check, and the near-the-end check runs at most once every 1.5 s.
+  //    Without this the check would re-trigger itself forever.
+  var _scrollIdleTimer = null;
+  var _ignoreScrollUntil = 0;
+  var _lastNearEndCheckAt = 0;
+  area.addEventListener('scroll', function() {
+    if (Date.now() < _ignoreScrollUntil) return;
+    clearTimeout(_scrollIdleTimer);
+    _scrollIdleTimer = setTimeout(function() {
+      if ((typeof isViewMode !== 'undefined' && isViewMode) || ed.offsetParent === null) return;
+      var now = Date.now();
+      var clipped = ed.scrollHeight > ed.offsetHeight + 1;
+      var nearEnd = (area.scrollHeight - area.scrollTop - area.clientHeight) < area.clientHeight * 2;
+      if (!clipped && !(nearEnd && now - _lastNearEndCheckAt > 1500)) return;
+      _lastNearEndCheckAt = now;
+      _ignoreScrollUntil = now + 300;
+      window._edHeightChecks = (window._edHeightChecks || 0) + 1; // test hook: how often this ran
+      refreshEditorHeight(clipped ? 'text was clipped (found after scrolling)' : 'checked near the end of the note');
+    }, 180);
+  }, { passive: true });
+  // 4. Last line of defence, just before an edit is applied: if the box
+  //    is too short, fix it first so resizeEditor()'s scroll adjustment
+  //    only ever sees the height change of the edit itself.
+  ed.addEventListener('beforeinput', function() {
+    if (ed.scrollHeight > ed.offsetHeight + 1) refreshEditorHeight('text was clipped (found before an edit)');
+  });
+}
+
 function resizeEditor() {
   var ed = document.getElementById('note-editor');
   if (!ed) return;
@@ -25065,6 +25313,249 @@ function scrollCursorIntoView() {
 // never returned) -- getCursorY below is now a thin wrapper, so every
 // pre-existing caller is untouched and there is exactly ONE mirror
 // measurement implementation, not two.
+// ===== ONE SHARED CARET MIRROR (v0.1919, code review item CUR-03) =====
+// A <textarea> cannot say where its caret is on screen, so the app lays
+// out a hidden copy of the text (a "mirror" <div>) and measures a marker
+// placed at the caret. There were two separate copies of that code
+// (getCursorXY for scrolling, getCursorXYFor for the Bold Cursor) and
+// they had drifted: fixes went into one and not the other, and BOTH left
+// out properties that change where lines wrap. One wrong wrap anywhere
+// above the caret moves the result by a whole line, and the chance of one
+// grows with the length of the note -- "worse toward the end of long
+// notes". This is now the ONLY place that decides what the mirror copies.
+//
+// What changed compared with the two old copies:
+//  - also copied: font-variation-settings (the editor's own CSS sets it;
+//    with a variable font it changes every glyph's width),
+//    font-optical-sizing, font-size-adjust, font-synthesis,
+//    font-language-override, font-variant-caps/-numeric/-east-asian/
+//    -alternates/-position, line-break, direction, text-align, and
+//    white-space (copied, with the old hard-coded pre-wrap as fallback);
+//  - the lang attribute in effect (hyphenation and line breaking);
+//  - text autosizing switched OFF on the mirror: on a phone in landscape
+//    the browser may enlarge the text of a <div> but never of a <textarea>;
+//  - WIDTH: taken from the computed width, which keeps fractions of a
+//    pixel. The old code used clientWidth/offsetWidth, which are rounded
+//    to whole pixels; a line that fits by less than a pixel then wrapped
+//    differently in the mirror. A visible classic scrollbar is still
+//    subtracted exactly as before (v0.1634).
+var CARET_MIRROR_PROPS = [
+  'box-sizing',
+  'font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch',
+  'font-variant-ligatures', 'font-variant-caps', 'font-variant-numeric', 'font-variant-east-asian',
+  'font-variant-alternates', 'font-variant-position',
+  'font-kerning', 'font-feature-settings', 'font-variation-settings', 'font-optical-sizing',
+  'font-size-adjust', 'font-synthesis', 'font-language-override',
+  'line-height', 'letter-spacing', 'word-spacing', 'text-transform', 'text-indent', 'text-align',
+  'text-rendering', 'tab-size',
+  'word-break', 'line-break', 'direction',
+  'min-height', 'max-height',
+  'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+  'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style'
+];
+// Returns the CSS text for a mirror of `ed` (everything except where the
+// mirror itself is placed). Also the mirror's identity for caching: two
+// calls that return the same string lay the same text out identically.
+function caretMirrorCss(ed, cs) {
+  var out = [];
+  for (var i = 0; i < CARET_MIRROR_PROPS.length; i++) {
+    var v = cs.getPropertyValue(CARET_MIRROR_PROPS[i]);
+    if (v) out.push(CARET_MIRROR_PROPS[i] + ':' + v);
+  }
+  out.push('white-space:' + (cs.whiteSpace || 'pre-wrap'));
+  out.push('overflow-wrap:' + (cs.overflowWrap || cs.wordWrap || 'break-word'));
+  out.push('hyphens:' + (cs.hyphens || cs.webkitHyphens || 'none'));
+  out.push('-webkit-hyphens:' + (cs.webkitHyphens || cs.hyphens || 'none'));
+  out.push('-webkit-text-size-adjust:100%');
+  out.push('text-size-adjust:100%');
+  // Width. The computed width is the box's real (fractional) width in
+  // layout pixels: the border box under box-sizing:border-box, the content
+  // box otherwise -- exactly what the copied box-sizing expects. A classic
+  // scrollbar takes its width out of the text area, so subtract it.
+  var bl = parseFloat(cs.borderLeftWidth) || 0, br = parseFloat(cs.borderRightWidth) || 0;
+  var scrollbarW = ed.offsetWidth - ed.clientWidth - Math.round(bl + br);
+  if (scrollbarW < 3) scrollbarW = 0; // whole-pixel rounding noise, not a scrollbar
+  var w = parseFloat(cs.width);
+  if (!(w > 0)) {
+    // No usable computed width (element not rendered): old whole-pixel formula.
+    w = ed.clientWidth + bl + br;
+    scrollbarW = 0;
+  }
+  out.push('width:' + (w - scrollbarW) + 'px');
+  return out.join(';');
+}
+// Builds the mirror for caret position `pos`, appends it to <body> and
+// returns { mirror, span }. The CALLER removes it. placementCss says
+// where the mirror itself goes (off screen normally; on screen for the
+// Bold Cursor debug view).
+function buildCaretMirror(ed, pos, placementCss, cs, mirrorCss) {
+  cs = cs || getComputedStyle(ed);
+  window._caretMirrorBuilds = (window._caretMirrorBuilds || 0) + 1; // test hook: how many full-note layouts were needed
+  var mirror = document.createElement('div');
+  mirror.setAttribute('aria-hidden', 'true');
+  var langEl = ed.closest ? ed.closest('[lang]') : null;
+  if (langEl && langEl.getAttribute('lang')) mirror.setAttribute('lang', langEl.getAttribute('lang'));
+  mirror.style.cssText = placementCss + ';' + (mirrorCss || caretMirrorCss(ed, cs));
+  // Full text with a zero-width marker AT the caret (never a truncated
+  // prefix -- see the v0.1602 notes): where a line breaks depends on the
+  // text after it too.
+  mirror.appendChild(document.createTextNode(ed.value.substring(0, pos)));
+  var span = document.createElement('span');
+  mirror.appendChild(span);
+  mirror.appendChild(document.createTextNode(ed.value.substring(pos) || ' ')); // something after the very end of the text too
+  document.body.appendChild(mirror);
+  return { mirror: mirror, span: span };
+}
+var CARET_MIRROR_OFFSCREEN = 'position:absolute;top:-9999px;left:-9999px;visibility:hidden;pointer-events:none';
+// Where the caret at `pos` sits inside the text box, measured from the
+// box's own top-left corner with the text NOT scrolled. Scroll offsets
+// are the caller's business.
+// v0.1921 (code review item CUR-04, the repeated-measurement part):
+// every measurement lays out the WHOLE note in the mirror, so its cost
+// grows with the length of the note. One keystroke or one tap used to
+// trigger several measurements of the very same state (resizeEditor,
+// the Bold Cursor, the keep-caret-visible timers at 100/350/600 ms,
+// the caret nudge buttons). The answer is now remembered and reused
+// for as long as NOTHING that can change it has changed: the same text
+// box, the same caret position, the same text, the same mirror CSS (which
+// includes the width and every copied font/wrap property), and no font
+// has finished loading since. It is exact reuse, never an estimate: any
+// difference at all means a fresh measurement. Only the latest answer is
+// kept (one entry), and the mirror itself is still removed from the page
+// immediately, as before.
+var _caretMeasureMemo = null;
+var _caretMeasureFontEpoch = 0;
+try {
+  if (document.fonts && document.fonts.addEventListener) {
+    document.fonts.addEventListener('loadingdone', function() { _caretMeasureFontEpoch++; _caretMeasureMemo = null; _caretPrefixMemo = null; _caretBaseMemo = null; });
+  }
+} catch (eMemoFonts) {}
+// v0.1922 (code review item CUR-04, the typing-lag part). Even with the
+// v0.1921 reuse, every keystroke changes the text, so every keystroke
+// still laid out the WHOLE note in the mirror -- the cost grows with the
+// note, and with the Bold Cursor on that is paid on every keystroke.
+//
+// Text in a pre-wrap box is laid out one PARAGRAPH (the text between two
+// line breaks) at a time: a paragraph's own wrapping never depends on any
+// other paragraph. So the caret position can be found in two exact pieces:
+//   1. how far down the caret's paragraph STARTS -- this depends only on
+//      the text BEFORE the paragraph, which does not change while typing
+//      inside it, so it is measured once and remembered;
+//   2. where the caret sits INSIDE its paragraph -- measured in a mirror
+//      holding only that one paragraph (a few lines, not the whole note).
+// top = (1) + (2) - what both pieces count twice (see the note in
+// _measureCaretOffsetFast).
+// Same mirror technique, same copied CSS, same width; nothing is estimated.
+//
+// Safety:
+//  - Used only when the text box wraps with white-space:pre-wrap and has
+//    no text-indent (an indent applies to the first line of the WHOLE box,
+//    which a one-paragraph mirror would get wrong). Otherwise the full
+//    measurement is used.
+//  - window._caretMeasureFast = false switches it off entirely.
+//  - While debug logging is ON, every fast measurement is checked against
+//    the full one; a difference of more than 1 px is written to the system
+//    log (CARET-MEASURE MISMATCH) and the full answer is used. Verified in
+//    a real browser against the full measurement at thousands of caret
+//    positions and 11 style combinations before release.
+var _caretPrefixMemo = null; // { ed, css, epoch, prefix, top }
+var _caretBaseMemo = null;   // { ed, css, epoch, top }: marker top on the first line of an empty box
+function _measureCaretOffsetFull(ed, pos, cs, css) {
+  var built = buildCaretMirror(ed, pos, CARET_MIRROR_OFFSCREEN, cs, css);
+  var spanRect = built.span.getBoundingClientRect();
+  var mirrorRect = built.mirror.getBoundingClientRect();
+  document.body.removeChild(built.mirror); // never left in the page
+  return { top: spanRect.top - mirrorRect.top, left: spanRect.left - mirrorRect.left };
+}
+// Lays out `before` + marker + `after` in a mirror and returns the marker's offset.
+function _measureCaretMirrorPiece(ed, cs, css, before, after) {
+  window._caretMirrorPieceBuilds = (window._caretMirrorPieceBuilds || 0) + 1; // test hook
+  var mirror = document.createElement('div');
+  mirror.setAttribute('aria-hidden', 'true');
+  var langEl = ed.closest ? ed.closest('[lang]') : null;
+  if (langEl && langEl.getAttribute('lang')) mirror.setAttribute('lang', langEl.getAttribute('lang'));
+  mirror.style.cssText = CARET_MIRROR_OFFSCREEN + ';' + css;
+  mirror.appendChild(document.createTextNode(before));
+  var span = document.createElement('span');
+  mirror.appendChild(span);
+  mirror.appendChild(document.createTextNode(after || ' '));
+  document.body.appendChild(mirror);
+  var spanRect = span.getBoundingClientRect();
+  var mirrorRect = mirror.getBoundingClientRect();
+  document.body.removeChild(mirror);
+  return { top: spanRect.top - mirrorRect.top, left: spanRect.left - mirrorRect.left };
+}
+function _measureCaretOffsetFast(ed, pos, cs, css, value) {
+  var paraStart = value.lastIndexOf('\n', pos - 1) + 1;      // 0 when there is no earlier line break
+  var paraEnd = value.indexOf('\n', pos);
+  if (paraEnd === -1) paraEnd = value.length;
+  // 1. Top of the line the paragraph starts on.
+  var prefix = value.substring(0, paraStart);
+  var pm = _caretPrefixMemo, prefixTop;
+  if (pm && pm.ed === ed && pm.epoch === _caretMeasureFontEpoch && pm.css === css &&
+      pm.prefix.length === prefix.length && pm.prefix === prefix) {
+    prefixTop = pm.top;
+  } else {
+    prefixTop = _measureCaretMirrorPiece(ed, cs, css, prefix, ' ').top;
+    _caretPrefixMemo = { ed: ed, css: css, epoch: _caretMeasureFontEpoch, prefix: prefix, top: prefixTop };
+  }
+  // 2. The caret inside its own paragraph. What follows the marker is
+  //    exactly what follows it in the full mirror, as far as this
+  //    paragraph can see: the rest of the paragraph, then the line break
+  //    (or, at the very end of the text, the same single space).
+  var after = value.substring(pos, paraEnd) + (paraEnd < value.length ? '\n' : '');
+  var inPara = _measureCaretMirrorPiece(ed, cs, css, value.substring(paraStart, pos), after);
+  // Both pieces report the marker's top measured from the top of their
+  // own mirror, so each includes what a marker on the very FIRST line of
+  // an otherwise empty box reports (padding + border + the gap between
+  // the top of a line and the top of the marker within it). That amount
+  // must be counted once, not twice: measure it (remembered per CSS) and
+  // take it out. The first draft of this function subtracted only the
+  // padding and border and was 4 px low on every line -- caught by the
+  // debug-logging self-check in measureCaretOffset(), which is why that
+  // check stays.
+  var bm = _caretBaseMemo, base;
+  if (bm && bm.ed === ed && bm.epoch === _caretMeasureFontEpoch && bm.css === css) {
+    base = bm.top;
+  } else {
+    base = _measureCaretMirrorPiece(ed, cs, css, '', ' ').top;
+    _caretBaseMemo = { ed: ed, css: css, epoch: _caretMeasureFontEpoch, top: base };
+  }
+  return { top: prefixTop + (inPara.top - base), left: inPara.left };
+}
+function measureCaretOffset(ed, pos) {
+  var cs = getComputedStyle(ed);
+  var css = caretMirrorCss(ed, cs);
+  var value = ed.value;
+  var m = _caretMeasureMemo;
+  if (m && m.ed === ed && m.pos === pos && m.epoch === _caretMeasureFontEpoch && m.css === css && m.value === value) {
+    return { top: m.top, left: m.left };
+  }
+  var result;
+  var fastOk = window._caretMeasureFast !== false &&
+    (cs.whiteSpace === 'pre-wrap' || cs.whiteSpace === 'break-spaces') &&
+    !(parseFloat(cs.textIndent) > 0 || parseFloat(cs.textIndent) < 0);
+  if (fastOk) {
+    result = _measureCaretOffsetFast(ed, pos, cs, css, value);
+    if (typeof settings !== 'undefined' && settings && settings.debugLoggingEnabled) {
+      var full = _measureCaretOffsetFull(ed, pos, cs, css);
+      if (Math.abs(full.top - result.top) > 1 || Math.abs(full.left - result.left) > 1) {
+        try {
+          logSys('CARET-MEASURE MISMATCH (fast vs full): pos=' + pos + ' of ' + value.length +
+            ' fast=(' + result.left.toFixed(1) + ',' + result.top.toFixed(1) + ') full=(' + full.left.toFixed(1) + ',' + full.top.toFixed(1) +
+            ') box=' + (ed.id || '?') + ' width=' + cs.width + ' font=' + cs.fontSize + '/' + cs.lineHeight + '. Using the full measurement.', true);
+        } catch (eMm) {}
+        result = full;
+      }
+    }
+  } else {
+    result = _measureCaretOffsetFull(ed, pos, cs, css);
+  }
+  _caretMeasureMemo = { ed: ed, pos: pos, epoch: _caretMeasureFontEpoch, css: css, value: value, top: result.top, left: result.left };
+  return result;
+}
+
 function getCursorXY(ed) {
   // Measures the Y position of the cursor within note-content-area by
   // briefly creating a mirror div, reading the position, then immediately
@@ -25084,90 +25575,31 @@ function getCursorXY(ed) {
   // text is the cursor," which is what's actually needed; absolute
   // screen position never was.
   var area = document.getElementById('note-content-area');
-  if (!area) return 0;
+  // v0.1920: was `return 0` -- every caller reads .x/.y, so a bare number
+  // gave them undefined. (getCursorY() below reads .y.)
+  if (!area) return { x: 0, y: 0 };
 
-  var cs = getComputedStyle(ed);
-  var mirror = document.createElement('div');
-  mirror.setAttribute('aria-hidden', 'true');
-  // v0.1605 FIX: letter-spacing and word-spacing were never copied here
-  // either -- same gap found and fixed in getCursorXYFor() after Lynn's
-  // screenshot proved the mirror and the real textarea can wrap text
-  // differently. This function backs the main note editor, caret nudge
-  // buttons, mode-switch scroll preservation, find-in-note, and trackpad
-  // heal -- hasn't shown symptoms yet, likely because those contexts
-  // happen to use default spacing, but the same latent bug applies
-  // wherever a non-default letter/word-spacing is in effect.
-  // v0.1606 FIX: 'border:' + cs.border used the SHORTHAND computed
-  // style, not reliably serialized across browsers (WebKit/Safari can
-  // return an empty string for shorthand computed properties even when
-  // the longhands are genuinely set) -- if that happened, the mirror
-  // silently rendered with NO border, making its box-sizing:border-box
-  // text area wider than the real element's by the border width on each
-  // side, shifting wrap points. Fixed with the four individual longhand
-  // properties, which serialize reliably everywhere.
-  mirror.style.cssText = [
-    'position:absolute',
-    'top:-9999px',
-    'left:-9999px',
-    'visibility:hidden',
-    'pointer-events:none',
-    'white-space:pre-wrap',
-    'word-wrap:break-word',
-    // v0.1607 FIX: was ed.clientWidth (content+padding, EXCLUDES border)
-    // applied as a box-sizing:border-box width (content+padding+border
-    // TOGETHER) -- double-subtracting the border, same bug found and
-    // fixed in getCursorXYFor(). offsetWidth is the W3C-correct match.
-    'width:' + ed.offsetWidth + 'px',
-    'font-family:' + cs.fontFamily,
-    'font-size:' + cs.fontSize,
-    'font-weight:' + cs.fontWeight,
-    'line-height:' + cs.lineHeight,
-    'padding-top:' + cs.paddingTop,
-    'padding-right:' + cs.paddingRight,
-    'padding-bottom:' + cs.paddingBottom,
-    'padding-left:' + cs.paddingLeft,
-    'border-top-width:' + cs.borderTopWidth,
-    'border-right-width:' + cs.borderRightWidth,
-    'border-bottom-width:' + cs.borderBottomWidth,
-    'border-left-width:' + cs.borderLeftWidth,
-    'border-top-style:' + cs.borderTopStyle,
-    'border-right-style:' + cs.borderRightStyle,
-    'border-bottom-style:' + cs.borderBottomStyle,
-    'border-left-style:' + cs.borderLeftStyle,
-    'box-sizing:' + cs.boxSizing,
-    'letter-spacing:' + cs.letterSpacing,
-    'word-spacing:' + cs.wordSpacing,
-    'text-transform:' + cs.textTransform,
-    'tab-size:' + cs.tabSize
-  ].join(';');
-
-  // v0.1602 FIX: was a TRUNCATED-PREFIX mirror (only text BEFORE the
-  // cursor) -- word-wrap is a greedy fill algorithm whose line-break
-  // decisions depend on what comes AFTER the visible point too, so a
-  // truncated prefix wraps differently than the real textarea once a
-  // line is long enough to actually wrap. This is the exact bug a
-  // standalone demo already found and fixed once (full text + zero-width
-  // marker AT the cursor); it had silently regressed back to the
-  // truncated-prefix version here. Fixed the same way: full text, marker
-  // inserted at the real cursor position, nothing truncated.
-  var _gcxyPos = ed.selectionStart;
-  var _gcxyBefore = ed.value.substring(0, _gcxyPos);
-  var _gcxyAfter = ed.value.substring(_gcxyPos);
-  mirror.textContent = '';
-  mirror.appendChild(document.createTextNode(_gcxyBefore));
-  var span = document.createElement('span');
-  mirror.appendChild(span);
-  mirror.appendChild(document.createTextNode(_gcxyAfter || ' ')); // trailing space: something after the very end of the text too
-
-  document.body.appendChild(mirror);
-  var spanRect   = span.getBoundingClientRect();
-  var mirrorRect = mirror.getBoundingClientRect();
-  // Offset of the cursor marker from the TOP OF THE TEXT CONTENT inside
-  // the mirror — both rects share the mirror's own off-screen coordinate
-  // space, so this is a clean, correct distance with no stray bias from
-  // the -9999px placement.
-  var offsetWithinText = spanRect.top - mirrorRect.top;
-  var offsetWithinTextX = spanRect.left - mirrorRect.left;
+  // v0.1920 (code review item CUR-03, second half): this function used
+  // to build its OWN mirror, a second copy that had fallen behind the
+  // Bold Cursor's. It left out font-style, font-stretch, kerning,
+  // ligatures, font-feature-settings, word-break, overflow-wrap, hyphens
+  // and text-indent, and used a whole-pixel width. Measured in a real
+  // browser on a 1,200-line note, the position it reported for the END
+  // of the note was wrong by 29 lines with small caps, 57 lines with
+  // word-break:break-all, 6 lines with kerning off, and 9 lines with an
+  // italic font at a fractional width -- while the shared mirror was
+  // exact in every case. This function backs everything that SCROLLS to
+  // the insertion point (keep-caret-visible after a tap, the caret nudge
+  // buttons, mode-switch scroll preservation, find-in-note, trackpad
+  // heal, resizeEditor), so those errors meant scrolling to the wrong
+  // place. It now uses the ONE shared measurement (measureCaretOffset,
+  // above). Its earlier mirror fixes (v0.1602 full-text mirror, v0.1605
+  // letter/word spacing, v0.1606 border longhands, v0.1607 border-box
+  // width) are all carried by the shared builder; the history is in the
+  // Changelog.
+  var _gcxyOffset = measureCaretOffset(ed, ed.selectionStart);
+  var offsetWithinText = _gcxyOffset.top;
+  var offsetWithinTextX = _gcxyOffset.left;
   // ed's position relative to area's scrollable CONTENT top (not the
   // viewport): both rects are read in the SAME real on-screen coordinate
   // space here (neither is the off-screen mirror), so subtracting them
@@ -25190,7 +25622,6 @@ function getCursorXY(ed) {
   var edLeftWithinContent = (edRect.left - areaRect.left) + areaScrollLeftClamped;
   var resultY = offsetWithinText + edTopWithinContent;
   var resultX = offsetWithinTextX + edLeftWithinContent;
-  document.body.removeChild(mirror);  // remove immediately — never leave in DOM
 
   return { x: resultX, y: resultY };
 }
@@ -25226,6 +25657,7 @@ var _deleteGuardTimer = null;
 // some later, unrelated one.
 var _lastCutAt = 0;
 function scheduleSave() {
+  _savePending = true; // v0.1916: the text box now holds typing that is not saved yet
   if (saveTimeout) clearTimeout(saveTimeout);
   // Cancel any pending delete guard check — new input arrived
   if (_deleteGuardTimer) { clearTimeout(_deleteGuardTimer); _deleteGuardTimer = null; }
@@ -26033,6 +26465,7 @@ function renderViewOnlyNotesList() {
   });
 }
 function goHome() {
+  flushPendingSave('leaving the note (Back)'); // v0.1916: before anything below can replace the text box contents
   if (currentNoteId && notes[currentNoteId] && !notes[currentNoteId].isDebugLog) {
     logDebugAction('Exited note: "' + (notes[currentNoteId].name || '(untitled)') + '"');
   }
@@ -30181,7 +30614,7 @@ function makeImportFolderName(label) {
     // meant the tour never actually registered as "seen" and could
     // reappear on every launch -- exactly the write/read-split bug this
     // migration needs to avoid. Both sides move together in 3b-ii.
-    storageSet(storeKey('remember_tour_seen'), '1');
+    bootSet(storeKey('remember_tour_seen'), '1').catch(function(eT) { logSys('Tour-seen flag write FAILED: ' + eT, true); });
     // Skip / tap-outside from a Help-launched tour returns to Help —
     // being dumped all the way out of Help felt broken. FINISHING the
     // tour (Get Started on the last slide) still exits fully, since
@@ -30692,7 +31125,7 @@ function makeImportFolderName(label) {
   })();
 
   // Show on first launch
-  if (!storageGet(storeKey('remember_tour_seen')) && !bootGet(storeKey('remember_notes'))) {
+  if (!bootGet(storeKey('remember_tour_seen')) && !bootGet(storeKey('remember_notes'))) {
     setTimeout(openTour, 800);
   }
 
@@ -33098,9 +33531,40 @@ function makeImportFolderName(label) {
     var dx = Math.abs(e.clientX - pointerDownX);
     var dy = Math.abs(e.clientY - pointerDownY);
     if (dx > TAP_THRESHOLD || dy > TAP_THRESHOLD) return;
-    clearTimeout(kbBlurTimer);
 
     var ed = document.getElementById('note-editor');
+
+    // v0.1914 FIX, per Lynn's report (Typing mode, scrolled near the
+    // bottom of a very long note, tap to place the insertion point, and
+    // the typing ends up somewhere else). Reproduced in a real browser:
+    // the note's text box ends at its last line, so at the bottom of a
+    // note there is blank space BELOW the text that belongs to this
+    // scrolling area, not to the text box. A tap there did NOT move the
+    // insertion point at all -- but this handler still ran as if it had,
+    // and its "keep the caret visible" timers scrolled the view to
+    // wherever the OLD insertion point was (the very top of the note for
+    // a note that had just been opened: measured jump from scrollTop
+    // 35643 to 48). On iOS a text box that already has focus KEEPS it
+    // when blank space is tapped, so the next keystrokes went to that
+    // old position too. Two changes:
+    //  1. A tap in the blank space BELOW the last line now does what
+    //     every notes app does: puts the insertion point at the END of
+    //     the note and focuses the text box (allowed here -- this is a
+    //     real tap, so iOS will show the keyboard).
+    //  2. A tap anywhere else that did not land in the text box (side
+    //     margins, the title row's blank part) no longer pretends the
+    //     keyboard opened and never scrolls to a stale insertion point.
+    if (e.target !== ed) {
+      var _tapOnControl = e.target.closest && e.target.closest('button, a, input, select, label, .oops-bar, #note-inline-title-row');
+      var _edRectTap = ed.getBoundingClientRect();
+      if (!_tapOnControl && !ed.readOnly && e.clientY > _edRectTap.bottom) {
+        try { ed.focus({ preventScroll: true }); } catch (eFocusTap) { ed.focus(); }
+        ed.setSelectionRange(ed.value.length, ed.value.length);
+        logDebugAction('Tap below the last line: insertion point placed at the end of the note');
+      }
+    }
+    if (document.activeElement !== ed) return; // the tap did not put the insertion point in the note
+    clearTimeout(kbBlurTimer);
 
     _typingSessionStartLen = (ed.value || '').length;
     logDebugAction('Entered typing mode');
@@ -33144,6 +33608,7 @@ function makeImportFolderName(label) {
     (function() {
       var _tapArea = document.getElementById('note-content-area');
       function _ensureTapCaretVisible() {
+        if (document.activeElement !== ed) return; // v0.1914: never scroll to a caret the user is no longer using
         _applyKeyboardScrollRoom(_tapArea);
         _tpadEnsureCaretVisible(getCursorY(ed), _tapArea);
       }
@@ -33212,10 +33677,39 @@ function makeImportFolderName(label) {
       // specific loop that used to hang here is fixed, and any future
       // bug in this same pure-logic cluster gets the same automatic
       // containment without needing to be individually anticipated.
-      _computeDefaultTagInsertionAsync(noteEditor.value, noteEditor.selectionStart, _tagList, function(result) {
+      // v0.1917 FIX (code review item SAVE-06, reproduced in a real
+      // browser: Enter then "eggs" typed at once ended as "egg" or "e").
+      // The answer comes back from the Worker a moment later. It used
+      // to REPLACE the whole text box with the text as it was when the
+      // question was sent, and move the insertion point back -- wiping
+      // out anything typed in between. Now only the tags themselves are
+      // inserted, at the place the Worker worked out, into whatever the
+      // text is NOW; the insertion point and anything typed since are
+      // left alone (setRangeText 'preserve' shifts the insertion point
+      // by exactly the inserted length when it sits after that place).
+      // If the text before that place has changed in the meantime, the
+      // tags are skipped rather than put in the wrong spot.
+      var _dtSentVal = noteEditor.value;
+      _computeDefaultTagInsertionAsync(_dtSentVal, noteEditor.selectionStart, _tagList, function(result) {
         if (!result) return;
-        noteEditor.value = result.value;
-        noteEditor.setSelectionRange(result.pos, result.pos);
+        var _dtNew = result.value;
+        var _dtAt = 0, _dtMax = Math.min(_dtSentVal.length, _dtNew.length);
+        while (_dtAt < _dtMax && _dtSentVal.charCodeAt(_dtAt) === _dtNew.charCodeAt(_dtAt)) _dtAt++;
+        var _dtIns = _dtNew.slice(_dtAt, _dtAt + (_dtNew.length - _dtSentVal.length));
+        var _dtPureInsertion = _dtNew.length > _dtSentVal.length &&
+          (_dtSentVal.slice(0, _dtAt) + _dtIns + _dtSentVal.slice(_dtAt)) === _dtNew;
+        if (!_dtPureInsertion) {
+          // Not a simple insertion (unexpected): only safe if nothing changed since.
+          if (noteEditor.value !== _dtSentVal) { logDebugAction('Default tags skipped: text changed while they were being worked out'); return; }
+          noteEditor.value = result.value;
+          noteEditor.setSelectionRange(result.pos, result.pos);
+        } else {
+          if (noteEditor.value.slice(0, _dtAt) !== _dtSentVal.slice(0, _dtAt)) {
+            logDebugAction('Default tags skipped: the line they belong to changed while they were being worked out');
+            return;
+          }
+          noteEditor.setRangeText(_dtIns, _dtAt, _dtAt, 'preserve');
+        }
         // Standard pipeline (scheduleSave, dirty-flag, resize) via a
         // synthetic input event -- same pattern as _insertTag.
         noteEditor.dispatchEvent(new Event('input', { bubbles: true }));
@@ -33290,140 +33784,46 @@ function makeImportFolderName(label) {
   var _boldCursorDebugMirror = null; // v0.1603 DIAGNOSTIC: visible-mirror debug aid, see getCursorXYFor
   function getCursorXYFor(ed, scrollAncestor) {
     var cs = getComputedStyle(ed);
-    // v0.1606 REAL FIX: cs.border (the SHORTHAND computed style) is not
-    // reliably serialized across browsers -- WebKit/Safari has a known
-    // history of returning an empty string for shorthand computed
-    // properties even when the underlying longhands are genuinely set.
-    // If that happened here, 'border:' + cs.border silently became the
-    // invalid string 'border:', rendering the mirror with NO border --
-    // under box-sizing:border-box, that makes the mirror's actual
-    // text-content area WIDER than the real textarea by exactly the
-    // border width on each side, shifting where lines wrap. Fixed with
-    // the four individual longhand properties, which ARE reliably
-    // serialized everywhere. Also: the debug-visible mirror's own extra
-    // 'border:2px dashed' was DOUBLE-COUNTING width on top of the real
-    // copied border -- another real source of the mismatch in Lynn's
-    // screenshot -- moved to outline, which never affects layout.
-    var mirror = document.createElement('div');
-    mirror.setAttribute('aria-hidden', 'true');
-    // v0.1603 DIAGNOSTIC: three theories (wrapper box mismatch, math
-    // error, staleness race) were proposed and discarded by code
-    // inspection without conclusive proof after Lynn's screenshots showed
-    // the mark landing in plausible-but-wrong locations (inside a
-    // checkbox label; past the end of the visible textarea). Rather than
-    // guess a fourth time, make the mirror ITSELF visible on screen --
-    // same technique that found the real v8 wrapping bug in the
-    // standalone demo. window._bcShowMirror toggles it; OFF by default,
-    // does not affect normal operation.
-    // v0.1605 REAL FIX: Lynn's screenshot proved the wrap points
-    // genuinely differ between the mirror and the real textarea --
-    // letter-spacing and word-spacing were never copied, despite being
-    // real, pervasive properties in this app's CSS cascade. If the
-    // textarea's own computed value for either ever resolves to
-    // anything non-default, the mirror's text packs differently and
-    // wraps at different points -- the actual root cause behind every
-    // round of this investigation, not any of the three earlier,
-    // disproven theories.
-    var _bcBorderProps = [
-      'border-top-width:' + cs.borderTopWidth, 'border-right-width:' + cs.borderRightWidth,
-      'border-bottom-width:' + cs.borderBottomWidth, 'border-left-width:' + cs.borderLeftWidth,
-      'border-top-style:' + cs.borderTopStyle, 'border-right-style:' + cs.borderRightStyle,
-      'border-bottom-style:' + cs.borderBottomStyle, 'border-left-style:' + cs.borderLeftStyle,
-      'border-top-color:' + cs.borderTopColor, 'border-right-color:' + cs.borderRightColor,
-      'border-bottom-color:' + cs.borderBottomColor, 'border-left-color:' + cs.borderLeftColor
-    ];
-    var _bcPaddingProps = [
-      'padding-top:' + cs.paddingTop, 'padding-right:' + cs.paddingRight,
-      'padding-bottom:' + cs.paddingBottom, 'padding-left:' + cs.paddingLeft
-    ];
-    var _bcCommonMirrorProps = [
-      'font-family:' + cs.fontFamily, 'font-size:' + cs.fontSize, 'font-weight:' + cs.fontWeight,
-      'line-height:' + cs.lineHeight, 'box-sizing:' + cs.boxSizing,
-      'letter-spacing:' + cs.letterSpacing, 'word-spacing:' + cs.wordSpacing,
-      'text-transform:' + cs.textTransform, 'tab-size:' + cs.tabSize,
-      // v0.1609 EXPERIMENT, per Lynn's observation: the real textarea has
-      // min-height:12em, making its box taller than its actual text
-      // content -- the mirror had no min-height at all, only ever as
-      // tall as its own content. If min-height changes where the text
-      // visually STARTS within the box (it shouldn't, for top-aligned
-      // text, but worth testing rather than assuming), that would shift
-      // the Y math exactly as Lynn's screenshot showed: same wrap, same
-      // content, different vertical position. Also switched padding
-      // (shorthand) to the four individual longhands -- same
-      // shorthand-serialization risk already found and fixed for border.
-      'min-height:' + cs.minHeight, 'max-height:' + cs.maxHeight,
-      // v0.1607 REAL FIX: was ed.clientWidth (content+padding, EXCLUDES
-      // border) applied as a box-sizing:border-box width (content+
-      // padding+border TOGETHER) -- double-subtracting the border and
-      // making the mirror narrower than the real element by 2x the
-      // border width. offsetWidth (content+padding+border) is the
-      // W3C-correct match for border-box's own definition of 'width'.
-      // v0.1634 REFINEMENT of that fix: offsetWidth is right ONLY while
-      // there is no visible scrollbar. Quick Add / Edit Paragraph are
-      // fixed-height SELF-SCROLLING textareas -- a long paragraph
-      // summons a scrollbar, which (Android/desktop classic scrollbars)
-      // consumes interior width, so the REAL text wraps in a narrower
-      // box than a scrollbar-less mirror sized to offsetWidth; the wrap
-      // error compounds with every line, exactly matching the reported
-      // long-paragraph drift. clientWidth EXCLUDES any scrollbar, so
-      // clientWidth + the two border widths is the correct border-box
-      // width in all cases -- and is mathematically IDENTICAL to
-      // offsetWidth whenever no scrollbar exists (short text, overlay-
-      // scrollbar iOS, the main note editor), i.e. zero regression risk.
-      'width:' + (ed.clientWidth +
-        (parseFloat(cs.borderLeftWidth) || 0) +
-        (parseFloat(cs.borderRightWidth) || 0)) + 'px',
-      // v0.1634: copy every remaining wrap-affecting property FROM the
-      // textarea's computed style rather than omitting or hardcoding it
-      // -- mirroring truth can only converge. The copied overflow-wrap
-      // deliberately lands AFTER (and therefore overrides) the older
-      // hardcoded word-wrap:break-word in the cssText cascade.
-      'overflow-wrap:' + (cs.overflowWrap || cs.wordWrap || 'break-word'),
-      'word-break:' + cs.wordBreak,
-      'hyphens:' + (cs.hyphens || cs.webkitHyphens || 'none'),
-      '-webkit-hyphens:' + (cs.webkitHyphens || cs.hyphens || 'none'),
-      'font-style:' + cs.fontStyle,
-      'font-stretch:' + cs.fontStretch,
-      'font-variant-ligatures:' + (cs.fontVariantLigatures || 'normal'),
-      'font-kerning:' + (cs.fontKerning || 'auto'),
-      'font-feature-settings:' + (cs.fontFeatureSettings || 'normal'),
-      'text-indent:' + cs.textIndent,
-      'text-rendering:' + (cs.textRendering || 'auto')
-    ].concat(_bcPaddingProps).concat(_bcBorderProps);
+    // v0.1919 (code review item CUR-03): the mirror is now built by the
+    // ONE shared buildCaretMirror() (top level, above getCursorXY), which
+    // owns the list of copied properties and the fractional width. The
+    // history of this function's own mirror fixes (v0.1602 full-text
+    // mirror, v0.1605 letter/word spacing, v0.1606 border longhands,
+    // v0.1607 border-box width, v0.1609 min/max-height and padding
+    // longhands, v0.1634 scrollbar-aware width and remaining wrap
+    // properties) is recorded in the Changelog; every one of those fixes
+    // is carried over in the shared builder.
+    // v0.1603 DIAGNOSTIC kept: window._bcShowMirror renders the mirror ON
+    // SCREEN just below the focused text box, marker highlighted, instead
+    // of off screen. OFF by default.
+    var placement;
     if (window._bcShowMirror) {
       var edRectDbg = ed.getBoundingClientRect();
-      mirror.style.cssText = [
-        'position:fixed', 'top:' + (edRectDbg.bottom + 4) + 'px', 'left:' + edRectDbg.left + 'px',
-        'visibility:visible', 'background:#fffbe0', 'outline:2px dashed #e67700', 'z-index:99999',
-        'border-radius:' + cs.borderRadius,
-        'pointer-events:none', 'white-space:pre-wrap', 'word-wrap:break-word'
-      ].concat(_bcCommonMirrorProps).join(';');
+      placement = 'position:fixed;top:' + (edRectDbg.bottom + 4) + 'px;left:' + edRectDbg.left + 'px;' +
+        'visibility:visible;background:#fffbe0;outline:2px dashed #e67700;z-index:99999;' +
+        'border-radius:' + cs.borderRadius + ';pointer-events:none';
       if (_boldCursorDebugMirror) _boldCursorDebugMirror.remove();
     } else {
-      mirror.style.cssText = [
-        'position:absolute', 'top:-9999px', 'left:-9999px', 'visibility:hidden',
-        'pointer-events:none', 'white-space:pre-wrap', 'word-wrap:break-word'
-      ].concat(_bcCommonMirrorProps).join(';');
+      placement = CARET_MIRROR_OFFSCREEN;
     }
-    // v0.1602 FIX: full text + zero-width marker AT the cursor, NOT a
-    // truncated prefix (see comment above this function). Same
-    // structural bug the standalone demo's v8 fix already solved once,
-    // reintroduced here because this function was written fresh instead
-    // of ported from the demo's proven version.
-    var pos = ed.selectionStart;
-    var beforeText = ed.value.substring(0, pos);
-    var afterText = ed.value.substring(pos);
-    mirror.textContent = '';
-    mirror.appendChild(document.createTextNode(beforeText));
-    var span = document.createElement('span');
-    span.style.cssText = window._bcShowMirror ? 'background:#ff6b6b;outline:2px solid #c92a2a' : '';
-    mirror.appendChild(span);
-    mirror.appendChild(document.createTextNode(afterText || ' ')); // trailing space: gives the wrap algorithm something after the very end of the text too
-    document.body.appendChild(mirror);
-    var spanRect = span.getBoundingClientRect();
-    var mirrorRect = mirror.getBoundingClientRect();
-    var offsetWithinText = spanRect.top - mirrorRect.top;
-    var offsetWithinTextX = spanRect.left - mirrorRect.left;
+    // v0.1921: outside the debug view, use the shared measurement so a
+    // state already measured this keystroke (by resizeEditor or the
+    // keep-caret-visible code) is not laid out a second time.
+    var mirror = null, span = null, spanRect = null, mirrorRect = null;
+    var offsetWithinText, offsetWithinTextX;
+    if (window._bcShowMirror) {
+      var built = buildCaretMirror(ed, ed.selectionStart, placement, cs);
+      mirror = built.mirror; span = built.span;
+      span.style.cssText = 'background:#ff6b6b;outline:2px solid #c92a2a';
+      spanRect = span.getBoundingClientRect();
+      mirrorRect = mirror.getBoundingClientRect();
+      offsetWithinText = spanRect.top - mirrorRect.top;
+      offsetWithinTextX = spanRect.left - mirrorRect.left;
+    } else {
+      var _bcOff = measureCaretOffset(ed, ed.selectionStart);
+      offsetWithinText = _bcOff.top;
+      offsetWithinTextX = _bcOff.left;
+    }
     var edRect = ed.getBoundingClientRect();
     var areaRect = scrollAncestor.getBoundingClientRect();
     // v0.1608 REAL FIX, from Lynn's two-screenshot comparison: after
@@ -33463,8 +33863,21 @@ function makeImportFolderName(label) {
     // is always 0 by construction), so summing both clamped values is
     // correct without needing to special-case which architecture is
     // active for a given call.
-    var edScrollTopClamped = Math.max(0, ed.scrollTop) + Math.max(0, scrollAncestor.scrollTop);
-    var edScrollLeftClamped = Math.max(0, ed.scrollLeft) + Math.max(0, scrollAncestor.scrollLeft);
+    // v0.1918 REAL FIX (code review item CUR-01, reproduced in a real
+    // browser): the two scroll sources must NOT simply be added. They
+    // push the mark in OPPOSITE directions:
+    //  - the ANCESTOR's scroll (note-content-area, for the note editor):
+    //    the mark lives inside that scrolling content, so its position
+    //    in the content grows with the scroll -> ADD (unchanged);
+    //  - the text box's OWN scroll (Quick Add / Edit Paragraph): the mark
+    //    lives in a wrapper that does not scroll, and when the text
+    //    scrolls UP by N the caret moves UP by N on screen -> SUBTRACT.
+    // v0.1608/v0.1616 added both. With the box's own scroll at 0 that is
+    // harmless, which is why short text always looked right; with lots of
+    // text the mark went DOWN when the text went UP -- wrong by twice the
+    // scroll amount (measured: scrolled 60 px, mark drawn 120 px too low).
+    var edScrollTopClamped = Math.max(0, scrollAncestor.scrollTop) - (scrollAncestor === ed ? 0 : Math.max(0, ed.scrollTop));
+    var edScrollLeftClamped = Math.max(0, scrollAncestor.scrollLeft) - (scrollAncestor === ed ? 0 : Math.max(0, ed.scrollLeft));
     var edTopWithinContent = (edRect.top - areaRect.top) + edScrollTopClamped;
     var edLeftWithinContent = (edRect.left - areaRect.left) + edScrollLeftClamped;
     if (window._bcShowMirror) {
@@ -33473,8 +33886,6 @@ function makeImportFolderName(label) {
         ' areaRect.width=' + Math.round(areaRect.width) + ' mirrorRect.width=' + Math.round(mirrorRect.width) +
         ' spanRect.left=' + Math.round(spanRect.left) + ' mirrorRect.left=' + Math.round(mirrorRect.left) +
         ' edScrollTop=' + ed.scrollTop + ' edRect.top=' + Math.round(edRect.top));
-    } else {
-      document.body.removeChild(mirror);
     }
     return { x: offsetWithinTextX + edLeftWithinContent, y: offsetWithinText + edTopWithinContent };
   }
@@ -33596,7 +34007,10 @@ function makeImportFolderName(label) {
         // the position math itself -- reusing scrollAncestor here rather
         // than introducing a third ad-hoc "which element really matters"
         // decision.
-        var visScrollTop = Math.max(0, ta.scrollTop) + Math.max(0, scrollAncestor.scrollTop);
+        // v0.1918: only the ANCESTOR's scroll is subtracted here now --
+        // the text box's own scroll is already taken out of newTop by
+        // getCursorXYFor() (see the v0.1918 note there).
+        var visScrollTop = Math.max(0, scrollAncestor.scrollTop);
         // v0.1619 REAL FIX, from Lynn's log showing a consistent ~35px
         // overshoot (visibleBottom=444 vs taVisibleHeight=409) repeating
         // across nearly every failure, and Lynn's own precise behavioral
@@ -33681,6 +34095,20 @@ function makeImportFolderName(label) {
         // cursor over. The TOP/left/right bounds keep their original
         // strict tolerance, since those never showed this problem.
         var bottomTolerance = 100;
+        // v0.1918 NEW: for the self-scrolling boxes (Quick Add, Edit
+        // Paragraph, the Settings preview) the caret can be scrolled out
+        // of view INSIDE the box. The mark must then be hidden, not drawn
+        // above or below the box where there is no caret. Judged by the
+        // middle of the mark so the calibrated -0.31em offset on the
+        // first line does not hide it.
+        if (ta.id !== 'note-editor' && scrollAncestor !== ta) {
+          var _bcTaTop = ta.getBoundingClientRect().top - scrollAncestor.getBoundingClientRect().top;
+          var _bcMid = (newTop - _bcTaTop) + newHeight / 2;
+          if (_bcMid < 0 || _bcMid > ta.offsetHeight) {
+            m.style.display = 'none';
+            return;
+          }
+        }
         if (visibleTop < -2 || visibleBottom > taVisibleHeight + bottomTolerance) {
           logDebugAction('boldcursor-SANITY-FAIL: id=' + (ta.id || '?') +
             ' computed top=' + Math.round(newTop) + ' visibleTop=' + Math.round(visibleTop) +
@@ -45165,6 +45593,7 @@ function pushUndo() {
 }
 
 function applyUndo() {
+  flushPendingSave('undo'); // v0.1916: unsaved typing becomes its own undo step instead of being dropped
   if (!currentNoteId || !notes[currentNoteId] || !_undoStack.length) return;
   if (_undoNoteId !== currentNoteId) { _resetUndoRedo(currentNoteId); return; }
   var current = notes[currentNoteId].content || '';
@@ -45174,6 +45603,7 @@ function applyUndo() {
 }
 
 function applyRedo() {
+  flushPendingSave('redo');
   if (!currentNoteId || !notes[currentNoteId] || !_redoStack.length) return;
   if (_undoNoteId !== currentNoteId) { _resetUndoRedo(currentNoteId); return; }
   var current = notes[currentNoteId].content || '';
@@ -48390,6 +48820,54 @@ window.addEventListener('unhandledrejection', function(e) {
 // IndexedDB) before init(), so loadState() reads real data. bootStorage()
 // never rejects -- on failure it records _bootFailure and the app still
 // starts, loudly (see BOOT STORAGE).
+// ===== RETIRING THE OLD localStorage COPIES (v0.1913) =====
+// Lynn's question: "why are you keeping an old copy of notes in local
+// storage?" Answer: the one-time migration deliberately left it as a safety
+// net. Since v0.1910 nothing reads it unless IndexedDB itself fails. Once
+// the app has started cleanly LS_RETIRE_AFTER_CLEAN_BOOTS times in a row on
+// IndexedDB data, those frozen copies are deleted. Counted per deployment.
+// "Clean" = IndexedDB opened, notes were present in it, no anomaly/failure,
+// no note-loss detection. A failed or anomalous start resets nothing but does
+// not count (an anomaly resets the counter to 0).
+var LS_RETIRE_AFTER_CLEAN_BOOTS = 5;
+var LS_RETIRE_DELAY_MS = 4000;
+// Moved to IndexedDB: only deleted from localStorage if IndexedDB has the key.
+var LS_RETIRE_REQUIRE_IDB = ['remember_notes', 'remember_folders', 'remember_folders_backup', 'remember_themes',
+  'remember_tour_seen', 'remember_migr_tag_sort_sampler', 'remember_notes_backup', 'remember_notes_corrupt'];
+// Frozen/obsolete since earlier builds (never read while IndexedDB works).
+var LS_RETIRE_OBSOLETE = ['remember_notes_gen', 'remember_note_census', 'remember_syslog', 'remember_note_snapshots'];
+async function _retireStaleLocalStorageIfSafe() {
+  var cntKey = storeKey('remember_ls_retire_clean_boots');
+  var doneKey = storeKey('remember_ls_retired');
+  if (await idbGet(doneKey)) return;
+  if (!_bootCacheOk || _bootFailure) return;                  // not a clean boot
+  if (_bootAnomalyMsg) { await idbSet(cntKey, 0); return; }   // anomaly: start counting again
+  if (_noteLossDetectedThisLoad) return;
+  var notesRaw = await idbGet(storeKey('remember_notes'));
+  var parsedOk = false;
+  try { var po = JSON.parse(notesRaw); parsedOk = !!po && typeof po === 'object'; } catch(eP) {}
+  if (!notesRaw || !parsedOk) return;
+  var cnt = (parseInt(await idbGet(cntKey), 10) || 0) + 1;
+  await idbSet(cntKey, cnt);
+  if (cnt < LS_RETIRE_AFTER_CLEAN_BOOTS) return;
+  var removed = [], kept = [];
+  for (var i = 0; i < LS_RETIRE_REQUIRE_IDB.length; i++) {
+    var k = storeKey(LS_RETIRE_REQUIRE_IDB[i]);
+    if (storageGet(k) === null) continue;
+    if ((await idbGet(k)) !== null) { storageRemove(k); removed.push(LS_RETIRE_REQUIRE_IDB[i]); }
+    else kept.push(LS_RETIRE_REQUIRE_IDB[i]);
+  }
+  for (var j = 0; j < LS_RETIRE_OBSOLETE.length; j++) {
+    var ko = storeKey(LS_RETIRE_OBSOLETE[j]);
+    if (storageGet(ko) !== null) { storageRemove(ko); removed.push(LS_RETIRE_OBSOLETE[j]); }
+  }
+  storageListKeys(storeKey('remember_notes_conflict_backup_')).forEach(function(kc) { storageRemove(kc); removed.push('conflict_backup'); });
+  if (kept.length === 0) await idbSet(doneKey, { at: Date.now(), removed: removed });
+  logSys('LOCALSTORAGE RETIRED (v0.1913): after ' + cnt + ' clean startups on IndexedDB, removed ' + removed.length +
+    ' old localStorage item(s) [' + removed.join(', ') + ']' + (kept.length ? '; KEPT (no IndexedDB copy yet): ' + kept.join(', ') : '') +
+    '. Still in localStorage by design: settings, current-note pointer, two-tab heartbeat.');
+}
+
 function _startApp() {
   try {
     init();
@@ -48407,6 +48885,12 @@ function _startApp() {
     _earlyErrors.push(msg);
   }
   _flushEarlyErrors();
+  try { installEditorHeightUpkeep(); } catch (eUpkeep) { logSys('installEditorHeightUpkeep failed: ' + eUpkeep, true); }
+  // v0.1913: after a quiet delay (never competes with startup work),
+  // retire the old localStorage copies once enough clean starts have passed.
+  setTimeout(function() {
+    try { _retireStaleLocalStorageIfSafe().catch(function(eR) { logSys('LOCALSTORAGE RETIRE check failed: ' + eR, true); }); } catch(eR2) {}
+  }, LS_RETIRE_DELAY_MS);
   setTimeout(pinToolbars, 0);
   // Sync Stop button width to Speak button width after first render
   requestAnimationFrame(function() {
