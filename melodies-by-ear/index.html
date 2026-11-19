@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.133</title>
+<title>Melodies by Ear v0.136</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -434,9 +434,12 @@
   #allNotes.lyrics-only .al-lyric { flex: 1 1 0; min-width: 0; padding-left: 4px; margin-top: 0; }
 
   .along-start label { font-size: .85rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  /* The key, big in a gold box: Play along's key line and the warm-up share this look (v0.134) */
+  .key-box { padding: 8px 12px; background: var(--gold-soft); border: 1px solid var(--gold-line); border-radius: 10px; }
+  .key-big { display: block; font-size: 1.45rem; font-weight: 700; line-height: 1.2; color: var(--ink); }
+  .key-sub { display: block; font-size: .88rem; font-weight: 400; color: var(--muted); }
   .along-key { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
-  .along-key-val { flex: 1; font-weight: 650; }
-  .along-key-val small { font-weight: 400; color: var(--muted); }
+  .along-key-val { flex: 1; min-width: 0; }
   .along-btns { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .along-btns.two { grid-template-columns: 1fr 1fr; }
   .along-status { margin: 0; font-size: .92rem; color: var(--ink); line-height: 1.4; }
@@ -720,9 +723,7 @@
   .warm-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   .warm-actions[hidden], .wq-answer[hidden], .warm-row[hidden], .warm-hear[hidden] { display: none; }
   /* the key, big, at the top of the warm-up */
-  .wq-keytop { margin: 2px 0 0; padding: 8px 12px; text-align: center; background: var(--gold-soft); border: 1px solid var(--gold-line); border-radius: 10px; }
-  .wq-keytop b { display: block; font-size: 1.45rem; line-height: 1.2; color: var(--ink); }
-  .wq-keytop span { display: block; font-size: .88rem; color: var(--muted); }
+  .wq-keytop { margin: 2px 0 0; text-align: center; }
   .warm-hear { display: grid; gap: 10px; }
   .wq-choices { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
   .wq-choice { font: inherit; font-weight: 650; font-size: 1.05rem; min-width: 52px; height: 40px; padding: 0 10px;
@@ -790,7 +791,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.133</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.136</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -845,7 +846,7 @@
   <details class="warm" id="warmPanel">
     <summary data-s="warm.title"></summary>
     <div class="warm-body">
-      <p class="wq-keytop" id="warmKeyTop"></p>
+      <p class="wq-keytop key-box" id="warmKeyTop"></p>
       <p class="hint" id="warmIntro"></p>
       <div class="warm-row" role="group" data-s-aria-label="warm.modeAria">
         <span class="dv-label" data-s="warm.mode"></span>
@@ -1077,7 +1078,7 @@
       <div class="plan-row" id="planRow" role="group" data-s-aria-label="plan.rowAria"></div>
       <p class="hint" id="planHint"></p>
     </div>
-    <div class="along-key" role="group" data-s-aria-label="along.keyAria">
+    <div class="along-key key-box" role="group" data-s-aria-label="along.keyAria">
       <span class="along-key-val" id="alongKeyVal"></span>
       <button class="chipbtn step" id="akDown" aria-label="Lower the key a half step" data-s-aria-label="along.keyDownAria">−</button>
       <button class="chipbtn step" id="akUp" aria-label="Raise the key a half step" data-s-aria-label="along.keyUpAria">+</button>
@@ -1687,6 +1688,7 @@ const STRINGS = {
     "updated": "Updated to {version}"
   },
   err: {
+    "seqChoice": "The Play menu has no choice \"{v}\" for this song. That’s a bug in the app.",
     "songTempo": "{song}: its suggested tempo {tempo} isn’t an even number from 40 to 200.",
     "storageFull": "Saved data is getting full: about {all} of the about 5 MB that all the apps on this website share ({pct}%). When it’s full, saving fails. Use Save everything (in Settings) to keep a copy, and delete songs or lyric sets you no longer need, here or in this website’s other apps.",
     "lyricSetBad": "A saved lyric set is damaged and was skipped ({key}, set {i}): {what}",
@@ -5674,7 +5676,12 @@ function planChorusAfter(v) {
   return { every: true, other: i % 2 === 1, end: false, ends: i === 0, custom: PLAN.custom.includes(v) }[PLAN.chorus];
 }
 const planIsDefault = () => !PLAN.off.length && (!HAS_CHORUS || PLAN.chorus === "every" || planVerses().every(planChorusAfter));
-if (VERSE_COUNT > 1) SEQ_CHOICES.song = {
+// "The whole song" (v0.134): the Play menu's choice whenever a different song is
+// opened (a first start keeps the first choice, as before). A one-verse song has
+// only its one choice, which plays the whole song.
+const WHOLE_SONG_SEQ = "song";
+const wholeSongSeq = () => SEQ_CHOICES[WHOLE_SONG_SEQ] ? WHOLE_SONG_SEQ : Object.keys(SEQ_CHOICES)[0];
+if (VERSE_COUNT > 1) SEQ_CHOICES[WHOLE_SONG_SEQ] = {
   label: SONG.wholeLabel || T("seq.whole"),
   play: T("seq.playWhole"),
   build: () => planVerses().flatMap(v => [...verseOf(v), ...(planChorusAfter(v) ? chorusAfter(v) : [])])
@@ -7036,9 +7043,9 @@ function renderWarm() {
   document.querySelectorAll(".wo[data-wmode]").forEach(b => b.classList.toggle("on", b.dataset.wmode === mode));
   // the song and its key now, with Transpose
   const doM = warmDoMidi(), t = +$("transpose").value;
-  $("warmKeyTop").innerHTML = `<b>${esc(T("warm.keyTop", { key: keyFull(doM) }))}</b>`
-    + `<span>${esc(T("warm.keySong", { song: SONG.title, do: keyOf(doM) }))}</span>`
-    + (t ? `<span>${esc(T("warm.keyTopFrom", { orig: keyFull(SONG_DO_MIDI) }))}</span>` : "");
+  $("warmKeyTop").innerHTML = `<b class="key-big">${esc(T("warm.keyTop", { key: keyFull(doM) }))}</b>`
+    + `<span class="key-sub">${esc(T("warm.keySong", { song: SONG.title, do: keyOf(doM) }))}</span>`
+    + (t ? `<span class="key-sub">${esc(T("warm.keyTopFrom", { orig: keyFull(SONG_DO_MIDI) }))}</span>` : "");
   $("warmIntro").textContent = T(hear ? "warm.introHear" : "warm.intro");
   $("warmDoFirstRow").hidden = !hear;
   const notes = warmNotes();
@@ -7728,8 +7735,8 @@ function renderPitch() {
   $("keyNote").textContent = t === 0 ? T("pitch.keyAsWritten", keyVars)
     : T(t < 0 ? "pitch.keyDown" : "pitch.keyUp", keyVars) + (t === -5 ? " " + T("pitch.guitarHint") : "");
   document.querySelectorAll(".presets .chipbtn").forEach(b => b.classList.toggle("on", +b.dataset.t === t));
-  $("alongKeyVal").innerHTML = esc(T("pitch.alongKey", { key: keyFull(doM) }))
-    + (t === 0 ? "" : ` <small>${esc(T("pitch.alongKeyShift", { shift: $("tVal").textContent.toLowerCase() }))}</small>`);
+  $("alongKeyVal").innerHTML = `<b class="key-big">${esc(T("pitch.alongKey", { key: keyFull(doM) }))}</b>`
+    + (t === 0 ? "" : `<span class="key-sub">${esc(T("pitch.alongKeyShift", { shift: $("tVal").textContent.toLowerCase() }))}</span>`);
   const signed_c = `${c > 0 ? "+" : ""}${c}`;
   $("fineVal").textContent = T("pitch.cents", { c: signed_c });
   $("aNote").textContent = T(c === 0 ? "pitch.aStandard" : "pitch.aShifted", { hz: (440 * Math.pow(2, c / 1200)).toFixed(1) });
@@ -9243,7 +9250,10 @@ $("doPitch").value = SONG_DO_MIDI;
 renderPitch();
 // saved choices that don't exist in this song fall back to the first one
 ensureOption($("catSel"), "all");
-if (!SEQ_CHOICES[$("seqSel").value]) $("seqSel").value = Object.keys(SEQ_CHOICES)[0];
+// a song just switched to (openSong saves WHOLE_SONG_SEQ), or a saved choice
+// this song doesn't have: the whole song
+if (!SEQ_CHOICES[$("seqSel").value]) $("seqSel").value = wholeSongSeq();
+if (!SEQ_CHOICES[$("seqSel").value]) reportError(T("err.seqChoice", { v: $("seqSel").value }));
 if (!VERSE_M[$("drillVerse").value] && !($("drillVerse").value === "mix" && VERSE_COUNT > 1)) $("drillVerse").value = String(VERSE_NUMS[0]);
 // each song remembers its own lyric choice
 const LYRICSET_STORE = songKey("phrase-parrot-lyricset-v1");
@@ -9283,7 +9293,12 @@ function openSong(id, mySongGone = false) {
   const sel = $("songSel");
   if (![...sel.options].some(o => o.value === id)) sel.add(new Option(id, id));   // (a song outside the category shown)
   sel.value = id;
-  $("drillVerse").value = "1"; $("seqSel").value = Object.keys(SEQ_CHOICES)[0];
+  $("drillVerse").value = "1";
+  // Play along starts at the whole song (Lynn, 2026-11-19: she listens first);
+  // the next song decides at startup what that is (a one-verse song has one choice)
+  const seq = $("seqSel");
+  if (![...seq.options].some(o => o.value === WHOLE_SONG_SEQ)) seq.add(new Option(WHOLE_SONG_SEQ, WHOLE_SONG_SEQ));
+  seq.value = WHOLE_SONG_SEQ;
   savePrefs();
   location.reload();
 }
