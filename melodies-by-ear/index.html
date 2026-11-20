@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.138</title>
+<title>Melodies by Ear v0.139</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -617,6 +617,16 @@
   .song-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
   .song-row label { font-size: .9rem; color: var(--muted); min-width: 4.6em; }
   .song-row select { flex: 1; }
+  /* under the song menu (v0.139): the filter line, the song's notes, the fit */
+  .song-filter-note, .song-facts { margin: -6px 0 8px; }
+  .song-fit { margin: -4px 0 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .song-fit .hint { margin: 0; }
+  .own-pcs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  .own-pc { min-width: 3em; }
+  .own-pc.on { background: var(--teal); border-color: var(--teal); color: var(--on-teal); }
+  .inst-own { margin-top: 8px; }
+  .inst-own .row { flex-wrap: wrap; }
+  #instWarn { color: var(--warn); }
   .dv-btns { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
 
   details { margin-top: 22px; }
@@ -791,7 +801,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.138</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.139</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -806,6 +816,9 @@
     <label for="songSel" data-s="ui.song"></label>
     <select id="songSel"></select>
   </div>
+  <p class="hint song-filter-note" id="filterNote" hidden></p>
+  <p class="hint song-facts" id="songFacts" hidden></p>
+  <div class="song-fit" id="songFit" hidden><span class="hint" id="songFitText"></span><button class="chipbtn" id="fitKeyBtn" hidden></button></div>
   <details class="mysongs" id="mySongsPanel">
     <summary data-s="mysongs.title"></summary>
     <div class="mysongs-body">
@@ -1238,6 +1251,35 @@
         </div>
         <p class="hint" id="keyNote"></p>
       </div>
+      <div id="instFilters">
+        <label data-s="inst.heading"></label>
+        <label class="check"><input type="checkbox" id="filterDiatonic"> <span data-s="inst.diatonic"></span></label>
+        <label for="instNotes" data-s="inst.notes"></label>
+        <select id="instNotes">
+          <option value="any" data-s="inst.notesAny"></option>
+          <option value="bells" data-s="inst.notesBells"></option>
+          <option value="orff" data-s="inst.notesOrff"></option>
+          <option value="kalimba" data-s="inst.notesKalimba"></option>
+          <option value="whistle" data-s="inst.notesWhistle"></option>
+          <option value="harmonica" data-s="inst.notesHarmonica"></option>
+          <option value="own" data-s="inst.notesOwn"></option>
+        </select>
+        <div class="inst-own" id="instOwn" hidden>
+          <div class="row">
+            <label for="ownLow" data-s="inst.ownLow"></label><select id="ownLow"></select>
+            <label for="ownHigh" data-s="inst.ownHigh"></label><select id="ownHigh"></select>
+          </div>
+          <p class="hint" data-s="inst.ownPcs"></p>
+          <div class="own-pcs" id="ownPcs"></div>
+          <div class="row">
+            <button class="chipbtn" id="ownWhite" data-s="inst.ownWhite"></button>
+            <button class="chipbtn" id="ownAll" data-s="inst.ownAll"></button>
+          </div>
+          <input type="hidden" id="ownNotes" value="101011010101">
+        </div>
+        <p class="hint" id="instWarn" hidden></p>
+        <p class="hint" data-s="inst.hint"></p>
+      </div>
       <div>
         <label for="fineTune" data-s="ui.fineTune"></label>
         <div class="row">
@@ -1390,6 +1432,48 @@ const $ = id => document.getElementById(id);
 // text uses T("group.key", { name: value }), which fills in each {name}.
 // Song content (titles, lyrics) stays with the songs, not here.
 const STRINGS = {
+  inst: {
+    "heading": "For simple instruments",
+    "diatonic": "Only songs with no sharps or flats",
+    "notes": "My instrument's notes",
+    "notesAny": "Any notes (no filter)",
+    "notesBells": "8 bells, C to C' (desk bells, Boomwhackers, a toy xylophone)",
+    "notesOrff": "Orff alto xylophone or glockenspiel, C to A' with F♯ and B♭ bars",
+    "notesKalimba": "17-key kalimba in C (C to E'')",
+    "notesWhistle": "Tin whistle in D (two octaves, with C natural)",
+    "notesHarmonica": "Harmonica in C (10 holes, no bends)",
+    "notesOwn": "My own notes",
+    "ownLow": "Lowest note",
+    "ownHigh": "Highest note",
+    "ownPcs": "The notes my instrument has (tap to turn each on or off):",
+    "ownWhite": "White notes",
+    "ownAll": "Every note",
+    "middleC": "{name} (middle C)",
+    "ownBadRange": "The lowest note is above the highest note, so no song fits.",
+    "ownNone": "No notes are turned on, so no song fits.",
+    "hint": "The song menu then lists only the songs that fit. A song fits your instrument when every note of it lands on one of your instrument's notes in some key: the app tries every key, and offers to set it.",
+    "showing": "Showing {n} of {m} songs (filters in Settings)",
+    "openNoFit": "{title} (open now; doesn't fit your filters)",
+    "facts": "Range: {low} to {high} ({span}); {chroma}.",
+    "noChromatic": "no sharps or flats",
+    "chromatic": "sharps or flats: {syls}",
+    "spanSame": "one note",
+    "spanOct1": "an octave",
+    "spanOct2": "two octaves",
+    "spanOct3": "three octaves",
+    "spanAnd": "{a} and {b}",
+    "fitHere": "Fits your instrument in this key, {key}.",
+    "fitOther": "Fits your instrument in {keys}.",
+    "fitNone": "Doesn't fit your instrument in any key.",
+    "fitSet": "Set the key to {key}",
+    "fitUp1": " Your instrument plays it an octave higher than the app.",
+    "fitUpN": " Your instrument plays it {n} octaves higher than the app.",
+    "fitDown1": " Your instrument plays it an octave lower than the app.",
+    "fitDownN": " Your instrument plays it {n} octaves lower than the app.",
+    "listSep": ", ",
+    "listLast": " or ",
+    "factsBad": "The app couldn't work out the notes of “{title}”, so the instrument filters leave it out (please report this): {msg}"
+  },
   ui: {
     "abClear": "Clear A–B loop",
     "abSwitch": "A–B loop: repeat just some lines",
@@ -5306,16 +5390,215 @@ function songsInListOrder(songs) {
   return [...songs].sort((a, b) => (b.id === SONG_ID) - (a.id === SONG_ID) || compareTitles(a.title, b.title) || compareTitles(a.id, b.id));
 }
 
-// The song menu shows the chosen category's songs, and always the open song.
+// ---------- For simple instruments (v0.139) ----------
+// Two filters in Settings limit the song menu: "Only songs with no sharps or
+// flats", and "My instrument's notes" (a preset or my own notes). Both are
+// worked out from the notes, never typed by hand, by the one songFacts(id).
+// What a song's melody uses, from the notes of every verse and the chorus
+// (chords don't count): { pitches (half steps from do, sorted), low, high,
+// lowSyl, highSyl (as written), chromatic, chromaticSyls, doMidi }, or null
+// (reported loudly) if it can't be worked out. Works for built-in songs,
+// songbook songs (whose text is read here when it hasn't been) and My songs.
+const SONG_FACTS = new Map();
+function songFacts(id) {
+  if (SONG_FACTS.has(id)) return SONG_FACTS.get(id);
+  let facts = null;
+  try {
+    let sg = SONGS[id];
+    if (sg && sg.songbook && !sg.verses) {
+      const r = readMySong(SONGBOOK[id].text, id);
+      if (!r.song) throw new Error(r.problems.join(" "));
+      sg = r.song;
+    }
+    if (!sg || !sg.verses) throw new Error("no song data");
+    const entries = [...Object.values(sg.verses).flat(), ...(sg.chorus || [])];
+    const seen = new Map();          // pitch -> its syllable as first written
+    for (const e of entries) {
+      const m = typeof e === "string" ? e : e && e.m;
+      if (typeof m !== "string") throw new Error("a phrase without notes");
+      for (const it of parse(m)) {
+        if (!isSung(it)) continue;
+        const p = pitchOf(it.syl);
+        if (p == null) throw new Error("unknown syllable " + it.syl);
+        if (!seen.has(p)) seen.set(p, it.syl);
+      }
+    }
+    if (!seen.size) throw new Error("no notes");
+    const pitches = [...seen.keys()].sort((a, b) => a - b);
+    const chromaticSyls = [...new Set(pitches.filter(p => !MAJOR_STEPS.includes(((p % 12) + 12) % 12)).map(p => sylBase(seen.get(p))))];
+    facts = { pitches, low: pitches[0], high: pitches[pitches.length - 1], lowSyl: seen.get(pitches[0]),
+      highSyl: seen.get(pitches[pitches.length - 1]), chromatic: chromaticSyls.length > 0, chromaticSyls, doMidi: sg.doMidi || 69 };
+  } catch (e) {
+    reportError(T("inst.factsBad", { title: (SONGS[id] && SONGS[id].title) || id, msg: e.message }));
+  }
+  SONG_FACTS.set(id, facts);
+  return facts;
+}
+// Every MIDI note from low to high whose pitch class (0 = C) is in pcs.
+function notesIn(low, high, pcs) {
+  const out = [];
+  for (let m = low; m <= high; m++) if (pcs.includes(((m % 12) + 12) % 12)) out.push(m);
+  return out;
+}
+// The presets' notes, as sounding MIDI notes (60 = middle C), checked against
+// makers' specifications (2026-11-19).
+const INSTRUMENT_NOTES = {
+  bells: notesIn(60, 72, MAJOR_STEPS),                                  // C4 to C5
+  orff: [...notesIn(60, 81, MAJOR_STEPS), 66, 70, 78].sort((a, b) => a - b), // alto: C4 to A5, F♯4 B♭4 F♯5 bars
+  kalimba: notesIn(60, 88, MAJOR_STEPS),                                // C4 to E6
+  whistle: notesIn(74, 98, [2, 4, 6, 7, 9, 11, 1, 0]),                  // D5 to D7, D major and C natural
+  harmonica: [60, 62, 64, 67, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88, 89, 91, 93, 96] // C, holes 1-10 blow and draw
+};
+const OWN_DEFAULT = "101011010101";     // C to B, one character a note: the white notes
+const OWN_LOWEST = 36, OWN_HIGHEST = 96; // the My own notes menus: C2 to C7
+// My own notes: the lowest and highest menus, and the notes turned on.
+function ownNotes() {
+  const bits = $("ownNotes").value;
+  return notesIn(+$("ownLow").value, +$("ownHigh").value, [...Array(12).keys()].filter(i => bits[i] === "1"));
+}
+// The instrument's notes as a Set, or null when "Any notes" is chosen.
+function instrumentNotes() {
+  const v = $("instNotes").value;
+  if (v === "any") return null;
+  if (v === "own") return new Set(ownNotes());
+  if (!INSTRUMENT_NOTES[v]) throw new Error("instNotes: no notes for " + v);
+  return new Set(INSTRUMENT_NOTES[v]);
+}
+// Every do (as a MIDI note) that puts all of a song's notes on the instrument,
+// by key: Map(do's pitch class -> [dos, low to high]). Empty: it doesn't fit.
+function fitDos(facts, notes) {
+  const fits = new Map();
+  if (!notes.size) return fits;
+  const lo = Math.min(...notes), hi = Math.max(...notes);
+  for (let d = lo - facts.low; d <= hi - facts.high; d++) {
+    if (!facts.pitches.every(p => notes.has(d + p))) continue;
+    const k = ((d % 12) + 12) % 12;
+    if (!fits.has(k)) fits.set(k, []);
+    fits.get(k).push(d);
+  }
+  return fits;
+}
+const filtersOn = () => $("filterDiatonic").checked || $("instNotes").value !== "any";
+// Whether a song passes the filters (every song does when they're off).
+function songPasses(id, notes = instrumentNotes()) {
+  if (!filtersOn()) return true;
+  const f = songFacts(id);
+  if (!f) return false;
+  if ($("filterDiatonic").checked && f.chromatic) return false;
+  return !notes || fitDos(f, notes).size > 0;
+}
+// The Category menu: all songs, then each category that has songs (that pass
+// the filters); a category left empty is hidden. wanted: the value to keep.
+function fillCategoryMenu(wanted = $("catSel").value) {
+  const notes = instrumentNotes();
+  const all = Object.values(SONGS).filter(sg => songPasses(sg.id, notes));
+  const brokenMine = filtersOn() ? 0 : Object.values(MY_SONG_READS).filter(r => !r.song).length;
+  // (Option objects: their text needs no escaping)
+  $("catSel").replaceChildren(new Option(T("ui.catAll", { n: all.length }), "all"),
+    ...CATEGORIES.map(c => [c, all.filter(sg => songCats(sg.id).includes(c)).length + (c === "mine" ? brokenMine : 0)]).filter(([, n]) => n)
+      .map(([c, n]) => new Option(T("ui.catN", { name: T("ui.cat_" + c), n }), c)));
+  $("catSel").value = wanted;
+  ensureOption($("catSel"), "all");
+}
+// Joins names into "A", "A or B", "A, B or C".
+function listText(names) {
+  return names.length < 2 ? names.join("") : names.slice(0, -1).join(T("inst.listSep")) + T("inst.listLast") + names[names.length - 1];
+}
+// A span in half steps, in words: "a major sixth", "an octave and a whole step".
+function spanText(n) {
+  if (!n) return T("inst.spanSame");
+  const oct = Math.floor(n / 12), rest = n % 12;
+  if (oct > 3) throw new Error("spanText: " + n + " half steps");
+  const o = oct ? T(`inst.spanOct${oct}`) : "";
+  return o && rest ? T("inst.spanAnd", { a: o, b: T(`pitch.interval${rest}`) }) : o || T(`pitch.interval${rest}`);
+}
+// A syllable as the chips show it: a low octave mark lowered.
+const sylHTML = syl => esc(sylBase(syl)) + markHTML(syl);
+// Under the song menu: the open song's range and sharps or flats, and with
+// an instrument chosen, whether it fits and a button to set the key.
+function renderSongFacts() {
+  const f = songFacts(SONG_ID);
+  $("songFacts").hidden = !f;
+  $("songFit").hidden = true;
+  if (!f) return;
+  $("songFacts").innerHTML = esc(T("inst.facts", { low: "\u0001", high: "\u0002", span: spanText(f.high - f.low),
+    chroma: f.chromatic ? T("inst.chromatic", { syls: f.chromaticSyls.join(T("inst.listSep")) }) : T("inst.noChromatic") }))
+    .replace("\u0001", sylHTML(f.lowSyl)).replace("\u0002", sylHTML(f.highSyl));
+  const notes = instrumentNotes();
+  if (!notes) return;
+  const fits = fitDos(f, notes);
+  const writtenPc = ((SONG_DO_MIDI % 12) + 12) % 12;
+  const playedDo = SONG_DO_MIDI + +$("transpose").value;
+  const playedPc = ((playedDo % 12) + 12) % 12;
+  // the keys that fit, as Transpose values (-6 to 5), nearest to the written key first, down before up
+  const keys = [...fits.keys()].map(k => pcDiff(k, writtenPc)).sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
+  let text, setT = null;
+  if (!fits.size) text = T("inst.fitNone");
+  else if (fits.has(playedPc)) {
+    text = T("inst.fitHere", { key: keyFull(playedDo) });
+    // the instrument's octave, nearest to the one the app plays
+    const d = fits.get(playedPc).reduce((a, b) => Math.abs(b - playedDo) < Math.abs(a - playedDo) ? b : a);
+    const oct = (d - playedDo) / 12;
+    if (oct) text += TN(Math.abs(oct), oct > 0 ? "inst.fitUp1" : "inst.fitDown1", oct > 0 ? "inst.fitUpN" : "inst.fitDownN");
+  } else {
+    text = T("inst.fitOther", { keys: listText(keys.map(t => keyFull(SONG_DO_MIDI + t))) });
+    setT = keys[0];
+  }
+  $("songFitText").textContent = text;
+  $("fitKeyBtn").hidden = setT == null;
+  if (setT != null) { $("fitKeyBtn").dataset.t = String(setT); $("fitKeyBtn").textContent = T("inst.fitSet", { key: keyFull(SONG_DO_MIDI + setT) }); }
+  $("songFit").hidden = false;
+}
+// The My own notes menus and note buttons (before the saved settings are restored).
+function fillOwnNoteMenus() {
+  for (const id of ["ownLow", "ownHigh"]) $(id).replaceChildren(...Array.from({ length: OWN_HIGHEST - OWN_LOWEST + 1 }, (_, i) => {
+    const m = OWN_LOWEST + i;
+    return new Option(m === 60 ? T("inst.middleC", { name: noteName(m) }) : noteName(m), String(m));
+  }));
+  $("ownLow").value = "60"; $("ownHigh").value = "72";
+  $("ownPcs").replaceChildren(...KEY_NAMES.map((name, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chipbtn own-pc"; b.textContent = name; b.dataset.pc = String(i);
+    return b;
+  }));
+}
+// Shows My own notes when chosen, the buttons that are on, and a warning when nothing can fit.
+function renderInstOwn() {
+  const own = $("instNotes").value === "own";
+  $("instOwn").hidden = !own;
+  if (!/^[01]{12}$/.test($("ownNotes").value)) $("ownNotes").value = OWN_DEFAULT;
+  const bits = $("ownNotes").value;
+  $("ownPcs").querySelectorAll("button[data-pc]").forEach(b => {
+    const on = bits[+b.dataset.pc] === "1";
+    b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on));
+  });
+  const warn = !own ? "" : +$("ownLow").value > +$("ownHigh").value ? T("inst.ownBadRange") : !bits.includes("1") ? T("inst.ownNone") : "";
+  $("instWarn").hidden = !warn;
+  $("instWarn").textContent = warn;
+}
+function instFiltersChanged() {
+  renderInstOwn(); savePrefs();
+  fillCategoryMenu(); fillSongMenu(); renderSongFacts();
+}
+
+// The song menu shows the chosen category's songs that pass the filters, and
+// always the open song (marked when it doesn't fit, v0.139).
 function fillSongMenu() {
   const cat = $("catSel").value;
-  const list = songsInListOrder(Object.values(SONGS).filter(sg => cat === "all" || songCats(sg.id).includes(cat) || sg.id === SONG_ID));
-  // the open song, if it isn't in this category, says so
-  const label = sg => cat !== "all" && sg.id === SONG_ID && !songCats(sg.id).includes(cat) ? T("ui.songOpenNow", { title: sg.title }) : sg.title;
-  const broken = cat === "all" || cat === "mine" ? Object.entries(MY_SONG_READS).filter(([, r]) => !r.song) : [];
+  const notes = instrumentNotes();
+  const inCat = Object.values(SONGS).filter(sg => cat === "all" || songCats(sg.id).includes(cat));
+  const passing = inCat.filter(sg => songPasses(sg.id, notes));
+  const list = songsInListOrder(passing.some(sg => sg.id === SONG_ID) ? passing : [...passing, SONGS[SONG_ID]]);
+  const openFits = songPasses(SONG_ID, notes);
+  // the open song, if it doesn't pass the filters or isn't in this category, says so
+  const label = sg => sg.id !== SONG_ID ? sg.title : !openFits ? T("inst.openNoFit", { title: sg.title })
+    : cat !== "all" && !songCats(sg.id).includes(cat) ? T("ui.songOpenNow", { title: sg.title }) : sg.title;
+  const broken = !filtersOn() && (cat === "all" || cat === "mine") ? Object.entries(MY_SONG_READS).filter(([, r]) => !r.song) : [];
   const brokenOpts = broken.map(([id, r]) => { const o = new Option(T("mysongs.brokenOption", { title: r.title || T("mysongs.untitled") }), "broken:" + id); o.disabled = true; return o; });
   $("songSel").replaceChildren(...list.map(sg => new Option(label(sg), sg.id)), ...brokenOpts);
   $("songSel").value = SONG_ID;
+  $("filterNote").hidden = !filtersOn();
+  $("filterNote").textContent = filtersOn() ? T("inst.showing", { n: passing.length, m: inCat.length }) : "";
 }
 // Which song is open is saved with your settings; switching songs reloads.
 const SONG_ID = (() => {
@@ -5391,15 +5674,8 @@ const verseOf = v => phraseRun("verse", v, SONG.verseFirstBar(v));
 applyStrings(document);
 $("errClose").addEventListener("click", dismissErrors);
 (function fillSongMarkup() {
-  // the Category menu: all songs, then each category that has songs
-  const all = Object.values(SONGS);
-  // (Option objects: their text needs no escaping)
-  $("catSel").replaceChildren(new Option(T("ui.catAll", { n: all.length }), "all"),
-    ...CATEGORIES.map(c => [c, all.filter(sg => songCats(sg.id).includes(c)).length +
-      (c === "mine" ? Object.values(MY_SONG_READS).filter(r => !r.song).length : 0)]).filter(([, n]) => n)
-      .map(([c, n]) => new Option(T("ui.catN", { name: T("ui.cat_" + c), n }), c)));
-  $("catSel").value = (SAVED_PREFS || {}).catSel;
-  ensureOption($("catSel"), "all");
+  // the Category menu (the filters are filled in again once the settings are restored)
+  fillCategoryMenu((SAVED_PREFS || {}).catSel);
   fillSongMenu();
   // (the description, #lede, is filled in later at startup by renderLede(),
   // once the saved mode has been restored)
@@ -7886,7 +8162,7 @@ const TRANSPOSE_STORE = songKey("phrase-parrot-transpose-v1");
 function setTranspose(t) {
   $("transpose").value = Math.max(-12, Math.min(12, t));
   storeSet(TRANSPOSE_STORE, $("transpose").value);
-  renderPitch(); renderWarm(); refreshChords(); savePrefs();
+  renderPitch(); renderWarm(); refreshChords(); savePrefs(); renderSongFacts();
 }
 
 // ---------- Tuning notes ----------
@@ -9319,7 +9595,7 @@ $("metroMeter").addEventListener("change", () => {
 });
 $("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("units.pct", { n: e.target.value }));
 
-const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel", "mapOpen"];
+const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "tuneRef", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel", "mapOpen", "filterDiatonic", "instNotes", "ownLow", "ownHigh", "ownNotes"];
 function savePrefs() {
   const p = {};
   prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
@@ -9334,6 +9610,7 @@ function ensureOption(sel, fallback) {
 }
 // ---------- Startup: restore settings, then render everything once ----------
 fillMetroMeter();           // the menus' choices exist before the saved ones are restored
+fillOwnNoteMenus();
 fillTalkChoices();
 if (SAVED_PREFS) prefIds.forEach(id => {
   const el = $(id); if (!(id in SAVED_PREFS)) return;
@@ -9384,6 +9661,12 @@ $("doPitch").value = SONG_DO_MIDI;
 renderPitch();
 // saved choices that don't exist in this song fall back to the first one
 ensureOption($("catSel"), "all");
+// the instrument filters (v0.139): the menus with the restored filters, and the song's notes
+ensureOption($("instNotes"), "any");
+ensureOption($("ownLow"), "60");
+ensureOption($("ownHigh"), "72");
+renderInstOwn();
+fillCategoryMenu(); fillSongMenu(); renderSongFacts();
 // a song just switched to (openSong saves WHOLE_SONG_SEQ), or a saved choice
 // this song doesn't have: the whole song
 if (!SEQ_CHOICES[$("seqSel").value]) $("seqSel").value = wholeSongSeq();
@@ -9417,6 +9700,18 @@ renderModeRows();
 renderLede();       // with the restored mode
 // Choosing a category filters the song menu (the open song stays open)
 $("catSel").addEventListener("change", () => { fillSongMenu(); savePrefs(); });
+for (const id of ["filterDiatonic", "instNotes", "ownLow", "ownHigh"]) $(id).addEventListener("change", instFiltersChanged);
+$("ownPcs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-pc]");
+  if (!b) return;
+  const bits = [...$("ownNotes").value];
+  bits[+b.dataset.pc] = bits[+b.dataset.pc] === "1" ? "0" : "1";
+  $("ownNotes").value = bits.join("");
+  instFiltersChanged();
+});
+$("ownWhite").addEventListener("click", () => { $("ownNotes").value = OWN_DEFAULT; instFiltersChanged(); });
+$("ownAll").addEventListener("click", () => { $("ownNotes").value = "1".repeat(12); instFiltersChanged(); });
+$("fitKeyBtn").addEventListener("click", () => setTranspose(+$("fitKeyBtn").dataset.t));
 // Switching songs: start that song at verse 1, then reload with it.
 // Unsaved edits in the My songs or My lyrics box are asked about first (the
 // reload would lose them); on Cancel the song menu goes back to the open song.
