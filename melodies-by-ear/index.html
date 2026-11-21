@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.146</title>
+<title>Melodies by Ear v0.148</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -851,7 +851,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.146</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.148</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -7045,15 +7045,58 @@ let lastCheck = null;       // { wall, audio } clock readings from the last tap
 
 function newContext() {
   if (ctx && ctx.state !== "closed") ctx.close().catch(e => reportError(T("err.audio", { where: "close", msg: e.message })));
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const c = new (window.AudioContext || window.webkitAudioContext)();
+  ctx = c;
   cache.clear();            // sounds are rebuilt for the new engine
   needsFresh = false;
-  ctx.onstatechange = () => {
-    if (ctx.state === "interrupted" || ctx.state === "suspended") {
+  // Only this engine's own changes count (v0.147). The engine just replaced
+  // reports "closed" a moment later; reading the global ctx there saw the NEW
+  // engine, still "suspended" while it starts up on a real device, marked it
+  // stuck, and the next tap threw it away too (Android: "AudioContext is
+  // closed"; on a Chromebook every new engine reopens the sound output).
+  c.onstatechange = () => {
+    if (c !== ctx) return;
+    if (c.state === "interrupted" || c.state === "suspended") {
       needsFresh = true;
       if (typeof onAudioInterrupted === "function") onAudioInterrupted();
     }
   };
+}
+
+// ---------- Keeping the sound output awake (v0.148) ----------
+// Some computers' speakers (Lynn's Chromebook) go quiet after a moment of
+// silence and fade back in when sound starts again, swallowing the start of a
+// note: a short high note was nearly lost, while a second press right after it
+// was fine. While something that plays live asks for it (the virtual piano,
+// while open), a hum far too quiet to hear (about 80 dB below full volume)
+// keeps the output from ever going silent; Lynn's probe page
+// (chromebook-sound-probe-v1.html) showed that this cures it.
+// General: keepAwake(reason, on) from anything that wants it; syncAwake()
+// starts the hum on the current engine (after a tap has made one) or stops
+// it (nothing wants it, the page is hidden, or the engine was replaced).
+const AWAKE_LEVEL = 1e-4;          // about −80 dB
+const awakeWanted = new Set();
+let awakeSrc = null, awakeCtx = null;
+function keepAwake(reason, on) {
+  if (on) awakeWanted.add(reason); else awakeWanted.delete(reason);
+  syncAwake();
+}
+function syncAwake() {
+  const want = awakeWanted.size > 0 && !!ctx && ctx.state !== "closed" && !document.hidden;
+  if (awakeSrc && (!want || awakeCtx !== ctx)) {
+    try { awakeSrc.stop(); }
+    catch (e) { if (e.name !== "InvalidStateError") reportError(T("err.audio", { where: "awake", msg: e.message })); }
+    awakeSrc = null; awakeCtx = null;
+  }
+  if (want && !awakeSrc) {
+    const sr = ctx.sampleRate, buf = ctx.createBuffer(1, sr * 2, sr), d = buf.getChannelData(0), rnd = seededNoise(80);
+    for (let i = 0; i < d.length; i++) d[i] = (rnd() * 2 - 1) * AWAKE_LEVEL;
+    awakeSrc = ctx.createBufferSource();
+    awakeSrc.buffer = buf; awakeSrc.loop = true;
+    awakeSrc.connect(ctx.destination);
+    awakeSrc.start();
+    awakeCtx = ctx;
+  }
 }
 
 function ensureAudio() {
@@ -7075,7 +7118,13 @@ function ensureAudio() {
     if (typeof stopAll === "function" && ctx) stopAll();
     newContext();
   }
-  if (ctx.state !== "running") ctx.resume().catch(e => reportError(T("err.audio", { where: "resume", msg: e.message })));
+  if (ctx.state !== "running") {
+    const c = ctx;
+    // An engine replaced on purpose while it was still starting fails its
+    // resume with "closed": that one isn't a problem (v0.147). Any other
+    // failure is reported.
+    c.resume().catch(e => { if (c !== ctx) return; reportError(T("err.audio", { where: "resume", msg: e.message })); });
+  }
 
   // A silent blip, played inside the tap, "unlocks" output on iOS.
   try {
@@ -7085,6 +7134,7 @@ function ensureAudio() {
   } catch (e) { reportError(T("err.audio", { where: "unlock", msg: e.message })); }
 
   lastCheck = { wall: now, audio: ctx.currentTime };
+  syncAwake();               // a new engine gets its own hum, if one is wanted
 }
 
 // Leaving the page (switching apps, locking the phone) or coming back from an
@@ -7094,6 +7144,7 @@ document.addEventListener("visibilitychange", () => {
     if (typeof wholeRun !== "undefined" && wholeRun) pauseWhole();
     else if (typeof stopAll === "function") stopAll();
     needsFresh = true;
+    syncAwake();             // no hum in the background
   }
 });
 window.addEventListener("pageshow", () => { needsFresh = true; });
@@ -7102,7 +7153,7 @@ window.addEventListener("blur", () => { needsFresh = true; });
 // tune, which is also the tuning panel's reference pitch since v0.146) apply
 // to the phrases, the whole melody, the virtual piano and "Play do" alike.
 // transpose = whole half steps; fineTune = cents (hundredths of a half step).
-const STANDARD_A4 = 440, TUNE_CENTS_MAX = 100;    // the tuning: ±100 cents, about A4 = 414 to 466 Hz
+const STANDARD_A4 = 440, TUNE_CENTS_MAX = 100;    // the tuning: ±100 cents, about A4 = 415.3 to 466.2 Hz
 function pitchShift() {
   const t = +($("transpose") || { value: 0 }).value;
   const c = +($("fineTune") || { value: 0 }).value;
@@ -7491,7 +7542,17 @@ function makePiano(freq) {
     const decay = 1.6 * pitchFactor * (1 + 0.35 * (n - 1));     // per second (shortened in v0.36 and v0.37)
     const phase = rnd() * 6.283;
     const w = 2 * Math.PI * fn / sr;
-    for (let i = 0; i < len; i++) out[i] += amp * Math.exp(-decay * i / sr) * Math.sin(w * i + phase);
+    // amp · e^(−decay·t) · sin(w·i + phase), stepped by one complex multiply a
+    // sample instead of an exp and a sin (v0.147: about ten times faster, the
+    // same samples to within 1e-8, so a first key press isn't late)
+    const r = Math.exp(-decay / sr), cr = r * Math.cos(w), ci = r * Math.sin(w);
+    let re = amp * Math.cos(phase), im = amp * Math.sin(phase);
+    for (let i = 0; i < len; i++) {
+      out[i] += im;
+      const nr = re * cr - im * ci;
+      im = re * ci + im * cr;
+      re = nr;
+    }
   }
   // hammer: a short, soft thump of low noise at the very start
   let lpState = 0;
@@ -7553,9 +7614,19 @@ const LIVE_HOLD_MAX = 8;          // seconds: a held note's longest (plucked not
 // After letting go: the volume falls with this time constant (seconds; about
 // 5% left after three of them), then the note stops.
 const LIVE_RING = { plucked: 0.4, held: 0.15 };     // plucked: ukulele, guitar, piano; held: winds and strings
+// Higher keys a little louder (v0.147; Lynn's son: the high notes are far too
+// quiet): from C4 up, 1.5 dB more an octave, at most 4 dB (C7), which is the
+// headroom a single note has before it would clip. Only the virtual piano.
+const LIVE_LIFT = { fromHz: 261.63, dbPerOctave: 1.5, maxDb: 4 };
+function liveLift(freq) {
+  const db = Math.min(LIVE_LIFT.maxDb, Math.max(0, LIVE_LIFT.dbPerOctave * Math.log2(freq / LIVE_LIFT.fromHz)));
+  return Math.pow(10, db / 20);
+}
 function liveNote(midi) {
   const when = ctx.currentTime;
   const bus = ctx.createGain();
+  const lift = liveLift(freqOf(midi));
+  bus.gain.value = lift;
   bus.connect(ctx.destination);
   const from = activeNodes.length;
   pluckAt(midi, when, LIVE_HOLD_MAX, bus);
@@ -7568,7 +7639,7 @@ function liveNote(midi) {
       if (released) return;
       released = true;
       const t = ctx.currentTime;
-      bus.gain.setValueAtTime(1, t);
+      bus.gain.setValueAtTime(lift, t);
       bus.gain.setTargetAtTime(0, t, ring);
       for (const src of sources) {
         try { src.stop(t + ring * 5); }
@@ -9360,6 +9431,7 @@ function renderPianoOpen() {
   $("pianoPanel").hidden = !open;
   $("pianoBtn").classList.toggle("on", open);
   $("pianoBtn").setAttribute("aria-expanded", String(open));
+  keepAwake("piano", open);       // v0.148: the Chromebook's speakers mustn't go to sleep between notes
   if (!open) { if (vpKeyboard) vpKeyboard.releaseAll(); return; }
   vpKeyboard.fit();
   if (!vpOpenedOnce) { vpOpenedOnce = true; vpKeyboard.scrollToKey(VP_START); }
