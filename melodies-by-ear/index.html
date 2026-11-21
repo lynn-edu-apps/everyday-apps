@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.148</title>
+<title>Melodies by Ear v0.149</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -346,11 +346,12 @@
   .vp .switch { margin: 4px 0; }
   .vp-layout { margin: 4px 0 0; }
   .kb { width: calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)); max-width: 1500px;
-        margin: 8px 0 0 50%; transform: translateX(-50%); --kw: 40px; }
+        margin: 8px 0 10px 50%; transform: translateX(-50%); --kw: 40px; }
   .kb-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .kb-nav .kb-hint { flex: 1; text-align: center; margin: 0; font-size: .82rem; }
   .kb-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin;
                border-radius: 8px; border: 1px solid var(--vp-edge);
+               padding-bottom: 14px;     /* v0.149: the scrollbar sits here, under the keys, not over them */
                -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .kb-strip { position: relative; height: 26px; touch-action: pan-x; cursor: grab; border-bottom: 1px solid var(--vp-edge);
               background: repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 7px), var(--paper); }
@@ -851,7 +852,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.148</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.149</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -7068,13 +7069,18 @@ function newContext() {
 // silence and fade back in when sound starts again, swallowing the start of a
 // note: a short high note was nearly lost, while a second press right after it
 // was fine. While something that plays live asks for it (the virtual piano,
-// while open), a hum far too quiet to hear (about 80 dB below full volume)
-// keeps the output from ever going silent; Lynn's probe page
-// (chromebook-sound-probe-v1.html) showed that this cures it.
+// while open), a hum nobody hears keeps the output from ever going silent.
+// v0.149, from Lynn's probe v2 (chromebook-sound-probe-v2.html): her
+// Chromebook's speakers mute anything quieter than a threshold (a noise gate)
+// and fade back in, so a hiss at −80 dB (v0.148) was too quiet to hold the
+// gate open; a hiss worked from −70 dB but could be heard from −60 dB. A deep
+// 40 Hz tone worked from −60 dB and was never heard, even at −40 dB with the
+// laptop at full volume (laptop speakers can't reproduce it). So: 40 Hz at
+// −50 dB, 10 dB inside both limits.
 // General: keepAwake(reason, on) from anything that wants it; syncAwake()
 // starts the hum on the current engine (after a tap has made one) or stops
 // it (nothing wants it, the page is hidden, or the engine was replaced).
-const AWAKE_LEVEL = 1e-4;          // about −80 dB
+const AWAKE_LEVEL = Math.pow(10, -50 / 20), AWAKE_HZ = 40;     // −50 dB; 40 whole cycles a second, so a one-second loop has no seam
 const awakeWanted = new Set();
 let awakeSrc = null, awakeCtx = null;
 function keepAwake(reason, on) {
@@ -7089,8 +7095,8 @@ function syncAwake() {
     awakeSrc = null; awakeCtx = null;
   }
   if (want && !awakeSrc) {
-    const sr = ctx.sampleRate, buf = ctx.createBuffer(1, sr * 2, sr), d = buf.getChannelData(0), rnd = seededNoise(80);
-    for (let i = 0; i < d.length; i++) d[i] = (rnd() * 2 - 1) * AWAKE_LEVEL;
+    const sr = ctx.sampleRate, buf = ctx.createBuffer(1, sr, sr), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.sin(2 * Math.PI * AWAKE_HZ * i / sr) * AWAKE_LEVEL;
     awakeSrc = ctx.createBufferSource();
     awakeSrc.buffer = buf; awakeSrc.loop = true;
     awakeSrc.connect(ctx.destination);
