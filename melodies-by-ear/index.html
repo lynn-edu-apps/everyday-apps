@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.152</title>
+<title>Melodies by Ear v0.153</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -366,9 +366,12 @@
   .kb-b { width: calc(var(--kw) * .6); height: 62%; padding-bottom: 5px; z-index: 2; background: var(--vp-black); border-radius: 0 0 4px 4px; }
   .kb-w.on { background: var(--teal-near); }
   .kb-b.on { background: var(--teal); }
-  /* v0.152: the app's hint (the phrase as it plays) is a ring; a finger's press fills the key */
-  .kb-w.hint { box-shadow: inset 0 0 0 4px var(--teal); }
-  .kb-b.hint { box-shadow: inset 0 0 0 3px var(--teal-near); }
+  /* v0.152–v0.153: keys lit as the phrase plays (.kb-lit; v0.152's name "hint" collided with
+     the app's .hint and its margin pushed the key down). Like a press, or a ring (Settings). */
+  .kb-w.kb-lit { background: var(--teal-near); }
+  .kb-b.kb-lit { background: var(--teal); }
+  .kb.lit-ring .kb-w.kb-lit { background: var(--vp-white); box-shadow: inset 0 0 0 4px var(--teal); }
+  .kb.lit-ring .kb-b.kb-lit { background: var(--vp-black); box-shadow: inset 0 0 0 3px var(--teal-near); }
   .kb-key .n { font-size: .74rem; padding: 2px 4px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
   .kb-b .n { font-size: .64rem; padding: 1px 3px; }
   .kb.no-syl .kb-key .n { display: none; }
@@ -857,7 +860,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.152</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.153</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -1367,6 +1370,11 @@
         <label data-s="piano.heading"></label>
         <label class="check"><input type="checkbox" id="vpLayoutC" checked> <span data-s="piano.layoutC"></span></label>
         <p class="hint" data-s="piano.layoutHint"></p>
+        <label for="vpLitLook" data-s="piano.litLook"></label>
+        <select id="vpLitLook">
+          <option value="press" data-s="piano.litPress"></option>
+          <option value="ring" data-s="piano.litRing"></option>
+        </select>
       </div>
       <div>
         <label for="fineTune" data-s="ui.fineTune"></label>
@@ -1546,6 +1554,9 @@ const STRINGS = {
     "syllables": "Syllables on the keys",
     "sound": "Sound",
     "light": "Light the keys as the phrase plays",
+    "litLook": "Keys lit as the phrase plays look",
+    "litPress": "Like a key you press",
+    "litRing": "Ringed (so you can play along with them)",
     "soundSame": "Same as the melody ({sound})",
     "layoutIsC": "Keys laid out in C: C is do.",
     "layoutIsA": "Keys laid out in A minor: A is la, the home note.",
@@ -7730,7 +7741,7 @@ function stopAll() {
   clearTimeout(endTimer); endTimer = null;
   visuals = [];
   document.querySelectorAll(".n.on, .beat.on, .all-line.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
-  document.querySelectorAll(".kb-key.hint").forEach(el => el.classList.remove("hint"));
+  document.querySelectorAll(".kb-key.kb-lit").forEach(el => el.classList.remove("kb-lit"));
   if (typeof endWhole === "function" && (wholeRun || wholePaused !== null)) endWhole();
   if (calibrating) {           // stopped partway through a sync: reset it
     calibrating = false; calib = null;
@@ -7754,7 +7765,7 @@ const MIN_HOLD_MS = 120;
 let lastCT = -1, lastCTwall = 0, lastHeard = 0, heardCtx = null;
 
 // o.group, o.cls (v0.152): a group and class of its own (the piano's hints use
-// "vp" and "hint", since a key's "on" is a finger pressing it)
+// "vp" and "kb-lit", since a key's "on" is a finger pressing it)
 function showAt(el, when, dur, o = {}) {
   const group = o.group || el.dataset.g || (el.classList.contains("lead-beat") ? "lead" : el.classList.contains("beat") ? "beat" : el.classList.contains("all-line") ? "line" : el.classList.contains("syl") ? "syl" : "note");
   visuals.push({ el, group, cls: o.cls || "on", start: when, end: when + dur, shownAt: 0 });
@@ -7810,7 +7821,7 @@ function drawVisuals() {
   if (visuals.length) rafId = requestAnimationFrame(drawVisuals);
   else {
     document.querySelectorAll(".n.on, .beat.on, .syl.on, .hseg.on").forEach(el => el.classList.remove("on"));
-    document.querySelectorAll(".kb-key.hint").forEach(el => el.classList.remove("hint"));
+    document.querySelectorAll(".kb-key.kb-lit").forEach(el => el.classList.remove("kb-lit"));
   }
 }
 
@@ -9468,7 +9479,7 @@ function pianoKeyOfRel(rel) {
 }
 function pianoHint(rel, when, dur) {
   const k = pianoKeyOfRel(rel);
-  if (k !== null) showAt(vpKeyboard.keyEl(k), when, dur, { group: "vp", cls: "hint" });
+  if (k !== null) showAt(vpKeyboard.keyEl(k), when, dur, { group: "vp", cls: "kb-lit" });
 }
 // Scroll the keyboard, if needed, so the keys about to light are on screen (and do, withDo)
 function pianoShowNotes(items, withDo) {
@@ -9479,7 +9490,7 @@ function pianoShowNotes(items, withDo) {
 }
 function clearPianoHints() {
   visuals = visuals.filter(v => v.group !== "vp");
-  document.querySelectorAll(".kb-key.hint").forEach(el => el.classList.remove("hint"));
+  document.querySelectorAll(".kb-key.kb-lit").forEach(el => el.classList.remove("kb-lit"));
 }
 function renderPianoSound() {
   const t = $("timbre");
@@ -9503,6 +9514,7 @@ function renderPiano() {
   $("vpLayoutNote").textContent = (pianoLayoutC() ? T(minor ? "piano.layoutIsA" : "piano.layoutIsC") : T("piano.layoutReal", { do: noteName(d) }))
     + " " + T("piano.layoutMore");
   $("vpKeyboard").classList.toggle("no-syl", !$("vpSyl").checked);
+  $("vpKeyboard").classList.toggle("lit-ring", $("vpLitLook").value === "ring");
   vpSyls = pianoSyllables();
   if (!vpKeyboard) vpKeyboard = makeKeyboard($("vpKeyboard"), { low: VP_LOW, high: VP_HIGH, fitWhite: VP_FIT_WHITE,
     label: k => pianoLabel(k, vpSyls), press: pianoPress });
@@ -9533,6 +9545,7 @@ $("vpSyl").addEventListener("change", renderPiano);
 $("vpLight").addEventListener("change", () => { if (!$("vpLight").checked) clearPianoHints(); });
 $("timbre").addEventListener("change", renderPianoSound);
 $("vpLayoutC").addEventListener("change", renderPiano);
+$("vpLitLook").addEventListener("change", renderPiano);
 window.addEventListener("resize", () => { if (vpKeyboard && !$("pianoPanel").hidden) vpKeyboard.fit(); });
 window.addEventListener("blur", () => { if (vpKeyboard) vpKeyboard.releaseAll(); });
 
@@ -10983,7 +10996,7 @@ $("metroMeter").addEventListener("change", () => {
 });
 $("clickVol").addEventListener("input", e => $("clickVolVal").textContent = T("units.pct", { n: e.target.value }));
 
-const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel", "mapOpen", "filterDiatonic", "instNotes", "ownLow", "ownHigh", "ownNotes", "pianoOpen", "vpSyl", "vpLayoutC", "vpSound", "vpLight"];
+const prefIds = ["drillMode", "cueType", "alongLyrics", "lyricsOnly", "autoPhraseName", "followLine", "visDelay", "countIn", "clickAll", "loop", "autoReveal", "doFirst", "clickVol", "timbre", "fineTune", "lyricSet", "showMeaning", "autoLyrics", "drillVerse", "seqSel", "tuneInst", "tuneSound", "chorusMode", "songSel", "tuneVol", "legato", "talkOn", "talkSay", "talkSwing", "talkSpeed", "talkVol", "talkNudge", "talkAccent", "talkSqueeze", "talkClick", "alongMelody", "metroMeter", "wakeOn", "theme", "noteShapes", "warmShow", "warmSet", "warmMode", "warmDoFirst", "chordStyle", "chordSimple", "chordKey", "showHolds", "catSel", "mapOpen", "filterDiatonic", "instNotes", "ownLow", "ownHigh", "ownNotes", "pianoOpen", "vpSyl", "vpLayoutC", "vpSound", "vpLight", "vpLitLook"];
 function savePrefs() {
   const p = {};
   prefIds.forEach(id => { const el = $(id); p[id] = el.type === "checkbox" ? el.checked : el.value; });
@@ -11024,6 +11037,7 @@ applyTheme();
 applyShapes();
 readPianoShift(); renderPiano(); renderPianoOpen();
 ensureOption($("vpSound"), ""); renderPianoSound();
+ensureOption($("vpLitLook"), "press"); renderPiano();
 const applyHolds = () => { document.documentElement.dataset.holds = $("showHolds").checked ? "on" : "off"; };
 applyHolds();
 $("showHolds").addEventListener("change", () => { applyHolds(); savePrefs(); });
