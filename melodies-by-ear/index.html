@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.160</title>
+<title>Melodies by Ear v0.167</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -532,6 +532,7 @@
   .all-section:first-child { margin-top: 6px; padding-top: 0; border-top: 0; }
   .all-line { display: flex; flex-wrap: wrap; gap: 12px 3px; align-items: center; margin: 0 0 12px; }
   .all-line .bn { font-size: .75rem; color: var(--muted); min-width: 22px; }
+  .all-line .rep-label { font-size: .75rem; font-style: italic; color: var(--muted); margin-right: 4px; }
   .all-line .n { font-size: .9rem; padding: 3px 6px; }
   /* Lyrics under each Play along line: larger than the solfège, easy to read */
   .al-lyric { flex-basis: 100%; padding-left: 30px; margin-top: 4px; }
@@ -912,7 +913,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.160</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.167</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -1216,6 +1217,15 @@
     <div class="along-start">
       <label for="seqSel" data-s="ui.playMenu"></label>
       <select id="seqSel"></select>
+    </div>
+    <div class="along-start" id="repeatsRow" hidden>
+      <label for="repeatsSel" data-s="along.repeats"></label>
+      <select id="repeatsSel">
+        <option value="play" data-s="along.repeatsPlay"></option>
+        <option value="skip" data-s="along.repeatsSkip"></option>
+      </select>
+      <p class="hint" data-s="along.repeatsHint"></p>
+      <p class="hint" id="repeatsDrop" data-s="along.repeatsDrops" hidden></p>
     </div>
     <div class="plan" id="planBox" hidden>
       <div class="plan-chorus" id="planChorusRow">
@@ -1918,6 +1928,11 @@ const STRINGS = {
     "whole": "The whole song"
   },
   along: {
+    "repeats": "Repeats",
+    "repeatsPlay": "Play them",
+    "repeatsSkip": "Skip them (each part once)",
+    "repeatsHint": "Skip them plays each repeated part once, with the last ending. D.C. and D.S. are always followed: they’re the song’s form. The choice is kept for each song.",
+    "repeatsDrops": "Skipping leaves out the words this song gives for a later time through.",
     "keyAria": "Key for this song",
     "keyDownAria": "Lower the key a half step",
     "keyUpAria": "Raise the key a half step",
@@ -2026,6 +2041,7 @@ const STRINGS = {
     "updated": "Updated to {version}"
   },
   err: {
+    "repeatsSkip": "“{title}” couldn’t be read with its repeats skipped, so it plays them: {problems} That’s a bug in the app.",
     "tuneCents": "The tuning was {c} cents, outside ±100 cents; it is back to 0 (A4 = 440 Hz). That’s a bug in the app.",
     "piano": "Virtual piano: {msg}. That’s a bug in the app.",
     "myColors": "My colors couldn’t be read, so they’re back to the Boomwhackers-style colors.",
@@ -2134,6 +2150,19 @@ const STRINGS = {
     "verse": "V",
     "verseN": "V{v}",
     "where": "Where is it?"
+  },
+  rep: {
+    "ord1": "1st",
+    "ord2": "2nd",
+    "ord3": "3rd",
+    "ordN": "{n}th",
+    "ending": "{n} ending",
+    "and": " and ",
+    "sep": ", ",
+    "time": "{n} time",
+    "afterDC": "after the D.C.",
+    "afterDS": "after the D.S.",
+    "nameWith": "{name} ({label})"
   },
   phrase: {
     "bar": "bar {a}",
@@ -2473,6 +2502,26 @@ const STRINGS = {
     "chorusLines": "{label} has {lines} lines; the chorus has {need}.",
     "badMeaning": "a meaning line (starting with =) must come right after a words line.",
     "emptySection": "{label} has no lines.",
+    "markMid": "“{tok}” is in the middle of the line. Repeat signs (|: and :|), endings and jumps go at the start or the end of a notes line, so start a new line there.",
+    "markAtEnd": "“{tok}” goes at the end of a notes line.",
+    "markAtStart": "“{tok}” goes at the start of a notes line.",
+    "markUnknown": "can’t read the mark “{tok}”. Repeats and jumps are written |: and :| (repeat signs), [1] [2] (endings), [Segno], [Coda], [To Coda], [Fine], [D.C.] and [D.S.] (also with al Fine or al Coda).",
+    "markTwice": "“{tok}” comes twice. A verse or chorus can have only one.",
+    "markBackTwice": "this :| goes back to the same place as the one before it. Put |: at the start of the line where this repeat begins.",
+    "endingNoRepeat": "ending {tok} has no :| to go back from. The last line of a 1st ending ends with :|.",
+    "endingNoBack": "ending {tok} needs a :| at the end of its last line, before the next ending.",
+    "endingMissing": "there’s no ending for time {k} through the repeat.",
+    "jumpNeedsSegno": "“{tok}” needs a [Segno] at the start of a line in the same verse or chorus.",
+    "jumpNeedsFine": "“{tok}” needs a [Fine] at the end of a line in the same verse or chorus.",
+    "jumpNeedsCoda": "“{tok}” needs a [To Coda] at the end of one line and a [Coda] at the start of another, in the same verse or chorus.",
+    "codaNoTo": "[Coda] needs a [To Coda] to jump from.",
+    "markNoJump": "“{tok}” does nothing without a D.C. or D.S. in the same verse or chorus.",
+    "markLoop": "the repeats and jumps never come to an end.",
+    "laterMarks": "a later verse or chorus follows the repeats and jumps of verse 1 (or of the first chorus). Leave the marks off this line, or make them the same.",
+    "passWordsExtra": "words marked [{k}], but this line is played only {times}.",
+    "passWordsMissing": "no words for time {k} through these notes. Add a words line starting with [{k}], or give one plain words line for every time.",
+    "times1": "once",
+    "timesN": "{n} times",
     "joinLong": "the end of the line before ({before} eighths) and this line’s pickup ({pickup}) come to more than a bar of {need}. Shorten the last note before, or the pickup.",
     "noNotes": "the song has no notes yet.",
     "empty": "Nothing to check yet: type or paste a song in the box.",
@@ -2525,6 +2574,9 @@ const STRINGS = {
   },
   // the MusicXML converter and its import (v0.121)
   xml: {
+    "noteRepeatVerses": "The whole song repeats with no endings, which means “the next verse”: written here as verses, without repeat signs.",
+    "noteRePickup": "Bar {bar}: its last notes are the pickup into the repeat, so they’re played from the start of the repeat instead.",
+    "noteShortRepeat": "Bar {bar}: its last note is {n} eighths shorter, to leave room for the pickup when the song goes back.",
     "notXml": "This file isn’t XML that the app can read.",
     "notMusicXml": "This XML file isn’t MusicXML (the app reads <score-partwise> files).",
     "timewise": "This MusicXML is in the “timewise” layout. Save it from your music program as ordinary (partwise) MusicXML.",
@@ -2541,9 +2593,11 @@ const STRINGS = {
     "microtone": "bar {bar}: a note between the half steps.",
     "unpitched": "bar {bar}: a note without a pitch (a drum or a tap); the app has none yet.",
     "badKind": "bar {bar}: can’t read the chord type “{kind}”.",
-    "jumps": "bar {bar}: a jump (D.C., D.S., segno, coda or fine); the app needs the song written out in order.",
-    "repeats": "bar {bar}: a repeat sign; the app needs the song written out in order (it has no repeats yet).",
-    "endings": "bar {bar}: a first or second ending; the app needs the song written out in order.",
+    "endings": "bar {bar}: an ending whose number the app can’t read.",
+    "repeatOrder": "bar {bar}: the repeats and jumps can’t be followed: {msg}",
+    "repeatPickup": "bar {bar}: the song goes back to a line that starts with a pickup, and this bar has no room for it.",
+    "repeatWords": "The file has {n} lines of words, but its repeated music is played only {times} times; the app can’t tell which words go where.",
+    "markInLine": "bar {bar}: a repeat sign, ending or jump falls inside a line (the app’s mistake, not the file’s).",
     "noNotes": "The file has no notes.",
     "noKey": "The file has no key signature the app can read.",
     "noTime": "The file has no time signature.",
@@ -2782,6 +2836,9 @@ const SAVED_PREFS = storeGetJSON(PREFS);
 // that runs while the page starts (reading My songs, filling the menus), so a
 // call made during startup can never reach one before its line (lesson 22,
 // review R16). Keep new helpers of this kind here.
+// A per-song storage key: the Internationale keeps the original key names, so
+// nothing saved before songs had their own keys is lost; other songs add "-<id>".
+const songKeyOf = (base, id) => id === "internationale" ? base : `${base}-${id}`;
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 // Apple Notes (and some other apps) mark line breaks with special characters
 // (Unicode "line separator" U+2028 or "paragraph separator" U+2029, or an old
@@ -5693,6 +5750,370 @@ And gie's a hand o' thine;
 We'll tak' a cup o' kind-ness yet,
 For auld_ lang_ syne.
 `;
+const SONGBOOK_WE_WISH_YOU_TEXT = `Title: We Wish You a Merry Christmas
+Key: G
+Time: 3/4
+Tempo: 132
+
+# Converted from the MusicXML file WE WISH YOU A MERRY CHRISTMAS.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-22 (app v0.166).
+# The book's repeat signs and 1st and 2nd endings, as it prints them, with one set of words: "We wish you a merry Christmas … and a happy New Year!" twice, then "Good tidings".
+# Bar 8 (the 1st ending) ends with "We", the pickup into the repeat: it's played from the start of the repeat instead.
+# Chords: the book's traditional harmonization. Modern chords: its modern harmonization. Settings chooses which show.
+
+|: (so,:2) | do:2 do:1 re:1 do:1 ti,:1 | la,:2 la,:2
+Chords: | G | C
+Modern chords: |  | B♭7♭5
+We wish you a mer-ry Christ-mas,
+
+(la,:2) | re:2 re:1 mi:1 re:1 do:1 | ti,:2 so,:2
+Chords: E7/B@3 | A7 | D
+Modern chords: | Em7 | A7sus4 A♭7♭5@2
+We wish you a mer-ry Christ-mas,
+
+(so,:2) | mi:2 mi:1 fa:1 mi:1 re:1 | do:2 la,:2
+Chords: D7/C@3 | B7 | Em
+Modern chords: | F♯m7♭5 B7@3 | Em7 B♭7♭5@2
+We wish you a mer-ry Christ-mas,
+
+(so,:1 so,:1) | la,:2 re:2 ti,:2
+Chords: E7@3 | Am D7@3
+Modern chords: | Am7 E♭7♭5@2 A♭7@3
+And a hap-py New
+
+[1] | do:4 :|
+Chords: | G
+Modern chords: | G
+Year!
+
+[2] | do:4
+Chords: | G
+Modern chords: | G
+Year!
+
+(so,:2) | do:2 do:2 do:2 | ti,:4 ti,:2 | do:2 ti,:2 la,:2 | so,:4
+Chords: | G | Bm | Am7 D/A@2 A7@3 | D
+Modern chords: | G/B | F♯/A♯ | Am7 A♯°@2 | Bm7 Am7@2
+Good tid-ings we bring to you and your kin;
+
+(so,:2) | mi:2 mi:1 fa:1 mi:1 re:1 | so:2 so,:2
+Chords: D7/C@3 | B7 | Em7
+Modern chords: Gmaj7@3 | F♯m7♭5 B7@3 | Em7
+We wish you a mer-ry Christ-mas,
+
+(so,:1 so,:1) | la,:2 re:2 ti,:2 | do:4
+Chords: E7@3 | Am D7@3 | G
+Modern chords: G♯°@3 | Am7 E♭7♭5@2 A♭7@3 | G
+And a hap-py New Year!
+`;
+const SONGBOOK_PARADE_TEXT = `Title: Parade of the Wooden Soldiers
+Key: C
+Time: 2/2
+Tempo: 64
+
+# Converted from the MusicXML file PARADE OF THE WOODEN SOLDIERS.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-22 (app v0.166), then arranged by hand.
+# The book's two repeated sections, each with a 1st and a 2nd ending, as it prints them, with its two sets of words ([1], [2]) for the two times through.
+# Bar 8 (the 1st ending) ends with "The", the pickup into the repeat: it's played from the start of the repeat instead.
+# "a\\-clinking" and "a\\-winking" with visible hyphens, as the book prints them.
+# "be-gun" is split across the 1st ending, so "be\\-" keeps a visible hyphen ("be-", then "gun.").
+# Chords: the book's traditional harmonization. Modern chords: its modern harmonization. Settings chooses which show.
+
+|: (so:1 so:1) | mi:2 so:2 so:2 so:1 so:1 | fa:2 so:2 so:2
+Chords: | C | G7
+Modern chords: | C♯°@2 | Dm7 G7@2
+[1] The_ toy shop door is_ locked up tight,
+[2] The_ dolls are in their_ best ar-rayed,
+
+(so:2) | mi:2 so:2 ti:2 la:2 | so:1 se:1 fa:1 mi:1 re:2
+Chords: | C E♭dim@2 | G7
+Modern chords: |  | Dm7 G7@2
+[1] and ev-'ry-thing is qui-et for the night,
+[2] there's going to be a won-der-ful pa-rade.
+
+(so:2) | mi:2 so:2 so:2 so:1 so:1 | re:2 ti:2 ti:2
+Chords: | C C♯dim@2 | G Em@2
+Modern chords: |  | Dm7 F7@1.5 Em7@2
+[1] When sud-den-ly the_ clock strikes twelve,
+[2] Hark to the drum "Oh!_ here they come,"
+
+(ti:1 ti:1) | la:2 r:2 re':2 r:2
+Chords: | C6 D7@2
+Modern chords: | E♭7 A♭7@2
+[1] the_ fun's be\\-
+[2] cries_ ev-'ry
+
+[1] | so:2 r:2 r:2 :|
+Chords: | G7
+Modern chords: | Dm7 D♭7@2
+gun.
+
+[2] | so:2 r:2 r:4
+Chords: | G7
+Modern chords: | Dm7 D♭7@2
+one.
+
+|: so:1 do':1 mi:2 la:2 so:2 | so:1 do':1 mi:2 la:2 so:2
+Chords: | C |
+Modern chords: | G7+5@2 | C G7+5@2
+[1] Hear them all cheer-ing, Now they are near-ing,
+[2] Day-light is creep-ing, Dol-lies are sleep-ing,
+
+| so:3 so:1 so:2 do':2 | do':2 ti:2 ti:4
+Chords: |  | Dm7 G7@1.5
+Modern chords: | C Am7@2 | Dm7 G7@2
+[1] There's the cap-tain stiff as starch,
+[2] In the toy shop win-dow fast;
+
+| so:1 re':1 fa:2 la:2 so:2 | so:1 re':1 fa:2 la:2 so:2
+Modern chords: | Dm7 G7@2 | Dm7 C♯°@2
+[1] Bay-o-nets flash-ing, Mus-ic is crash-ing,
+[2] Sol-diers so jol-ly, Think of each dol-ly,
+
+| so:3 so:1 so:2 re':2 | re':2 do':2 do':4
+Chords: |  | Dm/C C@1.5
+Modern chords: | Dm7 G7@2 | C° C@2
+[1] As the Wood-en sol-diers march;
+[2] Dream-ing of the night that's past;
+
+| so:1 do':1 mi:2 la:2 so:2 | so:1 do':1 mi:2 la:2 so:2
+Chords: | C |
+Modern chords: | G7+5@2 | C G7+5@2
+[1] Sa-bres a\\-clink-ing, sol-diers a\\-wink-ing,
+[2] When in the morn-ing, with-out a warn-ing,
+
+[1] | so:3 so:1 so:2 do':2 | do':2 ti:2 ti:4
+Chords: |  | Em
+Modern chords: | C B7+5@2 | Em
+At each pret-ty lit-tle maid.
+
+| ti:1 mi':1 ti:1 r:1 ti:1 mi':1 ti:1 r:1 | ti,:1 mi:1 ti,:1 r:1
+Modern chords: | Em F@2 | Em
+Here they come! Here they come! Here they come!
+
+(ti,:1 mi:1 ti,:1 r:1) | ti:2 ti:2 ti:1 la:1 so:1 fi:1 | mi:4 r:4 :|
+Chords: | B7@2 | Em G7@2
+Modern chords: Dm@2 | C♯m7♭5 F♯m7♭5@2 B7@2.5 | B♭7 A7@1.547 D7@2 D♭7@2.574
+Here they come! Wood-en sol-diers on pa-rade.
+
+[2] | so:3 so:1 so:2 mi':2 | mi':2 re':2 re':4
+Chords: | C | Dm
+Modern chords: | B♭7 A7♭9@2 | Dm7
+Toy-man pulls the win-dow shade,
+
+| do':3 do':1 do':2 la:2 | la:2 so:2 fa:2 mi:2 | re:1 mi:1 fa:1 so:1 la:2 ti:2 | do':4 r:4
+Chords: | F♯dim | C/G | F G7@2.5 | C
+Modern chords: | F♯m7♭5 B7@2 | Em7♭5 A7♭9@2 | Dm7 G7@2 | C
+There's no sign the Wood bri-gade was e-ver out up-on pa-rade.
+`;
+const SONGBOOK_ADESTE_TEXT = `Title: Adeste Fideles (O Come, All Ye Faithful)
+Key: F
+Time: 4/4
+Tempo: 92
+
+# Converted from the MusicXML file ADESTE FIDELES.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-22 (app v0.166), then arranged by hand.
+# The book prints the whole song between repeat signs with one verse of words: here once, verse and refrain. The refrain ("O come, let us adore him") is marked as the chorus.
+# Verse 1 only, in Frederick Oakeley's English, as the file has it ("come" lowercased; the file: "O Come").
+# Chords: the book's traditional harmonization. Modern chords: its modern harmonization. Settings chooses which show.
+
+(do:2) | do:4 so,:2 do:2 | re:4 so,:4
+Chords: | F | Gm/F C7/F@3
+O come, all ye faith-ful,
+
+| mi:2 re:2 mi:2 fa:2 | mi:4 re:2
+Chords: | F C/E@2 F@3 Gm@4 | F/C C@3
+Modern chords: | Fmaj7 Em7♭5@2 Fmaj7@3 Gm7@4 | F/C C7@3
+joy-ful and tri-um-phant!
+
+(do:2) | do:4 ti,:2 la,:2 | ti,:2 do:2 re:2 mi:2 | ti,:4 la,:3 so,:1 | so,:6 r:2
+Chords: | G7/D | C Dm@2 Em@3 F@4 | C/G G7@3 | C
+Modern chords: E♭7@4 | Dm7 G7@3 | Cmaj7 Dm7@2 Em7@3 Fmaj7@4 |  |
+O come ye, o come_ ye to Beth_-le-hem.
+
+| so:4 fa:2 mi:2 | fa:4 mi:4
+Chords: | F C7@3 F@4 | C7 F@3
+Modern chords: | Am7 Gm7@3 Fmaj7@4 | Gm7 Fmaj7@3
+Come and be-hold him,
+
+| re:2 mi:2 do:2 re:2 | ti,:3 la,:1 so,:2
+Chords: | C G7@3 | C
+Modern chords: | Em7♭5 Fmaj7@2 G7@3 |
+born the king of an_-gels;
+
+Chorus
+
+(do:2) | do:2 ti,:2 do:2 re:2 | do:4 so,:2
+Chords: | F C7@4 | F
+Modern chords: | F6 Em7♭5@2 F6@3 Em7♭5@4 | F6
+O come let us a-dore him,
+
+(mi:2) | mi:2 re:2 mi:2 fa:2 | mi:4 re:2
+Chords: | F/C C@2 F/C@3 C7@4 | F/C C7@3
+Modern chords: Fmaj7@4 | Em7♭5@2 Fmaj7@3 Gm7@4 | Fmaj7 Em7♭5@3
+O come let us a-dore him,
+
+(mi:2) | fa:2 mi:2 re:2 do:2 | ti,:4 do:2 fa:2 | mi:4 re:3 do:1 | do:8
+Chords: | Gm F@2 Em♭5@3 Dm@4 | C C7@2 F@3 Gm@4 | F/C C7@3 | F
+Modern chords: F♯°@4 | Gm7 Fmaj7@2 Em7♭5@3 Dm7@4 | C7 C♯°@2 Dm7@3 Gm7@4 |  |
+O come let us a-dore him_ Christ_ the Lord!
+`;
+const SONGBOOK_HAPPY_BIRTHDAY_TEXT = `Title: Happy Birthday
+Key: G
+Time: 3/4
+Tempo: 104
+
+# Converted from the MusicXML file HAPPY BIRTHDAY.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-22 (app v0.166), then arranged by hand.
+# The file's last line ("Happy birthday dear (name), happy birthday to you") split into two lines, like the first two.
+# The words as the file has them: sing the birthday person's name for "(name)".
+# Chords: the book's traditional harmonization. Modern chords: its modern harmonization. Settings chooses which show.
+
+(so,:1 so,:1) | la,:2 so,:2 do:2 | ti,:4
+Chords: | G | D7
+Hap-py birth-day to you.
+
+(so,:1 so,:1) | la,:2 so,:2 re:2 | do:4
+Chords: |  | G
+Hap-py birth-day to you.
+
+(so,:1 so,:1) | so:2 mi:2 do:2 | ti,:2 la,:2
+Chords: | G G7@3 | C7
+Modern chords: | D♭7@3 | C♯°@2
+Hap-py birth-day dear (name)_
+
+(fa:1 fa:1) | mi:2 do:2 re:2 | do:4
+Chords: | G/D D7@3 | G
+Modern chords: Cm@3 | Am7@2 |
+Hap-py birth-day to you.
+`;
+const SONGBOOK_TWINKLE_TEXT = `Title: Twinkle, Twinkle, Little Star
+Key: C
+Time: 2/4
+Tempo: 96
+
+# Converted from the MusicXML file TWINKLE, TWINKLE, LITTLE STAR.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-22 (app v0.166), then arranged by hand.
+# Lines of 4 bars: the file's "Twinkle, twinkle," and "little star" lines joined, twice.
+# The file's words, with "Twin-kle" split as dictionaries do and the second "twinkle" lowercased, as Jane Taylor wrote it (the file: "Twink-le, Twink-le").
+# Verses 2 and 3 aren't in the file: the ABC Song and Baa, Baa, Black Sheep, sung to the same tune, fitted for this app. Their own notes lines keep verse 1's chords.
+# Chords: the book's traditional harmonization. Modern chords: its modern harmonization. Settings chooses which show.
+
+Verse 1
+
+| do:2 do:2 | so:2 so:2 | la:2 la:2 | so:4
+Chords: | C |  | F | C
+Modern chords: |  | Em7 | F | Em7
+Twin-kle, twin-kle, lit-tle star,
+
+| fa:2 fa:2 | mi:2 mi:2 | re:2 re:2 | do:4
+Chords: | G7 | C | G | C
+Modern chords: | Dm7 | C | A♭7 G7@2 | C
+How I won-der what you are!
+
+| so:2 so:2 | fa:2 fa:2 | mi:2 mi:2 | re:4
+Chords: | C | G7 | C | G
+Modern chords: | Em7 | Dm7 | C | Bm7
+Up a-bove the world so high,
+
+| so:2 so:2 | fa:2 fa:2 | mi:2 mi:2 | re:4
+Chords: | C | G7 | C | G
+Modern chords: | E7 | A7+5 | D7 | G7
+Like a di'-mond in the sky.
+
+| do:2 do:2 | so:2 so:2 | la:2 la:2 | so:4
+Chords: | C |  | F | C
+Modern chords: | F♯m7♭5 | Fm | Em7 | A7
+Twin-kle, twin-kle, lit-tle star,
+
+| fa:2 fa:2 | mi:2 mi:2 | re:2 re:2 | do:4
+Chords: | G7 | C | G | C
+Modern chords: | Dm7 | C♯° | Dm7 G7@2 | C
+How I won-der what you are!
+
+Verse 2
+
+# The ABC Song: "L M N O" are four quick notes on re (the two quarter notes of "what you" split in two).
+# "S" is held over the two notes of "world", and "W" and "X" each over two notes ("Like a", "di'mond"), as it's usually sung.
+A B C D E F G,
+| fa:2 fa:2 | mi:2 mi:2 | re:1 re:1 re:1 re:1 | do:4
+Chords: | G7 | C | G | C
+Modern chords: | Dm7 | C | A♭7 G7@2 | C
+H I J K L M N O P,
+Q R S_ T U V,
+W_ X_ Y and Z.
+Now I know my A B C's,
+Next time won't you sing with me?
+
+Verse 3
+
+# Baa, Baa, Black Sheep: "have you an-y" are four quick notes on la (the two quarter notes of "lit-tle" split in two).
+# "One for the mas-ter, and one for the dame": each bar's second quarter note split in two. "And one for the lit-tle boy who lives down the lane": quarter notes split into eighths for the extra syllables.
+| do:2 do:2 | so:2 so:2 | la:1 la:1 la:1 la:1 | so:4
+Chords: | C |  | F | C
+Modern chords: |  | Em7 | F | Em7
+Baa, baa, black sheep, have you an-y wool?
+Yes, sir, yes, sir, three bags full;
+| so:2 so:1 so:1 | fa:2 fa:1 fa:1 | mi:2 mi:1 mi:1 | re:4
+Chords: | C | G7 | C | G
+Modern chords: | Em7 | Dm7 | C | Bm7
+One for the mas-ter, and one for the dame,
+| so:1 so:1 so:1 so:1 | fa:1 fa:1 fa:2 | mi:1 mi:1 mi:1 mi:1 | re:4
+Chords: | C | G7 | C | G
+Modern chords: | E7 | A7+5 | D7 | G7
+And one for the lit-tle boy who lives down the lane.
+| do:2 do:2 | so:2 so:2 | la:1 la:1 la:1 la:1 | so:4
+Chords: | C |  | F | C
+Modern chords: | F♯m7♭5 | Fm | Em7 | A7
+Baa, baa, black sheep, have you an-y wool?
+Yes, sir, yes, sir, three bags full.
+`;
+const SONGBOOK_BALL_GAME_TEXT = `Title: Take Me Out to the Ball Game
+Key: D
+Time: 3/4
+Tempo: 144
+
+# Converted from the MusicXML file TAKE ME OUT TO THE BALLGAME.xml (The Public Domain Song Anthology, by David Berger and Chuck Israels) on 2026-11-22 (app v0.166), then arranged by hand.
+# The title as the 1908 sheet music has it ("Ball Game", two words; the file: "Ballgame").
+# The book prints the chorus only, the part everyone sings. The 1908 verses about Katie Casey aren't in the book.
+# "ball game" as two words, as the book prints it (the file: "ball-game").
+# "For it's one, two," and "three strikes you're out" joined into one line. The book's last bar, a bar of rest, is left out, so the song ends on "game".
+# Chords: the book's traditional harmonization. Modern chords: its modern harmonization. Settings chooses which show.
+
+| do:4 do':2 | la:2 so:2 mi:2 | so:6 | re:6
+Chords: | D |  | A7 |
+Modern chords: |  | D♯° | Em7 | A7
+Take me out to the ball game,
+
+| do:4 do':2 | la:2 so:2 mi:2 | so:6~ | so:6
+Chords: | D |  | A7 | C7@3
+Modern chords: |  | D♯° | Em7 | A7 Gm6@3
+Take me out with the crowd._
+
+| la:2 si:2 la:2 | mi:2 fa:2 so:2 | la:4 fa:2 | re:6
+Chords: | B7 |  | Em |
+Modern chords: | F♯m7♭5 | B7 | Em | C7
+Buy me some pea-nuts and crack-er jack;
+
+| la:4 la:2 | la:2 ti:2 do':2 | re':2 ti:2 la:2 | so:2
+Chords: | E7 |  | A7 |
+Modern chords: | F7 | E7 | B♭7 Em7@3 |
+I don't care if I nev-er get back.
+
+(mi:2 re:2) | do:4 do':2 | la:2 so:2 mi:2 | so:6 | re:4
+Chords: | D |  | A7 |
+Modern chords: A7@2 |  | D♯° | Em7 | A7
+Let me root, root, root for the home team,
+
+(re:2) | do:4 re:2 | mi:2 fa:2 so:2 | la:6~ | la:2
+Chords: | D | A7@2 D7@3 | G |
+Modern chords: | Am7 | D7 | G | F7
+if they don't win it's a shame._
+
+(la:2 ti:2) | do':6 | do':6 | do':2 ti:2 la:2 | so:2
+Chords: | Em7 | B♭7 | D/A G@3 | D/F♯
+Modern chords: |  | F° | F♯m7+5 | B7
+For it's one, two, three strikes you're out,
+
+(fi:2 so:2) | la:6 | ti:6 | do':6
+Chords: Fm7@2 D/F♯@3 | E7 | A7 | D
+at the old ball game.
+`;
 // Built-in songs can be kept in the My songs text format ("How to type a
 // song"), as songs from Berger and Israels' Public Domain Song Anthology are:
 // converted from the book's MusicXML by musicXmlToSongText, then arranged by
@@ -6112,6 +6533,126 @@ const SONGBOOK = {
         ] }
     ],
     text: SONGBOOK_AULD_LANG_SYNE_TEXT
+  },
+  wewish: {
+    title: "We Wish You a Merry Christmas",
+    categories: ["holiday"],
+    lede: "We Wish You a Merry Christmas, phrase by phrase, with the book's repeat and its 1st and 2nd endings (Repeats: Skip them, in Play along, sings the first part once). The book gives two sets of chords; choose Traditional or Modern in Settings.",
+    credits: [
+      "Words and tune: a traditional English carol from the West Country, made widely known by Arthur Warrell's arrangement of 1935. Public domain.",
+      "Melody, words and both sets of chords (the traditional and the modern harmonization): The Public Domain Song Anthology, by David Berger and Chuck Israels (Aperio Press, 2020), whose editors waived all their rights (CC0). Converted from the book's MusicXML file.",
+      "Song history: written for this app."
+    ],
+    history: [
+      { h: "A carol from the West Country", p: [
+          "\"We Wish You a Merry Christmas\" is an English carol from the West Country, in the south-west of England. Nobody knows who made it up or when, though the greeting \"a merry Christmas and a happy New Year\" is recorded from the early 1700s. It belongs to the old custom of carolers going from door to door at Christmas, singing good wishes and asking for treats in return: its later verses demand figgy pudding (a raisin or plum pudding, in the West Country) and refuse to leave until they get some."
+        ] },
+      { h: "Arthur Warrell", p: [
+          "The carol was little known outside the West Country until Arthur Warrell, a composer, organist and choir director in Bristol, arranged it for the University of Bristol Madrigal Singers. They first sang it on 6 December 1935, and Oxford University Press printed it that year as \"A Merry Christmas: West Country traditional song\". Choirs everywhere took it up, and it became the cheerful song that ends many Christmas concerts.",
+          "The Anthology prints the first verse, sung twice, and \"Good tidings we bring\"."
+        ] }
+    ],
+    text: SONGBOOK_WE_WISH_YOU_TEXT
+  },
+  parade: {
+    title: "Parade of the Wooden Soldiers",
+    categories: ["holiday", "children"],
+    lede: "Parade of the Wooden Soldiers, phrase by phrase: two parts, each repeated with a 1st and a 2nd ending and words for each time through (Repeats: Skip them, in Play along, plays each part once). The book gives two sets of chords; choose Traditional or Modern in Settings.",
+    credits: [
+      "Music: Leon Jessel, Die Parade der Zinnsoldaten (The Parade of the Tin Soldiers), 1897; English words: Ballard MacDonald, 1922. Public domain.",
+      "Melody, words and both sets of chords (the traditional and the modern harmonization): The Public Domain Song Anthology, by David Berger and Chuck Israels (Aperio Press, 2020), whose editors waived all their rights (CC0). Converted from the book's MusicXML file.",
+      "Song history: written for this app."
+    ],
+    history: [
+      { h: "The Parade of the Tin Soldiers", p: [
+          "The German composer Leon Jessel wrote \"Die Parade der Zinnsoldaten\" (The Parade of the Tin Soldiers) as a piano piece in 1897, and published it for orchestra in 1905. It was recorded and played around the world. In 1922 Nikita Balieff's Russian revue La Chauve-Souris (The Bat) brought its wooden-soldiers number, danced to Jessel's march, to Broadway. It was a sensation: that year many American editions of the music came out, one of them with English words by Ballard MacDonald, about toys that come to life in a toy shop at midnight. Since 1933 the Rockettes have marched to it in the Radio City Christmas Spectacular in New York, which made it a Christmas song."
+        ] },
+      { h: "Leon Jessel", p: [
+          "Jessel, born in 1871 in Stettin (now Szczecin, in Poland), also wrote popular operettas. His father was Jewish; he himself had become a Christian. The Nazis banned his music anyway, from 1933 on. Arrested in December 1941 and tortured by the Gestapo, he died in Berlin in January 1942."
+        ] }
+    ],
+    text: SONGBOOK_PARADE_TEXT
+  },
+  adeste: {
+    title: "Adeste Fideles (O Come, All Ye Faithful)",
+    categories: ["holiday", "spiritual"],
+    lede: "Adeste Fideles (O Come, All Ye Faithful), phrase by phrase: the first verse and the refrain, in Frederick Oakeley's English. The book gives two sets of chords; choose Traditional or Modern in Settings.",
+    credits: [
+      "Words and tune: the Latin hymn \"Adeste fideles\", first known from manuscripts by John Francis Wade, printed in 1751. Public domain.",
+      "English words: Frederick Oakeley, 1841, in the form printed in 1852. Public domain.",
+      "Melody, words and both sets of chords (the traditional and the modern harmonization): The Public Domain Song Anthology, by David Berger and Chuck Israels (Aperio Press, 2020), whose editors waived all their rights (CC0). Converted from the book's MusicXML file.",
+      "Song history: written for this app."
+    ],
+    history: [
+      { h: "Adeste fideles", p: [
+          "The Latin hymn \"Adeste fideles\" (\"Be present, faithful ones\") first appears in manuscripts by John Francis Wade, an English Catholic who copied and taught church music and lived in France, at Douai, from the 1740s. He printed it in his collection Cantus Diversi in 1751. Whether he wrote the words and the tune himself isn't known for certain; the tune has also been credited to others, among them the English composer John Reading and King John IV of Portugal. In England it was long called \"the Portuguese Hymn\", after the Duke of Leeds heard it sung at the chapel of the Portuguese embassy in London in 1795."
+        ] },
+      { h: "O come, all ye faithful", p: [
+          "Of the many English translations, Frederick Oakeley's became the one most people sing. He made it in 1841 for his congregation at Margaret Chapel in London, beginning \"Ye faithful, approach ye\"; the familiar \"O come, all ye faithful\" came later, and was printed in Murray's Hymnal in 1852. Oakeley himself became a Catholic in 1845, and later a canon in Westminster."
+        ] }
+    ],
+    text: SONGBOOK_ADESTE_TEXT
+  },
+  happybirthday: {
+    title: "Happy Birthday",
+    categories: ["children"],
+    lede: "Happy Birthday, phrase by phrase. Sing the birthday person's name for \"(name)\". The book gives two sets of chords; choose Traditional or Modern in Settings.",
+    credits: [
+      "Tune: \"Good Morning to All\", by the sisters Mildred J. Hill and Patty Smith Hill, printed in 1893 (whether they wrote the tune is disputed). Words: author unknown, in print by the early 1900s. Public domain: a US court found the copyright claim on the song invalid in 2015.",
+      "Melody, words and both sets of chords (the traditional and the modern harmonization): The Public Domain Song Anthology, by David Berger and Chuck Israels (Aperio Press, 2020), whose editors waived all their rights (CC0). Converted from the book's MusicXML file.",
+      "Song history: written for this app."
+    ],
+    history: [
+      { h: "Good Morning to All", p: [
+          "Patty Smith Hill ran a kindergarten in Louisville, Kentucky, and her sister Mildred was a pianist and composer. They wanted songs young children could sing easily, and in 1893 they printed one in their book Song Stories for the Kindergarten: \"Good morning to you, good morning to you, good morning, dear children, good morning to all.\" Similar tunes were already around, so whether the sisters made it up is disputed. Children soon sang it with birthday words too, and who first did is unknown."
+        ] },
+      { h: "Whose song?", p: [
+          "In 1935 a music publisher registered a copyright on \"Happy Birthday to You\", and for decades its owners (Warner/Chappell Music, from 1988) charged fees whenever it was sung in a film, on television or anywhere else for profit. In 2013 makers of a documentary about the song sued. In September 2015 a federal judge ruled that the 1935 registration had covered only certain piano arrangements, not the words, and in 2016 Warner/Chappell settled, paying back 14 million dollars. The song is now public domain."
+        ] }
+    ],
+    text: SONGBOOK_HAPPY_BIRTHDAY_TEXT
+  },
+  twinkle: {
+    title: "Twinkle, Twinkle, Little Star",
+    categories: ["children"],
+    lede: "Twinkle, Twinkle, Little Star, phrase by phrase, with two more songs sung to the same tune as verses 2 and 3: the ABC Song and Baa, Baa, Black Sheep. The book gives two sets of chords; choose Traditional or Modern in Settings.",
+    credits: [
+      "Tune: the French song \"Ah! vous dirai-je, maman\", first printed in 1761. Public domain.",
+      "Verse 1: \"The Star\", by Jane Taylor, from Rhymes for the Nursery (1806), by Jane and Ann Taylor. Public domain.",
+      "Verse 2: the ABC Song (first published by Charles Bradlee, Boston, 1835), with its familiar ending, whose author is unknown. Verse 3: Baa, Baa, Black Sheep (first printed about 1744), traditional. Both fitted to the tune for this app. Public domain.",
+      "Melody, verse 1 and both sets of chords (the traditional and the modern harmonization): The Public Domain Song Anthology, by David Berger and Chuck Israels (Aperio Press, 2020), whose editors waived all their rights (CC0). Converted from the book's MusicXML file.",
+      "Song history: written for this app."
+    ],
+    history: [
+      { h: "A French tune", p: [
+          "The tune was first printed in France in 1761, and soon sung to words beginning \"Ah! vous dirai-je, maman\" (\"Oh, shall I tell you, Mama\"). Composers loved it: Mozart wrote twelve variations on it for piano in 1781 or 1782. English-speaking children know it from three songs, all here: Twinkle, Twinkle, Little Star; the ABC Song; and Baa, Baa, Black Sheep."
+        ] },
+      { h: "Three sets of words", p: [
+          "\"Twinkle, twinkle, little star\" is the first verse of \"The Star\", a poem by Jane Taylor printed in 1806 in Rhymes for the Nursery, a book by her and her sister Ann; the poem has five verses. The ABC Song was published in Boston by Charles Bradlee in 1835; its familiar ending, \"Now I know my ABC's, next time won't you sing with me\", came later, from no one knows whom. Baa, Baa, Black Sheep is older than both: it was printed in London in Tommy Thumb's Pretty Song Book in about 1744. Stories about what it means (a tax on wool, for one) have no good evidence behind them.",
+          "The ABC Song and Baa, Baa have more syllables than Twinkle in places, so their lines split some of its notes for this app."
+        ] }
+    ],
+    text: SONGBOOK_TWINKLE_TEXT
+  },
+  ballgame: {
+    title: "Take Me Out to the Ball Game",
+    categories: ["children", "folk"],
+    lede: "Take Me Out to the Ball Game, phrase by phrase: the chorus, the part everyone sings. The book gives two sets of chords; choose Traditional or Modern in Settings.",
+    credits: [
+      "Words: Jack Norworth; music: Albert Von Tilzer, 1908. Public domain.",
+      "Melody, the chorus's words and both sets of chords (the traditional and the modern harmonization): The Public Domain Song Anthology, by David Berger and Chuck Israels (Aperio Press, 2020), whose editors waived all their rights (CC0). Converted from the book's MusicXML file.",
+      "Song history: written for this app."
+    ],
+    history: [
+      { h: "Katie Casey", p: [
+          "Jack Norworth, a vaudeville performer and songwriter, said he wrote the words in 1908 on a New York subway train, after seeing a sign that said \"Baseball Today – Polo Grounds\". Albert Von Tilzer set them to a waltz. Neither had been to a major-league game: Von Tilzer first went about twenty years later, Norworth in 1940. The song's two verses tell of Katie Casey, who was \"baseball mad\": when her young man asked her to a show, she asked to be taken to the ball game instead. The chorus is her answer. Norworth wrote new verses in 1927, about Nelly Kelly.",
+          "The song was a hit at once, in sheet music, on records, and in vaudeville theaters, where slides of a ball game were shown while it was sung."
+        ] },
+      { h: "The seventh-inning stretch", p: [
+          "The first time it's known to have been played at a ballpark was in 1934, at a high-school game in Los Angeles; it was played at the World Series later that year. Its place in the seventh-inning stretch came much later, from the broadcaster Harry Caray, who began singing it with the fans in Chicago in the 1970s. Now crowds sing the chorus at almost every game, often with their own team's name in place of \"the home team\"."
+        ] }
+    ],
+    text: SONGBOOK_BALL_GAME_TEXT
   }
 };
 const SONGBOOK_FIELDS = ["title", "categories", "lede", "credits", "history", "text"];
@@ -6124,9 +6665,9 @@ for (const [id, sb] of Object.entries(SONGBOOK)) {
 }
 // Reads a songbook song's text into a full song (the open song only). Returns
 // the song, or null with the mistakes reported (loudly: the app's own song).
-function loadSongbookSong(id) {
+function loadSongbookSong(id, opt) {
   const sb = SONGBOOK[id];
-  const r = readMySong(sb.text, id);
+  const r = readMySong(sb.text, id, opt);
   if (!r.song) {
     reportError(T("err.songbookBad", { title: sb.title, n: r.problems.length, problems: r.problems.join(" ") }));
     return null;
@@ -6153,6 +6694,8 @@ function loadSongbookSong(id) {
 // startup with the category "mine". A song with mistakes is listed but
 // can't open, so a typo can never break the app.
 const MY_SONGS_STORE = "phrase-parrot-mysongs-v1";
+// Repeats: "skip" when a song plays each repeated part once (v0.164); nothing = play them
+const REPEATS_STORE = "phrase-parrot-repeats-v1";
 const MY_TIMES = { "2/4": [4, 2], "3/4": [6, 2], "4/4": [8, 2], "5/4": [10, 2], "2/2": [8, 4], "6/8": [6, 3], "9/8": [9, 3], "12/8": [12, 3] };
 const MY_BEAT_NAMES = { 2: "quarter-note", 3: "dotted-quarter-note", 4: "half-note" };
 const MY_NOTE_TOKEN = /^\(?[a-z]+[',]*:\d+(\.\d+)?(\/\d+)?~?\)?$/;
@@ -6184,14 +6727,152 @@ const CHORDS_LINE_RE = /^(modern\s+)?chords\s*:(.*)$/i;
 function wordsRow(line) {
   return line.toLowerCase().startsWith(WHOLE_LINE) ? { words: line.slice(WHOLE_LINE.length).trim(), whole: true } : { words: line };
 }
-function readMySong(text, id) {
+// ---------- Repeats, endings and jumps (v0.161) ----------
+// Marks on a notes line (part of the song format, so not translated; ABC-like):
+//   at the start: [Segno], [Coda], an ending [1], [2] or [1,2], then "|:" (a
+//     repeat starts with this line);
+//   at the end: ":|" (":|:" also starts a repeat with the next line), [Fine],
+//     [To Coda], [D.C.], [D.C. al Fine], [D.C. al Coda], [D.S.], [D.S. al Fine],
+//     [D.S. al Coda] (any case, with or without the dots).
+// Marks sit only at the start or the end of a line, so every line is played
+// whole and keeps its own words. Words for the 2nd, 3rd... time a line is
+// played: a words line starting "[2]", "[3]"...
+const MARK_AT_START = { segno: "segno", coda: "coda" };
+const MARK_AT_END = { fine: "fine", tocoda: "toCoda", dc: "dc", dcalfine: "dc", dcalcoda: "dc", ds: "ds", dsalfine: "ds", dsalcoda: "ds" };
+const ENDING_RE = /^\s*\d+(\s*,\s*\d+)*\s*$/;
+const PASS_WORDS_RE = /^\[(\d+)\]\s*(.*)$/;
+// a notes line: starts with "|" or a pickup, perhaps after marks in brackets
+const NOTES_LINE_RE = /^[|(]|^(\[[^\]]*\]\s*)+(\||\(\s*[a-z]+[',]*:)/i;
+const markKey = text => text.toLowerCase().replace(/[.\s]/g, "");
+// Takes the marks off a notes line: { m: the notes alone, marks, problems: [{ key, vars }] }.
+// marks: { start, end, startNext, ending: [numbers], segno, coda, fine, toCoda,
+// jump: { to: "dc" | "ds", al: null | "fine" | "coda" }, jumpTok }
+function readRepeatMarks(line) {
+  let rest = line.trim(), mm;
+  const marks = {}, problems = [];
+  const put = (key, tok) => { if (marks[key]) problems.push({ key: "mysongs.markTwice", vars: { tok } }); marks[key] = true; };
+  while ((mm = /^\[([^\]]*)\]\s*/.exec(rest))) {
+    const k = markKey(mm[1]), tok = mm[0].trim();
+    if (ENDING_RE.test(mm[1])) {
+      if (marks.ending) problems.push({ key: "mysongs.markTwice", vars: { tok } });
+      else marks.ending = mm[1].split(",").map(Number);
+    } else if (MARK_AT_START[k]) put(MARK_AT_START[k], tok);
+    else problems.push({ key: MARK_AT_END[k] ? "mysongs.markAtEnd" : "mysongs.markUnknown", vars: { tok } });
+    rest = rest.slice(mm[0].length);
+  }
+  if (rest.startsWith("|:")) {           // "|: do", "|: | do" and "|: (so,:1) | do" all start a repeat with this line
+    marks.start = true;
+    rest = rest.slice(2).replace(/^\s*\|/, "").trim();
+    if (!rest.startsWith("(")) rest = "| " + rest;
+  }
+  for (;;) {
+    if ((mm = /\s*\[([^\]]*)\]$/.exec(rest))) {
+      const k = markKey(mm[1]), tok = mm[0].trim();
+      if (k === "fine" || k === "tocoda") put(MARK_AT_END[k], tok);
+      else if (MARK_AT_END[k]) {
+        if (marks.jump) problems.push({ key: "mysongs.markTwice", vars: { tok } });
+        else { marks.jump = { to: MARK_AT_END[k], al: k.endsWith("alfine") ? "fine" : k.endsWith("alcoda") ? "coda" : null }; marks.jumpTok = tok; }
+      } else problems.push({ key: MARK_AT_START[k] || ENDING_RE.test(mm[1]) ? "mysongs.markAtStart" : "mysongs.markUnknown", vars: { tok } });
+      rest = rest.slice(0, mm.index);
+      continue;
+    }
+    if ((mm = /\s*:\|(:?)$/.exec(rest))) {
+      marks.end = true;
+      if (mm[1]) marks.startNext = true;
+      rest = rest.slice(0, mm.index).replace(/\s*\|$/, "");
+      continue;
+    }
+    break;
+  }
+  const mid = /:\||\|:|\[[^\]]*\]?/.exec(rest);
+  if (mid) problems.push({ key: "mysongs.markMid", vars: { tok: mid[0] } });
+  return { m: rest.trim(), marks, problems };
+}
+// The order a verse's (or a chorus's) lines are played in, from their marks
+// (one entry per line, as readRepeatMarks gives them). The one place that
+// works out repeats, endings and jumps (caveat 3). Returns
+// { order: [{ i: line, time: the how-many-th time this line is played,
+//   ending: [numbers] | null, after: "dc" or "ds" when played after that jump, else null }],
+//   problems: [{ i, key, vars }] } (with problems, no order).
+// The usual conventions: a ":|" goes back to the nearest "|:" before it (or the
+// start); a repeat is played twice, or as many times as its highest ending
+// number; after a D.C. or D.S. repeats aren't taken again and the last ending
+// is played; a Fine ends the song and a To Coda jumps to the Coda only after
+// the jump.
+// opt.skip (v0.164): each repeated part once, with the last ending; jumps are still followed.
+function playOrder(marks, opt = {}) {
+  const n = marks.length, problems = [], order = [], skip = !!opt.skip;
+  const bad = (i, key, vars) => problems.push({ i, key, vars: vars || {} });
+  const starts = marks.map((mk, i) => !!mk.start || (i > 0 && !!marks[i - 1].startNext));
+  const backTo = [];
+  for (let i = 0, from = 0; i < n; i++) { if (starts[i]) from = i; backTo[i] = from; }
+  const endingTok = e => `[${e.join(",")}]`;
+  // how many times each repeat is played (by the line it goes back to)
+  const total = {}, lastEnd = {};
+  for (let j = 0; j < n; j++) {
+    if (!marks[j].end) continue;
+    const r = backTo[j];
+    if (lastEnd[r] != null && !marks.slice(lastEnd[r] + 1, j + 1).some(mk => mk.ending)) bad(j, "mysongs.markBackTwice");
+    lastEnd[r] = j;
+    total[r] = Math.max(total[r] || 2, ...marks.slice(r, j + 2).filter(mk => mk.ending).flatMap(mk => mk.ending));
+  }
+  marks.forEach((mk, e) => {
+    if (!mk.ending) return;
+    const times = total[backTo[e]];
+    if (times == null) { bad(e, "mysongs.endingNoRepeat", { tok: endingTok(mk.ending) }); return; }
+    if (Math.max(...mk.ending) < times) {          // not the last ending: it goes back
+      const next = k => k > e && (marks[k].ending || starts[k]);     // the next ending, or a new repeat
+      let k = e;
+      while (k < n && !next(k) && !marks[k].end) k++;
+      if (!(k < n && marks[k].end && !next(k))) bad(e, "mysongs.endingNoBack", { tok: endingTok(mk.ending) });
+    }
+  });
+  const find = key => marks.map((mk, i) => mk[key] ? i : -1).filter(i => i >= 0);
+  const segnos = find("segno"), codas = find("coda"), fines = find("fine"), toCodas = find("toCoda"), jumps = find("jump");
+  for (const [list, tok] of [[segnos, "[Segno]"], [codas, "[Coda]"], [fines, "[Fine]"], [toCodas, "[To Coda]"]]) list.slice(1).forEach(i => bad(i, "mysongs.markTwice", { tok }));
+  jumps.slice(1).forEach(i => bad(i, "mysongs.markTwice", { tok: marks[i].jumpTok }));
+  if (jumps.length) {
+    const j = jumps[0], jp = marks[j].jump, tok = marks[j].jumpTok;
+    if (jp.to === "ds" && !segnos.length) bad(j, "mysongs.jumpNeedsSegno", { tok });
+    if (jp.al === "fine" && !fines.length) bad(j, "mysongs.jumpNeedsFine", { tok });
+    if (jp.al === "coda" && !(toCodas.length && codas.length)) bad(j, "mysongs.jumpNeedsCoda", { tok });
+  } else for (const [list, tok] of [[segnos, "[Segno]"], [fines, "[Fine]"], [toCodas, "[To Coda]"]]) if (list.length) bad(list[0], "mysongs.markNoJump", { tok });
+  if (jumps.length && toCodas.length && !codas.length) bad(toCodas[0], "mysongs.jumpNeedsCoda", { tok: "[To Coda]" });
+  if (codas.length && !toCodas.length) bad(codas[0], "mysongs.codaNoTo");
+  if (problems.length) return { order, problems };
+  const pass = {}, times = marks.map(() => 0);
+  let i = 0, jumped = false, steps = 0;
+  while (i < n) {
+    if (++steps > 50 * n + 100) { bad(i, "mysongs.markLoop"); return { order: [], problems }; }
+    const mk = marks[i], r = backTo[i], p = pass[r] || 1;
+    if (mk.ending) {
+      const want = jumped || skip ? (total[r] || p) : p;
+      if (!mk.ending.includes(want)) {              // on to the ending for this time
+        let k = i + 1;
+        while (k < n && !starts[k] && !(marks[k].ending && marks[k].ending.includes(want))) k++;
+        if (!(k < n && marks[k].ending && marks[k].ending.includes(want))) { bad(i, "mysongs.endingMissing", { k: want }); return { order: [], problems }; }
+        i = k; continue;
+      }
+    }
+    order.push({ i, time: ++times[i], ending: mk.ending || null, after: jumped || null });
+    if (mk.end && !jumped && !skip && p < (total[r] || 2)) { pass[r] = p + 1; i = r; continue; }
+    if (jumped && mk.fine) break;
+    if (jumped && mk.toCoda) { i = codas[0]; continue; }
+    if (mk.jump && !jumped) { jumped = mk.jump.to; i = mk.jump.to === "dc" ? 0 : segnos[0]; continue; }
+    i++;
+  }
+  return { order, problems };
+}
+// opt.skipRepeats (v0.164): the song as played with Repeats: Skip them. The
+// marks are checked the same way either way (with every repeat).
+function readMySong(text, id, opt = {}) {
   const lines = normalizeBreaks(String(text)).split("\n");
   const problems = [];
   // (whole-song problems, n = 0, come first; the rest in line order)
   const say = (n, key, vars) => problems.push({ n, text: n ? T("mysongs.line", { n, msg: T(key, vars) }) : T(key, vars).replace(/^./, c => c.toUpperCase()) });
   const head = {};
   const verses = [], choruses = [];          // { label, rows: [{ m, n, words, wn, meaning }], parts: [{ k, label }] }
-  let cur = null, pending = null, lastRow = null;
+  let cur = null, pending = null, lastRow = null, lastWords = null;     // lastWords: the words a "=" meaning line goes with
   // A Chorus block before any verse (v0.137): the song starts with its chorus
   // (Swing Low's D.C. al Fine). It is the chorus with the notes; a later Chorus
   // block gives the words of the chorus after verse 1, 2, ...
@@ -6204,8 +6885,9 @@ function readMySong(text, id) {
     (isChorus ? choruses : verses).push(cur);
   };
   const ensure = () => { if (!cur) startSection(false, T("phrase.verseN", { v: 1 })); };
+  const fromPending = () => ({ m: pending.m, n: pending.n, chords: pending.chords, marks: pending.marks, marked: pending.marked });
   const flush = () => {        // a notes line with no words line under it
-    if (pending) { cur.rows.push({ m: pending.m, n: pending.n, chords: pending.chords, words: null, wn: 0 }); lastRow = null; pending = null; }
+    if (pending) { cur.rows.push({ ...fromPending(), words: null, wn: 0 }); lastRow = lastWords = null; pending = null; }
   };
   lines.forEach((raw, i) => {
     const n = i + 1, l = raw.trim();
@@ -6226,24 +6908,39 @@ function readMySong(text, id) {
       startSection(h.isChorus, h.isChorus ? h.label : T("phrase.verseN", { v: verses.length + 1 }));
       return;
     }
-    if (/^[|(]/.test(l)) { ensure(); flush(); pending = { m: l, n }; return; }
+    if (NOTES_LINE_RE.test(l)) {
+      ensure(); flush();
+      const rm = readRepeatMarks(l);           // repeats, endings and jumps (v0.161)
+      rm.problems.forEach(p => say(n, p.key, p.vars));
+      pending = { m: rm.m, n, marks: rm.marks, marked: Object.keys(rm.marks).length > 0 };
+      return;
+    }
     if (l.startsWith("=")) {
-      if (lastRow && !lastRow.meaning) lastRow.meaning = l.slice(1).trim(); else say(n, "mysongs.badMeaning");
+      if (lastWords && !lastWords.meaning) lastWords.meaning = l.slice(1).trim(); else say(n, "mysongs.badMeaning");
       return;
     }
     ensure();
+    const pw = PASS_WORDS_RE.exec(l);          // "[2] words": the words for the 2nd time (v0.161)
+    if (pw) {
+      const k = +pw[1], w = { ...wordsRow(pw[2]), wn: n };
+      if (pending) { lastRow = { ...fromPending(), words: null, wn: n, passes: { [k]: w } }; cur.rows.push(lastRow); pending = null; }
+      else if (k > 1 && lastRow && !(lastRow.passes && lastRow.passes[k])) (lastRow.passes = lastRow.passes || {})[k] = w;
+      else { lastRow = { m: null, n: 0, words: null, wn: n, passes: { [k]: w } }; cur.rows.push(lastRow); }
+      lastWords = w;
+      return;
+    }
     if (pending) {
-      const row = { m: pending.m, n: pending.n, chords: pending.chords, ...wordsRow(l), wn: n };
-      cur.rows.push(row); lastRow = row; pending = null; return;
+      const row = { ...fromPending(), ...wordsRow(l), wn: n };
+      cur.rows.push(row); lastRow = lastWords = row; pending = null; return;
     }
     // a line standing alone, followed by notes (or ending in ":"), names a part of the verse
     const nx = next(i);
-    if (!cur.isChorus && blankAround(i) && (/^[|(]/.test(nx) || /:$/.test(l) || (verses[0] && verses[0].parts.some(p => p.label === l.replace(/:$/, ""))))) {
+    if (!cur.isChorus && blankAround(i) && (NOTES_LINE_RE.test(nx) || /:$/.test(l) || (verses[0] && verses[0].parts.some(p => p.label === l.replace(/:$/, ""))))) {
       cur.parts.push({ k: cur.rows.length, label: l.replace(/\s*:$/, "") });
       return;
     }
     const row = { m: null, n: 0, ...wordsRow(l), wn: n };     // words only: borrows notes later
-    cur.rows.push(row); lastRow = row;
+    cur.rows.push(row); lastRow = lastWords = row;
   });
   if (cur) flush();
   // the header
@@ -6265,7 +6962,7 @@ function readMySong(text, id) {
     else tempo = Math.min(200, Math.max(40, Math.round(t / 2) * 2));
   }
   if (!verses.length || !verses[0].rows.length) say(0, "mysongs.noNotes");
-  const hasWords = [...verses, ...choruses].some(sec => sec.rows.some(r => r.words || r.whole));
+  const hasWords = [...verses, ...choruses].some(sec => sec.rows.some(r => r.words || r.whole || r.passes));
   // each notes line: readable tokens, bars, syllables, ties
   const itemsOf = r => r._items || (r._items = parse(r.m));
   const readable = r => {
@@ -6301,6 +6998,51 @@ function readMySong(text, id) {
     fill(sec, choruses[0], null);          // (a wrong line count is reported just below)
     if (sec.rows.length !== choruses[0].rows.length) say(sec.rows[0] ? sec.rows[0].wn : 0, "mysongs.chorusLines", { label: sec.label, lines: TN(sec.rows.length, "lyrics.lines1", "lyrics.linesN"), need: choruses[0].rows.length });
   });
+  // Repeats, endings and jumps (v0.161). Verse 1's marks (and the first
+  // chorus's) are the tune's form: a later verse's line takes them from the
+  // line in the same place (marks of its own must be the same).
+  const markSig = mk => JSON.stringify(Object.keys(mk || {}).filter(k => k !== "jumpTok").sort().map(k => [k, mk[k]]));
+  const inherit = (sec, model) => sec.rows.forEach((r, k) => {
+    const fm = model.rows[k] && model.rows[k].marks || {};
+    if (r.borrowed || !r.marked) r.marks = fm;
+    else if (markSig(r.marks) !== markSig(fm)) { say(r.n, "mysongs.laterMarks"); r.marks = fm; }     // (then no knock-on mistakes)
+  });
+  verses.slice(1).forEach(sec => inherit(sec, verses[0]));
+  choruses.slice(1).forEach(sec => inherit(sec, choruses[0]));
+  // Each section's lines in the order they're played (playOrder): from here on
+  // a section's rows are its lines as played, each with the words for that
+  // time through, so everything after (checks, bars, chords, lyrics) sees the
+  // song written out. Bars are numbered as played.
+  let hasRepeats = false, skipDropsWords = false;
+  const unroll = sec => {
+    const marks = sec.rows.map(r => r.marks || {});
+    const po = playOrder(marks);
+    po.problems.forEach(p => { const r = sec.rows[p.i]; say(r.n || r.wn, p.key, p.vars); });
+    if (po.problems.length) return;
+    const countPlays = order => { const c = sec.rows.map(() => 0); order.forEach(o => c[o.i]++); return c; };
+    const plays = countPlays(po.order);
+    sec.rows.forEach((r, k) => {
+      if (r.passes) for (const t of Object.keys(r.passes)) if (+t > plays[k]) say(r.passes[t].wn, "mysongs.passWordsExtra", { k: t, times: TN(plays[k], "mysongs.times1", "mysongs.timesN") });
+    });
+    if (marks.some(mk => mk.end || mk.ending)) {
+      hasRepeats = true;
+      // the same lines with each repeated part once: a subset of the joins already checked
+      const sk = playOrder(marks, { skip: true }), skPlays = countPlays(sk.order);
+      if (sec.rows.some((r, k) => r.passes && Object.keys(r.passes).some(t => +t <= plays[k] && +t > skPlays[k]))) skipDropsWords = true;
+      if (opt.skipRepeats) po.order = sk.order;
+    }
+    const written = !po.order.every((o, j) => o.i === j);       // not just each line in turn: name lines by where they're written
+    const src = sec.rows;
+    sec.rows = po.order.map(o => {
+      const r = src[o.i], w = (r.passes && r.passes[o.time]) || (r.words != null || r.whole ? r : null);
+      const out = { ...r, src: o.i, ...(written ? { line: o.i } : {}), time: o.time, ending: o.ending, afterJump: o.after,
+        words: w ? w.words : null, whole: w ? !!w.whole : false, meaning: w ? w.meaning : undefined, wn: w ? w.wn : r.wn };
+      if (!w && r.passes) out.missingPass = o.time;
+      return out;
+    });
+    sec.parts = sec.parts.map(p => ({ ...p, k: Math.max(0, sec.rows.findIndex(r => r.src === p.k)) }));
+  };
+  [...verses, ...choruses].forEach(unroll);
   for (const sec of [...verses, ...choruses]) {
     if (!sec.rows.length) { say(0, "mysongs.emptySection", { label: sec.label }); continue; }
     sec.rows.forEach((r, k) => {
@@ -6308,7 +7050,7 @@ function readMySong(text, id) {
       if (!r.borrowed) checkRow(r, firstNote(sec.rows[k + 1]));
       if (!readable(r)) return;
       const notes = itemsOf(r).filter(isSung).length;
-      if (r.words == null) { if (hasWords) say(r.n, "mysongs.noWords"); return; }
+      if (r.words == null) { if (r.missingPass) say(r.n, "mysongs.passWordsMissing", { k: r.missingPass }); else if (hasWords) say(r.n, "mysongs.noWords"); return; }
       if (r.whole) return;
       const syls = parseSyl(r.words);
       const count = syls ? sylNotes(syls) : 0;
@@ -6371,7 +7113,11 @@ function readMySong(text, id) {
   const result = { title, problems: sorted, verses: verses.length, hasChorus: choruses.length > 0, song: null };
   if (sorted.length || !key || !meter) return result;
   // the song, in the same shape as the built-in songs
-  const phrase = r => ({ m: r.m, bars: itemsOf(r).filter(x => x.bar).length });
+  // (v0.164) a line played more than once, an ending or a line after a jump keeps
+  // rep: { time, ending, after } for its labels; line: where it's written (0 = the first)
+  const phrase = r => ({ m: r.m, bars: itemsOf(r).filter(x => x.bar).length,
+    ...(r.line != null ? { line: r.line } : {}),
+    ...(r.time > 1 || r.ending || r.afterJump ? { rep: { time: r.time, ending: r.ending || null, after: r.afterJump || null } } : {}) });
   const barsOf = sec => sec.rows.reduce((a, r) => a + phrase(r).bars, 0);
   const firstBars = [], chorusBars = [];
   let bar = 1;
@@ -6392,6 +7138,8 @@ function readMySong(text, id) {
     phrasesPerLine: 1, barsPerPhrase: 2,
     verseFirstBar: v => firstBars[v], chorusFirstBar: v => chorusBars[v],
     ...(chorusFirst ? { chorusFirst: true } : {}),
+    ...(hasRepeats ? { hasRepeats: true, repeatsSkipped: !!opt.skipRepeats } : {}),
+    ...(skipDropsWords ? { skipDropsWords: true } : {}),
     parts: Object.fromEntries(verses.map((sec, i) => [i + 1, sec.parts.length ? sec.parts : (verses[0].parts)])),
     fileName: `${id}-my-lyrics.txt`
   };
@@ -6674,10 +7422,20 @@ function fillSongMenu() {
 const SONG_ID = (() => {
   const p = SAVED_PREFS || {};
   const id = SONGS[p.songSel] ? p.songSel : "internationale";
-  if (!SONGS[id].songbook) return id;
+  // Repeats: Skip them (v0.164), kept per song: the open song is read again that way
+  const skipRepeats = storeGet(songKeyOf(REPEATS_STORE, id)) === "skip";
+  if (!SONGS[id].songbook) {
+    if (skipRepeats && SONGS[id].mine && SONGS[id].hasRepeats) {
+      const ms = readMySongsStore().find(x => x.id === id);
+      const r = ms ? readMySong(ms.text, id, { skipRepeats }) : null;
+      if (r && r.song) SONGS[id] = r.song;
+      else reportError(T("err.repeatsSkip", { title: SONGS[id].title, problems: r ? r.problems.join(" ") : "" }));
+    }
+    return id;
+  }
   // a songbook song: read its text now (only the open one); if it can't be
   // read, say so loudly and open the Internationale instead
-  const sg = loadSongbookSong(id);
+  const sg = loadSongbookSong(id, { skipRepeats });
   if (!sg) return "internationale";
   SONGS[id] = sg;
   return id;
@@ -6692,7 +7450,7 @@ const VERSE_COUNT = Object.keys(VERSE_M).length;
 const HAS_CHORUS = CHORUS_M.length > 0;
 // Storage keys: the Internationale keeps its original keys, so nothing
 // you've saved is lost; other songs get their own.
-const songKey = base => SONG_ID === "internationale" ? base : `${base}-${SONG_ID}`;
+const songKey = base => songKeyOf(base, SONG_ID);
 // Which chords show: a song with two sets (SONG.modernChords, a book's modern
 // harmonization) keeps the choice per song, in Settings (v0.121)
 const CHORD_SET_STORE = "phrase-parrot-chordset-v1";
@@ -6720,9 +7478,23 @@ function partAt(verse, k) {
 }
 // A phrase can be a plain string, or { m, bars } when it doesn't take the
 // song's usual number of bars.
+// Labels for a line of a song with repeats (v0.164): "1st ending", "2nd time",
+// "1st and 2nd ending, 2nd time", "after the D.C."; "" for none.
+const ordinal = n => T(n === 1 ? "rep.ord1" : n === 2 ? "rep.ord2" : n === 3 ? "rep.ord3" : "rep.ordN", { n });
+function repLabel(r) {
+  if (!r) return "";
+  const bits = [];
+  if (r.ending) bits.push(T("rep.ending", { n: r.ending.map(ordinal).join(T("rep.and")) }));
+  if (r.after) bits.push(T(r.after === "ds" ? "rep.afterDS" : "rep.afterDC"));
+  else if (r.time > 1) bits.push(T("rep.time", { n: ordinal(r.time) }));
+  return bits.join(T("rep.sep"));
+}
 function mkPhrase(kind, verse, k, firstBarNum) {
   const entry = kind === "verse" ? VERSE_M[verse][k] : CHORUS_M[k];
   const m = typeof entry === "string" ? entry : entry.m;
+  const rep = typeof entry === "string" ? null : entry.rep || null, label = repLabel(rep);
+  const kk = typeof entry !== "string" && entry.line != null ? entry.line : k;     // named by where it's written (v0.164)
+  const named = name => label ? T("rep.nameWith", { name, label }) : name;
   const nBars = typeof entry === "string" ? (SONG.barsPerPhrase || 2) : entry.bars;
   const lastBarNum = firstBarNum + nBars - 1;
   const part = kind === "verse" ? partAt(verse, k) : null;
@@ -6730,8 +7502,9 @@ function mkPhrase(kind, verse, k, firstBarNum) {
   return {
     kind, verse, k, m, nBars, firstBarNum, lastBarNum,
     section: part ? part.label : sectionName(kind, verse),
-    id: partId || phraseName(kind, verse, k),
-    shortId: partId || phraseName(kind, verse, k, true),
+    rep, repLabel: label,
+    id: named(partId || phraseName(kind, verse, kk)),
+    shortId: named(partId || phraseName(kind, verse, kk, true)),
     bars: nBars > 1 ? T("phrase.bars", { a: firstBarNum, b: lastBarNum }) : T("phrase.bar", { a: firstBarNum })
   };
 }
@@ -7110,9 +7883,12 @@ function relatedPhrases(p) {
   const order = x => x.rel === "now" ? 0 : x.q.kind === p.kind && x.q.k === p.k ? 1 : 2;
   return all.map((x, i) => [x, i]).sort((a, b) => order(a[0]) - order(b[0]) || a[1] - b[1]).map(([x]) => x);
 }
+// A line played again (the 2nd time through a repeat, or after a D.C. or D.S.)
+// is left out of the drill: the same notes are already in it once (v0.164).
+const firstTime = list => list.filter(p => !(p.rep && p.rep.time > 1));
 function buildPool(v) {
-  if (v === "mix") return withItems(songPhrases());
-  return withItems([...verseOf(+v || 1), ...chorusAfter(1)]);
+  if (v === "mix") return withItems(firstTime(songPhrases()));
+  return withItems(firstTime([...verseOf(+v || 1), ...chorusAfter(1)]));
 }
 let PHRASES = buildPool("1");
 
@@ -8104,6 +8880,7 @@ const SAVED_KEYS = [
   { base: "phrase-parrot-pianoshift-v1",   perSong: true,  backup: true,  json: false },   // the virtual piano's Sounds in (v0.142)
   { base: MY_COLORS_STORE,                 perSong: false, backup: true,  json: true },    // My colors (v0.158)
   { base: CHORD_SET_STORE,                 perSong: true,  backup: true,  json: false },   // Traditional or Modern chords (v0.121)
+  { base: REPEATS_STORE,                   perSong: true,  backup: true,  json: false },   // Repeats: Skip them (v0.164)
   { base: "phrase-parrot-ab-v1",           perSong: true,  backup: true,  json: true },
   { base: "phrase-parrot-v1",              perSong: true,  backup: false },   // the drill's place in its shuffle
   { base: "phrase-parrot-lyrics-v1",       perSong: true,  backup: false },   // before lyric sets, read once to move it
@@ -8794,6 +9571,7 @@ function renderWhole() {
     if (i === 0 || SEQ[i - 1].section !== p.section) html += `<p class="all-section">${esc(p.section)}</p>`;
     const bar = barNums(p)[0];
     html += `<div class="all-line" data-i="${i}"><button class="bn" data-start="${i}" aria-label="${T("seq.startFromBarAria", { bar })}">${bar}</button>`;
+    if (p.repLabel) html += `<span class="rep-label">${esc(p.repLabel)}</span>`;
     html += chipsHTML(p.items);
     html += `<div class="al-lyric" hidden><span class="al-text"></span><span class="al-mean" hidden></span></div>`;
     html += `</div>`;
@@ -11266,6 +12044,20 @@ $("chordSet").addEventListener("change", () => {
   stopAll();
   location.reload();
 });
+// Repeats: Play them / Skip them, for a song with repeat signs (v0.164): kept per
+// song; the page reloads to read the song again (asking about unsaved edits first)
+const repeatsNow = () => SONG.repeatsSkipped ? "skip" : "play";
+$("repeatsRow").hidden = !SONG.hasRepeats;
+$("repeatsDrop").hidden = !SONG.skipDropsWords;
+$("repeatsSel").value = repeatsNow();
+$("repeatsSel").addEventListener("change", () => {
+  if (!msOkToLeave() || !okToLeave()) { $("repeatsSel").value = repeatsNow(); return; }
+  const ok = $("repeatsSel").value === "skip" ? storeSet(songKey(REPEATS_STORE), "skip") : storeRemove(songKey(REPEATS_STORE));
+  if (!ok) { $("repeatsSel").value = repeatsNow(); return; }
+  storeRemove(AB_STORE);            // the lines are different now
+  stopAll();
+  location.reload();
+});
 $("warmCheck").addEventListener("click", warmCheck);
 $("warmGot").addEventListener("click", () => warmScore(true));
 $("warmNotYet").addEventListener("click", () => warmScore(false));
@@ -11810,8 +12602,17 @@ function importMySongs(file) {
 // Berger and Israels' Public Domain Song Anthology gives its modern
 // harmonization; its chord font writes ♭ as "€" or "¨", + as "&", ° as "º").
 // It refuses: more than one part, staff or voice; several notes at once;
-// grace notes; repeats, endings and jumps; a key or time change; a time the
-// app lacks; a bar that doesn't add up; a chord it can't read.
+// grace notes; a key or time change; a time the app lacks; a bar that doesn't
+// add up; a chord it can't read.
+// Repeats, endings and jumps (v0.165) become the song format's marks: from
+// <repeat>, <ending>, <segno>/<coda> and <sound> (dacapo, dalsegno, segno,
+// coda, tocoda, fine), and jumps printed only as words. Lines always break
+// where a mark is. When the song goes back to a line that starts with a
+// pickup, the bar before has to make room: its last notes, if they are that
+// pickup again, are left out (they're played from the start of the repeat),
+// or its last note is shortened. In a song with repeats, the file's numbered
+// lyric lines are the words for each time through ([1], [2]); a whole song
+// repeated with no endings means "the next verse", so it's written as verses.
 // Lines end after a word ending in , . ; : ! or ? once the line has 2 bars
 // (with the notes that hold its syllable); a line without such a word ends
 // after XML_MAX_BARS bars' worth (4 bars of 4/4); a song without words breaks
@@ -11824,7 +12625,9 @@ const XML_KINDS = { "major": "", "minor": "m", "augmented": "+", "diminished": "
   "major-13th": "maj13", "minor-13th": "m13", "suspended-second": "sus2", "suspended-fourth": "sus4", "power": "5" };
 const XML_MAJOR_KEYS = ["C♭", "G♭", "D♭", "A♭", "E♭", "B♭", "F", "C", "G", "D", "A", "E", "B", "F♯", "C♯"];   // by fifths, -7 to 7
 const XML_MINOR_KEYS = ["A♭", "E♭", "B♭", "F", "C", "G", "D", "A", "E", "B", "F♯", "C♯", "G♯", "D♯", "A♯"];
-const XML_EIGHTHS_PER_LINE = 32;         // a line with no phrase end breaks after this many eighths' worth of bars
+const XML_EIGHTHS_PER_LINE = 32;
+// Jumps written as words over the music (v0.165): "D.C. al Fine", "DS", "Fine", "To Coda", "Coda"
+const XML_JUMP_RE = /^(?:(d\.?\s*[cs]\.?)(?:\s*al\s*(fine|coda))?|(fine)|(to\s*coda)|(coda))\.?$/i;         // a line with no phrase end breaks after this many eighths' worth of bars
 const XML_SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "o'er", "of", "on", "or", "the", "to", "with"]);
 const SOLFEGE = ["do", "re", "mi", "fa", "so", "la", "ti"];
 const RAISED_SYL = { do: "di", re: "ri", fa: "fi", so: "si", la: "li" };
@@ -11868,6 +12671,16 @@ function musicXmlToSongText(xml, fileName = "") {
     let cursor = 0, sum = 0;                         // eighths into this bar
     const at = el => { const o = kid(el, "offset"); return cursor + (o && divisions ? +o.textContent * 2 / divisions : 0); };
     const newSystem = kids(meas, "print").some(p => p.getAttribute("new-system") === "yes" || p.getAttribute("new-page") === "yes");
+    const mk = {};                                   // this bar's repeat signs, endings and jumps (v0.165)
+    const sounds = el => { for (const sd of el) {
+      if (sd.getAttribute("dacapo") === "yes") mk.jumpSound = "dc";
+      if (sd.hasAttribute("dalsegno")) mk.jumpSound = "ds";
+      if (sd.hasAttribute("segno")) mk.segno = true;
+      if (sd.hasAttribute("coda")) mk.coda = true;
+      if (sd.hasAttribute("tocoda")) mk.toCoda = true;
+      if (sd.hasAttribute("fine")) mk.fine = true;
+    } };
+    sounds(kids(meas, "sound"));
     for (const el of meas.children) {
       switch (el.nodeName) {
         case "attributes": {
@@ -11926,11 +12739,20 @@ function musicXmlToSongText(xml, fileName = "") {
           break;
         }
         case "direction": {
-          if ([...el.getElementsByTagName("segno"), ...el.getElementsByTagName("coda")].length ||
-              [...el.getElementsByTagName("sound")].some(s => ["dacapo", "dalsegno", "segno", "coda", "fine", "tocoda"].some(a => s.hasAttribute(a)))) { fail("jumps", { bar }); break; }
+          if (el.getElementsByTagName("segno").length) mk.segno = true;
+          if (el.getElementsByTagName("coda").length) mk.coda = true;
+          sounds(el.getElementsByTagName("sound"));
           for (const w of el.getElementsByTagName("words")) {
             const raw = w.textContent.trim();
             if (!raw) continue;
+            const jm = XML_JUMP_RE.exec(raw);
+            if (jm) {
+              if (jm[1]) mk.jumpWords = { to: /c/i.test(jm[1].replace(/^d/i, "")) ? "dc" : "ds", al: jm[2] ? jm[2].toLowerCase() : null };
+              else if (jm[3]) mk.fine = true;
+              else if (jm[4]) mk.toCoda = true;
+              else mk.coda = true;
+              continue;
+            }
             const name = [...raw].map(ch => XML_CHORD_FONT[ch] ?? ch).join("");
             const chordFont = /chord/i.test(w.getAttribute("font-family") || "");
             if (chordFont || chordToken(name, 60, 0)) chords.push({ row: "text", pos: start + at(el), name, raw, bar, chordFont });
@@ -11938,13 +12760,18 @@ function musicXmlToSongText(xml, fileName = "") {
           }
           break;
         }
-        case "barline":
-          if (kid(el, "repeat")) fail("repeats", { bar });
-          if (kid(el, "ending")) fail("endings", { bar });
+        case "barline": {
+          const rp = kid(el, "repeat"), en = kid(el, "ending");
+          if (rp) mk[rp.getAttribute("direction") === "forward" ? "fwd" : "back"] = true;
+          if (en && en.getAttribute("type") === "start") {
+            const nums = (en.getAttribute("number") || "").match(/\d+/g);
+            if (nums) mk.ending = nums.map(Number); else fail("endings", { bar });
+          }
           break;
+        }
       }
     }
-    measures.push({ bar, start, len: sum, newSystem });
+    measures.push({ bar, start, len: sum, newSystem, mk });
     pos = start + sum;
   });
   if (!notes.length && !problems.length) fail("noNotes");
@@ -12009,6 +12836,24 @@ function musicXmlToSongText(xml, fileName = "") {
   for (const n of notes) for (const k of Object.keys(n.lyr)) if (!verseKeys.includes(k)) verseKeys.push(k);
   const hasWords = verseKeys.length > 0, v1 = verseKeys[0];
   const pickup = measures.length && measures[0].len < perBar - 1e-6 ? measures[0].len : 0;
+  // ---- repeats, endings and jumps (v0.165) ----
+  const MK = measures.map(m => m.mk);
+  MK.forEach(mk => { if (mk.jumpWords || mk.jumpSound) mk.jump = mk.jumpWords || { to: mk.jumpSound, al: null }; });
+  // the whole song repeated with no endings means "the next verse" (Lynn, 2026-11-22: Adeste Fideles)
+  const backs = MK.map((mk, i) => mk.back ? i : -1).filter(i => i >= 0);
+  const fwds = MK.map((mk, i) => mk.fwd ? i : -1).filter(i => i >= 0);
+  let repeatVerses = false;
+  if (backs.length === 1 && backs[0] === measures.length - 1 && !MK.some(mk => mk.ending) && fwds.every(i => i === 0 || (i === 1 && pickup))) {
+    MK.forEach(mk => { delete mk.fwd; delete mk.back; });
+    repeatVerses = true;
+  }
+  const hasRepeats = MK.some(mk => mk.back || mk.ending);
+  const keysAreVerses = !hasRepeats;          // lyric lines: verses, or the words for each time through
+  // a line always breaks where a mark is: before a bar that starts a repeat or
+  // an ending or has a segno or coda; after one that goes back, ends (Fine) or jumps
+  const markBefore = mi => mi > 0 && mi < MK.length && !!(MK[mi].fwd || MK[mi].ending || MK[mi].segno || MK[mi].coda);
+  const markAfter = mi => !!(MK[mi] && (MK[mi].back || MK[mi].fine || MK[mi].toCoda || MK[mi].jump));
+  const edgeAfter = mi => markAfter(mi) || markBefore(mi + 1);
   const barStart = n => near(n.pos, measures[n.mi].start) && !(n.mi === 0 && pickup);
   const hasSyl = (n, k = v1) => !!(n && n.lyr[k]);
   // With a pickup and more than one verse, the next verse's pickup must fit in
@@ -12016,7 +12861,7 @@ function musicXmlToSongText(xml, fileName = "") {
   // pickup's length, as sheet music does (the app checks this where lines join).
   let shortEnd = 0;
   const lastBar = measures[measures.length - 1], lastNote = notes[notes.length - 1];
-  if (pickup && verseKeys.length > 1 && measures.length > 1 && near(lastBar.len, perBar)) {
+  if (pickup && keysAreVerses && verseKeys.length > 1 && measures.length > 1 && near(lastBar.len, perBar)) {
     if (lastNote.dur > pickup + 1e-6) { lastNote.dur -= pickup; shortEnd = pickup; }
     else fail("lastTooShort", { bar: lastBar.bar });
   }
@@ -12044,11 +12889,100 @@ function musicXmlToSongText(xml, fileName = "") {
     if (!next) { lines.push(cur); return; }
     const bars = cur.filter(barStart).length;
     let brk;
-    if (hasWords) brk = (ends.has(i) && bars >= 2) || (bars >= maxBars && barStart(next) && (hasSyl(next) || next.rest));
+    const endingLine = () => { const fb = cur.find(barStart); return !!(fb && measures[fb.mi].mk.ending); };
+    if (hasWords) brk = (ends.has(i) && (bars >= 2 || (bars >= 1 && endingLine()))) || (bars >= maxBars && barStart(next) && (hasSyl(next) || next.rest));
     else brk = barStart(next) && bars >= 2 && (measures[next.mi].newSystem || bars >= maxBars * 2);
     if (brk && i >= lastBarStart) brk = false;
+    // a mark: always a break there, and never in the middle of the bar just before it (v0.165)
+    if (brk && !barStart(next) && edgeAfter(next.mi)) brk = false;
+    if (barStart(next) && edgeAfter(next.mi - 1) && bars) brk = true;
     if (brk) { lines.push(cur); cur = []; }
   });
+  // ---- each line's marks (v0.165), as readRepeatMarks gives them ----
+  const firstBarOf = line => line.find(barStart);
+  const lineMarks = lines.map(line => {
+    const fb = firstBarOf(line), sm = fb ? MK[fb.mi] : {}, em = MK[line[line.length - 1].mi];
+    const out = {};
+    if (sm.fwd) out.start = true;
+    if (sm.ending) out.ending = sm.ending;
+    if (sm.segno) out.segno = true;
+    if (sm.coda) out.coda = true;
+    if (em.back) out.end = true;
+    if (em.fine) out.fine = true;
+    if (em.toCoda) out.toCoda = true;
+    if (em.jump) out.jump = em.jump;
+    // (caveat 4) a mark anywhere else in the line would be lost
+    line.forEach((n, k) => { if (barStart(n) && n !== fb && markBefore(n.mi)) fail("markInLine", { bar: n.bar });
+      if (k < line.length - 1 && line[k + 1].mi !== n.mi && markAfter(n.mi)) fail("markInLine", { bar: n.bar }); });
+    return out;
+  });
+  if (problems.length) return refuse();
+  const markText = mk => ({
+    pre: [mk.segno ? "[Segno]" : "", mk.coda ? "[Coda]" : "", mk.ending ? `[${mk.ending.join(",")}]` : ""].filter(Boolean).join(" "),
+    post: [mk.end ? ":|" : "", mk.fine ? "[Fine]" : "", mk.toCoda ? "[To Coda]" : "",
+      mk.jump ? `[${mk.jump.to === "dc" ? "D.C." : "D.S."}${mk.jump.al ? " al " + (mk.jump.al === "fine" ? "Fine" : "Coda") : ""}]` : ""].filter(Boolean).join(" ")
+  });
+  lineMarks.forEach(mk => { if (mk.jump) mk.jumpTok = markText(mk).post.match(/\[D\.[CS]\.[^\]]*\]/)[0]; });
+  // Going back (or jumping) to a line that starts with a pickup: the bar before must make room
+  const startsOf = lineMarks.map((mk, i) => !!mk.start);
+  const backTo = []; for (let i = 0, from = 0; i < lines.length; i++) { if (startsOf[i]) from = i; backTo[i] = from; }
+  const reNotes = [];
+  lineMarks.forEach((mk, j) => {
+    const targets = [];
+    if (mk.end) targets.push(backTo[j]);
+    if (mk.jump) targets.push(mk.jump.to === "dc" ? 0 : lineMarks.findIndex(x => x.segno));
+    for (const t of new Set(targets.filter(t => t >= 0))) {
+      const tl = lines[t], fb = firstBarOf(tl);
+      const pick = tl.slice(0, fb ? tl.indexOf(fb) : 0);
+      const P = pick.reduce((a, n) => a + n.dur, 0);
+      if (!P) continue;
+      const line = lines[j], last = line[line.length - 1], m = measures[last.mi];
+      if (!near(m.len, perBar)) continue;                  // a short bar already leaves the room
+      const from = m.start + perBar - P;
+      const tail = line.filter(n => n.mi === last.mi && n.pos >= from - 1e-6);
+      if (tail.length && near(tail[0].pos, from) && line.includes(tail[0])) {
+        // its last notes are the pickup again: left out, played from the start of the repeat
+        const sungTail = tail.filter(n => !n.rest), sungPick = pick.filter(n => !n.rest);
+        if (hasWords && sungTail.length === sungPick.length) sungPick.forEach((p, k) => {
+          const ly = sungTail[k].lyr[v1];
+          if (ly && (!p.lyr[v1] || p.lyr[v1].text !== ly.text)) (p.over = p.over || {})[2] = ly;
+        });
+        lines[j] = line.slice(0, line.length - tail.length);
+        reNotes.push(T("xml.noteRePickup", { bar: m.bar }));
+      } else if (last.dur > P + 1e-6) {
+        last.dur -= P;
+        reNotes.push(T("xml.noteShortRepeat", { bar: m.bar, n: Math.round(P * 1000) / 1000 }));
+      } else fail("repeatPickup", { bar: m.bar });
+    }
+  });
+  // the order the lines are played in, from the one play-order component
+  const po = playOrder(lineMarks);
+  for (const p of po.problems) fail("repeatOrder", { bar: lines[p.i][0].bar, msg: T(p.key, p.vars) });
+  if (problems.length) return refuse();
+  // the words for each time through: the k-th lyric line for the k-th time (an
+  // ending: its own time, so a 2nd ending takes the 2nd lines); notes before the
+  // first syllable of that line (a pickup) and a line with none take line 1's
+  const plays = lines.map(() => []);
+  po.order.forEach(o => plays[o.i].push(o));
+  if (!keysAreVerses && hasWords) {
+    const most = Math.max(...plays.map(p => p.length));
+    if (verseKeys.length > most) fail("repeatWords", { n: verseKeys.length, times: most });
+  }
+  const wordsFor = (line, o) => {
+    const pass = o.ending ? o.ending[Math.min(o.time, o.ending.length) - 1] : o.time;
+    const key = verseKeys[pass - 1];
+    const hasKey = key && line.some(n => n.lyr[key]);
+    let seen = false;
+    for (const n of line) {
+      const own = n.over && n.over[o.time];
+      const ly = own || (hasKey ? n.lyr[key] || (!seen ? n.lyr[v1] : null) : n.lyr[v1]);
+      if (hasKey && n.lyr[key]) seen = true;
+      if (ly) n.lyr.__time = ly; else delete n.lyr.__time;
+    }
+    const w = wordsLine(line, "__time");
+    for (const n of line) delete n.lyr.__time;
+    return w;
+  };
   // ---- the text ----
   const beat = (p, m) => Math.round(((p - m.start + (m === measures[0] && pickup ? perBar - pickup : 0)) / beatLen + 1) * 1000) / 1000;
   const measureAt = p => { let k = 0; while (k + 1 < measures.length && measures[k + 1].start <= p + 1e-6) k++; return measures[k]; };
@@ -12111,19 +13045,29 @@ function musicXmlToSongText(xml, fileName = "") {
   if (both) { rows.push([sets.text, MODERN_CHORDS_LABEL]); L.push("# " + T("xml.noteTwoChords")); }
   for (const o of others) L.push("# " + T("xml.noteText", { bar: o.bar, text: o.text }));
   if (shortEnd) L.push("# " + T("xml.noteShortEnd", { n: shortEnd }));
+  if (repeatVerses) L.push("# " + T("xml.noteRepeatVerses"));
+  for (const t of reNotes) L.push("# " + t);
   L.push("");
-  if (verseKeys.length > 1) L.push(FILE_LABELS.verse(1), "");
+  if (keysAreVerses && verseKeys.length > 1) L.push(FILE_LABELS.verse(1), "");
   lines.forEach((line, li) => {
-    L.push(notesLine(line));
+    const mt = markText(lineMarks[li]);
+    let nl = notesLine(line);
+    if (lineMarks[li].start) nl = "|:" + (nl.startsWith("|") ? nl.slice(1) : " " + nl);
+    L.push([mt.pre, nl, mt.post].filter(Boolean).join(" "));
     for (const [set, label] of rows) { const c = chordsLine(line, li, set); if (c) L.push(label + " " + c); }
-    if (hasWords) {
+    if (hasWords && keysAreVerses) {
       const w = wordsLine(line, v1);
       if (w.lead) L.push("# " + T("xml.noteLead", { verse: 1 }));
       L.push(w.text);
+    } else if (hasWords) {
+      const ws = plays[li].map(o => wordsFor(line, o));
+      if (ws.some(w => w.lead)) L.push("# " + T("xml.noteLead", { verse: 1 }));
+      if (ws.length <= 1 || ws.every(w => w.text === ws[0].text)) L.push((ws[0] || wordsLine(line, v1)).text);
+      else ws.forEach((w, k) => L.push(`[${k + 1}] ` + w.text));
     }
     L.push("");
   });
-  verseKeys.slice(1).forEach((k, i) => {
+  if (keysAreVerses) verseKeys.slice(1).forEach((k, i) => {
     L.push(FILE_LABELS.verse(i + 2), "");
     lines.forEach(line => L.push(wordsLine(line, k).text));
     L.push("");
