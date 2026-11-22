@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.173</title>
+<title>Melodies by Ear v0.174</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -929,7 +929,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.173</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.174</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -1295,7 +1295,7 @@
       <p class="hint" id="alongNotesForced" hidden data-s="ui.alongNotesForced"></p>
       <label class="switch follow"><input type="checkbox" id="followLine" checked><span class="track"></span> <span data-s="ui.followLine"></span></label>
       <label class="switch follow"><input type="checkbox" id="showHolds" checked><span class="track"></span> <span data-s="ui.showHolds"></span></label>
-      <button class="reveal" id="syncOpenAlong" data-s="ui.syncOpen"></button>
+      <button class="reveal" id="syncOpenAlong" data-s="ui.syncOpenAlong"></button>
       <label class="switch follow shape-quick" id="shapeSylAlongRow" hidden><input type="checkbox" id="shapeSylAlong"><span class="track"></span> <span data-s="ui.shapeSyl"></span></label>
       <div class="along-beats" id="alongBeats" hidden aria-hidden="true"></div>
       <div id="allNotes"></div>
@@ -1912,6 +1912,7 @@ const STRINGS = {
     "steadyTone": "Steady tone",
     "stop": "Stop",
     "syncOpen": "Dots out of step with the clicks? Sync them",
+    "syncOpenAlong": "Notes or syllables out of step? Sync them",
     "tDownAria": "Down a half step",
     "tUpAria": "Up a half step",
     "tempoPlain": "Tempo (beats per minute)",
@@ -1929,7 +1930,8 @@ const STRINGS = {
     "close": "Close",
     "count": "{n} of {total} taps",
     "done": "Done. The sound reaches you about {ms} ms after the app plays it, so the highlights now wait that long. If you switch between speaker and headphones, sync again.",
-    "intro": "You'll hear 10 slow clicks. Look away from the dots and tap the big button exactly when you hear each click.",
+    "intro": "After a 3, 2, 1 countdown you'll hear 10 slow clicks. Don't watch the screen: tap the big button exactly when you hear each click.",
+    "getReady": "Get ready: {n}",
     "start": "Start",
     "tapEach": "Tap on each click",
     "tooFew": "Not enough taps lined up with the clicks to measure. Tap Start to try again, and tap right on each click."
@@ -2376,7 +2378,7 @@ const STRINGS = {
     "help4Title": "Lyrics",
     "help4": "Open Lyrics to add your own lyric sets. Use Save all my sets now and then: your sets live only in this browser.",
     "help5Title": "If the dots lag behind the sound",
-    "help5": "Bluetooth speakers and hearing aids delay the sound. Tap “Dots out of step with the clicks? Sync them” in Tempo and metronome, or in Play along under the line list’s switches.",
+    "help5": "Bluetooth speakers and hearing aids delay the sound. Tap “Dots out of step with the clicks? Sync them” in Tempo and metronome, or “Notes or syllables out of step? Sync them” in Play along, under the line list’s switches.",
     "help6Title": "Installing",
     "help6": "iPhone: in Safari, Share → Add to Home Screen. Android: in Chrome, ⋮ → Install app. It then works offline.",
     "help7Title": "My songs",
@@ -10192,6 +10194,9 @@ function playMetronome() {
 let calibrating = false;
 let calib = null;
 const CAL_CLICKS = 10, CAL_GAP = 1.5;
+// v0.174: a "3, 2, 1" countdown on the big button before the first click (Lynn: the
+// first click always came before she was ready); taps during it don't count
+const CAL_COUNTDOWN = 3;
 
 // v0.170: two buttons open it (Tempo and metronome, and Play along); the
 // calibration box moves to just under the one that was tapped.
@@ -10214,17 +10219,24 @@ function closeCalib() {
 function startCalib() {
   ensureAudio(); stopAll();
   calibrating = true;
-  const t0 = ctx.currentTime + 0.6;
+  const t0 = ctx.currentTime + CAL_COUNTDOWN + 0.6;
   const clicks = [];
   for (let i = 0; i < CAL_CLICKS; i++) {
     const when = t0 + i * CAL_GAP;
     clickAt(when, true, 0);
     clicks.push(when);
   }
-  calib = { clicks, taps: [] };
+  const c = calib = { clicks, taps: [], ready: false };
   setPlaying(true);
-  $("tapPad").textContent = T("calib.tapEach");
-  $("calibCount").textContent = T("calib.count", { n: 0, total: CAL_CLICKS });
+  $("tapPad").textContent = T("calib.getReady", { n: CAL_COUNTDOWN });
+  for (let k = 1; k < CAL_COUNTDOWN; k++) setTimeout(() => { if (calib === c) $("tapPad").textContent = T("calib.getReady", { n: CAL_COUNTDOWN - k }); }, k * 1000);
+  setTimeout(() => {
+    if (calib !== c) return;
+    c.ready = true;
+    $("tapPad").textContent = T("calib.tapEach");
+    $("calibCount").textContent = T("calib.count", { n: 0, total: CAL_CLICKS });
+  }, CAL_COUNTDOWN * 1000);
+  $("calibCount").textContent = "";
   // keep the smoothed clock running so taps are measured accurately
   const keepAlive = () => { if (calibrating) { heardTime(); requestAnimationFrame(keepAlive); } };
   keepAlive();
@@ -10232,6 +10244,7 @@ function startCalib() {
 }
 function calibTap() {
   if (!calib) { startCalib(); return; }
+  if (!calib.ready) return;   // still counting down
   const t = heardTime();
   calib.taps.push(t);
   $("calibCount").textContent = T("calib.count", { n: calib.taps.length, total: CAL_CLICKS });
