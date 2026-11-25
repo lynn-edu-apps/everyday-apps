@@ -69,7 +69,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon192.png">
 <link rel="icon" type="image/png" href="icon192.png">
-<title>Melodies by Ear v0.212</title>
+<title>Melodies by Ear v0.214</title>
 <style>
   :root {
     --paper: #F3F5F6;
@@ -616,6 +616,10 @@
   .key-sub { display: block; font-size: .88rem; font-weight: 400; color: var(--muted); }
   .along-key { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
   .along-key-val { flex: 1; min-width: 0; }
+  .along-key { flex-wrap: wrap; }   /* v0.213: Octave − + wraps under the key on a narrow phone */
+  .ak-oct { display: flex; gap: 8px; }
+  .oct-row { gap: 8px; margin-top: 6px; }
+  #akOctDown, #akOctUp, #tOctDown, #tOctUp { white-space: nowrap; }
   .along-btns { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .along-btns.two { grid-template-columns: 1fr 1fr; }
   .along-status { margin: 0; font-size: .92rem; color: var(--ink); line-height: 1.4; }
@@ -1171,7 +1175,7 @@
 </head>
 <body>
 <main>
-  <h1><span data-s="app.name"></span> <span class="ver">v0.212</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
+  <h1><span data-s="app.name"></span> <span class="ver">v0.214</span><span class="deploy-tag" id="deployTag" hidden></span></h1>
   <div class="info-row">
     <button class="chipbtn" id="aboutBtn" data-s="info.about"></button>
     <button class="chipbtn" id="historyBtn" data-s="info.history"></button>
@@ -1650,6 +1654,10 @@
       <span class="along-key-val" id="alongKeyVal"></span>
       <button class="chipbtn step" id="akDown" aria-label="Lower the key a half step" data-s-aria-label="along.keyDownAria">−</button>
       <button class="chipbtn step" id="akUp" aria-label="Raise the key a half step" data-s-aria-label="along.keyUpAria">+</button>
+      <span class="ak-oct">   <!-- v0.213: this song an octave lower or higher -->
+        <button class="chipbtn" id="akOctDown" data-s="along.octDown" data-s-aria-label="along.octDownAria"></button>
+        <button class="chipbtn" id="akOctUp" data-s="along.octUp" data-s-aria-label="along.octUpAria"></button>
+      </span>
     </div>
     <div class="along-start">
       <label for="startFrom" data-s="ui.startFrom"></label>
@@ -1810,6 +1818,10 @@
           <button class="chipbtn step" id="tDown" aria-label="Down a half step" data-s-aria-label="ui.tDownAria">−</button>
           <span class="t-val" id="tVal"></span>
           <button class="chipbtn step" id="tUp" aria-label="Up a half step" data-s-aria-label="ui.tUpAria">+</button>
+        </div>
+        <div class="row oct-row">   <!-- v0.213–v0.214: this song an octave lower or higher -->
+          <button class="chipbtn" id="tOctDown" data-s="along.octDown" data-s-aria-label="along.octDownAria"></button>
+          <button class="chipbtn" id="tOctUp" data-s="along.octUp" data-s-aria-label="along.octUpAria"></button>
         </div>
         <div class="presets">
           <button class="chipbtn" data-t="0" data-s="ui.presetUke"></button>
@@ -2401,6 +2413,10 @@ const STRINGS = {
     "repeatsDrops": "Skipping leaves out the words this song gives for a later time through.",
     "keyAria": "Key for this song",
     "keyDownAria": "Lower the key a half step",
+    "octDown": "Octave −",
+    "octUp": "Octave +",
+    "octDownAria": "This song an octave lower",
+    "octUpAria": "This song an octave higher",
     "keyUpAria": "Raise the key a half step",
     "abInactive": "A–B is set to {range}, but it only applies while “Loop until I tap Stop” is on. Turn that on to repeat these lines.",
     "abLooping": "Looping <strong>{range}</strong>, from {from} to {to}.",
@@ -2708,6 +2724,9 @@ const STRINGS = {
     "cents": "{c} cents",
     "down1": "Down 1 half step",
     "downN": "Down {n} half steps",
+    "downSpan": "Down {span}",
+    "upSpan": "Up {span}",
+    "transposedShift": "Transposed {shift} (do = {do})",
     "fine": "fine tune {c} cents (A4 = {hz} Hz)",
     "sameAsRef": "The same setting as the reference pitch in Tuning notes; it tunes everything the app plays.",
     "guitarHint": "On guitar, use your ukulele fingerings on the top four strings (D G B E).",
@@ -12469,9 +12488,11 @@ function finishCalib() {
 function renderPitch() {
   const t = +$("transpose").value, c = +$("fineTune").value;
   const n = Math.abs(t);
-  $("tVal").textContent = t === 0 ? T("pitch.asWritten") : TN(n, t < 0 ? "pitch.down1" : "pitch.up1", t < 0 ? "pitch.downN" : "pitch.upN");
+  // v0.213: an octave or more reads "Down an octave and a whole step" (spanText), less as half steps
+  $("tVal").textContent = t === 0 ? T("pitch.asWritten") : n >= 12 ? T(t < 0 ? "pitch.downSpan" : "pitch.upSpan", { span: spanText(n) })
+    : TN(n, t < 0 ? "pitch.down1" : "pitch.up1", t < 0 ? "pitch.downN" : "pitch.upN");
   const doM = SONG_DO_MIDI + t;
-  const keyVars = { key: keyFull(doM), do: noteName(doM), interval: T(`pitch.interval${n}`) };
+  const keyVars = { key: keyFull(doM), do: noteName(doM), interval: n ? spanText(n) : "" };
   $("keyNote").textContent = t === 0 ? T("pitch.keyAsWritten", keyVars)
     : T(t < 0 ? "pitch.keyDown" : "pitch.keyUp", keyVars) + (t === -5 ? " " + T("pitch.guitarHint") : "");
   document.querySelectorAll(".presets .chipbtn").forEach(b => b.classList.toggle("on", +b.dataset.t === t));
@@ -12484,15 +12505,20 @@ function renderPitch() {
   $("aNote").textContent = T(c === 0 ? "pitch.aStandard" : "pitch.aShifted", { hz: ref.toFixed(1) }) + " " + T("pitch.sameAsRef");
   // a reminder at the top whenever the pitch isn't as written
   const parts = [];
-  if (t !== 0) parts.push(TN(n, t < 0 ? "pitch.transposedDown1" : "pitch.transposedUp1", t < 0 ? "pitch.transposedDownN" : "pitch.transposedUpN", { do: noteName(doM) }));
+  if (t !== 0) parts.push(n >= 12 ? T("pitch.transposedShift", { shift: $("tVal").textContent.toLowerCase(), do: noteName(doM) })
+    : TN(n, t < 0 ? "pitch.transposedDown1" : "pitch.transposedUp1", t < 0 ? "pitch.transposedDownN" : "pitch.transposedUpN", { do: noteName(doM) }));
+  // v0.213: the buttons that would go past two octaves are greyed
+  for (const [id, d] of [["akDown", -1], ["tDown", -1], ["akUp", 1], ["tUp", 1], ["akOctDown", -12], ["tOctDown", -12], ["akOctUp", 12], ["tOctUp", 12]])
+    $(id).disabled = Math.abs(t + d) > TRANSPOSE_MAX;
   if (c !== 0) parts.push(T("pitch.fine", { c: signed_c, hz: ref.toFixed(1) }));
   $("pitchNote").hidden = parts.length === 0;
   $("pitchNote").textContent = parts.join(T("pitch.listSep"));
 }
 // The key is saved per song: lowering one song doesn't move the others.
 const TRANSPOSE_STORE = songKey("phrase-parrot-transpose-v1");
+const TRANSPOSE_MAX = 24;   // v0.213: two octaves each way (was 12), for Octave − +
 function setTranspose(t) {
-  $("transpose").value = Math.max(-12, Math.min(12, t));
+  $("transpose").value = Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, t));
   storeSet(TRANSPOSE_STORE, $("transpose").value);
   renderPitch(); renderWarm(); refreshChords(); savePrefs(); renderSongFacts(); renderPiano(); renderFret();
 }
@@ -14659,6 +14685,8 @@ $("tDown").addEventListener("click", () => setTranspose(+$("transpose").value - 
 $("akDown").addEventListener("click", () => setTranspose(+$("transpose").value - 1));
 $("akUp").addEventListener("click", () => setTranspose(+$("transpose").value + 1));
 $("tUp").addEventListener("click", () => setTranspose(+$("transpose").value + 1));
+for (const [id, d] of [["akOctDown", -12], ["akOctUp", 12], ["tOctDown", -12], ["tOctUp", 12]])   // v0.213
+  $(id).addEventListener("click", () => setTranspose(+$("transpose").value + d));
 document.querySelectorAll(".presets .chipbtn").forEach(b => b.addEventListener("click", () => setTranspose(+b.dataset.t)));
 $("fineTune").addEventListener("input", () => {
   renderPitch(); renderTuning(); savePrefs();
@@ -15235,7 +15263,7 @@ renderMyColors();          // v0.158: the My colors box shows only with My color
 {
   const own = storeGet(TRANSPOSE_STORE);
   const old = SAVED_PREFS && SAVED_PREFS.transpose != null ? +SAVED_PREFS.transpose || 0 : 0;
-  $("transpose").value = own != null ? String(Math.max(-12, Math.min(12, +own || 0))) : String(old);
+  $("transpose").value = own != null ? String(Math.max(-TRANSPOSE_MAX, Math.min(TRANSPOSE_MAX, +own || 0))) : String(old);
   if (own == null && old !== 0) storeSet(TRANSPOSE_STORE, String(old));
 }
 // This song's tempo (v0.127; before, one tempo was saved with the settings for every song)
